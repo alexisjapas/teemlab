@@ -10,6 +10,7 @@
 pub mod brain;
 pub mod components;
 pub mod config;
+pub mod interaction;
 pub mod movement;
 pub mod rng;
 pub mod spawn;
@@ -48,9 +49,17 @@ impl Plugin for SimPlugin {
             .insert_resource(Time::<Fixed>::from_hz(self.config.tick_hz))
             .add_systems(Startup, spawn::setup_world)
             // percevoir → décider → agir, strictement dans FixedUpdate.
+            // `interact` prolonge l'« agir » : il résout les interactions
+            // dirigées (manger/attaquer) une fois les commandes motrices posées.
             .add_systems(
                 FixedUpdate,
-                (movement::perceive, movement::decide, movement::act).chain(),
+                (
+                    movement::perceive,
+                    movement::decide,
+                    movement::act,
+                    interaction::interact,
+                )
+                    .chain(),
             );
     }
 }

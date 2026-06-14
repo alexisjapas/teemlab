@@ -29,6 +29,13 @@
     vision_fov_deg: 120.0,
     vision_range: 160.0,
 
+    // Espèces et réserve. Une seule espèce et une table de relations vide → monde
+    // inerte : personne n'agit sur personne. Voir scenarios/predation.ron pour
+    // un exemple de prédation entre deux espèces.
+    species_count: 1,
+    reserve_max: 100.0,
+    relations: [],
+
     // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
     seed: 0x00C0FFEE,
 )

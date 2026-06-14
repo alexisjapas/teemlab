@@ -231,7 +231,14 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   quantifié — `Vision::metabolic_cost()`, couplé portée × rayons — mais pas encore
   prélevé : son consommateur est l'économie d'énergie de l'item 8. Forme du
   capteur verrouillée par espèce v1 ; les magnitudes viendront des gènes.)*
-- [ ] **7. Primitive d'interaction unique** (manger/attaquer) + table de relations.
+- [~] **7. Primitive d'interaction unique** (manger/attaquer) + table de relations.
+  *(Fait : un seul système `interact` — un acteur réduit la `Reserve` d'une cible
+  à portée (broad-phase Avian), `transfer: true` = prédation (gain pour l'acteur),
+  `false` = combat. `Species` filtre les cibles ; la table `relations` (RON) dit
+  qui agit sur qui. Substrat posé : `Reserve` générique (énergie *ou* PV, au choix
+  du scénario), spawn multi-espèces, `scenarios/predation.ron`. À faire avec
+  l'item 8 : mort à zéro, régénération/métabolisme et la distinction explicite
+  énergie/PV — donc l'économie calibrée, pas juste la mécanique.)*
 - [ ] **8. Scénario nº1 — sélection naturelle**, agents déterministes : énergie, manger, mourir.
   Calibrer l'économie d'énergie ici (le vrai travail).
 - [ ] **9. Reproduction + mutation** (génotype paramétrique d'abord). On a alors une *boucle

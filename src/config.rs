@@ -34,8 +34,40 @@ pub struct SimConfig {
     pub vision_fov_deg: f32,
     /// Portée de vision, en unités monde (= longueur max d'un rayon).
     pub vision_range: f32,
+    /// Nombre d'espèces. Les agents sont répartis en round-robin (`i % count`).
+    pub species_count: u16,
+    /// Réserve initiale (= max) de chaque agent.
+    pub reserve_max: f32,
+    /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). Vide par
+    /// défaut → aucune interaction (monde inerte, comme avant l'item 7).
+    pub relations: Vec<Relation>,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
+}
+
+/// Une entrée de la table d'interactions. Matérialise l'insight du §3 — *manger
+/// et attaquer sont le même verbe* : une interaction dirigée où l'acteur réduit
+/// la réserve de la cible, à portée. Le seul axe sémantique en v1 est `transfer` :
+///
+/// - `transfer: true`  → **prédation** : ce qui est retiré à la cible est gagné
+///   par l'acteur.
+/// - `transfer: false` → **combat** : la réserve est détruite, sans transfert.
+///
+/// (La distinction énergie/PV attendra qu'un agent porte *plusieurs* réserves ;
+/// v1 n'en a qu'une.)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Relation {
+    /// Espèce de l'acteur.
+    pub actor: u16,
+    /// Espèce de la cible.
+    pub target: u16,
+    /// Transfert (prédation) ou simple destruction (combat).
+    pub transfer: bool,
+    /// Quantité de réserve transférée/détruite **par seconde** de temps simulé.
+    pub rate: f32,
+    /// Portée d'action, en unités monde (distance centre-à-centre).
+    pub range: f32,
 }
 
 impl Default for SimConfig {
@@ -49,6 +81,9 @@ impl Default for SimConfig {
             vision_rays: 7,
             vision_fov_deg: 120.0,
             vision_range: 160.0,
+            species_count: 1,
+            reserve_max: 100.0,
+            relations: Vec::new(),
             seed: 0x00C0_FFEE,
         }
     }
@@ -175,5 +210,36 @@ mod tests {
         let text = include_str!("../scenarios/default.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario par défaut valide");
         assert_eq!(cfg, SimConfig::default());
+    }
+
+    /// La table de relations parse depuis le RON et un champ inconnu y est aussi
+    /// rejeté (`deny_unknown_fields` sur `Relation`).
+    #[test]
+    fn relations_parse_from_ron() {
+        let cfg = SimConfig::from_ron_str(
+            "(relations: [(actor: 0, target: 1, transfer: true, rate: 40.0, range: 28.0)])",
+        )
+        .expect("RON valide");
+        assert_eq!(cfg.relations.len(), 1);
+        assert_eq!(cfg.relations[0].actor, 0);
+        assert_eq!(cfg.relations[0].target, 1);
+        assert!(cfg.relations[0].transfer);
+
+        assert!(
+            SimConfig::from_ron_str(
+                "(relations: [(actor: 0, target: 1, transfer: true, rate: 1.0, range: 1.0, oops: 2)])"
+            )
+            .is_err()
+        );
+    }
+
+    /// Le scénario de prédication versionné reste valide (garde-fou contre une
+    /// dérive du format de la table de relations).
+    #[test]
+    fn bundled_predation_scenario_is_valid() {
+        let text = include_str!("../scenarios/predation.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario prédation valide");
+        assert_eq!(cfg.species_count, 2);
+        assert_eq!(cfg.relations.len(), 1);
     }
 }

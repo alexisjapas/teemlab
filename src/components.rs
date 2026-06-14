@@ -10,6 +10,39 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct Agent;
 
+/// Identité d'espèce / de camp. Sert de filtre de cible pour la primitive
+/// d'interaction : c'est le *scénario* (via sa table de relations) qui donne un
+/// sens à cet entier — relation trophique prédateur→proie, ou camp ennemi→ennemi.
+/// Le moteur, lui, ne connaît que « l'espèce A peut agir sur l'espèce B ».
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Species(pub u16);
+
+/// Réserve : la *ressource* qu'une interaction réduit, et que la prédation
+/// transfère. Volontairement générique — le scénario décide si elle représente
+/// de l'énergie (sélection naturelle) ou des points de vie (bataille). L'économie
+/// qui l'alimente et la mort à zéro arrivent avec le scénario nº1 (item 8).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Reserve {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl Reserve {
+    /// Réserve pleine.
+    pub fn full(max: f32) -> Self {
+        Self { current: max, max }
+    }
+
+    /// Fraction de remplissage dans `[0, 1]` (0 si `max` nul).
+    pub fn fraction(&self) -> f32 {
+        if self.max > 0.0 {
+            (self.current / self.max).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Marqueur d'un mur statique de l'arène.
 #[derive(Component)]
 pub struct Wall;
@@ -139,5 +172,14 @@ mod tests {
         longer.range = 200.0;
         assert!(more_rays.metabolic_cost() > small.metabolic_cost());
         assert!(longer.metabolic_cost() > small.metabolic_cost());
+    }
+
+    /// La fraction de réserve est dans `[0, 1]`, robuste à un `max` nul.
+    #[test]
+    fn reserve_fraction_is_clamped() {
+        assert_eq!(Reserve::full(100.0).fraction(), 1.0);
+        assert_eq!(Reserve { current: 50.0, max: 100.0 }.fraction(), 0.5);
+        assert_eq!(Reserve { current: 0.0, max: 0.0 }.fraction(), 0.0);
+        assert_eq!(Reserve { current: 999.0, max: 100.0 }.fraction(), 1.0);
     }
 }

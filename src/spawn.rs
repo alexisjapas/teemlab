@@ -2,7 +2,9 @@
 //! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
 
 use crate::brain::{Brain, WanderBrain};
-use crate::components::{Action, Agent, Locomotion, Perception, Radius, Vision, Wall};
+use crate::components::{
+    Action, Agent, Locomotion, Perception, Radius, Reserve, Species, Vision, Wall,
+};
 use crate::config::SimConfig;
 use crate::rng::Rng;
 use avian2d::prelude::*;
@@ -49,14 +51,21 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
         range: config.vision_range,
     };
 
+    // Au moins une espèce, même si un scénario met 0 par mégarde.
+    let species_count = config.species_count.max(1);
+
     for i in 0..config.agent_count {
         let x = rng.next_signed() * span;
         let y = rng.next_signed() * span;
         let heading = rng.next_f32() * std::f32::consts::TAU;
         let brain_seed = config.seed ^ (i as u64).wrapping_mul(0x9E37_79B1);
+        // Répartition round-robin des espèces.
+        let species = Species((i as u16) % species_count);
 
         commands.spawn((
             Agent,
+            species,
+            Reserve::full(config.reserve_max),
             Radius(r),
             Locomotion {
                 max_speed: config.max_speed,

@@ -32,8 +32,12 @@ Première tranche posée : **scénario = donnée**.
   plus proche (un mur masque ce qui est derrière), et écrit une *proximité*
   normalisée par rayon dans `Perception`. Coût métabolique quantifié
   (`Vision::metabolic_cost`), prélèvement différé à l'économie d'énergie.
-- [ ] Reste du P1 (placement manuel, éditeur d'archétype, primitive
-  d'interaction, scénario sélection naturelle, reproduction + mutation) — voir
+- [x] **Primitive d'interaction unique** (§3 *manger et attaquer sont le même
+  verbe*) : un acteur réduit la `Reserve` d'une cible à portée (broad-phase
+  Avian) ; `transfer: true` = prédation, `false` = combat. `Species` + table
+  `relations` (RON) décident qui agit sur qui. Voir `scenarios/predation.ron`.
+- [ ] Reste du P1 (placement manuel, éditeur d'archétype, scénario sélection
+  naturelle avec économie d'énergie + mort, reproduction + mutation) — voir
   [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
@@ -46,9 +50,10 @@ réservé au rendu / UI du binaire fenêtré.
 src/
   lib.rs          SimPlugin : le cœur render-agnostic partagé.
   config.rs       SimConfig : le scénario (RON) + son chargement.
-  components.rs    Corps de l'agent ; Vision (capteur raycast) ; Perception/Action = contrat du cerveau.
+  components.rs    Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
+  interaction.rs  Primitive d'interaction unique (manger/attaquer) + table de relations.
   rng.rs          PRNG déterministe minimal (SplitMix64), par agent.
   spawn.rs        Peuplement : arène (murs statiques) + agents.
   main.rs         Binaire fenêtré  → `teemlab`.
@@ -56,6 +61,7 @@ src/
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.
   crowded.ron     Variante (petite arène saturée) : override partiel.
+  predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
 ```
 
 ## Développement
