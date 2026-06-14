@@ -26,7 +26,7 @@
     in
     {
       devShells.${system}.default = pkgs.mkShell {
-        # Build-time tools.
+        # Build-time tools + dev utilities.
         nativeBuildInputs = with pkgs; [
           rustc
           cargo
@@ -34,6 +34,9 @@
           rustfmt
           rust-analyzer
           pkg-config
+          # Vulkan/OpenGL HUD overlay: `mangohud cargo run --bin teemlab`
+          # to watch FPS / frame times while tuning the simulation.
+          mangohud
         ];
 
         # Things pkg-config must find at build time (the wayland feature links
