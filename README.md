@@ -6,7 +6,20 @@ chaque simulation (sélection naturelle, bataille, …) n'est qu'un *scénario*.
 
 ## État
 
-### P1 — Scénario = donnée
+Le plan complet et son avancement vivent dans [`ROADMAP.md`](ROADMAP.md) ; la
+numérotation de phase (P0, P1, …) y fait foi. Résumé :
+
+### P0 — Fondations — ✅ terminé
+
+- [x] Bevy 0.18 + Avian 0.6, ronds rigides, collisions, caméra 2D top-down.
+- [x] Boucle percevoir→décider→agir avec cerveau déterministe trivial (errance).
+- [x] Deux points d'entrée partageant **le même** schedule de sim :
+  - fenêtré (`DefaultPlugins`)
+  - headless (`ScheduleRunnerPlugin`, stepping à nombre de ticks fixe).
+
+### P1 — Le moteur jouable — 🚧 en cours
+
+Première tranche posée : **scénario = donnée**.
 
 - [x] `SimConfig` chargé depuis un fichier **RON**, pas codé en dur. Un scénario
   est de la donnée : le *même* fichier pilote le build fenêtré et le headless.
@@ -14,14 +27,9 @@ chaque simulation (sélection naturelle, bataille, …) n'est qu'un *scénario*.
   qu'il change ; champ inconnu rejeté (`deny_unknown_fields`).
 - [x] Chargement partagé via `SimConfig::from_cli()` : 1ᵉʳ argument = chemin du
   scénario, absent → défauts, illisible/invalide → échec bruyant (sortie 1).
-
-### P0 — Fondations
-
-- [x] Bevy 0.18 + Avian 0.6, ronds rigides, collisions, caméra 2D top-down.
-- [x] Boucle percevoir→décider→agir avec cerveau déterministe trivial (errance).
-- [x] Deux points d'entrée partageant **le même** schedule de sim :
-  - fenêtré (`DefaultPlugins`)
-  - headless (`ScheduleRunnerPlugin`, stepping à nombre de ticks fixe).
+- [ ] Reste du P1 (placement manuel, éditeur d'archétype, vision par raycast,
+  primitive d'interaction, scénario sélection naturelle, reproduction +
+  mutation) — voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
