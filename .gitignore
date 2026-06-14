@@ -2,3 +2,6 @@
 /.direnv
 *.rs.bk
 .DS_Store
+
+# Fichier scratch écrit par défaut depuis l'éditeur (Sauver).
+/scenarios/edited.ron
