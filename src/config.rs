@@ -53,11 +53,57 @@ pub struct SimConfig {
     pub food_radius: f32,
     /// Énergie contenue dans une source de nourriture (= sa réserve pleine).
     pub food_energy: f32,
+    /// Vitesse de repousse de la nourriture, en sources **par seconde**. `0` →
+    /// maintien instantané à `food_count` (régime item 8). Une valeur finie crée
+    /// une **capacité de charge** : à population élevée, la nourriture est mangée
+    /// plus vite qu'elle ne repousse → la faim borne la croissance (item 9).
+    pub food_regen: f32,
     /// Espèce assignée à la nourriture, pour que la table de relations puisse la
     /// désigner comme cible (`(actor: <agent>, target: <food_species>, …)`).
     pub food_species: u16,
+    /// Valeur initiale du gène d'agilité (vivacité du braquage, `[0, 1]`).
+    pub agility: f32,
+    /// Amplitude de mutation : écart-type d'une mutation de gène, en *fraction*
+    /// de l'amplitude (`max - min`) de ce gène. `0` → pas de mutation.
+    pub mutation_rate: f32,
+    /// Énergie nécessaire pour se reproduire. `0` → pas de reproduction (régime
+    /// pré-item-9 : la population ne fait que décliner).
+    pub reproduction_threshold: f32,
+    /// Énergie transmise à l'enfant, déduite du parent (conservation : aucune
+    /// énergie créée à la reproduction).
+    pub offspring_energy: f32,
+    /// Bornes du gène de vitesse maximale.
+    pub speed_bounds: Bounds,
+    /// Bornes du gène d'agilité.
+    pub agility_bounds: Bounds,
+    /// Bornes du gène de portée de vision.
+    pub vision_range_bounds: Bounds,
+    /// Bornes du gène de champ de vision, **en degrés**.
+    pub vision_fov_bounds: Bounds,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
+}
+
+/// Bornes `[min, max]` d'un gène. Matérialise, avec la valeur (dans le
+/// [`crate::genotype::Genotype`]) et le couplage de coût (dans l'économie), le
+/// triplet du §2 : *une caractéristique n'est pas un nombre*.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bounds {
+    pub min: f32,
+    pub max: f32,
+}
+
+impl Bounds {
+    /// Étendue (`max - min`), l'échelle naturelle d'une mutation.
+    pub fn span(&self) -> f32 {
+        self.max - self.min
+    }
+
+    /// Ramène une valeur dans `[min, max]`.
+    pub fn clamp(&self, v: f32) -> f32 {
+        v.clamp(self.min, self.max)
+    }
 }
 
 /// Une entrée de la table d'interactions. Matérialise l'insight du §3 — *manger
@@ -104,7 +150,16 @@ impl Default for SimConfig {
             food_count: 0,
             food_radius: 6.0,
             food_energy: 50.0,
+            food_regen: 0.0,
             food_species: 1,
+            agility: 0.12,
+            mutation_rate: 0.0,
+            reproduction_threshold: 0.0,
+            offspring_energy: 30.0,
+            speed_bounds: Bounds { min: 40.0, max: 260.0 },
+            agility_bounds: Bounds { min: 0.02, max: 0.5 },
+            vision_range_bounds: Bounds { min: 40.0, max: 300.0 },
+            vision_fov_bounds: Bounds { min: 40.0, max: 280.0 },
             seed: 0x00C0_FFEE,
         }
     }
@@ -278,6 +333,22 @@ mod tests {
                 .iter()
                 .any(|r| r.target == cfg.food_species && r.transfer),
             "une relation doit permettre de manger la nourriture"
+        );
+    }
+
+    /// Le scénario d'évolution versionné active bien la boucle (reproduction +
+    /// mutation) et borne la nourriture (capacité de charge), sinon la
+    /// population exploserait.
+    #[test]
+    fn bundled_evolution_scenario_closes_the_loop() {
+        let text = include_str!("../scenarios/evolution.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario évolution valide");
+        assert!(cfg.reproduction_threshold > 0.0, "la reproduction doit être active");
+        assert!(cfg.mutation_rate > 0.0, "la mutation doit être active");
+        assert!(cfg.food_regen > 0.0, "repousse finie → capacité de charge");
+        assert!(
+            cfg.reproduction_threshold <= cfg.reserve_max,
+            "un seuil au-dessus du max serait inatteignable"
         );
     }
 }

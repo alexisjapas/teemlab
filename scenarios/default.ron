@@ -44,7 +44,21 @@
     food_count: 0,
     food_radius: 6.0,
     food_energy: 50.0,
+    food_regen: 0.0,
     food_species: 1,
+
+    // Évolution (cf. item 9). mutation_rate et reproduction_threshold à 0 →
+    // évolution éteinte : ni reproduction ni mutation. Les `*_bounds` sont les
+    // bornes des gènes (le « bornes » du triplet du §2), n'ayant d'effet qu'une
+    // fois la mutation activée. Voir scenarios/evolution.ron.
+    agility: 0.12,
+    mutation_rate: 0.0,
+    reproduction_threshold: 0.0,
+    offspring_energy: 30.0,
+    speed_bounds: (min: 40.0, max: 260.0),
+    agility_bounds: (min: 0.02, max: 0.5),
+    vision_range_bounds: (min: 40.0, max: 300.0),
+    vision_fov_bounds: (min: 40.0, max: 280.0),
 
     // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
     seed: 0x00C0FFEE,

@@ -11,6 +11,7 @@ pub mod brain;
 pub mod components;
 pub mod config;
 pub mod ecology;
+pub mod genotype;
 pub mod interaction;
 pub mod movement;
 pub mod rng;
@@ -53,6 +54,7 @@ impl Plugin for SimPlugin {
             // Flux aléatoire de la sim (réapparition de nourriture, …), seedé à
             // part du peuplement pour ne pas corréler les deux.
             .insert_resource(ecology::SimRng(Rng::new(self.config.seed ^ 0xF00D)))
+            .init_resource::<ecology::FoodRegen>()
             .add_systems(Startup, spawn::setup_world)
             // percevoir → décider → agir, strictement dans FixedUpdate.
             // `interact` prolonge l'« agir » (manger/attaquer) ; puis l'économie
@@ -66,6 +68,7 @@ impl Plugin for SimPlugin {
                     interaction::interact,
                     ecology::metabolize,
                     ecology::reap,
+                    ecology::reproduce,
                     ecology::replenish_food,
                 )
                     .chain(),

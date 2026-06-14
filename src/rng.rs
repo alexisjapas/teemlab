@@ -32,4 +32,13 @@ impl Rng {
     pub fn next_signed(&mut self) -> f32 {
         self.next_f32() * 2.0 - 1.0
     }
+
+    /// Tirage gaussien centré réduit (moyenne 0, écart-type 1), par Box-Muller.
+    /// Sert à perturber les gènes lors d'une mutation.
+    pub fn next_gaussian(&mut self) -> f32 {
+        // `max` écarte le log de zéro ; u2 fournit la phase.
+        let u1 = self.next_f32().max(1e-7);
+        let u2 = self.next_f32();
+        (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()
+    }
 }

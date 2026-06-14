@@ -3,12 +3,13 @@
 > Document de référence. Vue 2D top-down, entités = ronds. **Un seul moteur**, dont chaque
 > simulation (sélection naturelle, bataille, …) n'est qu'un *fichier de scénario*.
 
-> **Statut au 2026-06-14.** P0 (fondations) terminé. La plomberie « scénario = fichier RON »
-> est posée (commit `P1: scénario RON` — `serde` + `ron`, `SimConfig` chargé depuis un `.ron`
-> partagé par les deux binaires) : c'est une avance sur le **§4 Contrat de Scénario** et sur
-> l'item 5 ci-dessous (le volet *save/load RON*), **pas** le P1 complet de la §8. La
-> numérotation de phase de ce document fait foi ; l'étiquette « P1 » du commit/README désigne
-> seulement cette première tranche de plomberie.
+> **Statut au 2026-06-14.** P0 (fondations) terminé. P1 **quasi complet** : la première
+> **boucle évolutive continue** tourne de bout en bout — vision par raycast (item 6),
+> primitive d'interaction unique (item 7), économie d'énergie / sélection naturelle (item 8),
+> reproduction + mutation d'un génotype paramétrique (item 9). Vérifié sur `evolution.ron` :
+> population stable et dérive des gènes observable. Ne restent du P1 que des conforts d'UI hors
+> du chemin critique : le **placement drag-and-drop** (item 4) et l'**éditeur d'archétype**
+> (item 5). La numérotation de phase de ce document fait foi.
 
 ---
 
@@ -250,8 +251,19 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   vraie** (la population ne fait que décliner sans reproduction) et donc le réglage
   fin des cycles Lotka-Volterra arrivent avec la boucle de l'item 9 ; le calibrage
   ici établit une économie viable, pas encore un équilibre auto-entretenu.)*
-- [ ] **9. Reproduction + mutation** (génotype paramétrique d'abord). On a alors une *boucle
+- [x] **9. Reproduction + mutation** (génotype paramétrique d'abord). On a alors une *boucle
   évolutive continue* complète.
+  *(Fait : `Genotype` héritable (gènes = magnitudes : vitesse, agilité, portée et
+  champ de vision) ; §2 respecté — on mute le génotype, **compilé** en phénotype
+  au spawn (`spawn_agent` partagé par peuplement et reproduction). `ecology::reproduce`
+  (régime continu-implicite) : à seuil d'énergie, un parent paie `offspring_energy`
+  pour engendrer un enfant muté (gaussienne bornée). Coût du gène de vitesse
+  corrigé (couplé à la vitesse absolue). Repousse de nourriture à débit fini →
+  **capacité de charge** (sinon la population explose). `scenarios/evolution.ron`,
+  vérifié : population stable ~90, et dérive nette des gènes sur 100 s — la
+  **portée de vision baisse** (pur coût tant que l'errance l'ignore : le cadre
+  minimise un trait coûteux et inutile), la **vitesse monte** (meilleur butinage).
+  C'est la première boucle évolutive continue complète.)*
 
 ### P2 — Intelligence évoluée et passage à l'échelle
 

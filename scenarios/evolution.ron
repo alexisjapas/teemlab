@@ -1,0 +1,53 @@
+// Scénario — ÉVOLUTION CONTINUE (item 9).
+//
+// L'économie de sélection naturelle (cf. selection.ron) + la boucle qui la
+// referme : REPRODUCTION et MUTATION. Régime continu-implicite (§4) — la fitness
+// est endogène : « tu t'es reproduit ». Un agent qui accumule assez d'énergie
+// engendre, à tout moment, un enfant au génotype muté (§2 : on mute le génotype,
+// recompilé en phénotype au spawn). La sélection agit alors sans fonction de
+// fitness explicite : les gènes qui aident à survivre-et-se-reproduire se
+// répandent.
+//
+// Cerveaux d'errance (déterministes) : la vision n'est PAS encore utilisée pour
+// décider (item 10/11). On s'attend donc à voir la portée de vision DÉRIVER VERS
+// LE BAS — c'est un pur coût tant qu'aucun cerveau ne s'en sert. Beau test du
+// cadre : la sélection minimise un trait coûteux et inutile.
+//
+//     cargo run --bin teemlab  scenarios/evolution.ron
+//     cargo run --bin headless scenarios/evolution.ron   # dérive des gènes en sortie
+(
+    arena_half_extent: 320.0,
+
+    agent_count: 40,
+    species_count: 1,
+    reserve_max: 120.0,
+
+    base_metabolism: 4.0,
+    move_cost: 2.0,
+
+    food_count: 70,
+    food_radius: 8.0,
+    food_energy: 60.0,
+    // Repousse à débit FINI : c'est elle qui crée la capacité de charge. Énergie
+    // entrante ≈ food_regen × food_energy ≈ 8 × 60 = 480/s ; rapportée au
+    // métabolisme par tête (~6,6/s), capacité ~70 agents. Sans cette limite, la
+    // nourriture serait un robinet infini et la population exploserait.
+    food_regen: 8.0,
+    food_species: 1,
+
+    relations: [
+        (actor: 0, target: 1, transfer: true, rate: 200.0, range: 26.0),
+    ],
+
+    // La boucle évolutive. Seuil < reserve_max pour qu'il soit atteignable ;
+    // l'enfant emporte offspring_energy, déduite du parent (rien n'est créé).
+    reproduction_threshold: 95.0,
+    offspring_energy: 45.0,
+    mutation_rate: 0.06,
+
+    // Bornes des gènes (le « bornes » du triplet du §2).
+    speed_bounds: (min: 40.0, max: 260.0),
+    agility_bounds: (min: 0.02, max: 0.5),
+    vision_range_bounds: (min: 30.0, max: 300.0),
+    vision_fov_bounds: (min: 40.0, max: 280.0),
+)

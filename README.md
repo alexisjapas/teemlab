@@ -41,8 +41,14 @@ Première tranche posée : **scénario = donnée**.
   nourriture mangée via l'unique primitive d'interaction, mort à zéro,
   réensemencement de la nourriture. Calibrée pour que le butinage soutienne la
   population (les affamés meurent).
-- [ ] Reste du P1 (placement manuel, éditeur d'archétype, reproduction +
-  mutation — la boucle évolutive continue) — voir [`ROADMAP.md`](ROADMAP.md).
+- [x] **Reproduction + mutation** (`scenarios/evolution.ron`) : la boucle
+  évolutive continue. `Genotype` héritable (vitesse, agilité, vision) **compilé**
+  en phénotype au spawn (§2) ; un agent assez nourri engendre un enfant muté
+  (gaussienne bornée). Repousse de nourriture à débit fini → capacité de charge.
+  Sur 100 s : population stable, la portée de vision **dérive vers le bas** (pur
+  coût tant que l'errance l'ignore), la vitesse monte (meilleur butinage).
+- [ ] Reste du P1 (placement manuel, éditeur d'archétype) — conforts d'UI hors du
+  chemin critique ; voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
@@ -56,11 +62,12 @@ src/
   config.rs       SimConfig : le scénario (RON) + son chargement.
   components.rs    Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
+  genotype.rs     Genotype héritable + mutation ; compilation génotype→phénotype (§2).
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
   interaction.rs  Primitive d'interaction unique (manger/attaquer) + table de relations.
-  ecology.rs      Économie d'énergie : métaboliser, mourir, réensemencer la nourriture.
-  rng.rs          PRNG déterministe minimal (SplitMix64), par agent.
-  spawn.rs        Peuplement : arène (murs statiques) + agents.
+  ecology.rs      Économie : métaboliser, mourir, se reproduire, réensemencer la nourriture.
+  rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
+  spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
   main.rs         Binaire fenêtré  → `teemlab`.
   bin/headless.rs Binaire headless → `headless`.
 scenarios/
@@ -68,6 +75,7 @@ scenarios/
   crowded.ron     Variante (petite arène saturée) : override partiel.
   predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
   selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir).
+  evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes.
 ```
 
 ## Développement
