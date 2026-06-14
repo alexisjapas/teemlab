@@ -47,6 +47,12 @@ impl Reserve {
 #[derive(Component)]
 pub struct Wall;
 
+/// Marqueur d'une source de nourriture : une réserve d'énergie posée dans le
+/// monde, mangée via la primitive d'interaction comme n'importe quelle autre
+/// cible. Réensemencée pour garder l'économie soutenable.
+#[derive(Component)]
+pub struct Food;
+
 /// Rayon du corps. Composant explicite pour que le code de rendu dimensionne
 /// le mesh sans fouiller dans le collider Avian.
 #[derive(Component, Clone, Copy, Debug)]

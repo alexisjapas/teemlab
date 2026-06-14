@@ -36,9 +36,13 @@ Première tranche posée : **scénario = donnée**.
   verbe*) : un acteur réduit la `Reserve` d'une cible à portée (broad-phase
   Avian) ; `transfer: true` = prédation, `false` = combat. `Species` + table
   `relations` (RON) décident qui agit sur qui. Voir `scenarios/predation.ron`.
-- [ ] Reste du P1 (placement manuel, éditeur d'archétype, scénario sélection
-  naturelle avec économie d'énergie + mort, reproduction + mutation) — voir
-  [`ROADMAP.md`](ROADMAP.md).
+- [x] **Scénario nº1 — sélection naturelle** (`scenarios/selection.ron`) :
+  économie d'énergie complète. Métabolisme (base + locomotion + coût de vision),
+  nourriture mangée via l'unique primitive d'interaction, mort à zéro,
+  réensemencement de la nourriture. Calibrée pour que le butinage soutienne la
+  population (les affamés meurent).
+- [ ] Reste du P1 (placement manuel, éditeur d'archétype, reproduction +
+  mutation — la boucle évolutive continue) — voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
@@ -54,6 +58,7 @@ src/
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
   interaction.rs  Primitive d'interaction unique (manger/attaquer) + table de relations.
+  ecology.rs      Économie d'énergie : métaboliser, mourir, réensemencer la nourriture.
   rng.rs          PRNG déterministe minimal (SplitMix64), par agent.
   spawn.rs        Peuplement : arène (murs statiques) + agents.
   main.rs         Binaire fenêtré  → `teemlab`.
@@ -62,6 +67,7 @@ scenarios/
   default.ron     Scénario par défaut, tous champs documentés.
   crowded.ron     Variante (petite arène saturée) : override partiel.
   predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
+  selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir).
 ```
 
 ## Développement

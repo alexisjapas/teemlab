@@ -25,15 +25,20 @@ use bevy::prelude::*;
 /// checker refuserait la double-mutation. Les deltas étant additifs, leur somme
 /// est indépendante de l'ordre (au clamp final près).
 ///
-/// v1 : pas de mort à zéro ni de régénération — c'est l'économie d'énergie de
-/// l'item 8. Ici, on ne fait qu'établir et exercer le mécanisme.
+/// La mort à zéro et la régénération vivent dans `ecology` (item 8) ; ici on ne
+/// fait que transférer/détruire de la réserve.
+///
+/// Seuls les agents *initient* (ils ont un corps qui se meut), mais une cible
+/// peut être n'importe quelle entité portant [`Species`] + [`Reserve`] — un
+/// autre agent (prédation) **ou** une source de nourriture (manger passe ainsi
+/// par la même primitive). Les colliders sans `Species` (murs) sont ignorés.
 pub fn interact(
     spatial: SpatialQuery,
     time: Res<Time>,
     config: Res<SimConfig>,
     actors: Query<(Entity, &Transform, &Species), With<Agent>>,
-    species_of: Query<&Species, With<Agent>>,
-    mut reserves: Query<&mut Reserve, With<Agent>>,
+    species_of: Query<&Species>,
+    mut reserves: Query<&mut Reserve>,
 ) {
     if config.relations.is_empty() {
         return;

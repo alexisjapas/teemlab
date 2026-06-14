@@ -36,6 +36,16 @@
     reserve_max: 100.0,
     relations: [],
 
+    // Économie d'énergie (cf. item 8). Tout à zéro/néant ici → monde inerte :
+    // pas de métabolisme, pas de nourriture, personne ne meurt. Voir
+    // scenarios/selection.ron pour une économie de sélection naturelle calibrée.
+    base_metabolism: 0.0,
+    move_cost: 0.0,
+    food_count: 0,
+    food_radius: 6.0,
+    food_energy: 50.0,
+    food_species: 1,
+
     // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
     seed: 0x00C0FFEE,
 )

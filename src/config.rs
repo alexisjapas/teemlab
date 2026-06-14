@@ -41,6 +41,21 @@ pub struct SimConfig {
     /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). Vide par
     /// défaut → aucune interaction (monde inerte, comme avant l'item 7).
     pub relations: Vec<Relation>,
+    /// Métabolisme de base : énergie drainée **par seconde**, au repos. `0` →
+    /// pas de drain (monde inerte, comme avant l'item 8).
+    pub base_metabolism: f32,
+    /// Surcoût de locomotion : énergie/seconde supplémentaire à pleine vitesse
+    /// (proportionnel à la fraction de vitesse). La vitesse devient un coût.
+    pub move_cost: f32,
+    /// Nombre de sources de nourriture maintenues dans l'arène. `0` → aucune.
+    pub food_count: usize,
+    /// Rayon d'une source de nourriture.
+    pub food_radius: f32,
+    /// Énergie contenue dans une source de nourriture (= sa réserve pleine).
+    pub food_energy: f32,
+    /// Espèce assignée à la nourriture, pour que la table de relations puisse la
+    /// désigner comme cible (`(actor: <agent>, target: <food_species>, …)`).
+    pub food_species: u16,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -84,6 +99,12 @@ impl Default for SimConfig {
             species_count: 1,
             reserve_max: 100.0,
             relations: Vec::new(),
+            base_metabolism: 0.0,
+            move_cost: 0.0,
+            food_count: 0,
+            food_radius: 6.0,
+            food_energy: 50.0,
+            food_species: 1,
             seed: 0x00C0_FFEE,
         }
     }
@@ -241,5 +262,22 @@ mod tests {
         let cfg = SimConfig::from_ron_str(text).expect("scénario prédation valide");
         assert_eq!(cfg.species_count, 2);
         assert_eq!(cfg.relations.len(), 1);
+    }
+
+    /// Le scénario de sélection naturelle versionné reste valide et constitue
+    /// bien une économie : métabolisme non nul, nourriture présente, et une
+    /// relation qui désigne cette nourriture comme cible.
+    #[test]
+    fn bundled_selection_scenario_is_an_economy() {
+        let text = include_str!("../scenarios/selection.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario sélection valide");
+        assert!(cfg.base_metabolism > 0.0, "il faut un coût de survie");
+        assert!(cfg.food_count > 0, "il faut une source d'énergie");
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.target == cfg.food_species && r.transfer),
+            "une relation doit permettre de manger la nourriture"
+        );
     }
 }

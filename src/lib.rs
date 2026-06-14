@@ -10,6 +10,7 @@
 pub mod brain;
 pub mod components;
 pub mod config;
+pub mod ecology;
 pub mod interaction;
 pub mod movement;
 pub mod rng;
@@ -17,6 +18,8 @@ pub mod spawn;
 
 use avian2d::prelude::*;
 use bevy::prelude::*;
+
+use crate::rng::Rng;
 
 pub use config::SimConfig;
 
@@ -47,10 +50,13 @@ impl Plugin for SimPlugin {
             .insert_resource(Gravity(Vec2::ZERO))
             // Cadence de sim constante (64 Hz par défaut), indépendante du rendu.
             .insert_resource(Time::<Fixed>::from_hz(self.config.tick_hz))
+            // Flux aléatoire de la sim (réapparition de nourriture, …), seedé à
+            // part du peuplement pour ne pas corréler les deux.
+            .insert_resource(ecology::SimRng(Rng::new(self.config.seed ^ 0xF00D)))
             .add_systems(Startup, spawn::setup_world)
             // percevoir → décider → agir, strictement dans FixedUpdate.
-            // `interact` prolonge l'« agir » : il résout les interactions
-            // dirigées (manger/attaquer) une fois les commandes motrices posées.
+            // `interact` prolonge l'« agir » (manger/attaquer) ; puis l'économie
+            // d'énergie : métaboliser, mourir, réensemencer la nourriture.
             .add_systems(
                 FixedUpdate,
                 (
@@ -58,6 +64,9 @@ impl Plugin for SimPlugin {
                     movement::decide,
                     movement::act,
                     interaction::interact,
+                    ecology::metabolize,
+                    ecology::reap,
+                    ecology::replenish_food,
                 )
                     .chain(),
             );

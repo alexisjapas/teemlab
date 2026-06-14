@@ -5,7 +5,7 @@
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
 use bevy::prelude::*;
-use teemlab::components::{Agent, Perception, Radius, Reserve, Species, Vision};
+use teemlab::components::{Agent, Food, Perception, Radius, Reserve, Species, Vision};
 use teemlab::{SimConfig, SimPlugin};
 
 fn main() {
@@ -22,7 +22,13 @@ fn main() {
         // RENDU UNIQUEMENT — jamais de logique de sim ici.
         .add_systems(
             Update,
-            (attach_visuals, shade_by_reserve, draw_arena, draw_vision),
+            (
+                attach_visuals,
+                attach_food_visuals,
+                shade_by_reserve,
+                draw_arena,
+                draw_vision,
+            ),
         )
         .run();
 }
@@ -52,6 +58,23 @@ fn attach_visuals(
     new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Mesh2d>)>,
 ) {
     for (entity, radius, species) in &new_agents {
+        commands.entity(entity).insert((
+            Mesh2d(meshes.add(Circle::new(radius.0))),
+            MeshMaterial2d(materials.add(Color::from(species_color(*species)))),
+        ));
+    }
+}
+
+/// Rendu seul : donner un mesh aux sources de nourriture fraîchement semées,
+/// teintées par leur espèce. Elles s'assombriront ensuite via `shade_by_reserve`
+/// (elles portent `Species` + `Reserve`) à mesure qu'on les mange.
+fn attach_food_visuals(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    new_food: Query<(Entity, &Radius, &Species), (Added<Food>, Without<Mesh2d>)>,
+) {
+    for (entity, radius, species) in &new_food {
         commands.entity(entity).insert((
             Mesh2d(meshes.add(Circle::new(radius.0))),
             MeshMaterial2d(materials.add(Color::from(species_color(*species)))),

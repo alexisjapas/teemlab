@@ -239,8 +239,17 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   du scénario), spawn multi-espèces, `scenarios/predation.ron`. À faire avec
   l'item 8 : mort à zéro, régénération/métabolisme et la distinction explicite
   énergie/PV — donc l'économie calibrée, pas juste la mécanique.)*
-- [ ] **8. Scénario nº1 — sélection naturelle**, agents déterministes : énergie, manger, mourir.
+- [~] **8. Scénario nº1 — sélection naturelle**, agents déterministes : énergie, manger, mourir.
   Calibrer l'économie d'énergie ici (le vrai travail).
+  *(Fait : économie complète — métabolisme (`ecology::metabolize` : base +
+  locomotion + **coût de vision** de l'item 6, qui trouve enfin son consommateur),
+  nourriture comme réserve mangée via l'unique primitive d'interaction (item 7),
+  mort à zéro (`reap`), réensemencement (`replenish_food`). `scenarios/selection.ron`
+  calibré : ~36/40 survivants à 100 s, énergie ~87 — l'économie soutient les
+  butineurs, les malchanceux meurent de faim. Reste ouvert : la **persistance
+  vraie** (la population ne fait que décliner sans reproduction) et donc le réglage
+  fin des cycles Lotka-Volterra arrivent avec la boucle de l'item 9 ; le calibrage
+  ici établit une économie viable, pas encore un équilibre auto-entretenu.)*
 - [ ] **9. Reproduction + mutation** (génotype paramétrique d'abord). On a alors une *boucle
   évolutive continue* complète.
 

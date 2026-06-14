@@ -1,0 +1,40 @@
+// Scénario nº1 — SÉLECTION NATURELLE (item 8).
+//
+// Le premier scénario de bout en bout : énergie, manger, mourir. Une espèce
+// d'herbivores (espèce 0) brûle de l'énergie en permanence (métabolisme de base
+// + surcoût de vitesse + coût de sa vision) et n'en regagne qu'en mangeant la
+// nourriture (espèce 1), via l'UNIQUE primitive d'interaction (transfer: true).
+// Réserve épuisée → mort.
+//
+// Cerveaux déterministes (errance) : il n'y a pas encore d'hérédité, donc pas de
+// dérive des traits — c'est l'item 9 (reproduction + mutation). Ici on pose et
+// on CALIBRE l'économie d'énergie (§7 : « du réglage, pas de l'algo ») : le
+// débit de nourriture face au métabolisme cumulé fixe le point d'équilibre.
+//
+//     cargo run --bin teemlab  scenarios/selection.ron
+//     cargo run --bin headless scenarios/selection.ron
+(
+    arena_half_extent: 320.0,
+
+    // Population d'herbivores (espèce 0).
+    agent_count: 40,
+    species_count: 1,
+    reserve_max: 100.0,
+
+    // Coûts énergétiques (par seconde). La survie n'est pas gratuite, mais le
+    // butineur aléatoire qu'est l'errance doit pouvoir s'en sortir : c'est tout
+    // l'enjeu du calibrage (§7). Métabolisme modéré, nourriture dense.
+    base_metabolism: 4.0,
+    move_cost: 2.0,
+
+    // Le robinet d'énergie : nourriture (espèce 1) maintenue à effectif constant.
+    food_count: 70,
+    food_radius: 8.0,
+    food_energy: 60.0,
+    food_species: 1,
+
+    // L'unique verbe : l'espèce 0 mange l'espèce 1 (transfert d'énergie).
+    relations: [
+        (actor: 0, target: 1, transfer: true, rate: 200.0, range: 26.0),
+    ],
+)
