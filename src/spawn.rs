@@ -2,7 +2,7 @@
 //! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
 
 use crate::brain::{Brain, WanderBrain};
-use crate::components::{Action, Agent, Locomotion, Perception, Radius, Wall};
+use crate::components::{Action, Agent, Locomotion, Perception, Radius, Vision, Wall};
 use crate::config::SimConfig;
 use crate::rng::Rng;
 use avian2d::prelude::*;
@@ -41,6 +41,14 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     let r = config.agent_radius;
     let span = config.arena_half_extent - r - 5.0;
 
+    // Forme du capteur, verrouillée par espèce (v1) : partagée par tous les
+    // agents de cette run.
+    let vision = Vision {
+        ray_count: config.vision_rays,
+        fov: config.vision_fov_deg.to_radians(),
+        range: config.vision_range,
+    };
+
     for i in 0..config.agent_count {
         let x = rng.next_signed() * span;
         let y = rng.next_signed() * span;
@@ -54,7 +62,11 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 max_speed: config.max_speed,
                 agility: 0.12,
             },
-            Perception::default(),
+            vision,
+            Perception {
+                vision: vec![0.0; vision.ray_count].into_boxed_slice(),
+                ..default()
+            },
             Action::default(),
             Brain::Wander(WanderBrain::new(brain_seed, heading)),
             RigidBody::Dynamic,

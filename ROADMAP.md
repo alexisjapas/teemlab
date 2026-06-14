@@ -223,7 +223,14 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   *(Fait : plomberie save/load RON — `serde` + `ron`, `SimConfig` chargé depuis un `.ron`,
   override partiel, scénario partagé par les deux binaires. À faire : l'éditeur d'archétype et
   la distinction explicite archétype/génome.)*
-- [ ] **6. Vision par raycast avec occlusion** (spatial queries Avian), avec coût métabolique.
+- [~] **6. Vision par raycast avec occlusion** (spatial queries Avian), avec coût métabolique.
+  *(Fait : éventail de rayons par agent via `SpatialQuery`, occlusion intrinsèque
+  — chaque rayon ne garde que le hit le plus proche, donc un mur masque ce qui
+  est derrière —, proximité normalisée écrite dans `Perception`, rendu des rayons
+  en build fenêtré pour vérifier l'occlusion à l'œil. Le **coût métabolique** est
+  quantifié — `Vision::metabolic_cost()`, couplé portée × rayons — mais pas encore
+  prélevé : son consommateur est l'économie d'énergie de l'item 8. Forme du
+  capteur verrouillée par espèce v1 ; les magnitudes viendront des gènes.)*
 - [ ] **7. Primitive d'interaction unique** (manger/attaquer) + table de relations.
 - [ ] **8. Scénario nº1 — sélection naturelle**, agents déterministes : énergie, manger, mourir.
   Calibrer l'économie d'énergie ici (le vrai travail).

@@ -22,6 +22,13 @@
     // Vitesse maximale d'un agent.
     max_speed: 140.0,
 
+    // Vision par raycast. La *forme* (nombre de rayons) est verrouillée par
+    // espèce ; ce sont les magnitudes (portée, champ) que les gènes feront
+    // varier plus tard. Plus de portée = plus de coût métabolique (cf. §7).
+    vision_rays: 7,
+    vision_fov_deg: 120.0,
+    vision_range: 160.0,
+
     // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
     seed: 0x00C0FFEE,
 )

@@ -5,7 +5,7 @@
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
 use bevy::prelude::*;
-use teemlab::components::{Agent, Radius};
+use teemlab::components::{Agent, Perception, Radius, Vision};
 use teemlab::{SimConfig, SimPlugin};
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .add_systems(Startup, setup_camera)
         // RENDU UNIQUEMENT — jamais de logique de sim ici.
-        .add_systems(Update, (attach_visuals, draw_arena))
+        .add_systems(Update, (attach_visuals, draw_arena, draw_vision))
         .run();
 }
 
@@ -41,6 +41,23 @@ fn attach_visuals(
             Mesh2d(meshes.add(Circle::new(radius.0))),
             MeshMaterial2d(materials.add(Color::srgb(0.30, 0.70, 1.0))),
         ));
+    }
+}
+
+/// Rendu seul : visualiser les rayons de vision pour *voir* l'occlusion à
+/// l'œuvre. On relit l'état sensoriel calculé par la sim (`Perception`) — on ne
+/// recalcule aucun raycast ici. Rayon clair = rien vu ; il rougit et raccourcit
+/// à mesure qu'un obstacle se rapproche.
+fn draw_vision(mut gizmos: Gizmos, agents: Query<(&Transform, &Vision, &Perception)>) {
+    for (transform, vision, perception) in &agents {
+        let origin = transform.translation.truncate();
+        let facing = perception.heading;
+        for (i, &proximity) in perception.vision.iter().enumerate() {
+            let dir = vision.ray_dir(i, facing);
+            let length = vision.range * (1.0 - proximity);
+            let color = Color::srgb(0.25 + 0.75 * proximity, 0.55 * (1.0 - proximity), 0.15);
+            gizmos.line_2d(origin, origin + dir * length, color);
+        }
     }
 }
 

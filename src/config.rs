@@ -28,6 +28,12 @@ pub struct SimConfig {
     pub agent_radius: f32,
     /// Vitesse maximale d'un agent.
     pub max_speed: f32,
+    /// Nombre de rayons de vision par agent (forme verrouillée par espèce, v1).
+    pub vision_rays: usize,
+    /// Champ de vision *total*, en degrés, réparti symétriquement autour du cap.
+    pub vision_fov_deg: f32,
+    /// Portée de vision, en unités monde (= longueur max d'un rayon).
+    pub vision_range: f32,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -40,6 +46,9 @@ impl Default for SimConfig {
             agent_count: 48,
             agent_radius: 8.0,
             max_speed: 140.0,
+            vision_rays: 7,
+            vision_fov_deg: 120.0,
+            vision_range: 160.0,
             seed: 0x00C0_FFEE,
         }
     }

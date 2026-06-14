@@ -27,9 +27,14 @@ Première tranche posée : **scénario = donnée**.
   qu'il change ; champ inconnu rejeté (`deny_unknown_fields`).
 - [x] Chargement partagé via `SimConfig::from_cli()` : 1ᵉʳ argument = chemin du
   scénario, absent → défauts, illisible/invalide → échec bruyant (sortie 1).
-- [ ] Reste du P1 (placement manuel, éditeur d'archétype, vision par raycast,
-  primitive d'interaction, scénario sélection naturelle, reproduction +
-  mutation) — voir [`ROADMAP.md`](ROADMAP.md).
+- [x] **Vision par raycast avec occlusion** (spatial queries Avian) : chaque
+  agent éventaille des rayons sur son champ de vision, ne garde que le hit le
+  plus proche (un mur masque ce qui est derrière), et écrit une *proximité*
+  normalisée par rayon dans `Perception`. Coût métabolique quantifié
+  (`Vision::metabolic_cost`), prélèvement différé à l'économie d'énergie.
+- [ ] Reste du P1 (placement manuel, éditeur d'archétype, primitive
+  d'interaction, scénario sélection naturelle, reproduction + mutation) — voir
+  [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
@@ -41,7 +46,7 @@ réservé au rendu / UI du binaire fenêtré.
 src/
   lib.rs          SimPlugin : le cœur render-agnostic partagé.
   config.rs       SimConfig : le scénario (RON) + son chargement.
-  components.rs    Corps de l'agent ; Perception/Action = contrat du cerveau.
+  components.rs    Corps de l'agent ; Vision (capteur raycast) ; Perception/Action = contrat du cerveau.
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
   rng.rs          PRNG déterministe minimal (SplitMix64), par agent.
