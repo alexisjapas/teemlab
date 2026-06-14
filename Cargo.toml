@@ -1,0 +1,27 @@
+[package]
+name = "teemlab"
+version = "0.1.0"
+edition = "2024"
+description = "Moteur de simulation évolutive — un moteur, des scénarios."
+
+[dependencies]
+bevy = { version = "0.18", features = ["wayland"] }
+# Minimal, headless-safe feature set. Avian's defaults pull in bevy_picking /
+# bevy_scene / debug-plugin integrations whose systems require resources that
+# only exist under DefaultPlugins — they panic under MinimalPlugins (headless).
+# We only need 2D, f32 colliders (parry) and the parallel solver.
+avian2d = { version = "0.6", default-features = false, features = [
+    "2d",
+    "f32",
+    "parry-f32",
+    "parallel",
+] }
+
+# Build ergonomics (standard Bevy advice): our crate at -O1 for fast rebuilds,
+# dependencies fully optimized so the simulation runs at a usable speed even in
+# debug builds.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
