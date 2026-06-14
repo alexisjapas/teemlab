@@ -8,8 +8,10 @@
 > primitive d'interaction unique (item 7), économie d'énergie / sélection naturelle (item 8),
 > reproduction + mutation d'un génotype paramétrique (item 9). Vérifié sur `evolution.ron` :
 > population stable et dérive des gènes observable. Ne restent du P1 que des conforts d'UI hors
-> du chemin critique : le **placement drag-and-drop** (item 4) et l'**éditeur d'archétype**
-> (item 5). La numérotation de phase de ce document fait foi.
+> du chemin critique. Le **placement drag-and-drop** (item 4) est posé — panneau
+> d'archétypes egui + glisser-déposer dans l'aire de jeu. Ne reste que l'**éditeur
+> d'archétype** (item 5 : éditer les valeurs + save/load RON). La numérotation de
+> phase de ce document fait foi.
 
 ---
 
@@ -216,9 +218,13 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
 
 ### P1 — Le moteur jouable (une boucle évolutive complète)
 
-- [~] **4. Placement** : drag-and-drop manuel + spawn aléatoire en nombre.
-  *(Fait : spawn aléatoire en nombre — `agent_count`, positions seedées. À faire :
-  drag-and-drop manuel.)*
+- [x] **4. Placement** : drag-and-drop manuel + spawn aléatoire en nombre.
+  *(Fait : spawn aléatoire en nombre — `agent_count`, positions seedées ; **et**
+  placement manuel par glisser-déposer — panneau d'archétypes egui à droite (une
+  entrée par espèce d'agent + nourriture), bandeau de stats en bas, dépose dans
+  l'aire de jeu via `viewport_to_world_2d`. Tout l'éditeur vit dans le binaire
+  fenêtré (`src/editor.rs`), jamais dans le headless ni dans `FixedUpdate` —
+  c'est de l'édition manuelle, pas de la logique de sim.)*
 - [~] **5. Éditeur d'archétype + save/load RON.** Distinguer archétype (config éditable) et
   génome (valeurs d'instance).
   *(Fait : plomberie save/load RON — `serde` + `ron`, `SimConfig` chargé depuis un `.ron`,

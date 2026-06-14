@@ -4,7 +4,10 @@
 //! qu'on ajoute ici vit dans `Update` et ne touche QUE le rendu / l'UI — jamais
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
+mod editor;
+
 use bevy::prelude::*;
+use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use teemlab::components::{Agent, Food, Perception, Radius, Reserve, Species, Vision};
 use teemlab::{SimConfig, SimPlugin};
 
@@ -17,8 +20,9 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(EguiPlugin::default())
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
-        .add_systems(Startup, setup_camera)
+        .add_systems(Startup, (setup_camera, editor::build_palette))
         // RENDU UNIQUEMENT — jamais de logique de sim ici.
         .add_systems(
             Update,
@@ -30,6 +34,8 @@ fn main() {
                 draw_vision,
             ),
         )
+        // UI egui : panneau d'archétypes + placement manuel (item 4).
+        .add_systems(EguiPrimaryContextPass, editor::editor_ui)
         .run();
 }
 

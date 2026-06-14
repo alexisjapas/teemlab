@@ -47,8 +47,11 @@ Première tranche posée : **scénario = donnée**.
   (gaussienne bornée). Repousse de nourriture à débit fini → capacité de charge.
   Sur 100 s : population stable, la portée de vision **dérive vers le bas** (pur
   coût tant que l'errance l'ignore), la vitesse monte (meilleur butinage).
-- [ ] Reste du P1 (placement manuel, éditeur d'archétype) — conforts d'UI hors du
-  chemin critique ; voir [`ROADMAP.md`](ROADMAP.md).
+- [x] **Placement manuel (drag-and-drop)** : panneau d'archétypes egui à droite
+  (une entrée par espèce + nourriture), bandeau de stats en bas, dépose dans
+  l'aire de jeu. Éditeur fenêtré uniquement (`src/editor.rs`).
+- [ ] Reste du P1 (éditeur d'archétype : éditer les valeurs + save/load RON) —
+  voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
@@ -69,6 +72,7 @@ src/
   rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
   spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
   main.rs         Binaire fenêtré  → `teemlab`.
+  editor.rs       UI egui (fenêtré seul) : palette d'archétypes + placement drag-and-drop.
   bin/headless.rs Binaire headless → `headless`.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.

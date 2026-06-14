@@ -156,8 +156,9 @@ pub fn replenish_food(
 
 /// Poser une source de nourriture : une réserve d'énergie statique et *sensor*
 /// (les agents la traversent sans la heurter), mangée via la primitive
-/// d'interaction comme n'importe quelle cible.
-fn spawn_food(commands: &mut Commands, config: &SimConfig, pos: Vec2) {
+/// d'interaction comme n'importe quelle cible. Public pour que le placement
+/// manuel de l'éditeur (item 4) puisse en déposer.
+pub fn spawn_food(commands: &mut Commands, config: &SimConfig, pos: Vec2) {
     commands.spawn((
         Food,
         Species(config.food_species),
