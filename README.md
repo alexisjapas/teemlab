@@ -17,9 +17,10 @@ numérotation de phase (P0, P1, …) y fait foi. Résumé :
   - fenêtré (`DefaultPlugins`)
   - headless (`ScheduleRunnerPlugin`, stepping à nombre de ticks fixe).
 
-### P1 — Le moteur jouable — 🚧 en cours
+### P1 — Le moteur jouable — ✅ terminé
 
-Première tranche posée : **scénario = donnée**.
+La première **boucle évolutive continue** tourne de bout en bout, pilotable
+depuis l'UI. **Scénario = donnée** :
 
 - [x] `SimConfig` chargé depuis un fichier **RON**, pas codé en dur. Un scénario
   est de la donnée : le *même* fichier pilote le build fenêtré et le headless.
@@ -50,8 +51,13 @@ Première tranche posée : **scénario = donnée**.
 - [x] **Placement manuel (drag-and-drop)** : panneau d'archétypes egui à droite
   (une entrée par espèce + nourriture), bandeau de stats en bas, dépose dans
   l'aire de jeu. Éditeur fenêtré uniquement (`src/editor.rs`).
-- [ ] Reste du P1 (éditeur d'archétype : éditer les valeurs + save/load RON) —
-  voir [`ROADMAP.md`](ROADMAP.md).
+- [x] **Éditeur d'archétype + save/load RON** : panneau egui à gauche, sliders
+  bornés sur les gènes de l'archétype sélectionné, boutons Sauver/Charger. La
+  distinction **archétype** (modèle édité) / **génome** (copie d'instance qui
+  mute seule) est explicite.
+
+Prochaine phase : **P2** (MLP fait maison, neuroévolution, HUD courbes, headless
+parallélisé) — voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est

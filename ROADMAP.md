@@ -3,15 +3,13 @@
 > Document de référence. Vue 2D top-down, entités = ronds. **Un seul moteur**, dont chaque
 > simulation (sélection naturelle, bataille, …) n'est qu'un *fichier de scénario*.
 
-> **Statut au 2026-06-14.** P0 (fondations) terminé. P1 **quasi complet** : la première
-> **boucle évolutive continue** tourne de bout en bout — vision par raycast (item 6),
-> primitive d'interaction unique (item 7), économie d'énergie / sélection naturelle (item 8),
-> reproduction + mutation d'un génotype paramétrique (item 9). Vérifié sur `evolution.ron` :
-> population stable et dérive des gènes observable. Ne restent du P1 que des conforts d'UI hors
-> du chemin critique. Le **placement drag-and-drop** (item 4) est posé — panneau
-> d'archétypes egui + glisser-déposer dans l'aire de jeu. Ne reste que l'**éditeur
-> d'archétype** (item 5 : éditer les valeurs + save/load RON). La numérotation de
-> phase de ce document fait foi.
+> **Statut au 2026-06-14.** P0 (fondations) **terminé**. P1 (le moteur jouable) **terminé** :
+> la première **boucle évolutive continue** tourne de bout en bout — vision par raycast (6),
+> primitive d'interaction unique (7), économie d'énergie / sélection naturelle (8), reproduction
+> + mutation d'un génotype paramétrique (9), le tout pilotable depuis l'UI egui : placement
+> drag-and-drop (4) et éditeur d'archétype + save/load RON (5). Vérifié sur `evolution.ron` :
+> population stable et dérive des gènes observable. Prochaine phase : **P2** (MLP fait maison,
+> neuroévolution, HUD courbes, headless parallélisé). La numérotation de phase fait foi.
 
 ---
 
@@ -225,11 +223,15 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   l'aire de jeu via `viewport_to_world_2d`. Tout l'éditeur vit dans le binaire
   fenêtré (`src/editor.rs`), jamais dans le headless ni dans `FixedUpdate` —
   c'est de l'édition manuelle, pas de la logique de sim.)*
-- [~] **5. Éditeur d'archétype + save/load RON.** Distinguer archétype (config éditable) et
+- [x] **5. Éditeur d'archétype + save/load RON.** Distinguer archétype (config éditable) et
   génome (valeurs d'instance).
-  *(Fait : plomberie save/load RON — `serde` + `ron`, `SimConfig` chargé depuis un `.ron`,
-  override partiel, scénario partagé par les deux binaires. À faire : l'éditeur d'archétype et
-  la distinction explicite archétype/génome.)*
+  *(Fait : plomberie RON (`serde` + `ron`, `SimConfig` depuis un `.ron`, override partiel) ;
+  **et** l'éditeur — panneau egui à gauche avec sliders bornés sur les gènes de l'archétype
+  sélectionné (vitesse, agilité, portée/champ de vision), Sauver/Charger RON (`to_ron_string` +
+  `save_ron_file`, aller-retour testé). La **distinction archétype/génome** est explicite et
+  matérialisée : l'archétype est le modèle édité dans le panneau ; chaque agent posé en reçoit
+  une *copie* (son `Genotype` d'instance) qui mute ensuite seule — l'évolution ne touche jamais
+  l'archétype. Limite v1 assumée : un seul génotype fondateur par scénario.)*
 - [~] **6. Vision par raycast avec occlusion** (spatial queries Avian), avec coût métabolique.
   *(Fait : éventail de rayons par agent via `SpatialQuery`, occlusion intrinsèque
   — chaque rayon ne garde que le hit le plus proche, donc un mur masque ce qui

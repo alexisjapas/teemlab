@@ -194,6 +194,20 @@ impl SimConfig {
     pub fn from_ron_str(text: &str) -> Result<Self, ron::error::SpannedError> {
         ron::from_str(text)
     }
+
+    /// Sérialise le scénario en RON lisible (export depuis l'éditeur, item 5).
+    pub fn to_ron_string(&self) -> Result<String, ron::Error> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+    }
+
+    /// Écrit le scénario dans un fichier RON.
+    pub fn save_ron_file(&self, path: impl AsRef<Path>) -> Result<(), ScenarioError> {
+        let text = self
+            .to_ron_string()
+            .map_err(|e| ScenarioError::Io(std::io::Error::other(e.to_string())))?;
+        std::fs::write(path, text)?;
+        Ok(())
+    }
 }
 
 /// Échec de chargement d'un scénario : I/O ou parsing RON.
@@ -277,6 +291,23 @@ mod tests {
     #[test]
     fn unknown_field_is_rejected() {
         assert!(SimConfig::from_ron_str("(agent_kount: 9)").is_err());
+    }
+
+    /// Aller-retour sérialisation : ce que l'éditeur sauve se relit à l'identique.
+    #[test]
+    fn ron_roundtrip_is_lossless() {
+        let mut cfg = SimConfig::default();
+        cfg.agent_count = 17;
+        cfg.relations.push(Relation {
+            actor: 0,
+            target: 1,
+            transfer: true,
+            rate: 12.0,
+            range: 9.0,
+        });
+        let text = cfg.to_ron_string().expect("sérialisation RON");
+        let back = SimConfig::from_ron_str(&text).expect("relecture RON");
+        assert_eq!(cfg, back);
     }
 
     /// Le scénario par défaut versionné dans le dépôt reste synchronisé avec
