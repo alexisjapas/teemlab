@@ -17,7 +17,7 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins(SimPlugin::new(SimConfig::default()))
+        .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .add_systems(Startup, setup_camera)
         // RENDU UNIQUEMENT — jamais de logique de sim ici.
         .add_systems(Update, (attach_visuals, draw_arena))

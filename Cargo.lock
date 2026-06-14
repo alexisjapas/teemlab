@@ -5062,6 +5062,8 @@ version = "0.1.0"
 dependencies = [
  "avian2d",
  "bevy",
+ "ron",
+ "serde",
 ]
 
 [[package]]

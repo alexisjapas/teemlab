@@ -19,10 +19,10 @@ fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     let t = 20.0; // épaisseur des murs
     let span = 2.0 * h + 2.0 * t;
     let walls = [
-        (Vec2::new(0.0, h + t * 0.5), Vec2::new(span, t)),  // haut
+        (Vec2::new(0.0, h + t * 0.5), Vec2::new(span, t)), // haut
         (Vec2::new(0.0, -h - t * 0.5), Vec2::new(span, t)), // bas
         (Vec2::new(-h - t * 0.5, 0.0), Vec2::new(t, 2.0 * h)), // gauche
-        (Vec2::new(h + t * 0.5, 0.0), Vec2::new(t, 2.0 * h)),  // droite
+        (Vec2::new(h + t * 0.5, 0.0), Vec2::new(t, 2.0 * h)), // droite
     ];
     for (center, size) in walls {
         commands.spawn((

@@ -20,7 +20,7 @@ struct TickCounter(u64);
 fn main() -> AppExit {
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::ZERO)))
-        .add_plugins(SimPlugin::new(SimConfig::default()))
+        .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .init_resource::<TickCounter>()
         // Comptage dans le schedule FIXE → exact, après la physique du tick.
         .add_systems(FixedLast, tick_and_maybe_exit)
@@ -36,8 +36,11 @@ fn tick_and_maybe_exit(
     counter.0 += 1;
     if counter.0 >= TICKS {
         let n = agents.iter().count().max(1);
-        let centroid: Vec2 =
-            agents.iter().map(|t| t.translation.truncate()).sum::<Vec2>() / n as f32;
+        let centroid: Vec2 = agents
+            .iter()
+            .map(|t| t.translation.truncate())
+            .sum::<Vec2>()
+            / n as f32;
         // `println!` (pas `info!`) : MinimalPlugins n'a pas de LogPlugin.
         println!(
             "headless: {} ticks simulés, {} agents, centroïde = ({:.1}, {:.1})",

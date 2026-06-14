@@ -17,6 +17,12 @@ avian2d = { version = "0.6", default-features = false, features = [
     "parallel",
 ] }
 
+# Scénario = donnée externe. RON plutôt que JSON : commentaires, types nommés,
+# littéraux hex — un fichier de scénario lisible et annotable à la main. serde
+# et ron sont déjà tirés transitivement par Bevy (aucune résolution nouvelle).
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
+
 # Build ergonomics (standard Bevy advice): our crate at -O1 for fast rebuilds,
 # dependencies fully optimized so the simulation runs at a usable speed even in
 # debug builds.

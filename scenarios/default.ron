@@ -1,0 +1,27 @@
+// Scénario par défaut de teemlab.
+//
+// Un scénario EST la donnée d'une run : le même fichier pilote le build fenêtré
+// et le build headless, à l'identique. Tous les champs sont optionnels —
+// `#[serde(default)]` retombe sur SimConfig::default — donc un `()` vide est un
+// scénario valide. Ce fichier liste les défauts en entier, à titre de doc.
+//
+//     cargo run --bin teemlab  scenarios/default.ron
+//     cargo run --bin headless scenarios/default.ron
+(
+    // Cadence du timestep fixe, en Hz. Stabilité du solveur, indépendante du
+    // rendu.
+    tick_hz: 64.0,
+
+    // Demi-côté de l'arène carrée, en unités monde.
+    arena_half_extent: 400.0,
+
+    // Peuplement initial.
+    agent_count: 48,
+    agent_radius: 8.0,
+
+    // Vitesse maximale d'un agent.
+    max_speed: 140.0,
+
+    // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
+    seed: 0x00C0FFEE,
+)
