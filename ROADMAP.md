@@ -291,8 +291,18 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
 L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`Update` / egui),
 **jamais** dans `FixedUpdate` — c'est du rendu/UI, pas de la logique de sim (invariant cardinal).
 
-- [ ] **10. HUD / courbes egui** : population par espèce, dérive des traits moyens — *voir*
+- [x] **10. HUD / courbes egui** : population par espèce, dérive des traits moyens — *voir*
   l'évolution en temps réel.
+  *(Fait : `src/hud.rs` (binaire fenêtré seul, comme `editor.rs`). Une ressource `History`
+  (fenêtre glissante de `VecDeque<Sample>`) échantillonnée à cadence fixe en **temps simulé**
+  (`Time<Virtual>`, donc se fige à la pause et suit l'accéléré). Fenêtre egui « Évolution —
+  courbes » : population par espèce + nourriture, et dérive des gènes **normalisés `[0, 1]`**
+  dans leurs bornes (vitesse/vision/agilité/champ comparables sur un graphe). Lecture seule —
+  l'invariant cardinal tient : `sample_history` ne fait qu'observer, dans `Update`. Tracé
+  **maison** au `Painter` egui (pas d'`egui_plot` à version-accorder), couleurs d'espèce
+  partagées avec le rendu (`editor::species_color32`). Bouton « Effacer ». À population nulle,
+  les gènes moyens gardent leur dernière valeur connue (un effondrement à 0 ferait croire à une
+  fonte des gènes, pas à une extinction).)*
 - [ ] **11. Contrôles de sim** : pause, vitesse (x0.5–x8), step-by-step, reset. Quasi gratuit via
   `Time<Virtual>::pause()` / `set_relative_speed()` (voir §6) ; le reset reconstruit le `World`
   depuis le `SimConfig`.

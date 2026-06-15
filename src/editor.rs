@@ -53,7 +53,8 @@ pub struct Palette {
 }
 
 /// Couleur d'une espèce, en `egui::Color32` (miroir de la palette du rendu).
-fn species_color32(species: u16) -> egui::Color32 {
+/// Partagée avec le HUD (item 10) pour que courbes et entités s'accordent.
+pub(crate) fn species_color32(species: u16) -> egui::Color32 {
     const PALETTE: [(u8, u8, u8); 4] = [
         (77, 179, 255),  // bleu
         (255, 115, 89),  // corail

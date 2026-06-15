@@ -84,6 +84,7 @@ src/
   spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
   main.rs         Binaire fenêtré  → `teemlab`.
   editor.rs       UI egui (fenêtré seul) : palette d'archétypes + placement drag-and-drop.
+  hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
   bin/headless.rs Binaire headless → `headless`.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.

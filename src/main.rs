@@ -5,6 +5,7 @@
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
 mod editor;
+mod hud;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
@@ -22,8 +23,10 @@ fn main() {
         }))
         .add_plugins(EguiPlugin::default())
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
+        .init_resource::<hud::History>()
         .add_systems(Startup, (setup_camera, editor::build_palette))
-        // RENDU UNIQUEMENT — jamais de logique de sim ici.
+        // RENDU / OBSERVATION UNIQUEMENT — jamais de logique de sim ici.
+        // `hud::sample_history` ne fait que *lire* l'état pour les courbes.
         .add_systems(
             Update,
             (
@@ -32,10 +35,11 @@ fn main() {
                 shade_by_reserve,
                 draw_arena,
                 draw_vision,
+                hud::sample_history,
             ),
         )
-        // UI egui : panneau d'archétypes + placement manuel (item 4).
-        .add_systems(EguiPrimaryContextPass, editor::editor_ui)
+        // UI egui : archétypes + placement manuel (item 4), HUD courbes (item 10).
+        .add_systems(EguiPrimaryContextPass, (editor::editor_ui, hud::hud_ui))
         .run();
 }
 
