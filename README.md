@@ -85,6 +85,7 @@ src/
   main.rs         Binaire fenêtré  → `teemlab`.
   editor.rs       UI egui (fenêtré seul) : palette d'archétypes + placement drag-and-drop.
   hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
+  controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps).
   bin/headless.rs Binaire headless → `headless`.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.

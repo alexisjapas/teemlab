@@ -10,8 +10,15 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 
 pub fn setup_world(mut commands: Commands, config: Res<SimConfig>) {
-    spawn_arena(&mut commands, &config);
-    spawn_agents(&mut commands, &config);
+    populate(&mut commands, &config);
+}
+
+/// Peuple le monde : arène (murs statiques) + population fondatrice. Partagé par
+/// le `Startup` ([`setup_world`]) et la **réinitialisation à chaud** (item 11),
+/// pour que reset et premier peuplement produisent rigoureusement le même monde.
+pub fn populate(commands: &mut Commands, config: &SimConfig) {
+    spawn_arena(commands, config);
+    spawn_agents(commands, config);
 }
 
 /// Quatre murs statiques formant une boîte fermée autour de l'arène.

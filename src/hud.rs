@@ -66,6 +66,15 @@ impl Default for History {
     }
 }
 
+impl History {
+    /// Repart de zéro : vide les échantillons et réarme l'horloge. Appelé par le
+    /// bouton « Effacer » du HUD et par la réinitialisation à chaud (item 11).
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.next_at = 0.0;
+    }
+}
+
 /// Normalise une valeur de gène dans ses bornes, vers `[0, 1]`.
 fn norm(v: f32, b: Bounds) -> f32 {
     if b.span() > 0.0 {
@@ -143,8 +152,7 @@ pub fn hud_ui(mut contexts: EguiContexts, mut history: ResMut<History>) -> Resul
             ui.horizontal(|ui| {
                 ui.weak(format!("{} échantillons", history.samples.len()));
                 if ui.button("↻ Effacer").clicked() {
-                    history.samples.clear();
-                    history.next_at = 0.0;
+                    history.clear();
                 }
             });
             ui.separator();

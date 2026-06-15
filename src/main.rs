@@ -4,6 +4,7 @@
 //! qu'on ajoute ici vit dans `Update` et ne touche QUE le rendu / l'UI — jamais
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
+mod controls;
 mod editor;
 mod hud;
 
@@ -24,7 +25,11 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .init_resource::<hud::History>()
+        .init_resource::<controls::SimControls>()
         .add_systems(Startup, (setup_camera, editor::build_palette))
+        // PILOTAGE DU TEMPS / RESET (item 11) — pas de logique de sim : on règle
+        // l'horloge ou on reconstruit le monde, avant la boucle fixe de la frame.
+        .add_systems(PreUpdate, (controls::drive_steps, controls::apply_reset))
         // RENDU / OBSERVATION UNIQUEMENT — jamais de logique de sim ici.
         // `hud::sample_history` ne fait que *lire* l'état pour les courbes.
         .add_systems(
@@ -38,8 +43,12 @@ fn main() {
                 hud::sample_history,
             ),
         )
-        // UI egui : archétypes + placement manuel (item 4), HUD courbes (item 10).
-        .add_systems(EguiPrimaryContextPass, (editor::editor_ui, hud::hud_ui))
+        // UI egui : archétypes + placement (item 4), HUD courbes (item 10),
+        // contrôles de sim (item 11).
+        .add_systems(
+            EguiPrimaryContextPass,
+            (editor::editor_ui, hud::hud_ui, controls::controls_ui),
+        )
         .run();
 }
 

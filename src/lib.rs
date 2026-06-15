@@ -20,8 +20,6 @@ pub mod spawn;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
-use crate::rng::Rng;
-
 pub use config::SimConfig;
 
 /// Le cœur de la simulation : tout ce qui fait avancer le monde.
@@ -53,7 +51,7 @@ impl Plugin for SimPlugin {
             .insert_resource(Time::<Fixed>::from_hz(self.config.tick_hz))
             // Flux aléatoire de la sim (réapparition de nourriture, …), seedé à
             // part du peuplement pour ne pas corréler les deux.
-            .insert_resource(ecology::SimRng(Rng::new(self.config.seed ^ 0xF00D)))
+            .insert_resource(ecology::SimRng::from_config(&self.config))
             .init_resource::<ecology::FoodRegen>()
             .add_systems(Startup, spawn::setup_world)
             // percevoir → décider → agir, strictement dans FixedUpdate.

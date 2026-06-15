@@ -303,9 +303,20 @@ L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`U
   partagées avec le rendu (`editor::species_color32`). Bouton « Effacer ». À population nulle,
   les gènes moyens gardent leur dernière valeur connue (un effondrement à 0 ferait croire à une
   fonte des gènes, pas à une extinction).)*
-- [ ] **11. Contrôles de sim** : pause, vitesse (x0.5–x8), step-by-step, reset. Quasi gratuit via
+- [x] **11. Contrôles de sim** : pause, vitesse (x0.5–x8), step-by-step, reset. Quasi gratuit via
   `Time<Virtual>::pause()` / `set_relative_speed()` (voir §6) ; le reset reconstruit le `World`
   depuis le `SimConfig`.
+  *(Fait : `src/controls.rs` (binaire fenêtré seul). Bandeau egui en haut — Pause/Lecture,
+  vitesses sélectionnables 0.5×–8×, Pas (actif en pause seule), Réinitialiser. Pause et vitesse
+  pilotent `Time<Virtual>` (l'horloge fixe le suit, §6 : la sim **et** le HUD se figent, le rendu
+  continue). **Pas-à-pas** : `drive_steps` en `PreUpdate` injecte un `timestep` exact dans
+  `Time<Virtual>` → la boucle fixe joue pile un tick par pas. **Reset** : `apply_reset`
+  (`PreUpdate`) despawn agents/nourriture/murs puis re-peuple via `spawn::populate` (factorisé
+  avec le `Startup` → monde identique), et remet à zéro `SimRng` (`SimRng::from_config`, source
+  unique du seed `^ 0xF00D`), `FoodRegen` et le HUD (`History::clear`). Les boutons (pass egui,
+  trop tard pour la boucle fixe de la frame) ne posent qu'un drapeau ; l'action a lieu en
+  `PreUpdate`, avant la boucle fixe. Invariant cardinal tenu : on règle l'horloge ou on
+  reconstruit le monde, jamais de logique de sim hors `FixedUpdate`.)*
 - [ ] **12. Inspecteur d'agent** : cliquer un agent → panneau affichant son `Genotype`, son
   énergie/`Reserve`, sa `Perception` et son `Action` courante. L'outil de débogage du
   comportement (indispensable comme garde-fou du groupe témoin).

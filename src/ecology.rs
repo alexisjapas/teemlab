@@ -27,6 +27,15 @@ use bevy::prelude::*;
 #[derive(Resource)]
 pub struct SimRng(pub Rng);
 
+impl SimRng {
+    /// Flux de sim seedé depuis la config, décalé du peuplement (`^ 0xF00D`) pour
+    /// ne pas corréler les deux flux. Source unique : utilisée à l'insertion de la
+    /// ressource (au build) **et** à la réinitialisation à chaud (item 11).
+    pub fn from_config(config: &SimConfig) -> Self {
+        Self(Rng::new(config.seed ^ 0xF00D))
+    }
+}
+
 /// Reliquat fractionnaire de repousse de nourriture, accumulé entre les ticks
 /// pour qu'un débit `food_regen` non entier par tick produise quand même le bon
 /// nombre de sources au fil du temps.
