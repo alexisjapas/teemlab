@@ -3,13 +3,20 @@
 > Document de référence. Vue 2D top-down, entités = ronds. **Un seul moteur**, dont chaque
 > simulation (sélection naturelle, bataille, …) n'est qu'un *fichier de scénario*.
 
-> **Statut au 2026-06-14.** P0 (fondations) **terminé**. P1 (le moteur jouable) **terminé** :
+> **Statut au 2026-06-15.** P0 (fondations) **terminé**. P1 (le moteur jouable) **terminé** :
 > la première **boucle évolutive continue** tourne de bout en bout — vision par raycast (6),
 > primitive d'interaction unique (7), économie d'énergie / sélection naturelle (8), reproduction
 > + mutation d'un génotype paramétrique (9), le tout pilotable depuis l'UI egui : placement
 > drag-and-drop (4) et éditeur d'archétype + save/load RON (5). Vérifié sur `evolution.ron` :
-> population stable et dérive des gènes observable. Prochaine phase : **P2** (MLP fait maison,
-> neuroévolution, HUD courbes, headless parallélisé). La numérotation de phase fait foi.
+> population stable et dérive des gènes observable.
+>
+> **Réorientation (2026-06-15) : construire toute la stack *avant* l'intelligence évoluée.**
+> L'objectif est de pouvoir tester correctement avec un **groupe témoin déterministe** : on bâtit
+> d'abord l'outillage d'observation et la validation de l'abstraction, on n'ajoute le cerveau
+> appris qu'à la toute fin. L'ordre des phases devient : **P2 — interface complète** (voir et
+> contrôler) → **P3 — capture & vidéo** (enregistrer) → **P4 — validation de l'abstraction**
+> (scénario bataille, toujours sur déterministe) → **P5 — intelligence évoluée, dépriorisée**
+> (MLP, neuroévolution, parallélisme GA, NEAT). La numérotation de phase fait foi.
 
 ---
 
@@ -198,8 +205,14 @@ Si un tick devient plus lent que le temps réel, Bevy empile les ticks de rattra
 
 Principe de l'ordre : **bâtir la fondation découplée d'abord**, valider chaque tranche avec des
 agents **déterministes** (l'échafaudage), faire **un scénario de bout en bout** avant de
-généraliser, et n'ajouter le headless/parallèle qu'une fois une run complète fonctionnelle. Le
-**second scénario sert de test** : si l'abstraction tient, il n'est presque que de la config.
+généraliser. Le **second scénario sert de test** : si l'abstraction tient, il n'est presque que
+de la config.
+
+**Corollaire (réorientation 2026-06-15) : toute la stack se construit sur le déterministe, et
+l'intelligence évoluée passe en dernier.** Tant que l'outillage (observation, contrôle, capture)
+et l'abstraction (les deux régimes évolutifs) ne sont pas posés, on ne peut pas *mesurer* ce
+qu'un cerveau appris apporte. On veut donc d'abord un **groupe témoin déterministe** complet et
+instrumenté ; le MLP et la neuroévolution n'arrivent qu'ensuite, comme challenger à battre.
 
 Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
 
@@ -273,24 +286,52 @@ Légende : `[x]` fait · `[~]` partiel · `[ ]` à faire.
   minimise un trait coûteux et inutile), la **vitesse monte** (meilleur butinage).
   C'est la première boucle évolutive continue complète.)*
 
-### P2 — Intelligence évoluée et passage à l'échelle
+### P2 — Interface complète (voir et contrôler la sim)
 
-- [ ] **10. MLP fait maison** branché sur le contrat I/O, en remplacement par espèce
-  (substitution).
-- [ ] **11. Neuroévolution** (mutation gaussienne + crossover sur les poids). Le déterministe
-  reste le *groupe témoin*.
-- [ ] **12. HUD / courbes egui** : population par espèce, dérive des traits moyens — *voir*
-  l'évolution.
-- [ ] **13. Headless parallélisé inter-matchs** + génération vidéo par re-render du meilleur
-  génome.
+L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`Update` / egui),
+**jamais** dans `FixedUpdate` — c'est du rendu/UI, pas de la logique de sim (invariant cardinal).
 
-### P3 — Validation de l'abstraction et raffinements
+- [ ] **10. HUD / courbes egui** : population par espèce, dérive des traits moyens — *voir*
+  l'évolution en temps réel.
+- [ ] **11. Contrôles de sim** : pause, vitesse (x0.5–x8), step-by-step, reset. Quasi gratuit via
+  `Time<Virtual>::pause()` / `set_relative_speed()` (voir §6) ; le reset reconstruit le `World`
+  depuis le `SimConfig`.
+- [ ] **12. Inspecteur d'agent** : cliquer un agent → panneau affichant son `Genotype`, son
+  énergie/`Reserve`, sa `Perception` et son `Action` courante. L'outil de débogage du
+  comportement (indispensable comme garde-fou du groupe témoin).
+- [ ] **13. Gestion de runs/scénarios à chaud** : sélecteur de fichier RON, recharge d'un
+  scénario sans relancer le binaire, sauvegarde/restauration de l'état d'une run.
 
-- [ ] **14. Scénario nº2 — bataille** : régime générationnel, fitness explicite. *Test ultime* :
-  si ça tient presque en config seule, l'architecture est saine.
-- [ ] **15. Hybridation** réflexes/appris (subsomption) ; co-évolution des camps (en
+### P3 — Capture & vidéo
+
+- [ ] **14. Render headless → vidéo** : capture des frames du rendu et **pipe direct vers un
+  process `ffmpeg`** (pas de PNG intermédiaires). Approche **re-render frais** (§7) — relancer une
+  run et l'enregistrer, représentatif sans déterminisme bit-à-bit. **Run unique, pas de
+  parallélisme** à ce stade (la parallélisation inter-matchs est repoussée en P5 avec le GA).
+
+### P4 — Validation de l'abstraction (toujours sur déterministe)
+
+Le vrai test de l'architecture, mené avec le **groupe témoin déterministe** — aucun cerveau
+appris encore. Si ces scénarios tiennent presque en config seule, l'abstraction est saine.
+
+- [ ] **15. Scénario nº2 — bataille** : régime **générationnel**, fitness explicite (run → score
+  → breed → run). Réutilise la mutation de génotype déjà en place (item 9) ; tourne en
+  mono-thread pour l'instant. *Test ultime* de l'interface commune aux deux régimes évolutifs (§4).
+- [ ] **16. Hybridation** réflexes/appris (subsomption) ; co-évolution des camps (en
   connaissance de l'instabilité Reine Rouge).
-- [ ] **16. Topologie variable / NEAT** (mode hard) — seulement si le besoin d'une morphologie à
+
+### P5 — Intelligence évoluée et passage à l'échelle (dépriorisée, en dernier)
+
+On n'y arrive qu'une fois la stack complète et instrumentée : le déterministe sert alors de
+**groupe témoin** mesurable (si le NN ne le bat pas, il n'a rien appris).
+
+- [ ] **17. MLP fait maison** branché sur le contrat I/O, en remplacement par espèce
+  (substitution).
+- [ ] **18. Neuroévolution** (mutation gaussienne + crossover sur les poids). Le déterministe
+  reste le *groupe témoin*.
+- [ ] **19. Headless parallélisé inter-matchs** : isolation des `World`, batch multi-cœurs — c'est
+  là que le débit du GA explose. N'a de sens qu'avec la neuroévolution active.
+- [ ] **20. Topologie variable / NEAT** (mode hard) — seulement si le besoin d'une morphologie à
   nombre de capteurs variable se confirme.
 
 ---

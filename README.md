@@ -56,8 +56,13 @@ depuis l'UI. **Scénario = donnée** :
   distinction **archétype** (modèle édité) / **génome** (copie d'instance qui
   mute seule) est explicite.
 
-Prochaine phase : **P2** (MLP fait maison, neuroévolution, HUD courbes, headless
-parallélisé) — voir [`ROADMAP.md`](ROADMAP.md).
+Suite (réorientée le 2026-06-15 — construire toute la stack *avant* l'intelligence
+évoluée, pour tester avec un groupe témoin déterministe) : **P2** interface
+complète (HUD courbes, contrôles de sim, inspecteur d'agent, gestion de runs) →
+**P3** capture & vidéo (re-render, pipe ffmpeg, run unique) → **P4** validation de
+l'abstraction (scénario bataille générationnel, toujours déterministe) → **P5**
+intelligence évoluée, dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT).
+Voir [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
