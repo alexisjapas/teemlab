@@ -21,23 +21,30 @@ pub fn populate(commands: &mut Commands, config: &SimConfig) {
     spawn_agents(commands, config);
 }
 
-/// Quatre murs statiques formant une boîte fermée autour de l'arène.
+/// Quatre **demi-espaces** (plans infinis) formant une boîte fermée autour de
+/// l'arène. Un demi-espace a un côté solide *infini* : un agent ne peut donc ni
+/// le tunneler en un tick, ni s'échapper s'il naît (reproduction) ou est déposé
+/// (éditeur) au-delà du bord — le solveur le repousse toujours vers l'intérieur.
+/// Un mur d'épaisseur finie, lui, laisse « dehors » une issue libre.
+///
+/// La normale passée à [`Collider::half_space`] pointe vers le côté **libre**
+/// (à l'opposé du solide), comme la normale « vers le haut » d'un sol. On la
+/// dirige donc vers l'intérieur de l'arène, et on pose chaque plan pile sur le
+/// bord `±arena_half_extent` (aligné avec la boîte dessinée par `draw_arena`).
 fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     let h = config.arena_half_extent;
-    let t = 20.0; // épaisseur des murs
-    let span = 2.0 * h + 2.0 * t;
     let walls = [
-        (Vec2::new(0.0, h + t * 0.5), Vec2::new(span, t)), // haut
-        (Vec2::new(0.0, -h - t * 0.5), Vec2::new(span, t)), // bas
-        (Vec2::new(-h - t * 0.5, 0.0), Vec2::new(t, 2.0 * h)), // gauche
-        (Vec2::new(h + t * 0.5, 0.0), Vec2::new(t, 2.0 * h)), // droite
+        (Vec2::new(0.0, -h), Vec2::Y),     // bas    : solide en dessous
+        (Vec2::new(0.0, h), Vec2::NEG_Y),  // haut   : solide au-dessus
+        (Vec2::new(-h, 0.0), Vec2::X),     // gauche : solide à gauche
+        (Vec2::new(h, 0.0), Vec2::NEG_X),  // droite : solide à droite
     ];
-    for (center, size) in walls {
+    for (origin, inward_normal) in walls {
         commands.spawn((
             Wall,
             RigidBody::Static,
-            Collider::rectangle(size.x, size.y),
-            Transform::from_translation(center.extend(0.0)),
+            Collider::half_space(inward_normal),
+            Transform::from_translation(origin.extend(0.0)),
         ));
     }
 }
