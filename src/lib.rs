@@ -17,6 +17,7 @@ pub mod movement;
 pub mod rng;
 pub mod snapshot;
 pub mod spawn;
+pub mod visuals;
 
 use avian2d::prelude::*;
 use bevy::prelude::*;

@@ -142,13 +142,20 @@ pub fn sample_history(
 
 /// La fenêtre du HUD : population par espèce + dérive des gènes. Tourne dans
 /// `EguiPrimaryContextPass`, aux côtés de l'éditeur.
-pub fn hud_ui(mut contexts: EguiContexts, mut history: ResMut<History>) -> Result {
+pub fn hud_ui(
+    mut contexts: EguiContexts,
+    mut history: ResMut<History>,
+    vis: Res<crate::controls::PanelVisibility>,
+) -> Result {
+    if !vis.hud {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
-    egui::Window::new("Évolution — courbes")
-        .default_pos([270.0, 12.0])
+    egui::SidePanel::right("hud")
         .default_width(340.0)
         .resizable(true)
         .show(ctx, |ui| {
+            ui.heading("Évolution — courbes");
             ui.horizontal(|ui| {
                 ui.weak(format!("{} échantillons", history.samples.len()));
                 if ui.button("↻ Effacer").clicked() {

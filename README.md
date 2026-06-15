@@ -74,11 +74,33 @@ témoin** :
 - [x] **Arène en demi-espaces** (correctif) : plans infinis → les agents ne
   s'échappent plus (ni tunneling, ni naissance/dépose hors bord).
 
+### P3 — Capture & vidéo — ✅ terminé
+
+- [x] **Enregistreur headless** (`src/bin/record.rs`) : rendu *réellement* sans
+  fenêtre (winit désactivé, caméra → **image-cible** au lieu d'une surface), capture
+  de chaque frame via l'API `Screenshot` (readback GPU→CPU), **pipe direct** des
+  pixels RGBA bruts sur `ffmpeg` (aucun PNG intermédiaire). Temps cadencé au pas
+  fixe `1/fps` → durée vidéo exacte. Approche *re-render frais* (§7), run unique.
+  Le rendu de la sim est factorisé dans `src/visuals.rs` (`VisualsPlugin`), **partagé**
+  avec le build fenêtré. Les sorties (vidéos, images…) atterrissent dans `outputs/`.
+  `cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10`
+- [x] **Menu d'enregistrement intégré** (`src/recorder.rs`, panneau docké
+  « Enregistrement ») : configure (fichier, durée, fps, résolution) et **lance le
+  binaire `record` en sous-processus** sur le scénario courant (édits compris,
+  sérialisés dans un RON temporaire) — un re-render propre, sans l'overlay egui.
+
+### Réglages d'interface (build fenêtré)
+
+- [x] **Démarrage en pause** : la sim s'ouvre figée (`Time<Virtual>` en pause), pour
+  préparer/placer avant de lancer ; on relance avec ▶ Lecture.
+- [x] **Menus dockés** : tous les panneaux egui sont attachés aux arêtes (plus de
+  fenêtres flottantes). Une rangée « Panneaux : » dans le bandeau de contrôles
+  affiche/masque chaque panneau (ils ne tiennent pas tous de front).
+
 Suite (réorientée le 2026-06-15 — construire toute la stack *avant* l'intelligence
-évoluée, pour tester avec un groupe témoin déterministe) : **P3** capture & vidéo
-(re-render, pipe ffmpeg, run unique) → **P4** validation de l'abstraction (scénario
-bataille générationnel, toujours déterministe) → **P5** intelligence évoluée,
-dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT). Voir
+évoluée, pour tester avec un groupe témoin déterministe) : **P4** validation de
+l'abstraction (scénario bataille générationnel, toujours déterministe) → **P5**
+intelligence évoluée, dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT). Voir
 [`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
@@ -106,13 +128,17 @@ src/
   controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps).
   inspector.rs    Inspecteur egui (fenêtré seul) : clic → génotype / énergie / perception / action (lecture seule).
   runs.rs         Gestion egui (fenêtré seul) : sélecteur de scénario, recharge à chaud, save/load de run.
-  bin/headless.rs Binaire headless → `headless`.
+  recorder.rs     Menu egui (fenêtré seul) : configure et lance le binaire `record` en sous-processus.
+  visuals.rs      VisualsPlugin : rendu de la sim (mesh, arène, vision) partagé fenêtré ⇄ enregistreur.
+  bin/headless.rs Binaire headless → `headless` (smoke test, sans rendu).
+  bin/record.rs   Binaire d'enregistrement headless → `record` : rend sans fenêtre, pipe les frames sur ffmpeg.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.
   crowded.ron     Variante (petite arène saturée) : override partiel.
   predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
   selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir).
   evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes.
+outputs/          Sorties des simulations (vidéos, images…) ; contenu ignoré par git.
 ```
 
 ## Développement
@@ -128,6 +154,10 @@ cargo run --bin headless    # headless, scénario par défaut
 # Charger un scénario explicite (1ᵉʳ argument = chemin RON) :
 cargo run --bin teemlab  scenarios/crowded.ron
 cargo run --bin headless scenarios/default.ron
+
+# Enregistrer une run en vidéo (rendu headless → ffmpeg, P3) ; sortie dans outputs/ :
+cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10
+#   options : --out F  --fps N  --seconds S  --width W  --height H
 
 cargo test                  # tests unitaires + intégration (confinement, snapshot)
 ```

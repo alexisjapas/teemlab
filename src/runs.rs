@@ -83,7 +83,14 @@ pub fn build_runs_panel(mut commands: Commands) {
 
 /// Le panneau egui. Ne fait que lire/écrire son propre état et poser une action
 /// en attente — aucun accès au monde ici (cf. systèmes `PreUpdate`).
-pub fn runs_ui(mut contexts: EguiContexts, mut panel: ResMut<RunsPanel>) -> Result {
+pub fn runs_ui(
+    mut contexts: EguiContexts,
+    mut panel: ResMut<RunsPanel>,
+    vis: Res<crate::controls::PanelVisibility>,
+) -> Result {
+    if !vis.runs {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
 
     // On travaille sur des copies locales pour que la fermeture egui ne capture
@@ -95,11 +102,11 @@ pub fn runs_ui(mut contexts: EguiContexts, mut panel: ResMut<RunsPanel>) -> Resu
     let mut pending = None;
     let mut rescan = false;
 
-    egui::Window::new("Runs & scénarios")
-        .default_pos([12.0, 330.0])
+    egui::SidePanel::left("runs")
         .default_width(280.0)
         .resizable(true)
         .show(ctx, |ui| {
+            ui.heading("Runs & scénarios");
             ui.strong("Scénario");
             ui.horizontal(|ui| {
                 let label = selected

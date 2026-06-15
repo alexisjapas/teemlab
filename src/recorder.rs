@@ -1,0 +1,187 @@
+//! Menu d'enregistrement vidéo du build fenêtré.
+//!
+//! Module du *binaire* fenêtré uniquement (comme [`crate::editor`], …). Il ne
+//! fait **pas** le rendu vidéo lui-même : il **pilote le binaire headless
+//! `record`** (P3, item 14) en sous-processus. On écrit le `SimConfig` courant
+//! (édits de l'éditeur compris) dans un fichier temporaire, puis on lance
+//! `record` dessus → un *re-render frais* **propre** (sans l'overlay egui),
+//! conforme au §7. L'UI ne fait que configurer et lancer ; un système `Update`
+//! surveille la fin du process.
+//!
+//! Invariant cardinal : aucune logique de sim ici, juste de l'orchestration
+//! d'outil — comme l'éditeur, c'est de l'action manuelle hors `FixedUpdate`.
+
+use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use teemlab::SimConfig;
+
+use crate::controls::PanelVisibility;
+
+/// État du panneau « Enregistrement » + process `record` en cours, le cas échéant.
+#[derive(Resource)]
+pub struct RecorderPanel {
+    out: String,
+    fps: f64,
+    seconds: f64,
+    width: u32,
+    height: u32,
+    status: String,
+    /// Le sous-process `record` tant qu'il tourne (sinon `None`).
+    child: Option<Child>,
+    /// Lancement demandé par l'UI, traité au prochain `Update`.
+    launch_requested: bool,
+}
+
+impl Default for RecorderPanel {
+    fn default() -> Self {
+        Self {
+            out: "outputs/run.mp4".into(),
+            fps: 60.0,
+            seconds: 10.0,
+            width: 1280,
+            height: 720,
+            status: String::new(),
+            child: None,
+            launch_requested: false,
+        }
+    }
+}
+
+/// Chemin du binaire `record` : à côté de l'exécutable courant (cas `cargo run` →
+/// `target/debug/record`), sinon on s'en remet au `PATH`.
+fn record_binary() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let sibling = dir.join(if cfg!(windows) { "record.exe" } else { "record" });
+        if sibling.exists() {
+            return sibling;
+        }
+    }
+    PathBuf::from("record")
+}
+
+/// Le panneau egui (docké à gauche). Ne fait que lire/écrire son propre état et
+/// poser `launch_requested` ; le lancement et le suivi vivent dans [`drive_recorder`].
+pub fn recorder_ui(
+    mut contexts: EguiContexts,
+    mut panel: ResMut<RecorderPanel>,
+    vis: Res<PanelVisibility>,
+) -> Result {
+    if !vis.recorder {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    let recording = panel.child.is_some();
+    egui::SidePanel::left("recorder")
+        .default_width(230.0)
+        .resizable(true)
+        .show(ctx, |ui| {
+            ui.heading("Enregistrement");
+            ui.small(
+                "Ré-exécute le scénario courant à frais (rendu headless propre, \
+                 sans cette interface) et l'encode en vidéo via ffmpeg.",
+            );
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                ui.label("Fichier :");
+                ui.text_edit_singleline(&mut panel.out);
+            });
+            ui.add(egui::Slider::new(&mut panel.seconds, 1.0..=120.0).text("Durée (s)"));
+            ui.add(egui::Slider::new(&mut panel.fps, 24.0..=60.0).text("FPS"));
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
+                    .on_hover_text("Largeur (px)");
+                ui.label("×");
+                ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
+                    .on_hover_text("Hauteur (px)");
+            });
+
+            ui.separator();
+            if recording {
+                ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
+                ui.spinner();
+            } else if ui
+                .button("⏺ Lancer l'enregistrement")
+                .on_hover_text("Lance le binaire headless `record` en sous-processus.")
+                .clicked()
+            {
+                panel.launch_requested = true;
+            }
+
+            if !panel.status.is_empty() {
+                ui.weak(&panel.status);
+            }
+        });
+    Ok(())
+}
+
+/// `Update` : surveille la fin du process `record` et, si l'UI l'a demandé,
+/// écrit le `SimConfig` courant dans un fichier temporaire puis lance `record`
+/// dessus. Pas de logique de sim — de l'orchestration de process.
+pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) {
+    // Suivi du process en cours : on relève sa fin sans bloquer (`try_wait`).
+    if panel.child.is_some() {
+        match panel.child.as_mut().unwrap().try_wait() {
+            Ok(Some(status)) => {
+                panel.child = None;
+                panel.status = if status.success() {
+                    format!("Vidéo écrite → {}", panel.out)
+                } else {
+                    format!("record a échoué ({status}). Voir la console.")
+                };
+            }
+            Ok(None) => {} // toujours en cours
+            Err(e) => {
+                panel.child = None;
+                panel.status = format!("Suivi du process impossible : {e}");
+            }
+        }
+    }
+
+    // Lancement demandé et rien en cours : on écrit le scénario courant puis on
+    // lance `record`. On n'autorise qu'un enregistrement à la fois.
+    if !panel.launch_requested || panel.child.is_some() {
+        return;
+    }
+    panel.launch_requested = false;
+
+    // Le scénario courant (édits de l'éditeur compris), capturé dans un RON
+    // temporaire pour que `record` re-render exactement ce qu'on voit configuré.
+    let scenario = std::env::temp_dir().join("teemlab_record_scenario.ron");
+    if let Err(e) = config.save_ron_file(&scenario) {
+        panel.status = format!("Échec d'écriture du scénario temporaire : {e}");
+        return;
+    }
+
+    let (out, fps, seconds, width, height) = (
+        panel.out.clone(),
+        panel.fps,
+        panel.seconds,
+        panel.width,
+        panel.height,
+    );
+    match Command::new(record_binary())
+        .arg(&scenario)
+        .args([
+            "--out", &out,
+            "--fps", &fps.to_string(),
+            "--seconds", &seconds.to_string(),
+            "--width", &width.to_string(),
+            "--height", &height.to_string(),
+        ])
+        .spawn()
+    {
+        Ok(child) => {
+            panel.child = Some(child);
+            panel.status = format!("Enregistrement en cours → {out}");
+        }
+        Err(e) => {
+            panel.status =
+                format!("Lancement impossible ({e}). `record` et `ffmpeg` sont-ils présents ?");
+        }
+    }
+}

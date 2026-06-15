@@ -73,14 +73,18 @@ pub fn pick_agent(
 pub fn inspector_ui(
     mut contexts: EguiContexts,
     selection: Res<Selection>,
+    vis: Res<crate::controls::PanelVisibility>,
     agents: Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action), With<Agent>>,
 ) -> Result {
+    if !vis.inspector {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
-    egui::Window::new("Inspecteur d'agent")
-        .default_pos([12.0, 80.0])
+    egui::SidePanel::right("inspector")
         .default_width(240.0)
         .resizable(true)
         .show(ctx, |ui| {
+            ui.heading("Inspecteur d'agent");
             let Some(entity) = selection.0 else {
                 ui.weak("Clique un agent dans l'aire pour l'inspecter.");
                 return;

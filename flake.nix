@@ -37,6 +37,9 @@
           # Vulkan/OpenGL HUD overlay: `mangohud cargo run --bin teemlab`
           # to watch FPS / frame times while tuning the simulation.
           mangohud
+          # Encodeur vidéo de l'enregistreur headless (P3, item 14) : `record`
+          # pipe ses frames brutes directement sur le stdin de `ffmpeg`.
+          ffmpeg
         ];
 
         # Things pkg-config must find at build time (the wayland feature links

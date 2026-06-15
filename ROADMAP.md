@@ -20,7 +20,15 @@
 >
 > **P2 (interface complète) terminé (2026-06-15).** HUD courbes (10), contrôles pause/vitesse/
 > pas/reset (11), inspecteur d'agent (12), gestion runs/scénarios à chaud (13). On peut voir,
-> piloter, déboguer et rejouer une run déterministe. Prochaine phase : **P3** (capture & vidéo).
+> piloter, déboguer et rejouer une run déterministe.
+>
+> **P3 (capture & vidéo) terminé (2026-06-15).** Enregistreur headless `record` (14) : rendu
+> *réellement* sans fenêtre (caméra → image-cible, winit désactivé) qui pipe ses frames brutes
+> directement sur `ffmpeg`, sans PNG intermédiaire — approche *re-render frais*. Plus un **menu
+> d'enregistrement intégré** au build fenêtré (pilote `record` en sous-processus). Réglages
+> d'UI au passage : **démarrage en pause** et **menus tous dockés** (panneaux d'arête + rangée de
+> bascules d'affichage, plus de fenêtres flottantes). Prochaine phase : **P4** (validation de
+> l'abstraction — scénario bataille, régime générationnel).
 
 ---
 
@@ -357,12 +365,32 @@ L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`U
 > peut désormais *voir, piloter, déboguer et rejouer* une run déterministe. Prochaine phase :
 > **P3** (capture & vidéo).
 
-### P3 — Capture & vidéo
+### P3 — Capture & vidéo — ✅ terminé
 
-- [ ] **14. Render headless → vidéo** : capture des frames du rendu et **pipe direct vers un
+- [x] **14. Render headless → vidéo** : capture des frames du rendu et **pipe direct vers un
   process `ffmpeg`** (pas de PNG intermédiaires). Approche **re-render frais** (§7) — relancer une
   run et l'enregistrer, représentatif sans déterminisme bit-à-bit. **Run unique, pas de
   parallélisme** à ce stade (la parallélisation inter-matchs est repoussée en P5 avec le GA).
+  *(Fait : `src/bin/record.rs`, nouveau binaire headless. Rendu **réellement sans fenêtre** —
+  `WinitPlugin` désactivé, fenêtre primaire supprimée, la caméra rend dans une **image-cible**
+  (`RenderTarget::Image`) et non une surface ; `ScheduleRunnerPlugin` pompe la boucle. Chaque
+  `Update`, l'image est capturée via l'API `Screenshot` (qui fait le readback GPU→CPU et le
+  dépaddage), et un **thread dédié** pousse les pixels RGBA bruts sur le `stdin` d'un process
+  `ffmpeg` — **aucun PNG intermédiaire**, le pipe est direct. Le temps avance d'un pas fixe par
+  frame (`TimeUpdateStrategy::ManualDuration` = `1/fps`), indépendant du mur d'horloge : la boucle
+  fixe joue le bon nombre de ticks et la durée vidéo est exacte. Le rendu de la sim (mesh, arène,
+  rayons de vision) est factorisé dans `src/visuals.rs` (`VisualsPlugin`), **partagé** par le build
+  fenêtré (`main.rs`) et l'enregistreur — zéro duplication. Hors de `SimPlugin` (qui reste
+  agnostique au rendu) ; tout vit au `Startup`/`Update`, jamais dans `FixedUpdate` (invariant
+  cardinal) : on ne fait qu'observer. CLI : `record [scenario.ron] [--out f.mp4] [--fps N]
+  [--seconds S] [--width W] [--height H]`. `ffmpeg` ajouté au dev shell (`flake.nix`). Vérifié :
+  `evolution.ron` → MP4 H.264 valide, frames non vides (arène, agents, vision). Run unique
+  mono-thread — le parallélisme inter-matchs reste en P5.)*
+  *(Plus : **menu d'enregistrement intégré au build fenêtré** — `src/recorder.rs`, panneau docké
+  « Enregistrement ». Il ne rend pas lui-même : il sérialise le `SimConfig` courant (édits de
+  l'éditeur compris) dans un RON temporaire et **lance `record` en sous-processus** dessus
+  (binaire voisin de l'exécutable), un système `Update` surveillant sa fin sans bloquer. On
+  configure/lance depuis l'app, le rendu reste propre — sans l'overlay egui.)*
 
 ### P4 — Validation de l'abstraction (toujours sur déterministe)
 
@@ -393,8 +421,11 @@ On n'y arrive qu'une fois la stack complète et instrumentée : le déterministe
 
 ## 9. Fils techniques ouverts (pour la suite)
 
-- **Capture vidéo (P3, item 14)** : brancher la capture des frames de rendu sur un pipe `ffmpeg` ;
-  re-render frais d'une run (pas de rejeu bit-à-bit). Voir §7.
+- **Capture vidéo (P3, item 14)** : ✅ fait — `src/bin/record.rs` rend sans fenêtre (caméra →
+  image-cible) et pipe les frames brutes sur `ffmpeg`, *re-render frais* d'une run (pas de rejeu
+  bit-à-bit). Reste ouvert pour plus tard : enregistrer plusieurs runs en parallèle (n'a de sens
+  qu'avec le batch inter-matchs du GA, P5 item 19) ; et un re-render ciblé du *meilleur génome*
+  une fois la sélection générationnelle en place (P4 item 15).
 - **Stepping manuel headless** : faire tourner la sim par `app.update()` en boucle serrée suppose
   d'avoir appelé `app.finish()` **puis** `app.cleanup()` au préalable — Avian insère certaines de
   ses ressources dans le hook `Plugin::finish()` (absent sinon → panique sur un `Res` manquant).

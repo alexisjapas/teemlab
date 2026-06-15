@@ -110,6 +110,7 @@ pub fn editor_ui(
     mut palette: ResMut<Palette>,
     mut commands: Commands,
     mut config: ResMut<SimConfig>,
+    vis: Res<crate::controls::PanelVisibility>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,
     agents: Query<(&Reserve, &Genotype), With<Agent>>,
@@ -119,6 +120,7 @@ pub fn editor_ui(
 
     // — Panneau de droite : la liste des archétypes (glisser pour poser, cliquer
     //   pour éditer). —
+    if vis.palette {
     egui::SidePanel::right("palette")
         .default_width(190.0)
         .show(ctx, |ui| {
@@ -153,9 +155,12 @@ pub fn editor_ui(
                 ui.weak("Relâche au-dessus de l'aire pour déposer.");
             }
         });
+    }
 
     // — Panneau de gauche : éditeur d'archétype + save/load RON. —
-    editor_panel(ctx, &mut palette, &mut config);
+    if vis.editor {
+        editor_panel(ctx, &mut palette, &mut config);
+    }
 
     // — Bandeau du bas : statistiques en direct. —
     egui::TopBottomPanel::bottom("stats").show(ctx, |ui| {

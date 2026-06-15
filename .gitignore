@@ -8,3 +8,8 @@
 
 # Snapshot de run écrit par défaut depuis le panneau Runs (Sauver la run).
 /run.ron
+
+# Sorties des simulations (vidéos, images…) écrites par l'enregistreur `record`
+# et le panneau Enregistrement. On versionne le dossier (.gitkeep), pas son contenu.
+/outputs/*
+!/outputs/.gitkeep
