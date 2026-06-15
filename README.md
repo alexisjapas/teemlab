@@ -56,9 +56,23 @@ depuis l'UI. **Scénario = donnée** :
   distinction **archétype** (modèle édité) / **génome** (copie d'instance qui
   mute seule) est explicite.
 
-**P2 — interface complète — ✅ terminé** (HUD courbes, contrôles pause/vitesse/
-pas/reset, inspecteur d'agent, gestion de runs/scénarios à chaud). On peut voir,
-piloter, déboguer et rejouer une run déterministe.
+### P2 — Interface complète — ✅ terminé
+
+Voir, piloter, déboguer et rejouer une run déterministe — l'outillage du **groupe
+témoin** :
+
+- [x] **HUD courbes** (`src/hud.rs`) : population par espèce + dérive des gènes
+  (normalisés dans leurs bornes), échantillonnés en temps simulé. Lecture seule.
+- [x] **Contrôles de sim** (`src/controls.rs`) : pause, vitesse 0.5×–8×, pas-à-pas,
+  reset — via `Time<Virtual>` (l'horloge fixe le suit) ; le reset reconstruit le
+  monde depuis le `SimConfig`.
+- [x] **Inspecteur d'agent** (`src/inspector.rs`) : clic → génotype, énergie,
+  perception, action courante ; anneau de surlignage. Lecture seule.
+- [x] **Runs & scénarios à chaud** (`src/runs.rs`) : sélecteur de `scenarios/*.ron`,
+  recharge sans relancer le binaire, save/load d'un **snapshot de run** (état
+  vivant sérialisé, cerveau compris — `src/snapshot.rs`).
+- [x] **Arène en demi-espaces** (correctif) : plans infinis → les agents ne
+  s'échappent plus (ni tunneling, ni naissance/dépose hors bord).
 
 Suite (réorientée le 2026-06-15 — construire toute la stack *avant* l'intelligence
 évoluée, pour tester avec un groupe témoin déterministe) : **P3** capture & vidéo
@@ -114,4 +128,11 @@ cargo run --bin headless    # headless, scénario par défaut
 # Charger un scénario explicite (1ᵉʳ argument = chemin RON) :
 cargo run --bin teemlab  scenarios/crowded.ron
 cargo run --bin headless scenarios/default.ron
+
+cargo test                  # tests unitaires + intégration (confinement, snapshot)
 ```
+
+Le build fenêtré ajoute, par-dessus la sim, l'outillage egui de P2 : bandeau de
+contrôles (haut), éditeur d'archétypes + palette (gauche/droite), et fenêtres
+flottantes HUD courbes / Inspecteur / Runs & scénarios. Tout cet outillage vit
+hors `FixedUpdate` (rendu/UI) ; le headless, lui, n'embarque rien de tout ça.

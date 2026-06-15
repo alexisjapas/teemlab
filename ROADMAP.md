@@ -393,8 +393,18 @@ On n'y arrive qu'une fois la stack complète et instrumentée : le déterministe
 
 ## 9. Fils techniques ouverts (pour la suite)
 
-- Modèle d'**isolation des `World`** pour paralléliser les matchs du GA.
-- Design du **`sense()` / `actuate()`** branchant cerveau et corps sur les raycasts et forces
-  d'Avian.
-- Squelette concret des deux `main()` + branchement du stepping manuel sur la condition de fin.
-- Encodage du **génotype** (poids, plage de mutation) et stratégie de **crossover**.
+- **Capture vidéo (P3, item 14)** : brancher la capture des frames de rendu sur un pipe `ffmpeg` ;
+  re-render frais d'une run (pas de rejeu bit-à-bit). Voir §7.
+- **Stepping manuel headless** : faire tourner la sim par `app.update()` en boucle serrée suppose
+  d'avoir appelé `app.finish()` **puis** `app.cleanup()` au préalable — Avian insère certaines de
+  ses ressources dans le hook `Plugin::finish()` (absent sinon → panique sur un `Res` manquant).
+  Déjà éprouvé dans `tests/containment.rs` et `tests/snapshot.rs` ; à réutiliser pour le débit
+  headless du GA.
+- **Régime générationnel (P4, item 15)** : boucle run → score → breed → run mono-thread, fitness
+  explicite ; réutilise la mutation de génotype (item 9) déjà en place. La stratégie de
+  **crossover** reste à concevoir (intra-type, §2).
+- **MLP (P5, item 17)** : un nouveau variant de [`Brain`] (enum, déjà `serde` depuis l'item 13)
+  branché sur le contrat `Perception → Action` — le `sense()/actuate()` est déjà matérialisé par
+  les systèmes perceive/decide/act.
+- **Isolation des `World` + parallélisme inter-matchs (P5, item 19)** : un `World` par match, seedé
+  à part, batch multi-cœurs — c'est là que le débit du GA explose.
