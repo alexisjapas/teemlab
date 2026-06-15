@@ -4,7 +4,7 @@
 //! contention inter-systèmes (pas de `Res` RNG mutable partagée qui sérialise
 //! tout). On garde la graine pour rejouer une config, pas pour le bit-à-bit.
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rng {
     state: u64,
 }

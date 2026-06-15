@@ -17,6 +17,10 @@
 > contrôler) → **P3 — capture & vidéo** (enregistrer) → **P4 — validation de l'abstraction**
 > (scénario bataille, toujours sur déterministe) → **P5 — intelligence évoluée, dépriorisée**
 > (MLP, neuroévolution, parallélisme GA, NEAT). La numérotation de phase fait foi.
+>
+> **P2 (interface complète) terminé (2026-06-15).** HUD courbes (10), contrôles pause/vitesse/
+> pas/reset (11), inspecteur d'agent (12), gestion runs/scénarios à chaud (13). On peut voir,
+> piloter, déboguer et rejouer une run déterministe. Prochaine phase : **P3** (capture & vidéo).
 
 ---
 
@@ -330,8 +334,28 @@ L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`U
   blanc en gizmo (`highlight_selection`, `Update`) pour le repérer dans l'aire. `pick_agent` et
   `inspector_ui` chaînés (sélection reflétée dès la même frame). Lecture seule — invariant
   cardinal tenu.)*
-- [ ] **13. Gestion de runs/scénarios à chaud** : sélecteur de fichier RON, recharge d'un
+- [x] **13. Gestion de runs/scénarios à chaud** : sélecteur de fichier RON, recharge d'un
   scénario sans relancer le binaire, sauvegarde/restauration de l'état d'une run.
+  *(Fait : `src/runs.rs` (binaire fenêtré seul) — panneau « Runs & scénarios ». **Sélecteur** :
+  combo des `scenarios/*.ron` scannés au lancement (+ rescan). **Recharge à chaud** : remplace le
+  `SimConfig`, resynchro la palette, et **délègue la reconstruction au reset de l'item 11**
+  (`apply_scenario_load` précède `apply_reset`, chaînés en `PreUpdate`) — zéro logique de
+  peuplement dupliquée. **Snapshot de run** : nouveau module cœur `src/snapshot.rs` (`Snapshot`
+  sérialisable = config + état du `SimRng` + reliquat de repousse + agents + nourriture).
+  `save_snapshot` capture l'état vivant (cerveau compris) ; `apply_snapshot_load` despawn tout,
+  reconstruit arène + agents (cerveaux **exacts**, via `spawn_agent_with_brain`) + nourriture (via
+  `spawn_food_with_energy`), restaure RNG/regen/HUD. Pré-requis : `Brain`/`WanderBrain`/`Rng`
+  rendus `serde` (§2 « enum, serde propre » — prêt aussi pour un futur MLP). v1 sérialisé en RON
+  (le §5 prévoit du binaire à terme). Comme l'éditeur (item 4/5), tout est de l'édition manuelle
+  hors `FixedUpdate` ; les boutons ne posent qu'une action appliquée en `PreUpdate` avant la
+  boucle fixe. Couvert par `tests/snapshot.rs` : capture → RON → restauration dans un autre monde
+  → la run continue.)*
+
+> **P2 terminé.** L'outillage d'observation et de contrôle est complet : HUD courbes (10),
+> contrôles pause/vitesse/pas/reset (11), inspecteur d'agent (12), gestion runs/scénarios à chaud
+> (13) — plus, en cours de route, l'arène en demi-espaces (les agents ne s'échappent plus). On
+> peut désormais *voir, piloter, déboguer et rejouer* une run déterministe. Prochaine phase :
+> **P3** (capture & vidéo).
 
 ### P3 — Capture & vidéo
 

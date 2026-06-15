@@ -168,10 +168,20 @@ pub fn replenish_food(
 /// d'interaction comme n'importe quelle cible. Public pour que le placement
 /// manuel de l'éditeur (item 4) puisse en déposer.
 pub fn spawn_food(commands: &mut Commands, config: &SimConfig, pos: Vec2) {
+    spawn_food_with_energy(commands, config, pos, config.food_energy);
+}
+
+/// Variante posant une source avec une réserve **partielle** donnée (au lieu de
+/// pleine) : chemin de la restauration d'un snapshot (item 13), qui réinjecte une
+/// nourriture à demi mangée à l'identique. [`spawn_food`] en est le cas « pleine ».
+pub fn spawn_food_with_energy(commands: &mut Commands, config: &SimConfig, pos: Vec2, current: f32) {
     commands.spawn((
         Food,
         Species(config.food_species),
-        Reserve::full(config.food_energy),
+        Reserve {
+            current,
+            max: config.food_energy,
+        },
         Radius(config.food_radius),
         RigidBody::Static,
         Collider::circle(config.food_radius),

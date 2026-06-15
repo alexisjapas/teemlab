@@ -8,6 +8,7 @@ mod controls;
 mod editor;
 mod hud;
 mod inspector;
+mod runs;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
@@ -28,10 +29,26 @@ fn main() {
         .init_resource::<hud::History>()
         .init_resource::<controls::SimControls>()
         .init_resource::<inspector::Selection>()
-        .add_systems(Startup, (setup_camera, editor::build_palette))
-        // PILOTAGE DU TEMPS / RESET (item 11) — pas de logique de sim : on règle
-        // l'horloge ou on reconstruit le monde, avant la boucle fixe de la frame.
-        .add_systems(PreUpdate, (controls::drive_steps, controls::apply_reset))
+        .add_systems(
+            Startup,
+            (setup_camera, editor::build_palette, runs::build_runs_panel),
+        )
+        // PILOTAGE DU TEMPS / RESET / RUNS (items 11, 13) — pas de logique de sim :
+        // on règle l'horloge, recharge un scénario, sauve/restaure une run, ou
+        // reconstruit le monde, le tout avant la boucle fixe de la frame.
+        // `apply_scenario_load` précède `apply_reset` : il pose le drapeau que ce
+        // dernier consomme pour reconstruire le monde avec le nouveau scénario.
+        .add_systems(
+            PreUpdate,
+            (
+                controls::drive_steps,
+                runs::apply_scenario_load,
+                controls::apply_reset,
+                runs::save_snapshot,
+                runs::apply_snapshot_load,
+            )
+                .chain(),
+        )
         // RENDU / OBSERVATION UNIQUEMENT — jamais de logique de sim ici.
         // `hud::sample_history` ne fait que *lire* l'état pour les courbes.
         .add_systems(
@@ -54,6 +71,7 @@ fn main() {
                 editor::editor_ui,
                 hud::hud_ui,
                 controls::controls_ui,
+                runs::runs_ui,
                 (inspector::pick_agent, inspector::inspector_ui).chain(),
             ),
         )

@@ -15,6 +15,7 @@ pub mod genotype;
 pub mod interaction;
 pub mod movement;
 pub mod rng;
+pub mod snapshot;
 pub mod spawn;
 
 use avian2d::prelude::*;

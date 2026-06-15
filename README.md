@@ -56,13 +56,16 @@ depuis l'UI. **Scénario = donnée** :
   distinction **archétype** (modèle édité) / **génome** (copie d'instance qui
   mute seule) est explicite.
 
+**P2 — interface complète — ✅ terminé** (HUD courbes, contrôles pause/vitesse/
+pas/reset, inspecteur d'agent, gestion de runs/scénarios à chaud). On peut voir,
+piloter, déboguer et rejouer une run déterministe.
+
 Suite (réorientée le 2026-06-15 — construire toute la stack *avant* l'intelligence
-évoluée, pour tester avec un groupe témoin déterministe) : **P2** interface
-complète (HUD courbes, contrôles de sim, inspecteur d'agent, gestion de runs) →
-**P3** capture & vidéo (re-render, pipe ffmpeg, run unique) → **P4** validation de
-l'abstraction (scénario bataille générationnel, toujours déterministe) → **P5**
-intelligence évoluée, dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT).
-Voir [`ROADMAP.md`](ROADMAP.md).
+évoluée, pour tester avec un groupe témoin déterministe) : **P3** capture & vidéo
+(re-render, pipe ffmpeg, run unique) → **P4** validation de l'abstraction (scénario
+bataille générationnel, toujours déterministe) → **P5** intelligence évoluée,
+dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT). Voir
+[`ROADMAP.md`](ROADMAP.md).
 
 **Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
 vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
@@ -77,6 +80,7 @@ src/
   components.rs    Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
   genotype.rs     Genotype héritable + mutation ; compilation génotype→phénotype (§2).
+  snapshot.rs     Snapshot d'une run (état vivant sérialisable) : config + RNG + agents + nourriture.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
   interaction.rs  Primitive d'interaction unique (manger/attaquer) + table de relations.
   ecology.rs      Économie : métaboliser, mourir, se reproduire, réensemencer la nourriture.
@@ -87,6 +91,7 @@ src/
   hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
   controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps).
   inspector.rs    Inspecteur egui (fenêtré seul) : clic → génotype / énergie / perception / action (lecture seule).
+  runs.rs         Gestion egui (fenêtré seul) : sélecteur de scénario, recharge à chaud, save/load de run.
   bin/headless.rs Binaire headless → `headless`.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.

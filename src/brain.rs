@@ -9,9 +9,14 @@
 use crate::components::{Action, Perception};
 use crate::rng::Rng;
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Le cerveau d'un agent. Un variant par implémentation.
-#[derive(Component)]
+///
+/// `serde` propre (§2) : un cerveau est sérialisable, donc capturable dans un
+/// snapshot de run (item 13) — et le sera pour un futur MLP sans changer le
+/// contrat.
+#[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Brain {
     /// Échafaudage déterministe trivial : marche aléatoire (errance). Dérisque
     /// toute la chaîne percevoir→décider→agir avant qu'aucun cerveau appris
@@ -31,6 +36,7 @@ impl Brain {
 
 /// Errance par braquage : le cap dérive d'un petit incrément aléatoire à chaque
 /// tick, produisant des trajectoires courbes plausibles.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WanderBrain {
     rng: Rng,
     /// Cap courant, en radians.

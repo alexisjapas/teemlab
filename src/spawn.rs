@@ -31,7 +31,11 @@ pub fn populate(commands: &mut Commands, config: &SimConfig) {
 /// (à l'opposé du solide), comme la normale « vers le haut » d'un sol. On la
 /// dirige donc vers l'intérieur de l'arène, et on pose chaque plan pile sur le
 /// bord `±arena_half_extent` (aligné avec la boîte dessinée par `draw_arena`).
-fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
+///
+/// Public pour que la restauration d'un snapshot (item 13) reconstruise l'arène
+/// avant d'y reposer les agents sauvegardés (le snapshot ne stocke pas les murs,
+/// qui se déduisent du `SimConfig`).
+pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     let h = config.arena_half_extent;
     let walls = [
         (Vec2::new(0.0, -h), Vec2::Y),     // bas    : solide en dessous
@@ -92,6 +96,25 @@ pub fn spawn_agent(
     brain_seed: u64,
     energy: f32,
 ) {
+    let brain = Brain::Wander(WanderBrain::new(brain_seed, heading));
+    spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
+}
+
+/// Variante prenant un [`Brain`] **déjà construit** plutôt qu'une graine : c'est
+/// le chemin de la restauration d'un snapshot (item 13), qui réinjecte le cerveau
+/// exact (état du RNG d'errance compris) lu dans le fichier. [`spawn_agent`] n'en
+/// est que le cas « cerveau neuf depuis une graine ». Source unique du *bundle*
+/// d'agent, pour qu'un agent restauré soit en tout point un agent comme un autre.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_agent_with_brain(
+    commands: &mut Commands,
+    config: &SimConfig,
+    genotype: Genotype,
+    species: Species,
+    pos: Vec2,
+    brain: Brain,
+    energy: f32,
+) {
     let r = config.agent_radius;
     let vision = genotype.vision(config.vision_rays);
     commands.spawn((
@@ -110,7 +133,7 @@ pub fn spawn_agent(
             ..default()
         },
         Action::default(),
-        Brain::Wander(WanderBrain::new(brain_seed, heading)),
+        brain,
         RigidBody::Dynamic,
         Collider::circle(r),
         LinearVelocity::default(),

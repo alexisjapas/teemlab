@@ -5,3 +5,6 @@
 
 # Fichier scratch écrit par défaut depuis l'éditeur (Sauver).
 /scenarios/edited.ron
+
+# Snapshot de run écrit par défaut depuis le panneau Runs (Sauver la run).
+/run.ron
