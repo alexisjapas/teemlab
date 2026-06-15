@@ -317,9 +317,19 @@ L'outillage d'observation et de pilotage. Tout vit dans le binaire fenêtré (`U
   trop tard pour la boucle fixe de la frame) ne posent qu'un drapeau ; l'action a lieu en
   `PreUpdate`, avant la boucle fixe. Invariant cardinal tenu : on règle l'horloge ou on
   reconstruit le monde, jamais de logique de sim hors `FixedUpdate`.)*
-- [ ] **12. Inspecteur d'agent** : cliquer un agent → panneau affichant son `Genotype`, son
+- [x] **12. Inspecteur d'agent** : cliquer un agent → panneau affichant son `Genotype`, son
   énergie/`Reserve`, sa `Perception` et son `Action` courante. L'outil de débogage du
   comportement (indispensable comme garde-fou du groupe témoin).
+  *(Fait : `src/inspector.rs` (binaire fenêtré seul). Ressource `Selection(Option<Entity>)` ;
+  `pick_agent` projette le clic en coordonnées monde (`viewport_to_world_2d`) et sélectionne
+  l'agent le plus proche dont le corps contient le clic — clic dans le vide = désélection, clic
+  sur un panneau egui ou pendant un glisser d'archétype ignoré (l'éditeur gère ce dernier).
+  Fenêtre egui « Inspecteur d'agent » : espèce, barre d'énergie (`Reserve::fraction`), génotype
+  (vitesse/agilité/portée/champ + coût vision/s), action courante (cap désiré + accélérateur),
+  et perception (proximité par rayon en barres). Agent mort → message « n'existe plus ». Anneau
+  blanc en gizmo (`highlight_selection`, `Update`) pour le repérer dans l'aire. `pick_agent` et
+  `inspector_ui` chaînés (sélection reflétée dès la même frame). Lecture seule — invariant
+  cardinal tenu.)*
 - [ ] **13. Gestion de runs/scénarios à chaud** : sélecteur de fichier RON, recharge d'un
   scénario sans relancer le binaire, sauvegarde/restauration de l'état d'une run.
 

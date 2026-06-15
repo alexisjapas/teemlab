@@ -7,6 +7,7 @@
 mod controls;
 mod editor;
 mod hud;
+mod inspector;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
@@ -26,6 +27,7 @@ fn main() {
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .init_resource::<hud::History>()
         .init_resource::<controls::SimControls>()
+        .init_resource::<inspector::Selection>()
         .add_systems(Startup, (setup_camera, editor::build_palette))
         // PILOTAGE DU TEMPS / RESET (item 11) — pas de logique de sim : on règle
         // l'horloge ou on reconstruit le monde, avant la boucle fixe de la frame.
@@ -41,13 +43,19 @@ fn main() {
                 draw_arena,
                 draw_vision,
                 hud::sample_history,
+                inspector::highlight_selection,
             ),
         )
         // UI egui : archétypes + placement (item 4), HUD courbes (item 10),
-        // contrôles de sim (item 11).
+        // contrôles de sim (item 11), inspecteur d'agent (item 12).
         .add_systems(
             EguiPrimaryContextPass,
-            (editor::editor_ui, hud::hud_ui, controls::controls_ui),
+            (
+                editor::editor_ui,
+                hud::hud_ui,
+                controls::controls_ui,
+                (inspector::pick_agent, inspector::inspector_ui).chain(),
+            ),
         )
         .run();
 }
