@@ -1,111 +1,34 @@
 # teemlab
 
-Moteur de simulation évolutive. **Un seul moteur** qui interprète de la donnée ;
-chaque simulation (sélection naturelle, bataille, …) n'est qu'un *scénario*. Vue
-2D top-down, entités = ronds. Boucle unique : **percevoir → décider → agir**.
+Moteur de simulation évolutive. **Un seul moteur** interprète de la donnée ; chaque
+simulation (sélection naturelle, bataille, …) est un *scénario*. Vue 2D top-down,
+entités = ronds. Boucle unique : **percevoir → décider → agir**.
+
+Conception et ordre d'implémentation : [`ROADMAP.md`](ROADMAP.md).
 
 ## État
 
-Le plan complet et son avancement vivent dans [`ROADMAP.md`](ROADMAP.md) ; la
-numérotation de phase (P0, P1, …) y fait foi. Résumé :
+**Réalisé (P0–P3).**
 
-### P0 — Fondations — ✅ terminé
+- **Fondations** : Bevy 0.18 + Avian 0.6, collisions, caméra 2D ; deux entrées (fenêtrée
+  / headless) partageant le même schedule de sim à timestep fixe.
+- **Boucle évolutive continue** : vision par raycast (avec coût métabolique), primitive
+  d'interaction unique (prédation/combat), économie d'énergie (sélection naturelle),
+  reproduction + mutation d'un génotype paramétrique. Scénario = donnée (RON, override
+  partiel). `evolution.ron` : population stable, dérive des gènes observable.
+- **Interface** (binaire fenêtré, egui) : HUD courbes, contrôles pause/vitesse/pas/reset,
+  inspecteur d'agent, recharge de scénario à chaud, snapshot de run.
+- **Capture vidéo** : rendu headless `record` → `ffmpeg` (re-render frais), menu
+  d'enregistrement intégré.
 
-- [x] Bevy 0.18 + Avian 0.6, ronds rigides, collisions, caméra 2D top-down.
-- [x] Boucle percevoir→décider→agir avec cerveau déterministe trivial (errance).
-- [x] Deux points d'entrée partageant **le même** schedule de sim :
-  - fenêtré (`DefaultPlugins`)
-  - headless (`ScheduleRunnerPlugin`, stepping à nombre de ticks fixe).
+**Planifié (P4–P5).** Sélection naturelle approfondie + intelligence évoluée en régime
+continu (éditeur générique de caractéristiques avec flag *héritable*, `Brain::Hunter`
+comme groupe témoin, scénarios co-évolutifs, MLP) ; puis la bataille (régime
+générationnel) comme test final de l'abstraction, le long d'une *couture A/B* propre.
 
-### P1 — Le moteur jouable — ✅ terminé
-
-La première **boucle évolutive continue** tourne de bout en bout, pilotable
-depuis l'UI. **Scénario = donnée** :
-
-- [x] `SimConfig` chargé depuis un fichier **RON**, pas codé en dur. Un scénario
-  est de la donnée : le *même* fichier pilote le build fenêtré et le headless.
-- [x] Override partiel (`#[serde(default)]`) : un scénario ne mentionne que ce
-  qu'il change ; champ inconnu rejeté (`deny_unknown_fields`).
-- [x] Chargement partagé via `SimConfig::from_cli()` : 1ᵉʳ argument = chemin du
-  scénario, absent → défauts, illisible/invalide → échec bruyant (sortie 1).
-- [x] **Vision par raycast avec occlusion** (spatial queries Avian) : chaque
-  agent éventaille des rayons sur son champ de vision, ne garde que le hit le
-  plus proche (un mur masque ce qui est derrière), et écrit une *proximité*
-  normalisée par rayon dans `Perception`. Coût métabolique quantifié
-  (`Vision::metabolic_cost`), prélèvement différé à l'économie d'énergie.
-- [x] **Primitive d'interaction unique** (§3 *manger et attaquer sont le même
-  verbe*) : un acteur réduit la `Reserve` d'une cible à portée (broad-phase
-  Avian) ; `transfer: true` = prédation, `false` = combat. `Species` + table
-  `relations` (RON) décident qui agit sur qui. Voir `scenarios/predation.ron`.
-- [x] **Scénario nº1 — sélection naturelle** (`scenarios/selection.ron`) :
-  économie d'énergie complète. Métabolisme (base + locomotion + coût de vision),
-  nourriture mangée via l'unique primitive d'interaction, mort à zéro,
-  réensemencement de la nourriture. Calibrée pour que le butinage soutienne la
-  population (les affamés meurent).
-- [x] **Reproduction + mutation** (`scenarios/evolution.ron`) : la boucle
-  évolutive continue. `Genotype` héritable (vitesse, agilité, vision) **compilé**
-  en phénotype au spawn (§2) ; un agent assez nourri engendre un enfant muté
-  (gaussienne bornée). Repousse de nourriture à débit fini → capacité de charge.
-  Sur 100 s : population stable, la portée de vision **dérive vers le bas** (pur
-  coût tant que l'errance l'ignore), la vitesse monte (meilleur butinage).
-- [x] **Placement manuel (drag-and-drop)** : panneau d'archétypes egui à droite
-  (une entrée par espèce + nourriture), bandeau de stats en bas, dépose dans
-  l'aire de jeu. Éditeur fenêtré uniquement (`src/editor.rs`).
-- [x] **Éditeur d'archétype + save/load RON** : panneau egui à gauche, sliders
-  bornés sur les gènes de l'archétype sélectionné, boutons Sauver/Charger. La
-  distinction **archétype** (modèle édité) / **génome** (copie d'instance qui
-  mute seule) est explicite.
-
-### P2 — Interface complète — ✅ terminé
-
-Voir, piloter, déboguer et rejouer une run déterministe — l'outillage du **groupe
-témoin** :
-
-- [x] **HUD courbes** (`src/hud.rs`) : population par espèce + dérive des gènes
-  (normalisés dans leurs bornes), échantillonnés en temps simulé. Lecture seule.
-- [x] **Contrôles de sim** (`src/controls.rs`) : pause, vitesse 0.5×–8×, pas-à-pas,
-  reset — via `Time<Virtual>` (l'horloge fixe le suit) ; le reset reconstruit le
-  monde depuis le `SimConfig`.
-- [x] **Inspecteur d'agent** (`src/inspector.rs`) : clic → génotype, énergie,
-  perception, action courante ; anneau de surlignage. Lecture seule.
-- [x] **Runs & scénarios à chaud** (`src/runs.rs`) : sélecteur de `scenarios/*.ron`,
-  recharge sans relancer le binaire, save/load d'un **snapshot de run** (état
-  vivant sérialisé, cerveau compris — `src/snapshot.rs`).
-- [x] **Arène en demi-espaces** (correctif) : plans infinis → les agents ne
-  s'échappent plus (ni tunneling, ni naissance/dépose hors bord).
-
-### P3 — Capture & vidéo — ✅ terminé
-
-- [x] **Enregistreur headless** (`src/bin/record.rs`) : rendu *réellement* sans
-  fenêtre (winit désactivé, caméra → **image-cible** au lieu d'une surface), capture
-  de chaque frame via l'API `Screenshot` (readback GPU→CPU), **pipe direct** des
-  pixels RGBA bruts sur `ffmpeg` (aucun PNG intermédiaire). Temps cadencé au pas
-  fixe `1/fps` → durée vidéo exacte. Approche *re-render frais* (§7), run unique.
-  Le rendu de la sim est factorisé dans `src/visuals.rs` (`VisualsPlugin`), **partagé**
-  avec le build fenêtré. Les sorties (vidéos, images…) atterrissent dans `outputs/`.
-  `cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10`
-- [x] **Menu d'enregistrement intégré** (`src/recorder.rs`, panneau docké
-  « Enregistrement ») : configure (fichier, durée, fps, résolution) et **lance le
-  binaire `record` en sous-processus** sur le scénario courant (édits compris,
-  sérialisés dans un RON temporaire) — un re-render propre, sans l'overlay egui.
-
-### Réglages d'interface (build fenêtré)
-
-- [x] **Démarrage en pause** : la sim s'ouvre figée (`Time<Virtual>` en pause), pour
-  préparer/placer avant de lancer ; on relance avec ▶ Lecture.
-- [x] **Menus dockés** : tous les panneaux egui sont attachés aux arêtes (plus de
-  fenêtres flottantes). Une rangée « Panneaux : » dans le bandeau de contrôles
-  affiche/masque chaque panneau (ils ne tiennent pas tous de front).
-
-Suite (réorientée le 2026-06-15 — construire toute la stack *avant* l'intelligence
-évoluée, pour tester avec un groupe témoin déterministe) : **P4** validation de
-l'abstraction (scénario bataille générationnel, toujours déterministe) → **P5**
-intelligence évoluée, dépriorisée (MLP, neuroévolution, parallélisme GA, NEAT). Voir
-[`ROADMAP.md`](ROADMAP.md).
-
-**Invariant cardinal :** aucune logique de simulation dans `Update`. L'agentivité
-vit dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate`. `Update` est
-réservé au rendu / UI du binaire fenêtré.
+> **Invariant cardinal** : aucune logique de simulation dans `Update`. L'agentivité vit
+> dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate` ; `Update` est réservé au
+> rendu / UI du binaire fenêtré.
 
 ## Architecture
 
@@ -113,12 +36,12 @@ réservé au rendu / UI du binaire fenêtré.
 src/
   lib.rs          SimPlugin : le cœur render-agnostic partagé.
   config.rs       SimConfig : le scénario (RON) + son chargement.
-  components.rs    Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
+  components.rs   Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
   brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
   genotype.rs     Genotype héritable + mutation ; compilation génotype→phénotype (§2).
   snapshot.rs     Snapshot d'une run (état vivant sérialisable) : config + RNG + agents + nourriture.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
-  interaction.rs  Primitive d'interaction unique (manger/attaquer) + table de relations.
+  interaction.rs  Primitive d'interaction unique (prédation/combat) + table de relations.
   ecology.rs      Économie : métaboliser, mourir, se reproduire, réensemencer la nourriture.
   rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
   spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
@@ -143,26 +66,35 @@ outputs/          Sorties des simulations (vidéos, images…) ; contenu ignoré
 
 ## Développement
 
-L'environnement (toolchain Rust + dépendances système de Bevy) est fourni par
-Nix :
+L'environnement (toolchain Rust + dépendances système de Bevy) est fourni par Nix :
 
 ```sh
 nix develop            # ou : direnv allow  (puis automatique)
-cargo run --bin teemlab     # fenêtré, scénario par défaut
-cargo run --bin headless    # headless, scénario par défaut
 
-# Charger un scénario explicite (1ᵉʳ argument = chemin RON) :
-cargo run --bin teemlab  scenarios/crowded.ron
-cargo run --bin headless scenarios/default.ron
+# Lancer le fenêtré — commande `play` du dev shell (voir l'encadré ci-dessous) :
+play                                  # debug, scénario par défaut
+play --release                        # release (teemlab ET record en release)
+play --release scenarios/crowded.ron  # profil + scénario explicite
 
-# Enregistrer une run en vidéo (rendu headless → ffmpeg, P3) ; sortie dans outputs/ :
+cargo run --bin headless                          # headless, scénario par défaut
+cargo run --bin headless scenarios/default.ron    # scénario explicite (1ᵉʳ arg = RON)
+
+# Enregistrer une run en vidéo (rendu headless → ffmpeg) ; sortie dans outputs/ :
 cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10
 #   options : --out F  --fps N  --seconds S  --width W  --height H
 
-cargo test                  # tests unitaires + intégration (confinement, snapshot)
+cargo test                            # tests unitaires + intégration (confinement, snapshot)
 ```
 
-Le build fenêtré ajoute, par-dessus la sim, l'outillage egui de P2 : bandeau de
-contrôles (haut), éditeur d'archétypes + palette (gauche/droite), et fenêtres
-flottantes HUD courbes / Inspecteur / Runs & scénarios. Tout cet outillage vit
-hors `FixedUpdate` (rendu/UI) ; le headless, lui, n'embarque rien de tout ça.
+> **Lancer le fenêtré : la commande `play`** (fournie par le dev shell Nix —
+> `flake.nix`, `writeShellScriptBin`, pas de script versionné). Le menu d'enregistrement
+> lance `record` en sous-process, cherché *à côté* de l'exécutable courant. Or
+> `cargo run --bin teemlab` ne compile QUE `teemlab` : sans un `record` buildé dans le
+> même profil, l'enregistrement échoue (« No such file or directory »). `play` fait
+> d'abord un `cargo build` (qui construit *tous* les binaires) dans le profil choisi, puis
+> lance le fenêtré — `record` suit donc toujours `teemlab`, debug comme release.
+
+Le build fenêtré ajoute, par-dessus la sim, l'outillage egui : bandeau de contrôles
+(haut), éditeur d'archétypes + palette, et panneaux dockés HUD courbes / inspecteur /
+runs & scénarios / enregistrement. Tout cet outillage vit hors `FixedUpdate` (rendu / UI) ;
+le headless n'embarque rien de tout ça.
