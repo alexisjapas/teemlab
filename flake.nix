@@ -23,6 +23,24 @@
         alsa-lib
         systemdLibs # libudev (gamepad/input enumeration)
       ];
+
+      # `play` : construit tout l'atelier (teemlab + record + headless) dans le
+      # profil choisi, puis lance le build fenêtré. Nécessaire parce que le menu
+      # d'enregistrement (P3) lance `record` en sous-process voisin de l'exécutable :
+      # `cargo run --bin teemlab` ne compilerait que `teemlab`, alors que
+      # `cargo build` (sans --bin) construit *tous* les binaires. Vit dans le dev
+      # shell (hérite de LD_LIBRARY_PATH + toolchain) ; aucun script .sh versionné.
+      play = pkgs.writeShellScriptBin "play" ''
+        profile=()
+        forward=()
+        for arg in "$@"; do
+          case "$arg" in
+            --release) profile=(--release) ;;
+            *) forward+=("$arg") ;;
+          esac
+        done
+        cargo build "''${profile[@]}" && exec cargo run "''${profile[@]}" --bin teemlab -- "''${forward[@]}"
+      '';
     in
     {
       devShells.${system}.default = pkgs.mkShell {
@@ -40,6 +58,9 @@
           # Encodeur vidéo de l'enregistreur headless (P3, item 14) : `record`
           # pipe ses frames brutes directement sur le stdin de `ffmpeg`.
           ffmpeg
+          # `play [--release] [scenario.ron]` : build l'atelier + lance le fenêtré
+          # (record compris). Défini dans le `let` ci-dessus.
+          play
         ];
 
         # Things pkg-config must find at build time (the wayland feature links
@@ -56,6 +77,7 @@
 
         shellHook = ''
           echo "teemlab dev shell — $(rustc --version)"
+          echo "  play [--release] [scenario.ron]  # build l'atelier + lance le fenêtré (record inclus)"
         '';
       };
     };
