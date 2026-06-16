@@ -140,36 +140,49 @@ pub fn sample_history(
     }
 }
 
-/// La fenêtre du HUD : population par espèce + dérive des gènes. Tourne dans
-/// `EguiPrimaryContextPass`, aux côtés de l'éditeur.
+/// La fenêtre flottante des courbes d'évolution : population par espèce + dérive
+/// des gènes. Tourne dans `EguiPrimaryContextPass`. Lecture seule de l'historique.
 pub fn hud_ui(
     mut contexts: EguiContexts,
     mut history: ResMut<History>,
-    vis: Res<crate::controls::PanelVisibility>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
 ) -> Result {
     if !vis.hud {
         return Ok(());
     }
+    let tidy = vis.tidy_windows;
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::right("hud")
-        .default_width(340.0)
+    let screen = ctx.content_rect();
+    let mut window = egui::Window::new("Évolution — courbes")
+        .open(&mut vis.hud)
+        .default_pos([12.0, 820.0])
+        .default_width(360.0)
         .resizable(true)
-        .show(ctx, |ui| {
-            ui.heading("Évolution — courbes");
-            ui.horizontal(|ui| {
-                ui.weak(format!("{} échantillons", history.samples.len()));
-                if ui.button("↻ Effacer").clicked() {
-                    history.clear();
-                }
-            });
-            ui.separator();
-            ui.strong("Population par espèce");
-            draw_population(ui, &history);
-            ui.add_space(10.0);
-            ui.strong("Dérive des gènes (normalisée 0–1)");
-            draw_traits(ui, &history);
-        });
+        .vscroll(true);
+    if tidy {
+        window =
+            window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Hud));
+    }
+    window.show(ctx, |ui| hud_section(ui, &mut history));
     Ok(())
+}
+
+/// Le contenu des courbes (sans le cadre de fenêtre, pour rester testable et
+/// composable). Population par espèce puis dérive des gènes normalisée.
+pub fn hud_section(ui: &mut egui::Ui, history: &mut History) {
+    ui.horizontal(|ui| {
+        ui.weak(format!("{} échantillons", history.samples.len()));
+        if ui.button("↻ Effacer").clicked() {
+            history.clear();
+        }
+    });
+    ui.separator();
+    let history: &History = history;
+    ui.strong("Population par espèce");
+    draw_population(ui, history);
+    ui.add_space(10.0);
+    ui.strong("Dérive des gènes (normalisée 0–1)");
+    draw_traits(ui, history);
 }
 
 /// Une courbe à tracer : un nom, une couleur, et ses points `[temps, valeur]`.

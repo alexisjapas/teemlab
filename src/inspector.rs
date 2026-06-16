@@ -68,85 +68,105 @@ pub fn pick_agent(
     Ok(())
 }
 
-/// Le panneau de l'inspecteur : génotype, énergie, perception, action de l'agent
-/// sélectionné. S'il a disparu (mort), on le signale.
+/// La fenêtre flottante de l'inspecteur : génotype, énergie, perception, action de
+/// l'agent sélectionné. Tourne dans `EguiPrimaryContextPass`. Lecture seule.
 pub fn inspector_ui(
     mut contexts: EguiContexts,
     selection: Res<Selection>,
-    vis: Res<crate::controls::PanelVisibility>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
     agents: Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action), With<Agent>>,
 ) -> Result {
     if !vis.inspector {
         return Ok(());
     }
+    let tidy = vis.tidy_windows;
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::right("inspector")
-        .default_width(240.0)
-        .resizable(true)
-        .show(ctx, |ui| {
-            ui.heading("Inspecteur d'agent");
-            let Some(entity) = selection.0 else {
-                ui.weak("Clique un agent dans l'aire pour l'inspecter.");
-                return;
-            };
-            let Ok((species, reserve, genotype, vision, perception, action)) = agents.get(entity)
-            else {
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 140, 120),
-                    "L'agent sélectionné n'existe plus (mort ?).",
-                );
-                ui.weak("Clique un autre agent, ou dans le vide pour désélectionner.");
-                return;
-            };
-
-            ui.label(format!("Espèce : {}", species.0));
-
-            ui.separator();
-            ui.strong("Énergie / réserve");
-            ui.add(
-                egui::ProgressBar::new(reserve.fraction())
-                    .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
-            );
-
-            ui.separator();
-            ui.strong("Génotype (gènes hérités)");
-            egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-                ui.label("vitesse max");
-                ui.label(format!("{:.1}", genotype.max_speed));
-                ui.end_row();
-                ui.label("agilité");
-                ui.label(format!("{:.3}", genotype.agility));
-                ui.end_row();
-                ui.label("portée vision");
-                ui.label(format!("{:.1}", genotype.vision_range));
-                ui.end_row();
-                ui.label("champ vision");
-                ui.label(format!("{:.0}°", genotype.vision_fov.to_degrees()));
-                ui.end_row();
-                ui.label("coût vision/s");
-                ui.label(format!("{:.3}", vision.metabolic_cost()));
-                ui.end_row();
-            });
-
-            ui.separator();
-            ui.strong("Action (sortie du cerveau)");
-            let throttle = action.throttle;
-            let heading_deg = if action.dir.length_squared() > 1e-6 {
-                action.dir.to_angle().to_degrees()
-            } else {
-                0.0
-            };
-            ui.label(format!("cap désiré : {heading_deg:+.0}°"));
-            ui.add(egui::ProgressBar::new(throttle).text(format!("accélérateur {throttle:.2}")));
-
-            ui.separator();
-            ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
-            ui.weak("proximité par rayon (0 = rien, 1 = au contact)");
-            for (i, &proximity) in perception.vision.iter().enumerate() {
-                ui.add(egui::ProgressBar::new(proximity).text(format!("r{i} · {proximity:.2}")));
-            }
-        });
+    let screen = ctx.content_rect();
+    // Pas de `vscroll` ici : `inspector_section` a déjà sa propre `ScrollArea`
+    // (la liste des rayons de vision peut être longue).
+    let mut window = egui::Window::new("Inspecteur d'agent")
+        .open(&mut vis.inspector)
+        .default_pos([560.0, 820.0])
+        .default_width(260.0)
+        .resizable(true);
+    if tidy {
+        window = window
+            .current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Inspector));
+    }
+    window.show(ctx, |ui| inspector_section(ui, &selection, &agents));
     Ok(())
+}
+
+/// Le contenu de l'inspecteur (sans le cadre de fenêtre). Si l'agent sélectionné a
+/// disparu (mort), on le signale. Lecture seule du monde.
+pub fn inspector_section(
+    ui: &mut egui::Ui,
+    selection: &Selection,
+    agents: &Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action), With<Agent>>,
+) {
+    let Some(entity) = selection.0 else {
+        ui.weak("Clique un agent dans l'aire pour l'inspecter.");
+        return;
+    };
+    let Ok((species, reserve, genotype, vision, perception, action)) = agents.get(entity) else {
+        ui.colored_label(
+            egui::Color32::from_rgb(255, 140, 120),
+            "L'agent sélectionné n'existe plus (mort ?).",
+        );
+        ui.weak("Clique un autre agent, ou dans le vide pour désélectionner.");
+        return;
+    };
+
+    // Un défilement évite de rogner la liste des rayons de vision quand le panneau
+    // est réduit.
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.label(format!("Espèce : {}", species.0));
+
+        ui.separator();
+        ui.strong("Énergie / réserve");
+        ui.add(
+            egui::ProgressBar::new(reserve.fraction())
+                .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
+        );
+
+        ui.separator();
+        ui.strong("Génotype (gènes hérités)");
+        egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
+            ui.label("vitesse max");
+            ui.label(format!("{:.1}", genotype.max_speed));
+            ui.end_row();
+            ui.label("agilité");
+            ui.label(format!("{:.3}", genotype.agility));
+            ui.end_row();
+            ui.label("portée vision");
+            ui.label(format!("{:.1}", genotype.vision_range));
+            ui.end_row();
+            ui.label("champ vision");
+            ui.label(format!("{:.0}°", genotype.vision_fov.to_degrees()));
+            ui.end_row();
+            ui.label("coût vision/s");
+            ui.label(format!("{:.3}", vision.metabolic_cost()));
+            ui.end_row();
+        });
+
+        ui.separator();
+        ui.strong("Action (sortie du cerveau)");
+        let throttle = action.throttle;
+        let heading_deg = if action.dir.length_squared() > 1e-6 {
+            action.dir.to_angle().to_degrees()
+        } else {
+            0.0
+        };
+        ui.label(format!("cap désiré : {heading_deg:+.0}°"));
+        ui.add(egui::ProgressBar::new(throttle).text(format!("accélérateur {throttle:.2}")));
+
+        ui.separator();
+        ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
+        ui.weak("proximité par rayon (0 = rien, 1 = au contact)");
+        for (i, &proximity) in perception.vision.iter().enumerate() {
+            ui.add(egui::ProgressBar::new(proximity).text(format!("r{i} · {proximity:.2}")));
+        }
+    });
 }
 
 /// Rendu seul : entourer l'agent sélectionné d'un anneau, pour le retrouver dans

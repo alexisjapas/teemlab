@@ -81,18 +81,34 @@ pub fn build_runs_panel(mut commands: Commands) {
     });
 }
 
-/// Le panneau egui. Ne fait que lire/écrire son propre état et poser une action
-/// en attente — aucun accès au monde ici (cf. systèmes `PreUpdate`).
+/// La fenêtre flottante « Runs & scénarios ». Tourne dans `EguiPrimaryContextPass`.
 pub fn runs_ui(
     mut contexts: EguiContexts,
     mut panel: ResMut<RunsPanel>,
-    vis: Res<crate::controls::PanelVisibility>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
 ) -> Result {
     if !vis.runs {
         return Ok(());
     }
+    let tidy = vis.tidy_windows;
     let ctx = contexts.ctx_mut()?;
+    let screen = ctx.content_rect();
+    let mut window = egui::Window::new("Runs & scénarios")
+        .open(&mut vis.runs)
+        .default_pos([12.0, 84.0])
+        .default_width(290.0)
+        .resizable(true);
+    if tidy {
+        window =
+            window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Runs));
+    }
+    window.show(ctx, |ui| runs_section(ui, &mut panel));
+    Ok(())
+}
 
+/// Le contenu de « Runs & scénarios ». Ne fait que lire/écrire son propre état et
+/// poser une action en attente — aucun accès au monde ici (cf. systèmes `PreUpdate`).
+fn runs_section(ui: &mut egui::Ui, panel: &mut RunsPanel) {
     // On travaille sur des copies locales pour que la fermeture egui ne capture
     // pas `panel` (évite les emprunts croisés dans le combo).
     let scenarios = panel.scenarios.clone();
@@ -102,56 +118,50 @@ pub fn runs_ui(
     let mut pending = None;
     let mut rescan = false;
 
-    egui::SidePanel::left("runs")
-        .default_width(280.0)
-        .resizable(true)
-        .show(ctx, |ui| {
-            ui.heading("Runs & scénarios");
-            ui.strong("Scénario");
-            ui.horizontal(|ui| {
-                let label = selected
-                    .and_then(|i| scenarios.get(i))
-                    .map(String::as_str)
-                    .unwrap_or("(choisir…)");
-                egui::ComboBox::from_id_salt("scenario_combo")
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        for (i, path) in scenarios.iter().enumerate() {
-                            ui.selectable_value(&mut selected, Some(i), path);
-                        }
-                    });
-                if ui.button("↻").on_hover_text("Rescanner scenarios/").clicked() {
-                    rescan = true;
+    ui.strong("Scénario");
+    ui.horizontal(|ui| {
+        let label = selected
+            .and_then(|i| scenarios.get(i))
+            .map(String::as_str)
+            .unwrap_or("(choisir…)");
+        egui::ComboBox::from_id_salt("scenario_combo")
+            .selected_text(label)
+            .show_ui(ui, |ui| {
+                for (i, path) in scenarios.iter().enumerate() {
+                    ui.selectable_value(&mut selected, Some(i), path);
                 }
             });
-            if ui
-                .add_enabled(
-                    selected.is_some(),
-                    egui::Button::new("⟲ Recharger dans le monde"),
-                )
-                .on_hover_text("Charge le scénario et redémarre la run.")
-                .clicked()
-                && let Some(path) = selected.and_then(|i| scenarios.get(i))
-            {
-                pending = Some(RunAction::LoadScenario(path.clone()));
-            }
+        if ui.button("↻").on_hover_text("Rescanner scenarios/").clicked() {
+            rescan = true;
+        }
+    });
+    if ui
+        .add_enabled(
+            selected.is_some(),
+            egui::Button::new("⟲ Recharger dans le monde"),
+        )
+        .on_hover_text("Charge le scénario et redémarre la run.")
+        .clicked()
+        && let Some(path) = selected.and_then(|i| scenarios.get(i))
+    {
+        pending = Some(RunAction::LoadScenario(path.clone()));
+    }
 
-            ui.separator();
-            ui.strong("État de la run (snapshot)");
-            ui.text_edit_singleline(&mut snapshot_path);
-            ui.horizontal(|ui| {
-                if ui.button("💾 Sauver la run").clicked() {
-                    pending = Some(RunAction::SaveSnapshot(snapshot_path.clone()));
-                }
-                if ui.button("📂 Charger la run").clicked() {
-                    pending = Some(RunAction::LoadSnapshot(snapshot_path.clone()));
-                }
-            });
+    ui.separator();
+    ui.strong("État de la run (snapshot)");
+    ui.text_edit_singleline(&mut snapshot_path);
+    ui.horizontal(|ui| {
+        if ui.button("💾 Sauver la run").clicked() {
+            pending = Some(RunAction::SaveSnapshot(snapshot_path.clone()));
+        }
+        if ui.button("📂 Charger la run").clicked() {
+            pending = Some(RunAction::LoadSnapshot(snapshot_path.clone()));
+        }
+    });
 
-            if !status.is_empty() {
-                ui.weak(&status);
-            }
-        });
+    if !status.is_empty() {
+        ui.weak(&status);
+    }
 
     // Report des copies locales vers la ressource.
     panel.selected = selected;
@@ -163,7 +173,6 @@ pub fn runs_ui(
     if pending.is_some() {
         panel.pending = pending;
     }
-    Ok(())
 }
 
 /// Recharge un scénario dans le monde vivant : remplace le `SimConfig`, resynchro

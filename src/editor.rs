@@ -8,8 +8,9 @@
 //! `FixedUpdate`. Les entités créées rejoignent ensuite la boucle de sim
 //! normalement.
 //!
-//! Disposition : un panneau d'**archétypes** à droite (on y pioche par
-//! glisser-déposer), un bandeau de **statistiques** sous l'aire de jeu.
+//! Disposition : des **fenêtres flottantes** au-dessus de la sim plein cadre —
+//! **sélecteur** d'archétypes (on y pioche par glisser-déposer), **éditeur** de
+//! l'archétype choisi, et **statistiques** ([`stats_ui`]).
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -102,68 +103,244 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
     });
 }
 
-/// Le panneau d'archétypes (droite), le bandeau de stats (bas), et la résolution
-/// du glisser-déposer. Tourne dans `EguiPrimaryContextPass`.
-#[allow(clippy::too_many_arguments)]
+/// Les fenêtres flottantes d'archétypes : le **sélecteur** (où l'on pioche par
+/// glisser-déposer) et l'**éditeur** de l'archétype choisi. Tourne dans
+/// `EguiPrimaryContextPass`. La résolution du glisser-déposer vit dans
+/// [`resolve_drag`] (système distinct, ordonné **après** toutes les fenêtres) et
+/// les statistiques dans [`stats_ui`].
 pub fn editor_ui(
     mut contexts: EguiContexts,
     mut palette: ResMut<Palette>,
-    mut commands: Commands,
     mut config: ResMut<SimConfig>,
-    vis: Res<crate::controls::PanelVisibility>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
+) -> Result {
+    use crate::controls::{WindowSlot, tidy_pos};
+    let tidy = vis.tidy_windows;
+    let ctx = contexts.ctx_mut()?;
+    let screen = ctx.content_rect();
+
+    if vis.palette {
+        let mut w = egui::Window::new("Archétypes")
+            .open(&mut vis.palette)
+            .default_pos([1180.0, 84.0])
+            .default_width(220.0)
+            .resizable(true);
+        if tidy {
+            w = w.current_pos(tidy_pos(screen, WindowSlot::Archetypes));
+        }
+        w.show(ctx, |ui| selector_section(ui, &mut palette));
+    }
+    if vis.editor {
+        let mut w = egui::Window::new("Éditeur d'archétype")
+            .open(&mut vis.editor)
+            .default_pos([1180.0, 400.0])
+            .default_width(250.0)
+            .resizable(true)
+            .vscroll(true);
+        if tidy {
+            w = w.current_pos(tidy_pos(screen, WindowSlot::Editor));
+        }
+        w.show(ctx, |ui| editor_section(ui, &mut palette, &mut config));
+    }
+
+    Ok(())
+}
+
+/// Résolution du glisser-déposer d'un archétype dans l'aire de jeu. Système
+/// **distinct**, ordonné après tous les panneaux egui : `is_pointer_over_area`
+/// connaît alors toutes les arêtes, sinon un dépôt au-dessus d'un panneau (bas ou
+/// gauche) poserait une entité cachée sous l'UI. `viewport_to_world_2d` tient
+/// compte de l'offset du viewport (sim centrée, cf. `set_sim_viewport`) → le
+/// curseur fenêtre reste la bonne entrée.
+pub fn resolve_drag(
+    mut contexts: EguiContexts,
+    mut palette: ResMut<Palette>,
+    mut commands: Commands,
+    config: Res<SimConfig>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,
+) -> Result {
+    let Some(i) = palette.dragging else {
+        return Ok(());
+    };
+    let ctx = contexts.ctx_mut()?;
+    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+    if ctx.input(|input| input.pointer.any_released()) {
+        // Déposé hors de tout panneau egui = au-dessus de l'aire de jeu.
+        // Chaîne de `let` (edition 2024) : caméra, fenêtre, curseur, monde.
+        if !ctx.is_pointer_over_area()
+            && let Ok((camera, cam_tf)) = cameras.single()
+            && let Ok(window) = windows.single()
+            && let Some(cursor) = window.cursor_position()
+            && let Ok(world) = camera.viewport_to_world_2d(cam_tf, cursor)
+        {
+            place(&mut commands, &config, &mut palette, i, world);
+        }
+        palette.dragging = None;
+    }
+
+    Ok(())
+}
+
+/// Section « sélecteur » : la liste des archétypes (glisser pour poser, cliquer
+/// pour éditer). Rendue en haut du panneau de droite.
+fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
+    ui.label("Glisse dans l'aire pour poser ; clique pour éditer.");
+    ui.separator();
+    let mut started = None;
+    let mut clicked = None;
+    for (i, arch) in palette.items.iter().enumerate() {
+        let mark = if palette.selected == Some(i) { "▶ " } else { "⬤ " };
+        let label = egui::RichText::new(format!("{mark}{}", arch.name)).color(arch.color);
+        let resp = ui.add_sized(
+            [ui.available_width(), 28.0],
+            egui::Button::new(label).sense(egui::Sense::click_and_drag()),
+        );
+        if resp.drag_started() {
+            started = Some(i);
+        }
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+    }
+    if started.is_some() {
+        palette.dragging = started;
+    }
+    if clicked.is_some() {
+        palette.selected = clicked;
+    }
+    if palette.dragging.is_some() {
+        ui.separator();
+        ui.weak("Relâche au-dessus de l'aire pour déposer.");
+    }
+}
+
+/// Section « éditeur » : édition des gènes de l'archétype sélectionné + save/load
+/// RON. Rendue sous le sélecteur. Rend explicite la distinction **archétype** (le
+/// modèle édité ici) / **génome** (la copie héritée par chaque instance, qui mute
+/// ensuite seule).
+fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
+    match palette.selected {
+        Some(i) => {
+            let is_agent = matches!(
+                palette.items.get(i).map(|a| &a.kind),
+                Some(ArchetypeKind::Agent { .. })
+            );
+            if is_agent {
+                ui.label(format!("Édition : {}", palette.items[i].name));
+                ui.small(
+                    "Ces gènes sont l'ARCHÉTYPE (le modèle). Chaque agent posé \
+                     en reçoit une COPIE — son génome — qui mute ensuite seule. \
+                     L'évolution ne touche jamais l'archétype.",
+                );
+                ui.separator();
+                // Bornes copiées pour ne pas garder `config` emprunté.
+                let (sb, ab, rb, fb) = (
+                    config.speed_bounds,
+                    config.agility_bounds,
+                    config.vision_range_bounds,
+                    config.vision_fov_bounds,
+                );
+                if let Some(Archetype {
+                    kind: ArchetypeKind::Agent { genotype, .. },
+                    ..
+                }) = palette.items.get_mut(i)
+                {
+                    ui.add(
+                        egui::Slider::new(&mut genotype.max_speed, sb.min..=sb.max)
+                            .text("Vitesse max"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut genotype.agility, ab.min..=ab.max)
+                            .text("Agilité"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut genotype.vision_range, rb.min..=rb.max)
+                            .text("Portée vision"),
+                    );
+                    let mut fov_deg = genotype.vision_fov.to_degrees();
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut fov_deg, fb.min..=fb.max)
+                                .text("Champ vision (°)"),
+                        )
+                        .changed()
+                    {
+                        genotype.vision_fov = fov_deg.to_radians();
+                    }
+                }
+                if ui.button("↺ Réinitialiser au scénario").clicked() {
+                    let base = Genotype::base(config);
+                    if let Some(Archetype {
+                        kind: ArchetypeKind::Agent { genotype, .. },
+                        ..
+                    }) = palette.items.get_mut(i)
+                    {
+                        *genotype = base;
+                    }
+                }
+            } else {
+                ui.label("La nourriture n'a pas de gènes éditables.");
+            }
+        }
+        None => {
+            ui.label("Clique un archétype dans la palette pour l'éditer.");
+        }
+    }
+
+    ui.separator();
+    ui.label("Scénario (RON)");
+    ui.text_edit_singleline(&mut palette.save_path);
+    ui.horizontal(|ui| {
+        if ui.button("💾 Sauver").clicked() {
+            sync_config_from_palette(config, palette);
+            let path = palette.save_path.clone();
+            palette.status = match config.save_ron_file(&path) {
+                Ok(()) => format!("Sauvé → {path}"),
+                Err(e) => format!("Échec : {e}"),
+            };
+        }
+        if ui.button("📂 Charger").clicked() {
+            let path = palette.save_path.clone();
+            palette.status = match SimConfig::from_ron_file(&path) {
+                Ok(loaded) => {
+                    *config = loaded;
+                    palette.items = make_items(config);
+                    palette.selected = None;
+                    palette.dragging = None;
+                    format!("Chargé ← {path}")
+                }
+                Err(e) => format!("Échec : {e}"),
+            };
+        }
+    });
+    if !palette.status.is_empty() {
+        ui.weak(&palette.status);
+    }
+}
+
+/// Fenêtre de statistiques en direct. Lecture seule du monde : c'est de
+/// l'observation pour affichage, pas de la logique de sim.
+pub fn stats_ui(
+    mut contexts: EguiContexts,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
     agents: Query<(&Reserve, &Genotype), With<Agent>>,
     food: Query<(), With<Food>>,
 ) -> Result {
+    if !vis.stats {
+        return Ok(());
+    }
+    let tidy = vis.tidy_windows;
     let ctx = contexts.ctx_mut()?;
-
-    // — Panneau de droite : la liste des archétypes (glisser pour poser, cliquer
-    //   pour éditer). —
-    if vis.palette {
-    egui::SidePanel::right("palette")
-        .default_width(190.0)
-        .show(ctx, |ui| {
-            ui.heading("Archétypes");
-            ui.label("Glisse dans l'aire pour poser ; clique pour éditer.");
-            ui.separator();
-            let mut started = None;
-            let mut clicked = None;
-            for (i, arch) in palette.items.iter().enumerate() {
-                let mark = if palette.selected == Some(i) { "▶ " } else { "⬤ " };
-                let label =
-                    egui::RichText::new(format!("{mark}{}", arch.name)).color(arch.color);
-                let resp = ui.add_sized(
-                    [ui.available_width(), 28.0],
-                    egui::Button::new(label).sense(egui::Sense::click_and_drag()),
-                );
-                if resp.drag_started() {
-                    started = Some(i);
-                }
-                if resp.clicked() {
-                    clicked = Some(i);
-                }
-            }
-            if started.is_some() {
-                palette.dragging = started;
-            }
-            if clicked.is_some() {
-                palette.selected = clicked;
-            }
-            if palette.dragging.is_some() {
-                ui.separator();
-                ui.weak("Relâche au-dessus de l'aire pour déposer.");
-            }
-        });
+    let screen = ctx.content_rect();
+    let mut window = egui::Window::new("Stats")
+        .open(&mut vis.stats)
+        .default_pos([560.0, 84.0])
+        .resizable(false);
+    if tidy {
+        window = window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Stats));
     }
-
-    // — Panneau de gauche : éditeur d'archétype + save/load RON. —
-    if vis.editor {
-        editor_panel(ctx, &mut palette, &mut config);
-    }
-
-    // — Bandeau du bas : statistiques en direct. —
-    egui::TopBottomPanel::bottom("stats").show(ctx, |ui| {
+    window.show(ctx, |ui| {
         let population = agents.iter().count();
         let n = population.max(1) as f32;
         let mean_reserve = agents.iter().map(|(r, _)| r.current).sum::<f32>() / n;
@@ -182,134 +359,7 @@ pub fn editor_ui(
             ui.label(format!("vision : {mean_vision:.0}"));
         });
     });
-
-    // — Résolution du glisser-déposer. —
-    if let Some(i) = palette.dragging {
-        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
-        if ctx.input(|input| input.pointer.any_released()) {
-            // Déposé hors de tout panneau egui = au-dessus de l'aire de jeu.
-            // Chaîne de `let` (edition 2024) : caméra, fenêtre, curseur, monde.
-            if !ctx.is_pointer_over_area()
-                && let Ok((camera, cam_tf)) = cameras.single()
-                && let Ok(window) = windows.single()
-                && let Some(cursor) = window.cursor_position()
-                && let Ok(world) = camera.viewport_to_world_2d(cam_tf, cursor)
-            {
-                place(&mut commands, &config, &mut palette, i, world);
-            }
-            palette.dragging = None;
-        }
-    }
-
     Ok(())
-}
-
-/// Panneau de gauche : édition des gènes de l'archétype sélectionné + save/load
-/// RON. Rend explicite la distinction **archétype** (le modèle édité ici) /
-/// **génome** (la copie héritée par chaque instance, qui mute ensuite seule).
-fn editor_panel(ctx: &egui::Context, palette: &mut Palette, config: &mut SimConfig) {
-    egui::SidePanel::left("editor")
-        .default_width(250.0)
-        .show(ctx, |ui| {
-            ui.heading("Éditeur d'archétype");
-            match palette.selected {
-                Some(i) => {
-                    let is_agent = matches!(
-                        palette.items.get(i).map(|a| &a.kind),
-                        Some(ArchetypeKind::Agent { .. })
-                    );
-                    if is_agent {
-                        ui.label(format!("Édition : {}", palette.items[i].name));
-                        ui.small(
-                            "Ces gènes sont l'ARCHÉTYPE (le modèle). Chaque agent posé \
-                             en reçoit une COPIE — son génome — qui mute ensuite seule. \
-                             L'évolution ne touche jamais l'archétype.",
-                        );
-                        ui.separator();
-                        // Bornes copiées pour ne pas garder `config` emprunté.
-                        let (sb, ab, rb, fb) = (
-                            config.speed_bounds,
-                            config.agility_bounds,
-                            config.vision_range_bounds,
-                            config.vision_fov_bounds,
-                        );
-                        if let Some(Archetype {
-                            kind: ArchetypeKind::Agent { genotype, .. },
-                            ..
-                        }) = palette.items.get_mut(i)
-                        {
-                            ui.add(
-                                egui::Slider::new(&mut genotype.max_speed, sb.min..=sb.max)
-                                    .text("Vitesse max"),
-                            );
-                            ui.add(
-                                egui::Slider::new(&mut genotype.agility, ab.min..=ab.max)
-                                    .text("Agilité"),
-                            );
-                            ui.add(
-                                egui::Slider::new(&mut genotype.vision_range, rb.min..=rb.max)
-                                    .text("Portée vision"),
-                            );
-                            let mut fov_deg = genotype.vision_fov.to_degrees();
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut fov_deg, fb.min..=fb.max)
-                                        .text("Champ vision (°)"),
-                                )
-                                .changed()
-                            {
-                                genotype.vision_fov = fov_deg.to_radians();
-                            }
-                        }
-                        if ui.button("↺ Réinitialiser au scénario").clicked() {
-                            let base = Genotype::base(config);
-                            if let Some(Archetype {
-                                kind: ArchetypeKind::Agent { genotype, .. },
-                                ..
-                            }) = palette.items.get_mut(i)
-                            {
-                                *genotype = base;
-                            }
-                        }
-                    } else {
-                        ui.label("La nourriture n'a pas de gènes éditables.");
-                    }
-                }
-                None => {
-                    ui.label("Clique un archétype dans la palette pour l'éditer.");
-                }
-            }
-
-            ui.separator();
-            ui.label("Scénario (RON)");
-            ui.text_edit_singleline(&mut palette.save_path);
-            ui.horizontal(|ui| {
-                if ui.button("💾 Sauver").clicked() {
-                    sync_config_from_palette(config, palette);
-                    let path = palette.save_path.clone();
-                    palette.status = match config.save_ron_file(&path) {
-                        Ok(()) => format!("Sauvé → {path}"),
-                        Err(e) => format!("Échec : {e}"),
-                    };
-                }
-                if ui.button("📂 Charger").clicked() {
-                    let path = palette.save_path.clone();
-                    palette.status = match SimConfig::from_ron_file(&path) {
-                        Ok(loaded) => {
-                            *config = loaded;
-                            palette.items = make_items(config);
-                            palette.selected = None;
-                            palette.dragging = None;
-                            format!("Chargé ← {path}")
-                        }
-                        Err(e) => format!("Échec : {e}"),
-                    };
-                }
-            });
-            if !palette.status.is_empty() {
-                ui.weak(&palette.status);
-            }
-        });
 }
 
 /// Reporte les gènes de l'archétype d'agent (le premier) dans le génotype

@@ -20,13 +20,10 @@ use teemlab::spawn;
 
 use crate::hud::History;
 
-/// Vitesses proposées (× temps réel). Le §6 vise « x0.5 – x8 ».
-const SPEEDS: [f32; 5] = [0.5, 1.0, 2.0, 4.0, 8.0];
-
-/// Quels panneaux dockés sont affichés. Tous les menus sont *dockés* (panneaux
-/// d'arête, jamais flottants) ; comme ils ne tiennent pas tous de front, on les
-/// montre/cache depuis le bandeau de contrôles. Le rendu de chaque panneau est
-/// conditionné par ce drapeau.
+/// Quelles fenêtres d'outils sont ouvertes. Chaque outil est une `egui::Window`
+/// **flottante** au-dessus de la sim plein cadre ; ce drapeau pilote son
+/// ouverture (bascule du bandeau ou croix de la fenêtre). Seul le bandeau de
+/// contrôles reste docké (chrome de l'appli).
 #[derive(Resource)]
 pub struct PanelVisibility {
     pub editor: bool,
@@ -35,19 +32,74 @@ pub struct PanelVisibility {
     pub inspector: bool,
     pub runs: bool,
     pub recorder: bool,
+    pub stats: bool,
+    /// Demande de rangement des fenêtres (replacées par [`tidy_pos`] cette frame).
+    pub tidy_windows: bool,
+}
+
+/// Emplacement d'une fenêtre d'outil pour le rangement automatique.
+#[derive(Clone, Copy)]
+pub enum WindowSlot {
+    Runs,
+    Recorder,
+    Hud,
+    Archetypes,
+    Editor,
+    Inspector,
+    Stats,
+}
+
+/// Position de rangement d'une fenêtre, calculée depuis la taille **courante** de
+/// l'écran egui — donc adaptée à la fenêtre réelle, contrairement à un `default_pos`
+/// figé (qui ne suit pas un compositeur agrandissant la fenêtre après coup).
+/// Disposition : colonne gauche (Runs · Enregistrement · Courbes), colonne droite
+/// (Archétypes · Éditeur · Inspecteur), Stats en haut au centre — le centre reste
+/// à la simulation.
+pub fn tidy_pos(screen: egui::Rect, slot: WindowSlot) -> egui::Pos2 {
+    const COL_W: f32 = 232.0;
+    let top = screen.top() + 48.0;
+    let left = screen.left() + 8.0;
+    let right = (screen.right() - COL_W - 8.0).max(left + COL_W);
+    let h = screen.height();
+    match slot {
+        WindowSlot::Runs => egui::pos2(left, top),
+        WindowSlot::Recorder => egui::pos2(left, top + h * 0.28),
+        WindowSlot::Hud => egui::pos2(left, top + h * 0.56),
+        WindowSlot::Archetypes => egui::pos2(right, top),
+        WindowSlot::Editor => egui::pos2(right, top + h * 0.30),
+        WindowSlot::Inspector => egui::pos2(right, top + h * 0.62),
+        WindowSlot::Stats => egui::pos2(screen.center().x - COL_W * 0.5, top),
+    }
+}
+
+/// Range les fenêtres une fois, peu après le lancement (quand la fenêtre a atteint
+/// sa taille définitive). Le bouton « Ranger » fait la même chose à la demande.
+pub fn auto_tidy(mut vis: ResMut<PanelVisibility>, mut frame: Local<u32>) {
+    *frame += 1;
+    if *frame == 60 {
+        vis.tidy_windows = true;
+    }
+}
+
+/// Consomme le drapeau de rangement après que toutes les fenêtres l'ont lu (dernier
+/// maillon de la chaîne des fenêtres).
+pub fn clear_tidy(mut vis: ResMut<PanelVisibility>) {
+    vis.tidy_windows = false;
 }
 
 impl Default for PanelVisibility {
     fn default() -> Self {
-        // À l'ouverture : les outils de placement (éditeur + palette) et les
-        // courbes ; les autres à la demande, pour laisser de la place à l'aire.
+        // À l'ouverture : toutes les fenêtres d'outils ouvertes (on ferme à la
+        // demande — croix de la fenêtre ou bascule du bandeau).
         Self {
             editor: true,
             palette: true,
             hud: true,
-            inspector: false,
-            runs: false,
-            recorder: false,
+            inspector: true,
+            runs: true,
+            recorder: true,
+            stats: true,
+            tidy_windows: false,
         }
     }
 }
@@ -114,13 +166,17 @@ pub fn controls_ui(
             });
 
             ui.separator();
-            ui.label("Vitesse :");
-            for s in SPEEDS {
-                let selected = (controls.speed - s).abs() < 1e-3;
-                if ui.selectable_label(selected, format!("{s}×")).clicked() {
-                    controls.speed = s;
-                    vtime.set_relative_speed(s);
-                }
+            // Slider à échelle logarithmique : réglage fin du x0.1 au x100 sur une
+            // seule poignée (remplace les anciens presets discrets).
+            if ui
+                .add(
+                    egui::Slider::new(&mut controls.speed, 0.1..=100.0)
+                        .logarithmic(true)
+                        .text("Vitesse ×"),
+                )
+                .changed()
+            {
+                vtime.set_relative_speed(controls.speed);
             }
 
             ui.separator();
@@ -132,16 +188,24 @@ pub fn controls_ui(
                 ui.weak("en pause");
             }
         });
-        // Affichage des panneaux dockés (tous attachés aux arêtes ; on choisit
-        // lesquels montrer pour ne pas saturer la fenêtre).
+        // Ouverture des fenêtres d'outils (flottantes au-dessus de la sim).
         ui.horizontal(|ui| {
-            ui.label("Panneaux :");
+            ui.label("Fenêtres :");
+            if ui
+                .button("⊞ Ranger")
+                .on_hover_text("Replace les fenêtres le long des bords")
+                .clicked()
+            {
+                vis.tidy_windows = true;
+            }
+            ui.separator();
+            ui.toggle_value(&mut vis.palette, "Archétypes");
             ui.toggle_value(&mut vis.editor, "Éditeur");
-            ui.toggle_value(&mut vis.palette, "Palette");
-            ui.toggle_value(&mut vis.hud, "Courbes");
-            ui.toggle_value(&mut vis.inspector, "Inspecteur");
             ui.toggle_value(&mut vis.runs, "Runs");
             ui.toggle_value(&mut vis.recorder, "Enregistrement");
+            ui.toggle_value(&mut vis.hud, "Courbes");
+            ui.toggle_value(&mut vis.inspector, "Inspecteur");
+            ui.toggle_value(&mut vis.stats, "Stats");
         });
     });
     Ok(())

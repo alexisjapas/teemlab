@@ -17,8 +17,6 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use teemlab::SimConfig;
 
-use crate::controls::PanelVisibility;
-
 /// État du panneau « Enregistrement » + process `record` en cours, le cas échéant.
 #[derive(Resource)]
 pub struct RecorderPanel {
@@ -63,60 +61,71 @@ fn record_binary() -> PathBuf {
     PathBuf::from("record")
 }
 
-/// Le panneau egui (docké à gauche). Ne fait que lire/écrire son propre état et
-/// poser `launch_requested` ; le lancement et le suivi vivent dans [`drive_recorder`].
+/// La fenêtre flottante « Enregistrement ». Tourne dans `EguiPrimaryContextPass`.
 pub fn recorder_ui(
     mut contexts: EguiContexts,
     mut panel: ResMut<RecorderPanel>,
-    vis: Res<PanelVisibility>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
 ) -> Result {
     if !vis.recorder {
         return Ok(());
     }
+    let tidy = vis.tidy_windows;
     let ctx = contexts.ctx_mut()?;
-    let recording = panel.child.is_some();
-    egui::SidePanel::left("recorder")
-        .default_width(230.0)
-        .resizable(true)
-        .show(ctx, |ui| {
-            ui.heading("Enregistrement");
-            ui.small(
-                "Ré-exécute le scénario courant à frais (rendu headless propre, \
-                 sans cette interface) et l'encode en vidéo via ffmpeg.",
-            );
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                ui.label("Fichier :");
-                ui.text_edit_singleline(&mut panel.out);
-            });
-            ui.add(egui::Slider::new(&mut panel.seconds, 1.0..=120.0).text("Durée (s)"));
-            ui.add(egui::Slider::new(&mut panel.fps, 24.0..=60.0).text("FPS"));
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
-                    .on_hover_text("Largeur (px)");
-                ui.label("×");
-                ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
-                    .on_hover_text("Hauteur (px)");
-            });
-
-            ui.separator();
-            if recording {
-                ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
-                ui.spinner();
-            } else if ui
-                .button("⏺ Lancer l'enregistrement")
-                .on_hover_text("Lance le binaire headless `record` en sous-processus.")
-                .clicked()
-            {
-                panel.launch_requested = true;
-            }
-
-            if !panel.status.is_empty() {
-                ui.weak(&panel.status);
-            }
-        });
+    let screen = ctx.content_rect();
+    let mut window = egui::Window::new("Enregistrement")
+        .open(&mut vis.recorder)
+        .default_pos([12.0, 300.0])
+        .default_width(240.0)
+        .resizable(true);
+    if tidy {
+        window = window
+            .current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Recorder));
+    }
+    window.show(ctx, |ui| recorder_section(ui, &mut panel));
     Ok(())
+}
+
+/// Le contenu de la fenêtre d'enregistrement. Ne fait que lire/écrire son propre
+/// état et poser `launch_requested` ; le lancement et le suivi vivent dans
+/// [`drive_recorder`].
+pub fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
+    let recording = panel.child.is_some();
+    ui.small(
+        "Ré-exécute le scénario courant à frais (rendu headless propre, \
+         sans cette interface) et l'encode en vidéo via ffmpeg.",
+    );
+    ui.separator();
+
+    ui.horizontal(|ui| {
+        ui.label("Fichier :");
+        ui.text_edit_singleline(&mut panel.out);
+    });
+    ui.add(egui::Slider::new(&mut panel.seconds, 1.0..=120.0).text("Durée (s)"));
+    ui.add(egui::Slider::new(&mut panel.fps, 24.0..=60.0).text("FPS"));
+    ui.horizontal(|ui| {
+        ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
+            .on_hover_text("Largeur (px)");
+        ui.label("×");
+        ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
+            .on_hover_text("Hauteur (px)");
+    });
+
+    ui.separator();
+    if recording {
+        ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
+        ui.spinner();
+    } else if ui
+        .button("⏺ Lancer l'enregistrement")
+        .on_hover_text("Lance le binaire headless `record` en sous-processus.")
+        .clicked()
+    {
+        panel.launch_requested = true;
+    }
+
+    if !panel.status.is_empty() {
+        ui.weak(&panel.status);
+    }
 }
 
 /// `Update` : surveille la fin du process `record` et, si l'UI l'a demandé,
