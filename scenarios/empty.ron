@@ -1,0 +1,11 @@
+// Scénario VIDE — la toile de l'éditeur.
+//
+// Mêmes archétypes et même arène que le défaut, mais AUCUNE entité au spawn :
+// on place agents et nourriture à la main (glisser-déposer), puis on lance.
+// C'est le repli sans-argument du build fenêtré (`play` / `cargo run --bin
+// teemlab`). Tous les autres champs retombent sur les défauts — voir
+// scenarios/default.ron pour la liste commentée.
+(
+    agent_count: 0,
+    food_count: 0,
+)

@@ -213,22 +213,42 @@ impl Default for SimConfig {
 }
 
 impl SimConfig {
-    /// Construit le scénario depuis le 1er argument positionnel (chemin RON).
+    /// Scénario *vide* : l'arène et les archétypes du défaut, mais **aucune entité
+    /// au spawn** (ni agent, ni nourriture). La toile de l'éditeur — on place tout
+    /// à la main (glisser-déposer), puis on lance. C'est le repli sans-argument du
+    /// build fenêtré.
+    pub fn empty() -> Self {
+        Self {
+            agent_count: 0,
+            food_count: 0,
+            ..Self::default()
+        }
+    }
+
+    /// Construit le scénario depuis le 1er argument positionnel (chemin RON), avec
+    /// `fallback` quand aucun argument n'est donné.
     ///
-    /// - Aucun argument → scénario par défaut.
+    /// - Aucun argument → `fallback`.
     /// - Fichier illisible / invalide → on échoue **bruyamment** (sortie 1).
     ///   Faire tourner silencieusement le mauvais monde est pire que s'arrêter.
     ///
-    /// Partagé par les deux binaires : ils chargent ainsi exactement le même
-    /// scénario, de la même façon.
-    pub fn from_cli() -> Self {
+    /// Avec un argument, les deux binaires chargent **exactement le même scénario,
+    /// de la même façon** ; ils ne diffèrent que par leur repli sans-argument (cf.
+    /// [`SimConfig::from_cli`], peuplé, et [`SimConfig::empty`], vide).
+    pub fn from_cli_or(fallback: Self) -> Self {
         match std::env::args().nth(1) {
-            None => Self::default(),
+            None => fallback,
             Some(path) => Self::from_ron_file(&path).unwrap_or_else(|err| {
                 eprintln!("teemlab: scénario « {path} » illisible : {err}");
                 std::process::exit(1);
             }),
         }
+    }
+
+    /// [`from_cli_or`](SimConfig::from_cli_or) avec le scénario par défaut (peuplé)
+    /// en repli — le headless, dont le smoke test a besoin d'agents.
+    pub fn from_cli() -> Self {
+        Self::from_cli_or(Self::default())
     }
 
     /// Charge et désérialise un scénario depuis un fichier RON.
@@ -364,6 +384,17 @@ mod tests {
         let text = include_str!("../scenarios/default.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario par défaut valide");
         assert_eq!(cfg, SimConfig::default());
+    }
+
+    /// Le scénario vide versionné (repli sans-argument du fenêtré) reste
+    /// synchronisé avec [`SimConfig::empty`] et ne spawne aucune entité.
+    #[test]
+    fn bundled_empty_matches_empty() {
+        let text = include_str!("../scenarios/empty.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario vide valide");
+        assert_eq!(cfg, SimConfig::empty());
+        assert_eq!(cfg.agent_count, 0);
+        assert_eq!(cfg.food_count, 0);
     }
 
     /// La table de relations parse depuis le RON et un champ inconnu y est aussi

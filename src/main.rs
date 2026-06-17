@@ -26,7 +26,10 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
-        .add_plugins(SimPlugin::new(SimConfig::from_cli()))
+        // Sans argument, le fenêtré démarre sur une **arène vide** (la toile de
+        // l'éditeur) ; un scénario explicite l'emporte. Le headless, lui, garde le
+        // défaut peuplé (`from_cli`).
+        .add_plugins(SimPlugin::new(SimConfig::from_cli_or(SimConfig::empty())))
         // Rendu de la sim partagé avec l'enregistreur vidéo (item 14).
         .add_plugins(VisualsPlugin)
         // Fond « hors-jeu » : avec le cadrage « tout voir », la zone derrière les

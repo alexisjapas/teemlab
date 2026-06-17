@@ -57,6 +57,7 @@ src/
   bin/record.rs   Binaire d'enregistrement headless → `record` : rend sans fenêtre, pipe les frames sur ffmpeg.
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.
+  empty.ron       Arène vide : la toile de l'éditeur (repli sans-argument du fenêtré).
   crowded.ron     Variante (petite arène saturée) : override partiel.
   predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
   selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir).
@@ -72,7 +73,8 @@ L'environnement (toolchain Rust + dépendances système de Bevy) est fourni par 
 nix develop            # ou : direnv allow  (puis automatique)
 
 # Lancer le fenêtré — commande `play` du dev shell (voir l'encadré ci-dessous) :
-play                                  # debug, scénario par défaut
+play                                  # debug, arène vide (toile de l'éditeur)
+play scenarios/evolution.ron          # debug, scénario explicite
 play --release                        # release (teemlab ET record en release)
 play --release scenarios/crowded.ron  # profil + scénario explicite
 
