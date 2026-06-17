@@ -1,7 +1,7 @@
 //! Peuplement initial du monde : l'arène (murs statiques) et les agents
 //! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
 
-use crate::brain::{Brain, WanderBrain};
+use crate::brain::Brain;
 use crate::components::{Action, Agent, Perception, Radius, Reserve, Species, Wall};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
@@ -96,7 +96,10 @@ pub fn spawn_agent(
     brain_seed: u64,
     energy: f32,
 ) {
-    let brain = Brain::Wander(WanderBrain::new(brain_seed, heading));
+    // Le scénario choisit le *type* de cerveau ; on le compile ici en un cerveau
+    // frais (§1, l'auteur de la décision). La graine ne sert qu'aux cerveaux à
+    // état (errance) ; le chasseur, déterministe, l'ignore.
+    let brain = config.brain.build(brain_seed, heading);
     spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
 }
 
@@ -130,6 +133,8 @@ pub fn spawn_agent_with_brain(
         vision,
         Perception {
             vision: vec![0.0; vision.ray_count].into_boxed_slice(),
+            target: vec![0.0; vision.ray_count].into_boxed_slice(),
+            ray_dirs: vec![Vec2::ZERO; vision.ray_count].into_boxed_slice(),
             ..default()
         },
         Action::default(),

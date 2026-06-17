@@ -109,16 +109,32 @@ impl Vision {
     }
 }
 
-/// Instantané sensoriel normalisé. Écrit par `perceive`, lu par `decide`.
-/// Conceptuellement le vecteur d'entrée du cerveau.
+/// Instantané sensoriel. Écrit par `perceive`, lu par `decide` — conceptuellement
+/// le vecteur d'entrée du cerveau. Il réunit les **canaux normalisés** (`vision`,
+/// `target`, dans `[0, 1]`) et la **géométrie** qui les situe (`heading`,
+/// `ray_dirs`), pour qu'un cerveau décide sans rien savoir du corps ([`Vision`]).
 #[derive(Component, Default)]
 pub struct Perception {
     /// Cap courant en vecteur unitaire (nul à l'arrêt).
     pub heading: Vec2,
-    /// Proximité par rayon, un canal par rayon de [`Vision`], dans `[0, 1]` :
-    /// `0` = rien dans la portée, `1` = obstacle au contact. Occlusion
-    /// intrinsèque (chaque rayon ne retient que le hit le plus proche).
+    /// Proximité d'**obstacle** par rayon, un canal par rayon de [`Vision`], dans
+    /// `[0, 1]` : `0` = rien dans la portée, `1` = au contact. Occlusion
+    /// intrinsèque (chaque rayon ne retient que le hit le plus proche) ; le hit
+    /// est pris quel qu'il soit — mur, agent ou nourriture.
     pub vision: Box<[f32]>,
+    /// Proximité de **cible** par rayon, dans `[0, 1]` : `0` si le hit le plus
+    /// proche de ce rayon n'est pas une espèce que la nôtre peut viser (table de
+    /// relations, cf. [`crate::config::SimConfig::acts_on`]), sinon sa proximité.
+    /// L'occlusion est incluse — une proie derrière un mur ne s'y lit pas, c'est
+    /// le mur (hit le plus proche) qui occupe le rayon. Le canal que suit
+    /// `Brain::Hunter`.
+    pub target: Box<[f32]>,
+    /// Direction **monde** (unitaire) de chaque rayon, situant les canaux
+    /// ci-dessus. `perceive` la dérive déjà pour lancer le raycast ; l'exposer
+    /// évite au cerveau de connaître la géométrie de [`Vision`] (fov, nombre de
+    /// rayons) : un réflexe décode « rayon i → direction » sans dépendre du corps,
+    /// et le contrat `Perception → Action` reste pur (un MLP ignorera ce champ).
+    pub ray_dirs: Box<[Vec2]>,
 }
 
 /// Commande motrice. Écrite par `decide`, lue par `act`.

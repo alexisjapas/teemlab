@@ -21,10 +21,16 @@ Conception et ordre d'implémentation : [`ROADMAP.md`](ROADMAP.md).
 - **Capture vidéo** : rendu headless `record` → `ffmpeg` (re-render frais), menu
   d'enregistrement intégré.
 
-**Planifié (P4–P5).** Sélection naturelle approfondie + intelligence évoluée en régime
-continu (éditeur générique de caractéristiques avec flag *héritable*, `Brain::Hunter`
-comme groupe témoin, scénarios co-évolutifs, MLP) ; puis la bataille (régime
-générationnel) comme test final de l'abstraction, le long d'une *couture A/B* propre.
+**En cours (P4).** Sélection naturelle approfondie + intelligence évoluée en régime
+continu. *Réalisé* : caractéristiques d'entité génériques (table `TRAITS` + facet
+*héritable*, gènes de reproduction / métabolisme / locomotion) ; `Brain::Hunter`, le
+réflexe déterministe **groupe témoin** qui fonce vers la cible perçue la plus proche —
+2ᵉ variant de `Brain`, sélectionnable par scénario (`BrainKind`), nourri par un nouveau
+**canal « cible »** de la perception. *Reste* : sélecteur de cerveau dans l'éditeur,
+substitution par espèce, scénarios co-évolutifs (proie-prédateur), MLP + neuroévolution.
+
+**Planifié (P5).** La bataille (régime générationnel) comme test final de l'abstraction,
+le long d'une *couture A/B* propre.
 
 > **Invariant cardinal** : aucune logique de simulation dans `Update`. L'agentivité vit
 > dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate` ; `Update` est réservé au
@@ -37,7 +43,7 @@ src/
   lib.rs          SimPlugin : le cœur render-agnostic partagé.
   config.rs       SimConfig : le scénario (RON) + son chargement.
   components.rs   Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
-  brain.rs        Brain (enum, dispatch statique) ; WanderBrain déterministe.
+  brain.rs        Brain (enum, dispatch statique) : WanderBrain (errance) + HunterBrain (réflexe) ; BrainKind = choix de scénario.
   genotype.rs     Genotype héritable + mutation ; compilation génotype→phénotype (§2).
   snapshot.rs     Snapshot d'une run (état vivant sérialisable) : config + RNG + agents + nourriture.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
@@ -60,7 +66,8 @@ scenarios/
   empty.ron       Arène vide : la toile de l'éditeur (repli sans-argument du fenêtré).
   crowded.ron     Variante (petite arène saturée) : override partiel.
   predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
-  selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir).
+  selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir) — cerveaux d'errance.
+  chasse.ron      Même économie que selection.ron mais cerveaux Hunter : le groupe témoin compétent (item 16).
   evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes.
 outputs/          Sorties des simulations (vidéos, images…) ; contenu ignoré par git.
 ```

@@ -6,6 +6,7 @@
 //! chargent à l'identique. Faire varier une expérience = éditer un `.ron`, pas
 //! recompiler.
 
+use crate::brain::BrainKind;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -38,6 +39,12 @@ pub struct SimConfig {
     pub species_count: u16,
     /// Réserve initiale (= max) de chaque agent.
     pub reserve_max: f32,
+    /// Le **type de cerveau** des agents (l'auteur de la décision, §1) : choix de
+    /// scénario, compilé en un [`crate::brain::Brain`] frais à chaque spawn
+    /// (peuplement initial **et** reproduction). `Wander` par défaut (errance,
+    /// l'échafaudage d'avant l'item 16). La substitution par espèce et le
+    /// sélecteur d'éditeur (item 15) viendront se poser dessus.
+    pub brain: BrainKind,
     /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). Vide par
     /// défaut → aucune interaction (monde inerte, comme avant l'item 7).
     pub relations: Vec<Relation>,
@@ -196,6 +203,7 @@ impl Default for SimConfig {
             vision_range: 160.0,
             species_count: 1,
             reserve_max: 100.0,
+            brain: BrainKind::default(),
             relations: Vec::new(),
             base_metabolism: 0.0,
             move_cost: 0.0,
@@ -234,6 +242,17 @@ impl SimConfig {
             food_count: 0,
             ..Self::default()
         }
+    }
+
+    /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une
+    /// [`Relation`] l'y autorise. C'est le **filtre de cible** de la primitive
+    /// d'interaction (§3 : *manger et attaquer sont le même verbe*), sans
+    /// distinction transfert/destruction : ce qui fait d'une entité une *cible*
+    /// dans le canal de perception du `Brain::Hunter` (item 16).
+    pub fn acts_on(&self, actor: u16, target: u16) -> bool {
+        self.relations
+            .iter()
+            .any(|r| r.actor == actor && r.target == target)
     }
 
     /// Construit le scénario depuis le 1er argument positionnel (chemin RON), avec
@@ -426,6 +445,46 @@ mod tests {
                 "(relations: [(actor: 0, target: 1, transfer: true, rate: 1.0, range: 1.0, oops: 2)])"
             )
             .is_err()
+        );
+    }
+
+    /// Le champ `brain` parse le type de cerveau ; absent, il retombe sur l'errance
+    /// — rétro-compatibilité d'avant l'item 16 (les scénarios existants n'en
+    /// parlent pas et restent des mondes d'errance).
+    #[test]
+    fn brain_kind_parses_and_defaults_to_wander() {
+        use crate::brain::BrainKind;
+        let cfg = SimConfig::from_ron_str("(brain: Hunter)").expect("RON valide");
+        assert_eq!(cfg.brain, BrainKind::Hunter);
+        assert_eq!(SimConfig::default().brain, BrainKind::Wander);
+        assert_eq!(SimConfig::from_ron_str("()").unwrap().brain, BrainKind::Wander);
+    }
+
+    /// `acts_on` reflète la table de relations : c'est le filtre de cible du
+    /// chasseur (une espèce est « cible » ssi une relation l'autorise comme tel).
+    #[test]
+    fn acts_on_follows_relations() {
+        let cfg = SimConfig::from_ron_str(
+            "(relations: [(actor: 0, target: 1, transfer: true, rate: 1.0, range: 1.0)])",
+        )
+        .unwrap();
+        assert!(cfg.acts_on(0, 1));
+        assert!(!cfg.acts_on(1, 0), "la relation est dirigée");
+        assert!(!cfg.acts_on(0, 2), "espèce non visée");
+    }
+
+    /// Le scénario de chasse versionné est valide : cerveau chasseur **et** une
+    /// relation qui désigne la nourriture comme cible — sans elle, le canal
+    /// « cible » resterait nul et le chasseur ne ferait qu'errer.
+    #[test]
+    fn bundled_hunt_scenario_uses_hunter_on_a_target() {
+        use crate::brain::BrainKind;
+        let text = include_str!("../scenarios/chasse.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario chasse valide");
+        assert_eq!(cfg.brain, BrainKind::Hunter);
+        assert!(
+            cfg.relations.iter().any(|r| r.target == cfg.food_species),
+            "le chasseur a besoin d'une cible désignée (la nourriture)"
         );
     }
 

@@ -1,0 +1,45 @@
+// Scénario — CHASSE (item 16) : le groupe témoin compétent.
+//
+// La MÊME économie que selection.ron (énergie, manger, mourir) — mais les agents
+// pensent avec `Brain::Hunter` au lieu d'errer. Le chasseur lit le canal « cible »
+// de sa perception (la nourriture, espèce 1, désignée par la relation) et fonce
+// vers la cible perçue la plus proche ; faute de cible en vue, il balaie le
+// terrain en évitant les murs. Même dépense d'énergie qu'un errant — il TROUVE
+// simplement sa pitance au lieu de tomber dessus par hasard.
+//
+// L'intérêt : un cerveau APPRIS (futur MLP, item 18) qui ne bat pas ce réflexe
+// n'a rien appris (§4). C'est aussi ce qui rend la chaîne percevoir→décider→agir
+// PORTEUSE : à perception identique, errance et chasse divergent nettement
+// (survie, agrégation autour de la nourriture). Comparer côte à côte :
+//
+//     cargo run --bin headless scenarios/selection.ron   # errance (témoin naïf)
+//     cargo run --bin headless scenarios/chasse.ron      # chasse  (témoin compétent)
+(
+    arena_half_extent: 320.0,
+
+    agent_count: 40,
+    species_count: 1,
+    reserve_max: 100.0,
+
+    // LE SEUL changement par rapport à selection.ron : un réflexe qui se sert de la
+    // vue. Vision, coûts et nourriture sont identiques, pour que la comparaison ne
+    // porte que sur le cerveau (un A/B propre — au headless, la réserve moyenne du
+    // chasseur ressort au-dessus de celle de l'errant sur la même économie).
+    brain: Hunter,
+
+    // Coûts énergétiques (par seconde) : identiques à selection.ron.
+    base_metabolism: 4.0,
+    move_cost: 2.0,
+
+    // Le robinet d'énergie : nourriture (espèce 1) maintenue à effectif constant.
+    food_count: 70,
+    food_radius: 8.0,
+    food_energy: 60.0,
+    food_species: 1,
+
+    // L'unique verbe : l'espèce 0 mange l'espèce 1. C'est cette relation qui fait
+    // de la nourriture une « cible » dans le canal de perception du chasseur.
+    relations: [
+        (actor: 0, target: 1, transfer: true, rate: 200.0, range: 26.0),
+    ],
+)

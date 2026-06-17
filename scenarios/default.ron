@@ -34,6 +34,12 @@
     // un exemple de prédation entre deux espèces.
     species_count: 1,
     reserve_max: 100.0,
+
+    // Type de cerveau des agents (l'auteur de la décision, §1) : `Wander`
+    // (errance, l'échafaudage par défaut) ou `Hunter` (réflexe déterministe qui
+    // fonce vers la cible perçue la plus proche, item 16). Voir scenarios/chasse.ron.
+    brain: Wander,
+
     relations: [],
 
     // Économie d'énergie (cf. item 8). Tout à zéro/néant ici → monde inerte :

@@ -220,17 +220,24 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
     Menu d'enregistrement intégré au build fenêtré (lance `record` en sous-process). Rendu de la sim
     factorisé (`VisualsPlugin`) partagé fenêtré ⇄ enregistreur.
 
-### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu)
+### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu, en cours)
 
 L'évolution d'intelligence est la frontière de l'abstraction *dans* la sélection naturelle. L'éditeur
 grandit ici, piloté par ces scénarios.
 
-15. Éditeur générique de caractéristiques : (valeur, bornes) + toggle « héritable ? » par trait, et
-    sélecteur de cerveau (chaque variant de `Brain` exposant ses propres paramètres éditables).
-    Testable immédiatement contre la pluralité de traits existante.
-16. `Brain::Hunter` déterministe : réflexe utilisant la perception (orientation vers la cible perçue
-    la plus proche, attaque au contact). Groupe témoin compétent ; rend le chemin
-    percevoir→décider→agir porteur et le sélecteur de cerveau falsifiable (2ᵉ variant de `Brain`).
+15. Éditeur générique de caractéristiques : (valeur, bornes) + toggle « héritable ? » par trait
+    *(réalisé : table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
+    inspecteur ; reproduction, métabolisme et coût de locomotion migrés en gènes)* — **reste** le
+    sélecteur de cerveau (chaque variant de `Brain` exposant ses propres paramètres éditables),
+    désormais falsifiable depuis l'item 16.
+16. `Brain::Hunter` déterministe **(réalisé)** : réflexe utilisant la perception — orientation vers la
+    cible perçue la plus proche (sans cible, balaie le terrain en évitant les obstacles) ; l'« attaque
+    au contact » reste la primitive d'interaction (item 7), le chasseur n'a qu'à venir au contact. A
+    nécessité d'étendre la perception d'un **canal « cible »** par rayon (le hit le plus proche est-il
+    une espèce visée par la table de relations ?) — driver réel de l'extension du schéma. Sélection du
+    cerveau par scénario (`BrainKind`, RON : `Wander`/`Hunter` ; `scenarios/chasse.ron`). Groupe témoin
+    compétent ; rend le chemin percevoir→décider→agir porteur et le sélecteur de cerveau falsifiable
+    (2ᵉ variant de `Brain`). **Reste** : substitution *par espèce* (cohabitation témoin/appris, §4).
 17. Pluralité de scénarios de sélection naturelle (dont un proie-prédateur co-évolutif) + calibration
     de l'économie (cycles de Lotka-Volterra). Critère de falsification explicite par scénario : bande
     de population, dérive attendue, et « scénario ajouté en donnée + un driver, zéro édition de

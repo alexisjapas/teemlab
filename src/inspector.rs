@@ -12,6 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use teemlab::brain::Brain;
 use teemlab::components::{Action, Agent, Perception, Radius, Reserve, Species, Vision};
 use teemlab::genotype::{Genotype, TRAITS};
 
@@ -74,7 +75,7 @@ pub fn inspector_ui(
     mut contexts: EguiContexts,
     selection: Res<Selection>,
     mut vis: ResMut<crate::controls::PanelVisibility>,
-    agents: Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action), With<Agent>>,
+    agents: Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action, &Brain), With<Agent>>,
 ) -> Result {
     if !vis.inspector {
         return Ok(());
@@ -102,13 +103,17 @@ pub fn inspector_ui(
 pub fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
-    agents: &Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action), With<Agent>>,
+    agents: &Query<
+        (&Species, &Reserve, &Genotype, &Vision, &Perception, &Action, &Brain),
+        With<Agent>,
+    >,
 ) {
     let Some(entity) = selection.0 else {
         ui.weak("Clique un agent dans l'aire pour l'inspecter.");
         return;
     };
-    let Ok((species, reserve, genotype, vision, perception, action)) = agents.get(entity) else {
+    let Ok((species, reserve, genotype, vision, perception, action, brain)) = agents.get(entity)
+    else {
         ui.colored_label(
             egui::Color32::from_rgb(255, 140, 120),
             "L'agent sélectionné n'existe plus (mort ?).",
@@ -121,6 +126,7 @@ pub fn inspector_section(
     // est réduit.
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.label(format!("Espèce : {}", species.0));
+        ui.label(format!("Cerveau : {}", brain.name()));
 
         ui.separator();
         ui.strong("Énergie / réserve");
@@ -157,9 +163,22 @@ pub fn inspector_section(
 
         ui.separator();
         ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
-        ui.weak("proximité par rayon (0 = rien, 1 = au contact)");
+        ui.weak("obstacle (gris) · cible comestible (orange) — 0 = rien, 1 = au contact");
         for (i, &proximity) in perception.vision.iter().enumerate() {
-            ui.add(egui::ProgressBar::new(proximity).text(format!("r{i} · {proximity:.2}")));
+            let target = perception.target.get(i).copied().unwrap_or(0.0);
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::ProgressBar::new(proximity)
+                        .desired_width(110.0)
+                        .text(format!("r{i} · {proximity:.2}")),
+                );
+                ui.add(
+                    egui::ProgressBar::new(target)
+                        .desired_width(110.0)
+                        .fill(egui::Color32::from_rgb(220, 130, 40))
+                        .text(format!("{target:.2}")),
+                );
+            });
         }
     });
 }

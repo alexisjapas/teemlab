@@ -5,7 +5,8 @@
 //! ignore tout d'Avian.
 
 use crate::brain::Brain;
-use crate::components::{Action, Agent, Locomotion, Perception, Vision};
+use crate::components::{Action, Agent, Locomotion, Perception, Species, Vision};
+use crate::config::SimConfig;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -23,18 +24,26 @@ use bevy::prelude::*;
 /// sans conséquence pour de la perception.
 pub fn perceive(
     spatial: SpatialQuery,
-    mut agents: Query<(Entity, &Transform, &LinearVelocity, &Vision, &mut Perception), With<Agent>>,
+    config: Res<SimConfig>,
+    mut agents: Query<
+        (Entity, &Transform, &LinearVelocity, &Species, &Vision, &mut Perception),
+        With<Agent>,
+    >,
+    species_of: Query<&Species>,
 ) {
-    for (entity, transform, velocity, vision, mut perception) in &mut agents {
+    for (entity, transform, velocity, species, vision, mut perception) in &mut agents {
         // Cap = direction de déplacement, repli sur +X à l'arrêt (1er tick).
         let facing = velocity.0.normalize_or_zero();
         let facing = if facing == Vec2::ZERO { Vec2::X } else { facing };
         perception.heading = facing;
 
-        // Buffer de la bonne taille (l'espèce peut avoir changé de forme entre
-        // deux runs ; au régime établi c'est un no-op).
+        // Buffers de la bonne taille (l'espèce peut avoir changé de forme entre
+        // deux runs ; au régime établi c'est un no-op). Les trois canaux partagent
+        // la cardinalité `ray_count`.
         if perception.vision.len() != vision.ray_count {
             perception.vision = vec![0.0; vision.ray_count].into_boxed_slice();
+            perception.target = vec![0.0; vision.ray_count].into_boxed_slice();
+            perception.ray_dirs = vec![Vec2::ZERO; vision.ray_count].into_boxed_slice();
         }
 
         let origin = transform.translation.truncate();
@@ -43,14 +52,29 @@ pub fn perceive(
 
         for i in 0..vision.ray_count {
             let dir = vision.ray_dir(i, facing);
+            perception.ray_dirs[i] = dir;
             let Ok(direction) = Dir2::new(dir) else {
                 perception.vision[i] = 0.0;
+                perception.target[i] = 0.0;
                 continue;
             };
-            perception.vision[i] = spatial
-                .cast_ray(origin, direction, vision.range, true, &filter)
-                .map(|hit| 1.0 - (hit.distance / vision.range).clamp(0.0, 1.0))
-                .unwrap_or(0.0);
+            match spatial.cast_ray(origin, direction, vision.range, true, &filter) {
+                Some(hit) => {
+                    let proximity = 1.0 - (hit.distance / vision.range).clamp(0.0, 1.0);
+                    perception.vision[i] = proximity;
+                    // Canal « cible » : la proximité ne compte que si le hit le plus
+                    // proche porte une espèce que la nôtre peut viser (relations).
+                    // Un mur (sans [`Species`]) ou une espèce non visée → 0.
+                    let is_target = species_of
+                        .get(hit.entity)
+                        .is_ok_and(|hit_species| config.acts_on(species.0, hit_species.0));
+                    perception.target[i] = if is_target { proximity } else { 0.0 };
+                }
+                None => {
+                    perception.vision[i] = 0.0;
+                    perception.target[i] = 0.0;
+                }
+            }
         }
     }
 }
