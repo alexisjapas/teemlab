@@ -273,3 +273,22 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base` et cette
   duplication, mais casse le RON de tous les scénarios (champs de premier niveau → imbriqués sous
   `founder`). Différé hors de l'amorce item 15 ; à faire avec une migration des `.ron` versionnés.
+- **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
+  vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
+  pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des
+  gènes per-espèce et évolvables (extension de la machinerie de l'item 15) ; **restent à migrer** le
+  métabolisme (`base_metabolism`) et `move_cost`. La suite logique est de **supprimer le type
+  spécial `Food`** : une source de nourriture devient un *archétype comestible* d'une entité
+  **flore**, avec son propre génotype (énergie, croissance, dissémination) et un cerveau trivial
+  (sessile), se reproduisant par **semis local** plutôt que par un `food_regen` global. La « source
+  pure » des tests n'est alors que le cas dégénéré (cerveau no-op, reproduction coupée) — *stub le
+  comportement, pas le schéma* (§8), et 2ᵉ exemplaire qui falsifie l'abstraction flore.
+  - **Verrou** : `Genotype` est aujourd'hui **une** structure pour toutes les entités (« forme
+    verrouillée par espèce » au sens d'*une* forme globale) ; flore et faune ont des jeux de traits
+    différents. Trois sorties à trancher : **enum `Genotype`** (dispatch statique, façon `Brain`,
+    §2), **composition de composants-traits ECS**, ou **superset** (une struct, traits inertes
+    hors-espèce). Même famille que la topologie variable repoussée à v2 (§2, item 21).
+  - **Driver** : à faire naître d'un scénario réel (une plante co-évolutive), pas spéculativement
+    (§8) ; l'item 17 (proie-prédateur) en est le candidat naturel.
+  - **Subtilités** : le semis spatial recalibre toute l'économie (cycles de Lotka-Volterra, §7) ;
+    `mutation_rate` héritable = méta-évolution instable, d'où son réglage non héritable par défaut.
