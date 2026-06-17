@@ -13,7 +13,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::components::{Action, Agent, Perception, Radius, Reserve, Species, Vision};
-use teemlab::genotype::Genotype;
+use teemlab::genotype::{Genotype, TRAITS};
 
 use crate::editor::Palette;
 
@@ -132,18 +132,13 @@ pub fn inspector_section(
         ui.separator();
         ui.strong("Génotype (gènes hérités)");
         egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-            ui.label("vitesse max");
-            ui.label(format!("{:.1}", genotype.max_speed));
-            ui.end_row();
-            ui.label("agilité");
-            ui.label(format!("{:.3}", genotype.agility));
-            ui.end_row();
-            ui.label("portée vision");
-            ui.label(format!("{:.1}", genotype.vision_range));
-            ui.end_row();
-            ui.label("champ vision");
-            ui.label(format!("{:.0}°", genotype.vision_fov.to_degrees()));
-            ui.end_row();
+            // Une ligne par caractéristique de TRAITS : ajouter un trait l'affiche
+            // ici sans toucher l'inspecteur.
+            for t in &TRAITS {
+                ui.label(t.name);
+                ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
+                ui.end_row();
+            }
             ui.label("coût vision/s");
             ui.label(format!("{:.3}", vision.metabolic_cost()));
             ui.end_row();

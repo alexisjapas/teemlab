@@ -78,25 +78,30 @@ pub fn reap(mut commands: Commands, agents: Query<(Entity, &Reserve), With<Agent
 }
 
 /// REPRODUCTION (régime continu-implicite, §4) : la fitness est endogène — *tu
-/// t'es reproduit*. Un agent dont l'énergie atteint le seuil paie
+/// t'es reproduit*. Un agent dont l'énergie atteint son seuil paie son
 /// `offspring_energy` (conservation : rien n'est créé) pour engendrer un enfant
 /// au génotype muté, posé près de lui. C'est ce qui ferme la **boucle évolutive
 /// continue** : la sélection agit sur les gènes via le simple fait de survivre
 /// assez pour se reproduire.
+///
+/// Seuil, coût et taux de mutation sont des **gènes de l'entité** (§1, *le
+/// corps*) : la stratégie de reproduction évolue elle-même et peut différer d'une
+/// espèce à l'autre.
 pub fn reproduce(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut rng: ResMut<SimRng>,
     mut parents: Query<(&Transform, &mut Reserve, &Genotype, &Species), With<Agent>>,
 ) {
-    if config.reproduction_threshold <= 0.0 {
-        return;
-    }
     for (transform, mut reserve, genotype, species) in &mut parents {
-        if reserve.current < config.reproduction_threshold {
+        // Seuil et coût sont des **gènes** (per-entité, évolvables) : un seuil nul
+        // = cet agent ne se reproduit pas.
+        if genotype.reproduction_threshold <= 0.0
+            || reserve.current < genotype.reproduction_threshold
+        {
             continue;
         }
-        reserve.current -= config.offspring_energy;
+        reserve.current -= genotype.offspring_energy;
         let child = genotype.mutate(&mut rng.0, &config);
         // L'enfant naît légèrement décalé pour ne pas chevaucher exactement.
         let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed())
@@ -114,7 +119,7 @@ pub fn reproduce(
             pos,
             heading,
             brain_seed,
-            config.offspring_energy,
+            genotype.offspring_energy,
         );
     }
 }

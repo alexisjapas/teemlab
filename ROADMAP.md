@@ -268,3 +268,8 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
   générationnelle et le batch inter-matchs en place (P5).
+- **Repli des valeurs fondatrices** (item 15) : `SimConfig` porte aujourd'hui les valeurs
+  d'archétype en champs épars (`max_speed`, `agility`, …) qui doublent ceux du `Genotype`. Les
+  replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base` et cette
+  duplication, mais casse le RON de tous les scénarios (champs de premier niveau → imbriqués sous
+  `founder`). Différé hors de l'amorce item 15 ; à faire avec une migration des `.ron` versionnés.

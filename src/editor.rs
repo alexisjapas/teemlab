@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::components::{Agent, Food, Reserve, Species};
 use teemlab::ecology::spawn_food;
-use teemlab::genotype::Genotype;
+use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
 use teemlab::SimConfig;
 
@@ -234,39 +234,32 @@ fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConf
                      L'évolution ne touche jamais l'archétype.",
                 );
                 ui.separator();
-                // Bornes copiées pour ne pas garder `config` emprunté.
-                let (sb, ab, rb, fb) = (
-                    config.speed_bounds,
-                    config.agility_bounds,
-                    config.vision_range_bounds,
-                    config.vision_fov_bounds,
-                );
                 if let Some(Archetype {
                     kind: ArchetypeKind::Agent { genotype, .. },
                     ..
                 }) = palette.items.get_mut(i)
                 {
-                    ui.add(
-                        egui::Slider::new(&mut genotype.max_speed, sb.min..=sb.max)
-                            .text("Vitesse max"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut genotype.agility, ab.min..=ab.max)
-                            .text("Agilité"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut genotype.vision_range, rb.min..=rb.max)
-                            .text("Portée vision"),
-                    );
-                    let mut fov_deg = genotype.vision_fov.to_degrees();
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut fov_deg, fb.min..=fb.max)
-                                .text("Champ vision (°)"),
-                        )
-                        .changed()
-                    {
-                        genotype.vision_fov = fov_deg.to_radians();
+                    // Une seule boucle sur TRAITS : slider (valeur, bornes) + case
+                    // « héritable » par caractéristique. Ajouter un trait n'ajoute
+                    // pas une ligne ici — c'est la falsification de l'item 15
+                    // contre la pluralité de traits existante.
+                    for t in &TRAITS {
+                        let bounds = (t.bounds)(config);
+                        let mut value = (t.get)(genotype);
+                        if ui
+                            .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
+                            .changed()
+                        {
+                            (t.set)(genotype, value);
+                        }
+                        let mut heritable = (t.heritable)(&config.heritable);
+                        if ui
+                            .checkbox(&mut heritable, "héritable")
+                            .on_hover_text("Décoché : ce gène reste figé à l'archétype, il ne mute pas.")
+                            .changed()
+                        {
+                            (t.set_heritable)(&mut config.heritable, heritable);
+                        }
                     }
                 }
                 if ui.button("↺ Réinitialiser au scénario").clicked() {
@@ -344,8 +337,6 @@ pub fn stats_ui(
         let population = agents.iter().count();
         let n = population.max(1) as f32;
         let mean_reserve = agents.iter().map(|(r, _)| r.current).sum::<f32>() / n;
-        let mean_speed = agents.iter().map(|(_, g)| g.max_speed).sum::<f32>() / n;
-        let mean_vision = agents.iter().map(|(_, g)| g.vision_range).sum::<f32>() / n;
         let food_count = food.iter().count();
         ui.horizontal(|ui| {
             ui.label(format!("Population : {population}"));
@@ -354,9 +345,12 @@ pub fn stats_ui(
             ui.separator();
             ui.label(format!("Réserve moy. : {mean_reserve:.0}"));
             ui.separator();
-            ui.label(format!("Gènes moy. — vitesse : {mean_speed:.0}"));
-            ui.separator();
-            ui.label(format!("vision : {mean_vision:.0}"));
+            ui.label("Gènes moy. —");
+            // Une moyenne par caractéristique de TRAITS, sans champ codé en dur.
+            for t in &TRAITS {
+                let mean = agents.iter().map(|(_, g)| (t.get)(g)).sum::<f32>() / n;
+                ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
+            }
         });
     });
     Ok(())
@@ -377,7 +371,10 @@ fn sync_config_from_palette(config: &mut SimConfig, palette: &Palette) {
         config.max_speed = g.max_speed;
         config.agility = g.agility;
         config.vision_range = g.vision_range;
-        config.vision_fov_deg = g.vision_fov.to_degrees();
+        config.vision_fov_deg = g.vision_fov_deg;
+        config.reproduction_threshold = g.reproduction_threshold;
+        config.offspring_energy = g.offspring_energy;
+        config.mutation_rate = g.mutation_rate;
     }
 }
 

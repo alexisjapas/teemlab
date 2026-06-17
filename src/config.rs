@@ -80,6 +80,15 @@ pub struct SimConfig {
     pub vision_range_bounds: Bounds,
     /// Bornes du gène de champ de vision, **en degrés**.
     pub vision_fov_bounds: Bounds,
+    /// Bornes du gène de seuil de reproduction.
+    pub reproduction_threshold_bounds: Bounds,
+    /// Bornes du gène d'énergie passée à l'enfant.
+    pub offspring_energy_bounds: Bounds,
+    /// Bornes du gène de taux de mutation.
+    pub mutation_rate_bounds: Bounds,
+    /// Facet « héritable ? » par trait (§2) : un gène mute, ou reste figé à la
+    /// valeur d'archétype. `Default` = tout héritable.
+    pub heritable: Heritability,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -103,6 +112,40 @@ impl Bounds {
     /// Ramène une valeur dans `[min, max]`.
     pub fn clamp(&self, v: f32) -> f32 {
         v.clamp(self.min, self.max)
+    }
+}
+
+/// Le facet **héritable ?** du §2, par trait : un gène participe-t-il à
+/// l'hérédité (il mute, cf. [`crate::genotype::Genotype::mutate`]) ou reste-t-il
+/// cloué à la valeur d'archétype ? Donnée de scénario, modifiable à l'édition.
+/// `Default` = tout héritable → un scénario qui omet ce champ garde le
+/// comportement d'avant l'item 15. Un champ par caractéristique de
+/// [`crate::genotype::TRAITS`].
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Heritability {
+    pub max_speed: bool,
+    pub agility: bool,
+    pub vision_range: bool,
+    pub vision_fov: bool,
+    pub reproduction_threshold: bool,
+    pub offspring_energy: bool,
+    pub mutation_rate: bool,
+}
+
+impl Default for Heritability {
+    fn default() -> Self {
+        Self {
+            max_speed: true,
+            agility: true,
+            vision_range: true,
+            vision_fov: true,
+            reproduction_threshold: true,
+            offspring_energy: true,
+            // Non héritable par défaut : laissé évolvable, le taux de mutation
+            // dérive (méta-évolution) et peut se figer à 0 → évolution morte.
+            mutation_rate: false,
+        }
     }
 }
 
@@ -160,6 +203,10 @@ impl Default for SimConfig {
             agility_bounds: Bounds { min: 0.02, max: 0.5 },
             vision_range_bounds: Bounds { min: 40.0, max: 300.0 },
             vision_fov_bounds: Bounds { min: 40.0, max: 280.0 },
+            reproduction_threshold_bounds: Bounds { min: 0.0, max: 200.0 },
+            offspring_energy_bounds: Bounds { min: 10.0, max: 120.0 },
+            mutation_rate_bounds: Bounds { min: 0.0, max: 0.5 },
+            heritable: Heritability::default(),
             seed: 0x00C0_FFEE,
         }
     }

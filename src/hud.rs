@@ -20,7 +20,7 @@ use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Food, Species};
 use teemlab::config::Bounds;
-use teemlab::genotype::Genotype;
+use teemlab::genotype::{Genotype, TRAITS};
 
 use crate::editor::species_color32;
 
@@ -32,13 +32,10 @@ struct Sample {
     population: Vec<u32>,
     /// Sources de nourriture présentes.
     food: u32,
-    // Gènes moyens, chacun **normalisé dans ses bornes** (`[0, 1]`) pour que des
-    // traits d'échelles différentes (vitesse vs angle) se comparent sur un seul
-    // graphe.
-    speed: f32,
-    vision: f32,
-    agility: f32,
-    fov: f32,
+    // Gènes moyens, un par caractéristique de [`TRAITS`] (même ordre), chacun
+    // **normalisé dans ses bornes** (`[0, 1]`) pour que des traits d'échelles
+    // différentes (vitesse vs angle) se comparent sur un seul graphe.
+    traits: Vec<f32>,
 }
 
 /// Historique glissant des métriques — l'état du HUD. Vit dans le binaire
@@ -102,38 +99,35 @@ pub fn sample_history(
 
     let species_count = config.species_count.max(1) as usize;
     let mut population = vec![0u32; species_count];
-    let (mut sum_speed, mut sum_vision, mut sum_agility, mut sum_fov) = (0.0, 0.0, 0.0, 0.0);
+    let mut sums = vec![0.0_f32; TRAITS.len()];
+    let cfg = &*config;
     let mut n = 0u32;
     for (species, g) in &agents {
         let idx = (species.0 as usize).min(species_count - 1);
         population[idx] += 1;
-        sum_speed += norm(g.max_speed, config.speed_bounds);
-        sum_vision += norm(g.vision_range, config.vision_range_bounds);
-        sum_agility += norm(g.agility, config.agility_bounds);
-        sum_fov += norm(g.vision_fov.to_degrees(), config.vision_fov_bounds);
+        for (sum, t) in sums.iter_mut().zip(&TRAITS) {
+            *sum += norm((t.get)(g), (t.bounds)(cfg));
+        }
         n += 1;
     }
 
     // Population zéro → on garde les derniers gènes moyens connus (un graphe qui
     // s'effondre à zéro laisserait croire que les gènes ont fondu, pas que la
     // population s'est éteinte).
-    let (speed, vision, agility, fov) = if n > 0 {
+    let traits = if n > 0 {
         let inv = 1.0 / n as f32;
-        (sum_speed * inv, sum_vision * inv, sum_agility * inv, sum_fov * inv)
+        sums.iter().map(|s| s * inv).collect()
     } else if let Some(last) = history.samples.back() {
-        (last.speed, last.vision, last.agility, last.fov)
+        last.traits.clone()
     } else {
-        (0.0, 0.0, 0.0, 0.0)
+        vec![0.0; TRAITS.len()]
     };
 
     history.samples.push_back(Sample {
         t: now,
         population,
         food: food.iter().count() as u32,
-        speed,
-        vision,
-        agility,
-        fov,
+        traits,
     });
     while history.samples.len() > history.max_samples {
         history.samples.pop_front();
@@ -233,35 +227,42 @@ fn draw_traits(ui: &mut egui::Ui, history: &History) {
         ui.weak("(en attente de données…)");
         return;
     }
-    let series = |get: &dyn Fn(&Sample) -> f32| -> Vec<[f32; 2]> {
-        history.samples.iter().map(|s| [s.t, get(s)]).collect()
-    };
-    let lines = vec![
-        Line {
-            name: "vitesse".to_string(),
-            color: egui::Color32::from_rgb(120, 200, 255),
-            pts: series(&|s| s.speed),
-        },
-        Line {
-            name: "vision".to_string(),
-            color: egui::Color32::from_rgb(255, 170, 90),
-            pts: series(&|s| s.vision),
-        },
-        Line {
-            name: "agilité".to_string(),
-            color: egui::Color32::from_rgb(150, 230, 120),
-            pts: series(&|s| s.agility),
-        },
-        Line {
-            name: "champ".to_string(),
-            color: egui::Color32::from_rgb(220, 140, 230),
-            pts: series(&|s| s.fov),
-        },
-    ];
+    // Une courbe par caractéristique de TRAITS (même ordre que `Sample::traits`),
+    // sa couleur tirée d'une palette indexée. Ajouter un trait ajoute sa courbe
+    // sans toucher le HUD.
+    let lines: Vec<Line> = TRAITS
+        .iter()
+        .enumerate()
+        .map(|(i, t)| Line {
+            name: t.name.to_string(),
+            color: trait_color(i),
+            pts: history
+                .samples
+                .iter()
+                .map(|s| [s.t, *s.traits.get(i).unwrap_or(&0.0)])
+                .collect(),
+        })
+        .collect();
 
     // Bornes fixes [0, 1] : la dérive se lit contre l'étendue possible du gène.
     plot(ui, 110.0, &lines, 0.0, 1.0);
     legend(ui, &lines);
+}
+
+/// Couleur de la courbe du trait d'indice `i` (palette du HUD ; la couleur est
+/// une affaire d'affichage, donc elle vit ici et non dans [`TRAITS`]).
+fn trait_color(i: usize) -> egui::Color32 {
+    const PALETTE: [(u8, u8, u8); 7] = [
+        (120, 200, 255), // bleu
+        (255, 170, 90),  // orange
+        (150, 230, 120), // vert
+        (220, 140, 230), // mauve
+        (240, 220, 120), // jaune
+        (120, 230, 220), // cyan
+        (235, 130, 130), // rouge
+    ];
+    let (r, g, b) = PALETTE[i % PALETTE.len()];
+    egui::Color32::from_rgb(r, g, b)
 }
 
 /// Une légende : une pastille colorée + le nom de chaque courbe.

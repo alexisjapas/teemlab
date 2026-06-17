@@ -47,10 +47,12 @@
     food_regen: 0.0,
     food_species: 1,
 
-    // Évolution (cf. item 9). mutation_rate et reproduction_threshold à 0 →
-    // évolution éteinte : ni reproduction ni mutation. Les `*_bounds` sont les
-    // bornes des gènes (le « bornes » du triplet du §2), n'ayant d'effet qu'une
-    // fois la mutation activée. Voir scenarios/evolution.ron.
+    // Évolution (cf. item 9). agility, mutation_rate, reproduction_threshold et
+    // offspring_energy sont les valeurs FONDATRICES de gènes (l'archétype),
+    // compilées dans le génotype de chaque agent puis muables. À 0, mutation_rate
+    // et reproduction_threshold éteignent l'évolution (ni mutation ni
+    // reproduction). Les `*_bounds` sont les bornes de ces gènes (le « bornes » du
+    // triplet du §2). Voir scenarios/evolution.ron.
     agility: 0.12,
     mutation_rate: 0.0,
     reproduction_threshold: 0.0,
@@ -59,6 +61,23 @@
     agility_bounds: (min: 0.02, max: 0.5),
     vision_range_bounds: (min: 40.0, max: 300.0),
     vision_fov_bounds: (min: 40.0, max: 280.0),
+    reproduction_threshold_bounds: (min: 0.0, max: 200.0),
+    offspring_energy_bounds: (min: 10.0, max: 120.0),
+    mutation_rate_bounds: (min: 0.0, max: 0.5),
+
+    // Facet « héritable ? » par trait (§2) : true → le gène mute et dérive ;
+    // false → il reste cloué à la valeur d'archétype ci-dessus. Tout héritable
+    // par défaut → comportement d'avant l'item 15.
+    heritable: (
+        max_speed: true,
+        agility: true,
+        vision_range: true,
+        vision_fov: true,
+        reproduction_threshold: true,
+        offspring_energy: true,
+        // Non héritable : éviter la dérive méta-évolutive du taux de mutation.
+        mutation_rate: false,
+    ),
 
     // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
     seed: 0x00C0FFEE,

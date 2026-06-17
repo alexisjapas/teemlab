@@ -39,8 +39,11 @@
         (actor: 0, target: 1, transfer: true, rate: 200.0, range: 26.0),
     ],
 
-    // La boucle évolutive. Seuil < reserve_max pour qu'il soit atteignable ;
-    // l'enfant emporte offspring_energy, déduite du parent (rien n'est créé).
+    // La boucle évolutive — valeurs FONDATRICES des gènes de reproduction (§1, le
+    // corps). Seuil < reserve_max pour qu'il soit atteignable ; l'enfant emporte
+    // offspring_energy, déduite du parent (rien n'est créé). Ces gènes étant
+    // héritables (cf. default.ron), la stratégie de reproduction ÉVOLUE elle aussi ;
+    // le taux de mutation, lui, reste fixé par l'archétype (non héritable).
     reproduction_threshold: 95.0,
     offspring_energy: 45.0,
     mutation_rate: 0.06,
