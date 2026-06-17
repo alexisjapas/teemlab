@@ -38,8 +38,10 @@ impl Default for RecorderPanel {
             out: "outputs/run.mp4".into(),
             fps: 60.0,
             seconds: 10.0,
-            width: 1280,
-            height: 720,
+            // Carré 1080×1080 par défaut : l'arène est carrée (cadrage « tout
+            // voir »), donc une cible carrée évite les bandes de hors-jeu.
+            width: 1080,
+            height: 1080,
             status: String::new(),
             child: None,
             launch_requested: false,

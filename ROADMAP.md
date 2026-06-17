@@ -223,19 +223,26 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
 ### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu, en cours)
 
 L'évolution d'intelligence est la frontière de l'abstraction *dans* la sélection naturelle. L'éditeur
-grandit ici, piloté par ces scénarios.
+grandit ici, piloté par ces scénarios — à ce jour : gènes d'archétype (valeur/bornes/héritable),
+sélecteur de cerveau, **paramètres de monde** (arène, économie de nourriture, table de relations),
+placement et **suppression** d'entités (touche Suppr).
 
-15. Éditeur générique de caractéristiques : (valeur, bornes) + toggle « héritable ? » par trait
-    *(réalisé : table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
-    inspecteur ; reproduction, métabolisme et coût de locomotion migrés en gènes)* — **reste** le
-    sélecteur de cerveau (chaque variant de `Brain` exposant ses propres paramètres éditables),
-    désormais falsifiable depuis l'item 16.
-16. `Brain::Hunter` déterministe **(réalisé)** : réflexe utilisant la perception — orientation vers la
-    cible perçue la plus proche (sans cible, balaie le terrain en évitant les obstacles) ; l'« attaque
-    au contact » reste la primitive d'interaction (item 7), le chasseur n'a qu'à venir au contact. A
-    nécessité d'étendre la perception d'un **canal « cible »** par rayon (le hit le plus proche est-il
-    une espèce visée par la table de relations ?) — driver réel de l'extension du schéma. Sélection du
-    cerveau par scénario (`BrainKind`, RON : `Wander`/`Hunter` ; `scenarios/chasse.ron`). Groupe témoin
+15. Éditeur générique de caractéristiques **(réalisé)** : (valeur, bornes) + toggle « héritable ? »
+    par trait — table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
+    inspecteur ; reproduction, métabolisme et coût de locomotion migrés en gènes — **et** sélecteur de
+    cerveau, chaque variant de `Brain` exposant ses propres paramètres éditables (`turn_rate` pour
+    l'errance, aucun pour le chasseur) via un `BrainKind` *porteur de données*. Le sélecteur édite par
+    *kind* et expose les paramètres du variant par un `match` exhaustif : la contrepartie *hétérogène*
+    (un cerveau = ses propres champs) de la table `TRAITS`, elle *homogène*. (La part « sélecteur » est
+    venue après l'item 16, qui en fournit le 2ᵉ variant falsifiant.)
+16. `Brain::Hunter` déterministe **(réalisé)** : réflexe utilisant la perception. Un **champ de pilotage
+    unifié** où chaque rayon pousse d'un poids `attraction·cible + dégagement` : la cible *attire*
+    (gradué par la proximité), un obstacle non-cible (mur, autre entité) se *contourne* sans qu'on le
+    fuie — la nourriture n'est donc plus évitée comme un mur. L'« attaque au contact » reste la
+    primitive d'interaction (item 7), le chasseur n'a qu'à venir au contact. A nécessité d'étendre la
+    perception d'un **canal « cible »** par rayon (le hit le plus proche est-il une espèce visée par la
+    table de relations ?) — driver réel de l'extension du schéma. Sélection du cerveau par scénario
+    (`BrainKind`, RON : `Wander(turn_rate: …)`/`Hunter` ; `scenarios/chasse.ron`). Groupe témoin
     compétent ; rend le chemin percevoir→décider→agir porteur et le sélecteur de cerveau falsifiable
     (2ᵉ variant de `Brain`). **Reste** : substitution *par espèce* (cohabitation témoin/appris, §4).
 17. Pluralité de scénarios de sélection naturelle (dont un proie-prédateur co-évolutif) + calibration

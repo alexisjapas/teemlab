@@ -14,7 +14,9 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Food, Reserve, Species};
+use teemlab::config::Relation;
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
@@ -185,7 +187,7 @@ pub fn resolve_drag(
 /// Section « sélecteur » : la liste des archétypes (glisser pour poser, cliquer
 /// pour éditer). Rendue en haut du panneau de droite.
 fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
-    ui.label("Glisse dans l'aire pour poser ; clique pour éditer.");
+    ui.label("Glisse dans l'aire pour poser ; clique pour éditer ; Suppr (curseur sur une entité) pour retirer.");
     ui.separator();
     let mut started = None;
     let mut clicked = None;
@@ -281,6 +283,8 @@ fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConf
         }
     }
 
+    brain_selector(ui, config);
+
     ui.separator();
     ui.label("Scénario (RON)");
     ui.text_edit_singleline(&mut palette.save_path);
@@ -309,6 +313,160 @@ fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConf
     });
     if !palette.status.is_empty() {
         ui.weak(&palette.status);
+    }
+}
+
+/// Sélecteur de cerveau (item 15) : le **type** de cerveau des agents + les
+/// paramètres **propres au variant** choisi. Global au scénario en v1, comme le
+/// génotype fondateur (cf. [`sync_config_from_palette`]) — édité directement sur le
+/// [`SimConfig`], donc persisté par « Sauver » sans passe de synchro.
+///
+/// Le choix se fait par *kind* (et non par valeur) : éditer un paramètre ne doit
+/// pas désélectionner le type. Le `match` est exhaustif → ajouter un variant de
+/// `Brain` force à exposer ses paramètres ici. C'est la contrepartie *hétérogène*
+/// (des paramètres propres à chaque cerveau) de la table `TRAITS`, elle homogène.
+fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
+    ui.separator();
+    ui.strong("Cerveau (auteur de la décision)");
+    ui.small(
+        "Le type de cerveau des agents, global au scénario en v1. Chaque variant \
+         expose ses propres paramètres d'archétype.",
+    );
+    egui::ComboBox::from_label("type")
+        .selected_text(config.brain.name())
+        .show_ui(ui, |ui| {
+            // Sélection par KIND : on ne réécrit le config que si l'on change de
+            // type, pour ne pas réinitialiser les paramètres du variant courant.
+            let is_wander = matches!(config.brain, BrainKind::Wander { .. });
+            if ui.selectable_label(is_wander, "Errance").clicked() && !is_wander {
+                config.brain = BrainKind::default();
+            }
+            let is_hunter = matches!(config.brain, BrainKind::Hunter);
+            if ui.selectable_label(is_hunter, "Chasseur").clicked() && !is_hunter {
+                config.brain = BrainKind::Hunter;
+            }
+        });
+    match &mut config.brain {
+        BrainKind::Wander { turn_rate } => {
+            ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
+                .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
+        }
+        BrainKind::Hunter => {
+            ui.weak("Réflexe déterministe — aucun paramètre.");
+        }
+    }
+}
+
+/// La fenêtre flottante « Monde » : les paramètres de **scénario** — l'arène, la
+/// population, l'économie de nourriture, la table d'interactions — par opposition à
+/// l'éditeur d'**archétype** (le génotype d'une espèce). Édités directement sur le
+/// [`SimConfig`], donc persistés par « Sauver ». Tourne dans `EguiPrimaryContextPass`.
+pub fn world_ui(
+    mut contexts: EguiContexts,
+    mut config: ResMut<SimConfig>,
+    mut vis: ResMut<crate::controls::PanelVisibility>,
+) -> Result {
+    if !vis.world {
+        return Ok(());
+    }
+    use crate::controls::{WindowSlot, tidy_pos};
+    let tidy = vis.tidy_windows;
+    let ctx = contexts.ctx_mut()?;
+    let screen = ctx.content_rect();
+    let mut w = egui::Window::new("Monde")
+        .open(&mut vis.world)
+        .default_pos([520.0, 130.0])
+        .default_width(280.0)
+        .resizable(true)
+        .vscroll(true);
+    if tidy {
+        w = w.current_pos(tidy_pos(screen, WindowSlot::World));
+    }
+    w.show(ctx, |ui| world_section(ui, &mut config));
+    Ok(())
+}
+
+/// Le contenu de la fenêtre « Monde » : lecture/écriture directe du [`SimConfig`].
+/// Certains champs ne prennent effet qu'à la (ré)génération du monde (annotés
+/// *reset*) ; les autres — nourriture maintenue, relations — sont lus en continu
+/// par la sim et agissent **à chaud**.
+fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+    ui.small(
+        "Paramètres de scénario. Les champs notés (reset) ne s'appliquent qu'à la \
+         (ré)génération du monde (⟲ du bandeau) ; les autres agissent à chaud.",
+    );
+
+    ui.separator();
+    ui.strong("Arène & population");
+    ui.add(egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("demi-arène"));
+    ui.add(
+        egui::DragValue::new(&mut config.agent_count)
+            .range(0..=5000)
+            .prefix("agents au spawn (reset) : "),
+    );
+    ui.add(
+        egui::DragValue::new(&mut config.species_count)
+            .range(1..=8)
+            .prefix("espèces (reset) : "),
+    );
+    ui.add(egui::Slider::new(&mut config.reserve_max, 10.0..=500.0).text("réserve max"));
+    ui.add(
+        egui::DragValue::new(&mut config.vision_rays)
+            .range(1..=21)
+            .prefix("rayons de vision (reset) : "),
+    );
+    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0).prefix("graine (reset) : "));
+
+    ui.separator();
+    ui.strong("Nourriture");
+    ui.add(
+        egui::DragValue::new(&mut config.food_count)
+            .range(0..=2000)
+            .prefix("effectif maintenu : "),
+    );
+    ui.add(egui::Slider::new(&mut config.food_radius, 2.0..=30.0).text("rayon"));
+    ui.add(egui::Slider::new(&mut config.food_energy, 5.0..=300.0).text("énergie"));
+    ui.add(egui::Slider::new(&mut config.food_regen, 0.0..=50.0).text("repousse/s"));
+    ui.add(
+        egui::DragValue::new(&mut config.food_species)
+            .range(0..=8)
+            .prefix("espèce nourriture : "),
+    );
+
+    ui.separator();
+    ui.strong("Relations (qui agit sur qui)");
+    ui.small(
+        "Une relation = un acteur réduit la réserve d'une cible à portée. C'est elle \
+         qui fait d'une espèce une CIBLE comestible — ce que poursuit Brain::Hunter. \
+         transfert = prédation (l'acteur gagne l'énergie) ; sinon simple destruction.",
+    );
+    let mut to_remove = None;
+    for (i, rel) in config.relations.iter_mut().enumerate() {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.add(egui::DragValue::new(&mut rel.actor).range(0..=8).prefix("acteur "));
+            ui.add(egui::DragValue::new(&mut rel.target).range(0..=8).prefix("→ cible "));
+            if ui.button("🗑").on_hover_text("Retirer cette relation").clicked() {
+                to_remove = Some(i);
+            }
+        });
+        ui.checkbox(&mut rel.transfer, "transfert (prédation)");
+        ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("débit/s"));
+        ui.add(egui::Slider::new(&mut rel.range, 1.0..=100.0).text("portée"));
+    }
+    if let Some(i) = to_remove {
+        config.relations.remove(i);
+    }
+    if ui.button("＋ Ajouter une relation").clicked() {
+        // Défaut « l'espèce 0 mange la nourriture » : le cas le plus courant, et ce
+        // qu'il faut pour qu'un chasseur reconnaisse la nourriture comme cible.
+        config.relations.push(Relation {
+            actor: 0,
+            target: config.food_species,
+            transfer: true,
+            rate: 100.0,
+            range: 20.0,
+        });
     }
 }
 

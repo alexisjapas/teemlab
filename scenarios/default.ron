@@ -35,10 +35,12 @@
     species_count: 1,
     reserve_max: 100.0,
 
-    // Type de cerveau des agents (l'auteur de la décision, §1) : `Wander`
-    // (errance, l'échafaudage par défaut) ou `Hunter` (réflexe déterministe qui
-    // fonce vers la cible perçue la plus proche, item 16). Voir scenarios/chasse.ron.
-    brain: Wander,
+    // Type de cerveau des agents (l'auteur de la décision, §1). Chaque variant
+    // porte ses propres paramètres d'archétype (édités dans le sélecteur de cerveau
+    // de l'éditeur) : `Wander(turn_rate: …)` — errance, turn_rate = amplitude de la
+    // dérive de cap par tick — ou `Hunter` (réflexe déterministe qui fonce vers la
+    // cible perçue la plus proche, item 16 ; sans paramètre). Voir scenarios/chasse.ron.
+    brain: Wander(turn_rate: 0.25),
 
     relations: [],
 

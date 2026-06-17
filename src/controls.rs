@@ -28,6 +28,7 @@ use crate::hud::History;
 pub struct PanelVisibility {
     pub editor: bool,
     pub palette: bool,
+    pub world: bool,
     pub hud: bool,
     pub inspector: bool,
     pub runs: bool,
@@ -46,6 +47,7 @@ pub enum WindowSlot {
     Archetypes,
     Editor,
     Inspector,
+    World,
     Stats,
 }
 
@@ -69,6 +71,9 @@ pub fn tidy_pos(screen: egui::Rect, slot: WindowSlot) -> egui::Pos2 {
         WindowSlot::Editor => egui::pos2(right, top + h * 0.30),
         WindowSlot::Inspector => egui::pos2(right, top + h * 0.62),
         WindowSlot::Stats => egui::pos2(screen.center().x - COL_W * 0.5, top),
+        // Colonne centrale, sous les Stats : le monde est l'édition « globale »,
+        // distincte des archétypes (colonne droite).
+        WindowSlot::World => egui::pos2(screen.center().x - COL_W * 0.5, top + h * 0.10),
     }
 }
 
@@ -94,6 +99,7 @@ impl Default for PanelVisibility {
         Self {
             editor: true,
             palette: true,
+            world: true,
             hud: true,
             inspector: true,
             runs: true,
@@ -201,6 +207,7 @@ pub fn controls_ui(
             ui.separator();
             ui.toggle_value(&mut vis.palette, "Archétypes");
             ui.toggle_value(&mut vis.editor, "Éditeur");
+            ui.toggle_value(&mut vis.world, "Monde");
             ui.toggle_value(&mut vis.runs, "Runs");
             ui.toggle_value(&mut vis.recorder, "Enregistrement");
             ui.toggle_value(&mut vis.hud, "Courbes");

@@ -448,16 +448,29 @@ mod tests {
         );
     }
 
-    /// Le champ `brain` parse le type de cerveau ; absent, il retombe sur l'errance
-    /// — rétro-compatibilité d'avant l'item 16 (les scénarios existants n'en
-    /// parlent pas et restent des mondes d'errance).
+    /// Le champ `brain` parse le type de cerveau **et ses paramètres de variant** ;
+    /// absent, il retombe sur l'errance — rétro-compatibilité d'avant l'item 16 (les
+    /// scénarios existants n'en parlent pas et restent des mondes d'errance).
     #[test]
     fn brain_kind_parses_and_defaults_to_wander() {
         use crate::brain::BrainKind;
-        let cfg = SimConfig::from_ron_str("(brain: Hunter)").expect("RON valide");
-        assert_eq!(cfg.brain, BrainKind::Hunter);
-        assert_eq!(SimConfig::default().brain, BrainKind::Wander);
-        assert_eq!(SimConfig::from_ron_str("()").unwrap().brain, BrainKind::Wander);
+        assert_eq!(
+            SimConfig::from_ron_str("(brain: Hunter)").unwrap().brain,
+            BrainKind::Hunter
+        );
+        // Le variant `Wander` porte son propre paramètre (turn_rate), lu depuis le RON.
+        assert_eq!(
+            SimConfig::from_ron_str("(brain: Wander(turn_rate: 0.4))")
+                .unwrap()
+                .brain,
+            BrainKind::Wander { turn_rate: 0.4 }
+        );
+        // Absent → errance au taux par défaut.
+        assert!(matches!(
+            SimConfig::from_ron_str("()").unwrap().brain,
+            BrainKind::Wander { .. }
+        ));
+        assert!(matches!(SimConfig::default().brain, BrainKind::Wander { .. }));
     }
 
     /// `acts_on` reflète la table de relations : c'est le filtre de cible du

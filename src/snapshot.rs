@@ -98,7 +98,7 @@ mod tests {
                 genotype: Genotype::base(&config),
                 reserve: 73.0,
                 species: 0,
-                brain: Brain::Wander(WanderBrain::new(99, 1.2)),
+                brain: Brain::Wander(WanderBrain::new(99, 1.2, 0.25)),
             }],
             food: vec![FoodSnap {
                 pos: [-3.0, 4.0],

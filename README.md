@@ -26,7 +26,8 @@ continu. *Réalisé* : caractéristiques d'entité génériques (table `TRAITS` 
 *héritable*, gènes de reproduction / métabolisme / locomotion) ; `Brain::Hunter`, le
 réflexe déterministe **groupe témoin** qui fonce vers la cible perçue la plus proche —
 2ᵉ variant de `Brain`, sélectionnable par scénario (`BrainKind`), nourri par un nouveau
-**canal « cible »** de la perception. *Reste* : sélecteur de cerveau dans l'éditeur,
+**canal « cible »** de la perception ; **sélecteur de cerveau dans l'éditeur** (combo de
+type + paramètres propres au variant, p. ex. `turn_rate` de l'errance). *Reste* :
 substitution par espèce, scénarios co-évolutifs (proie-prédateur), MLP + neuroévolution.
 
 **Planifié (P5).** La bataille (régime générationnel) comme test final de l'abstraction,
@@ -52,7 +53,7 @@ src/
   rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
   spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
   main.rs         Binaire fenêtré  → `teemlab`.
-  editor.rs       UI egui (fenêtré seul) : palette d'archétypes + placement drag-and-drop.
+  editor.rs       UI egui (fenêtré seul) : palette + placement drag-and-drop (Suppr retire) ; sélecteur de cerveau ; éditeur du monde (arène, nourriture, relations).
   hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
   controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps).
   inspector.rs    Inspecteur egui (fenêtré seul) : clic → génotype / énergie / perception / action (lecture seule).
@@ -90,7 +91,7 @@ cargo run --bin headless scenarios/default.ron    # scénario explicite (1ᵉʳ 
 
 # Enregistrer une run en vidéo (rendu headless → ffmpeg) ; sortie dans outputs/ :
 cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10
-#   options : --out F  --fps N  --seconds S  --width W  --height H
+#   options : --out F  --fps N  --seconds S  --width W  --height H  (défaut 1080×1080, arène carrée)
 
 cargo test                            # tests unitaires + intégration (confinement, snapshot)
 ```
@@ -104,6 +105,8 @@ cargo test                            # tests unitaires + intégration (confinem
 > lance le fenêtré — `record` suit donc toujours `teemlab`, debug comme release.
 
 Le build fenêtré ajoute, par-dessus la sim, l'outillage egui : bandeau de contrôles
-(haut), éditeur d'archétypes + palette, et panneaux dockés HUD courbes / inspecteur /
-runs & scénarios / enregistrement. Tout cet outillage vit hors `FixedUpdate` (rendu / UI) ;
-le headless n'embarque rien de tout ça.
+(haut), éditeur d'archétypes + palette (glisser-déposer pour poser, **Suppr** pour
+retirer l'entité sous le curseur), éditeur du **Monde** (arène, nourriture, table de
+relations), et fenêtres flottantes HUD courbes / inspecteur / runs & scénarios /
+enregistrement. Tout cet outillage vit hors `FixedUpdate` (rendu / UI) ; le headless
+n'embarque rien de tout ça.

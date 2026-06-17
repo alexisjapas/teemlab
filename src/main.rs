@@ -94,6 +94,7 @@ fn main() {
                 controls::controls_ui,
                 controls::auto_tidy,
                 editor::editor_ui,
+                editor::world_ui,
                 runs::runs_ui,
                 recorder::recorder_ui,
                 hud::hud_ui,
@@ -101,6 +102,7 @@ fn main() {
                 inspector::inspector_ui,
                 controls::clear_tidy,
                 inspector::pick_agent,
+                inspector::delete_under_cursor,
                 editor::resolve_drag,
                 set_sim_camera,
             )

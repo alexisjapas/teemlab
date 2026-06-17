@@ -69,6 +69,67 @@ pub fn pick_agent(
     Ok(())
 }
 
+/// Suppression manuelle (Suppr / Retour arrière) : retire l'entité **sous le
+/// curseur** — agent OU nourriture (tout corps à [`Radius`] ; les murs, sans
+/// `Radius`, sont épargnés). Édition manuelle déclenchée par l'utilisateur, comme
+/// le placement de l'éditeur → vit hors `FixedUpdate`, et reste autorisée même
+/// hors pause, par cohérence avec le placement. Pas d'annulation en v1 : une
+/// entité se repose depuis la palette (le monde est un bac à sable d'expérience,
+/// pas une donnée précieuse).
+///
+/// Comme [`pick_agent`] et `resolve_drag`, doit tourner **après** les fenêtres egui
+/// pour que `is_pointer_over_area` soit à jour (sinon un Suppr au-dessus d'un
+/// panneau viserait l'entité cachée dessous).
+#[allow(clippy::too_many_arguments)]
+pub fn delete_under_cursor(
+    mut contexts: EguiContexts,
+    keys: Res<ButtonInput<KeyCode>>,
+    palette: Res<Palette>,
+    mut selection: ResMut<Selection>,
+    mut commands: Commands,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    windows: Query<&Window>,
+    bodies: Query<(Entity, &Transform, &Radius)>,
+) -> Result {
+    if !(keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace)) {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    // Pas pendant un glisser d'archétype, ni quand le curseur vise un panneau egui.
+    if palette.dragging.is_some() || ctx.is_pointer_over_area() {
+        return Ok(());
+    }
+    let Ok((camera, cam_tf)) = cameras.single() else {
+        return Ok(());
+    };
+    let Ok(window) = windows.single() else {
+        return Ok(());
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return Ok(());
+    };
+    let Ok(world) = camera.viewport_to_world_2d(cam_tf, cursor) else {
+        return Ok(());
+    };
+
+    // Le corps le plus proche dont le rayon contient le curseur (même critère que
+    // le picking de l'inspecteur).
+    let mut best: Option<(Entity, f32)> = None;
+    for (entity, transform, radius) in &bodies {
+        let d = transform.translation.truncate().distance(world);
+        if d <= radius.0 && best.is_none_or(|(_, bd)| d < bd) {
+            best = Some((entity, d));
+        }
+    }
+    if let Some((entity, _)) = best {
+        commands.entity(entity).despawn();
+        if selection.0 == Some(entity) {
+            selection.0 = None; // ne pas garder une sélection fantôme.
+        }
+    }
+    Ok(())
+}
+
 /// La fenêtre flottante de l'inspecteur : génotype, énergie, perception, action de
 /// l'agent sélectionné. Tourne dans `EguiPrimaryContextPass`. Lecture seule.
 pub fn inspector_ui(

@@ -56,8 +56,10 @@ impl Settings {
             out: "outputs/out.mp4".into(),
             fps: 60.0,
             seconds: 10.0,
-            width: 1280,
-            height: 720,
+            // Carré par défaut : l'arène est carrée, donc 1080×1080 la cadre sans
+            // bandes de hors-jeu (cf. menu d'enregistrement du fenêtré).
+            width: 1080,
+            height: 1080,
         };
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
