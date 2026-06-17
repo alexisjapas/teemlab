@@ -44,6 +44,14 @@ pub struct Genotype {
     /// par défaut** ([`crate::config::Heritability`]) : laissé héritable, il dérive
     /// (méta-évolution) et peut se figer à 0 → évolution morte.
     pub mutation_rate: f32,
+    /// Métabolisme de base : énergie drainée **par seconde** au repos — le coût de
+    /// survie (§2), pression de sélection de base. Per-espèce, **non héritable par
+    /// défaut** : évolvable, il se ferait raboter à 0 (la pression disparaîtrait).
+    pub base_metabolism: f32,
+    /// Surcoût de locomotion : énergie/s à pleine vitesse. Couple la vitesse à un
+    /// coût (§2). Per-espèce, **non héritable par défaut** : sinon le gène de
+    /// vitesse pourrait « s'auto-annuler » son coût.
+    pub move_cost: f32,
 }
 
 impl Genotype {
@@ -59,6 +67,8 @@ impl Genotype {
             reproduction_threshold: config.reproduction_threshold,
             offspring_energy: config.offspring_energy,
             mutation_rate: config.mutation_rate,
+            base_metabolism: config.base_metabolism,
+            move_cost: config.move_cost,
         }
     }
 
@@ -134,7 +144,7 @@ pub struct TraitSpec {
 /// (cet ordre fixe le flux de tirages de [`Genotype::mutate`], donc la
 /// reproductibilité d'une config seedée). v1 — forme verrouillée par espèce —
 /// une table constante partagée par tous les agents.
-pub const TRAITS: [TraitSpec; 7] = [
+pub const TRAITS: [TraitSpec; 9] = [
     TraitSpec {
         name: "Vitesse max",
         get: |g| g.max_speed,
@@ -198,6 +208,24 @@ pub const TRAITS: [TraitSpec; 7] = [
         set_heritable: |h, b| h.mutation_rate = b,
         decimals: 3,
     },
+    TraitSpec {
+        name: "Métabolisme/s",
+        get: |g| g.base_metabolism,
+        set: |g, v| g.base_metabolism = v,
+        bounds: |c| c.base_metabolism_bounds,
+        heritable: |h| h.base_metabolism,
+        set_heritable: |h, b| h.base_metabolism = b,
+        decimals: 1,
+    },
+    TraitSpec {
+        name: "Coût locomotion",
+        get: |g| g.move_cost,
+        set: |g, v| g.move_cost = v,
+        bounds: |c| c.move_cost_bounds,
+        heritable: |h| h.move_cost,
+        set_heritable: |h, b| h.move_cost = b,
+        decimals: 1,
+    },
 ];
 
 #[cfg(test)]
@@ -217,6 +245,7 @@ mod tests {
         assert_eq!(g.vision_fov_deg, c.vision_fov_deg);
         assert_eq!(g.reproduction_threshold, c.reproduction_threshold);
         assert_eq!(g.mutation_rate, c.mutation_rate);
+        assert_eq!(g.base_metabolism, c.base_metabolism);
     }
 
     /// Toute mutation laisse **chaque** gène de [`TRAITS`] dans ses bornes — même

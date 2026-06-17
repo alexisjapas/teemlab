@@ -252,7 +252,7 @@ fn draw_traits(ui: &mut egui::Ui, history: &History) {
 /// Couleur de la courbe du trait d'indice `i` (palette du HUD ; la couleur est
 /// une affaire d'affichage, donc elle vit ici et non dans [`TRAITS`]).
 fn trait_color(i: usize) -> egui::Color32 {
-    const PALETTE: [(u8, u8, u8); 7] = [
+    const PALETTE: [(u8, u8, u8); 9] = [
         (120, 200, 255), // bleu
         (255, 170, 90),  // orange
         (150, 230, 120), // vert
@@ -260,6 +260,8 @@ fn trait_color(i: usize) -> egui::Color32 {
         (240, 220, 120), // jaune
         (120, 230, 220), // cyan
         (235, 130, 130), // rouge
+        (180, 180, 180), // gris clair
+        (200, 160, 110), // brun
     ];
     let (r, g, b) = PALETTE[i % PALETTE.len()];
     egui::Color32::from_rgb(r, g, b)

@@ -86,6 +86,10 @@ pub struct SimConfig {
     pub offspring_energy_bounds: Bounds,
     /// Bornes du gène de taux de mutation.
     pub mutation_rate_bounds: Bounds,
+    /// Bornes du gène de métabolisme de base.
+    pub base_metabolism_bounds: Bounds,
+    /// Bornes du gène de surcoût de locomotion.
+    pub move_cost_bounds: Bounds,
     /// Facet « héritable ? » par trait (§2) : un gène mute, ou reste figé à la
     /// valeur d'archétype. `Default` = tout héritable.
     pub heritable: Heritability,
@@ -131,6 +135,8 @@ pub struct Heritability {
     pub reproduction_threshold: bool,
     pub offspring_energy: bool,
     pub mutation_rate: bool,
+    pub base_metabolism: bool,
+    pub move_cost: bool,
 }
 
 impl Default for Heritability {
@@ -142,9 +148,12 @@ impl Default for Heritability {
             vision_fov: true,
             reproduction_threshold: true,
             offspring_energy: true,
-            // Non héritable par défaut : laissé évolvable, le taux de mutation
-            // dérive (méta-évolution) et peut se figer à 0 → évolution morte.
+            // Non héritables par défaut : taux de mutation (méta-évolution
+            // instable) et les coûts (métabolisme, locomotion) qui *sont* la
+            // pression de sélection — évolvables, ils se raboteraient à 0.
             mutation_rate: false,
+            base_metabolism: false,
+            move_cost: false,
         }
     }
 }
@@ -206,6 +215,8 @@ impl Default for SimConfig {
             reproduction_threshold_bounds: Bounds { min: 0.0, max: 200.0 },
             offspring_energy_bounds: Bounds { min: 10.0, max: 120.0 },
             mutation_rate_bounds: Bounds { min: 0.0, max: 0.5 },
+            base_metabolism_bounds: Bounds { min: 0.0, max: 20.0 },
+            move_cost_bounds: Bounds { min: 0.0, max: 20.0 },
             heritable: Heritability::default(),
             seed: 0x00C0_FFEE,
         }

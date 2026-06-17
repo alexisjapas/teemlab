@@ -375,6 +375,8 @@ fn sync_config_from_palette(config: &mut SimConfig, palette: &Palette) {
         config.reproduction_threshold = g.reproduction_threshold;
         config.offspring_energy = g.offspring_energy;
         config.mutation_rate = g.mutation_rate;
+        config.base_metabolism = g.base_metabolism;
+        config.move_cost = g.move_cost;
     }
 }
 

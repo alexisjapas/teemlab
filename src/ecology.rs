@@ -47,11 +47,11 @@ pub struct FoodRegen(pub f32);
 pub fn metabolize(
     time: Res<Time>,
     config: Res<SimConfig>,
-    mut agents: Query<(&mut Reserve, &Vision, &LinearVelocity), With<Agent>>,
+    mut agents: Query<(&mut Reserve, &Genotype, &Vision, &LinearVelocity), With<Agent>>,
 ) {
     if config.base_metabolism == 0.0 && config.move_cost == 0.0 {
-        // Monde inerte : on évite même de payer le coût de vision si aucun
-        // métabolisme n'est configuré (scénarios pré-item-8).
+        // Monde inerte : pas d'économie métabolique dans ce *scénario* (fondateurs
+        // à zéro) → on évite même le coût de vision (scénarios pré-item-8).
         return;
     }
     let dt = time.delta_secs();
@@ -60,10 +60,12 @@ pub fn metabolize(
     // l'agent — sinon un mutant deux fois plus rapide paierait pareil et le gène
     // de vitesse n'aurait aucun coût. Ainsi « vitesse → énergie » (§2) tient.
     let reference_speed = config.max_speed.max(1e-3);
-    for (mut reserve, vision, velocity) in &mut agents {
+    for (mut reserve, genotype, vision, velocity) in &mut agents {
+        // Métabolisme et coût de locomotion sont des gènes (per-espèce) ; le coût
+        // de vision vient du phénotype, déjà per-entité.
         let speed_ratio = velocity.0.length() / reference_speed;
         let drain =
-            config.base_metabolism + config.move_cost * speed_ratio + vision.metabolic_cost();
+            genotype.base_metabolism + genotype.move_cost * speed_ratio + vision.metabolic_cost();
         reserve.current = (reserve.current - drain * dt).max(0.0);
     }
 }
