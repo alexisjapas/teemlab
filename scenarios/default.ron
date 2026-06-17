@@ -33,6 +33,11 @@
     // inerte : personne n'agit sur personne. Voir scenarios/predation.ron pour
     // un exemple de prédation entre deux espèces.
     species_count: 1,
+    // Effectifs PAR espèce au spawn. Vide → partage uniforme : agent_count réparti
+    // en round-robin sur species_count. Non vide, il prime (et fixe le nombre
+    // d'espèces) : `[10, 60]` = 10 agents de l'espèce 0, 60 de l'espèce 1 — le
+    // levier d'une pyramide trophique (cf. scenarios/proie_predateur.ron).
+    agents_per_species: [],
     reserve_max: 100.0,
 
     // Type de cerveau des agents (l'auteur de la décision, §1). Chaque variant

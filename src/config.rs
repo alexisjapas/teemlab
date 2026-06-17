@@ -35,8 +35,19 @@ pub struct SimConfig {
     pub vision_fov_deg: f32,
     /// Portée de vision, en unités monde (= longueur max d'un rayon).
     pub vision_range: f32,
-    /// Nombre d'espèces. Les agents sont répartis en round-robin (`i % count`).
+    /// Nombre d'espèces. Les agents sont répartis en round-robin (`i % count`)
+    /// — sauf si [`agents_per_species`](Self::agents_per_species) impose un partage
+    /// explicite.
     pub species_count: u16,
+    /// Effectifs **par espèce** au spawn : `agents_per_species[s]` agents de
+    /// l'espèce `s`. Vide par défaut → repli sur le partage *uniforme*
+    /// (`agent_count` en round-robin sur `species_count`, le comportement d'avant
+    /// cet ajout). Non vide, il **prime** : il fixe à la fois l'effectif de chaque
+    /// espèce **et**, par sa longueur, le nombre d'espèces ; `agent_count` est alors
+    /// ignoré. C'est le levier d'une **pyramide trophique** (peu de prédateurs,
+    /// beaucoup de proies) qu'un ratio uniforme 50/50 interdit — l'archétype reste
+    /// partagé, seul l'effectif diffère.
+    pub agents_per_species: Vec<usize>,
     /// Réserve initiale (= max) de chaque agent.
     pub reserve_max: f32,
     /// Le **type de cerveau** des agents (l'auteur de la décision, §1) : choix de
@@ -202,6 +213,7 @@ impl Default for SimConfig {
             vision_fov_deg: 120.0,
             vision_range: 160.0,
             species_count: 1,
+            agents_per_species: Vec::new(),
             reserve_max: 100.0,
             brain: BrainKind::default(),
             relations: Vec::new(),
@@ -242,6 +254,16 @@ impl SimConfig {
             food_count: 0,
             ..Self::default()
         }
+    }
+
+    /// Nombre d'espèces d'agents *effectif* : le max entre `species_count` (le knob
+    /// uniforme) et la longueur d'[`agents_per_species`](Self::agents_per_species)
+    /// (effectifs explicites). HUD, éditeur et palette s'y réfèrent pour rester
+    /// cohérents même si un scénario ne renseigne que l'un des deux (au moins 1).
+    pub fn species_cardinality(&self) -> u16 {
+        self.species_count
+            .max(self.agents_per_species.len() as u16)
+            .max(1)
     }
 
     /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une
@@ -525,6 +547,58 @@ mod tests {
                 .iter()
                 .any(|r| r.target == cfg.food_species && r.transfer),
             "une relation doit permettre de manger la nourriture"
+        );
+    }
+
+    /// Les effectifs par espèce parsent depuis le RON, et `species_cardinality`
+    /// reflète bien le nombre d'espèces effectif (le max du knob uniforme et de la
+    /// longueur des effectifs explicites). Vide → repli sur `species_count`.
+    #[test]
+    fn agents_per_species_parses_and_drives_cardinality() {
+        let cfg = SimConfig::from_ron_str("(species_count: 2, agents_per_species: [10, 60])")
+            .expect("RON valide");
+        assert_eq!(cfg.agents_per_species, vec![10, 60]);
+        assert_eq!(cfg.species_cardinality(), 2);
+
+        // La longueur prime si elle dépasse species_count (scénario qui n'a renseigné
+        // que les effectifs).
+        let cfg = SimConfig::from_ron_str("(agents_per_species: [4, 4, 4])").expect("RON valide");
+        assert_eq!(cfg.species_cardinality(), 3);
+
+        // Vide (défaut) → repli sur species_count, au moins 1.
+        assert_eq!(SimConfig::default().agents_per_species, Vec::<usize>::new());
+        assert_eq!(SimConfig::default().species_cardinality(), 1);
+    }
+
+    /// Le scénario proie-prédateur versionné est une chaîne trophique à trois
+    /// niveaux exprimée en pure donnée : pyramide par effectifs (proies ≫
+    /// prédateurs), cerveau chasseur, et DEUX relations enchaînées
+    /// (prédateur→proie, proie→plante) — la dynamique elle-même est vérifiée par le
+    /// driver `tests/predator_prey`.
+    #[test]
+    fn bundled_predator_prey_is_a_trophic_chain() {
+        use crate::brain::BrainKind;
+        let text = include_str!("../scenarios/proie_predateur.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario proie-prédateur valide");
+        // Pyramide : strictement moins de prédateurs (espèce 0) que de proies (1).
+        assert_eq!(cfg.agents_per_species.len(), 2);
+        assert!(
+            cfg.agents_per_species[0] < cfg.agents_per_species[1],
+            "une pyramide veut proies ≫ prédateurs"
+        );
+        assert_eq!(cfg.brain, BrainKind::Hunter);
+        // La chaîne : le prédateur mange une espèce qui, elle, mange la nourriture.
+        let prey = cfg
+            .relations
+            .iter()
+            .find(|r| r.actor == 0 && r.transfer)
+            .expect("le prédateur mange quelqu'un")
+            .target;
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.actor == prey && r.target == cfg.food_species && r.transfer),
+            "la proie du prédateur doit elle-même brouter la nourriture (3 niveaux)"
         );
     }
 

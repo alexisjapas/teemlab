@@ -245,10 +245,29 @@ placement et **suppression** d'entités (touche Suppr).
     (`BrainKind`, RON : `Wander(turn_rate: …)`/`Hunter` ; `scenarios/chasse.ron`). Groupe témoin
     compétent ; rend le chemin percevoir→décider→agir porteur et le sélecteur de cerveau falsifiable
     (2ᵉ variant de `Brain`). **Reste** : substitution *par espèce* (cohabitation témoin/appris, §4).
-17. Pluralité de scénarios de sélection naturelle (dont un proie-prédateur co-évolutif) + calibration
-    de l'économie (cycles de Lotka-Volterra). Critère de falsification explicite par scénario : bande
-    de population, dérive attendue, et « scénario ajouté en donnée + un driver, zéro édition de
-    `movement` / `interaction` / `ecology` ».
+17. Proie-prédateur co-évolutif **(réalisé)** : `scenarios/proie_predateur.ron`, une **chaîne
+    trophique à trois niveaux** (plantes → proies → prédateurs) où le *même* `Brain::Hunter` partagé
+    fait d'une proie un herbivore et d'un prédateur un carnivore — le canal « cible » (item 16) se
+    résout **par espèce qui perçoit** via la table de relations, si bien que deux relations enchaînées
+    (prédateur→proie, proie→plante) suffisent à distinguer les rôles. La méthode « éditeur piloté par
+    les scénarios » a joué pleinement : la version **pure donnée** (round-robin → 50 % de prédateurs)
+    s'est avérée un *knife-edge* (coexistence pour ~2 graines sur 5, effondrement sinon) — la cause
+    structurelle (ratio forcé, pas de pyramide possible) a **fait naître l'unique croissance de
+    schéma** : un champ **`agents_per_species`** (effectif par espèce → pyramide « proies ≫
+    prédateurs »), vivant dans `config` + `spawn` (+ `species_cardinality()` pour HUD/éditeur), **zéro
+    édition de `movement` / `interaction` / `ecology`** et **rétro-compatible** (vide → l'ancien
+    partage uniforme ; aucun `.ron` à migrer). L'archétype reste *partagé* entre espèces — seul
+    l'effectif diffère. Calibration (§7) : le stabilisateur décisif des cycles de Lotka-Volterra s'est
+    révélé **spatial** (grande arène = refuges des proies + cueillette plafonnée), pas un réglage fin ;
+    prédation modérée et seuil de reproduction modéré amortissent l'oscillation. **Driver**
+    `tests/predator_prey` — multi-graines (5 mondes indépendants), il encode le critère de
+    falsification : (a) *bande de population* — aucune lignée éteinte ni explosive sur la 2ᵉ moitié,
+    pour toutes les graines ; (b) *dérive attendue* — la vision **se maintient** (le chasseur s'en
+    sert : ~130-280 selon la graine, fondateur 170), au lieu de fondre vers la borne basse comme sous
+    l'errance (contraste falsifiable avec `evolution.ron`). **Reste** : substitution de cerveau *par
+    espèce* (cohabitation témoin/appris, §4) et l'**archétype complet par espèce** (gènes fondateurs +
+    cerveau distincts ; couture du founder de §9), différés jusqu'à un scénario exigeant des *corps*
+    distincts — et la **fuite active** d'une proie (un canal « menace » symétrique du canal « cible »).
 18. MLP fait maison + neuroévolution, en substitution par espèce, dans le régime continu. Mutation
     gaussienne sur les poids ; crossover paramétrique (gènes) trivial. Le déterministe reste le
     groupe témoin.
@@ -282,11 +301,15 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
   générationnelle et le batch inter-matchs en place (P5).
-- **Repli des valeurs fondatrices** (item 15) : `SimConfig` porte aujourd'hui les valeurs
-  d'archétype en champs épars (`max_speed`, `agility`, …) qui doublent ceux du `Genotype`. Les
-  replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base` et cette
-  duplication, mais casse le RON de tous les scénarios (champs de premier niveau → imbriqués sous
-  `founder`). Différé hors de l'amorce item 15 ; à faire avec une migration des `.ron` versionnés.
+- **Repli des valeurs fondatrices → archétype par espèce** (items 15, 17) : `SimConfig` porte
+  aujourd'hui les valeurs d'archétype en champs épars (`max_speed`, `agility`, …) qui doublent ceux du
+  `Genotype`. Les replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base`
+  et cette duplication ; le pas suivant naturel est un `founder` **par espèce** (`Vec<Archetype>`),
+  pour que prédateur et proie aient des *corps* distincts. L'item 17 a posé le **premier levier par
+  espèce — l'effectif** (`agents_per_species`), additif et rétro-compatible ; l'archétype, lui, reste
+  *partagé*. Le replier (et le rendre per-espèce) casse le RON de tous les scénarios (champs de premier
+  niveau → imbriqués) → à faire avec une migration des `.ron` versionnés, le jour où un scénario exige
+  des corps distincts (le driver de cette croissance-là, pas encore rencontré).
 - **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
   vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
   pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des

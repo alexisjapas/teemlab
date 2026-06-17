@@ -97,7 +97,7 @@ pub fn sample_history(
     }
     history.next_at = now + history.interval;
 
-    let species_count = config.species_count.max(1) as usize;
+    let species_count = config.species_cardinality() as usize;
     let mut population = vec![0u32; species_count];
     let mut sums = vec![0.0_f32; TRAITS.len()];
     let cfg = &*config;

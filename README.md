@@ -27,8 +27,12 @@ continu. *Réalisé* : caractéristiques d'entité génériques (table `TRAITS` 
 réflexe déterministe **groupe témoin** qui fonce vers la cible perçue la plus proche —
 2ᵉ variant de `Brain`, sélectionnable par scénario (`BrainKind`), nourri par un nouveau
 **canal « cible »** de la perception ; **sélecteur de cerveau dans l'éditeur** (combo de
-type + paramètres propres au variant, p. ex. `turn_rate` de l'errance). *Reste* :
-substitution par espèce, scénarios co-évolutifs (proie-prédateur), MLP + neuroévolution.
+type + paramètres propres au variant, p. ex. `turn_rate` de l'errance) ; **scénario
+proie-prédateur co-évolutif** (`proie_predateur.ron`) — chaîne trophique à trois niveaux
+(plantes → proies → prédateurs) en *pure donnée*, robuste sur 5 graines via le driver
+`tests/predator_prey`, avec pour seule croissance de schéma un **effectif par espèce**
+(`agents_per_species`, la pyramide trophique). *Reste* : substitution de cerveau par
+espèce, archétype complet par espèce, MLP + neuroévolution.
 
 **Planifié (P5).** La bataille (régime générationnel) comme test final de l'abstraction,
 le long d'une *couture A/B* propre.
@@ -70,6 +74,8 @@ scenarios/
   selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir) — cerveaux d'errance.
   chasse.ron      Même économie que selection.ron mais cerveaux Hunter : le groupe témoin compétent (item 16).
   evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes.
+  proie_predateur.ron  Chaîne trophique à 3 niveaux co-évolutive (item 17) : pyramide
+                  par effectifs (agents_per_species), cerveaux Hunter, 2 relations.
 outputs/          Sorties des simulations (vidéos, images…) ; contenu ignoré par git.
 ```
 

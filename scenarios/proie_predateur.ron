@@ -1,0 +1,117 @@
+// Scénario — PROIE-PRÉDATEUR CO-ÉVOLUTIF (item 17).
+//
+// Le second exemplaire de l'axe « sélection naturelle » — celui qui FALSIFIE
+// l'abstraction. Trois niveaux trophiques, et pourtant *zéro* ligne de moteur
+// touchée (`movement` / `interaction` / `ecology` inchangés) : la dynamique est une
+// recomposition des briques de l'item 16 (cerveau chasseur + canal « cible ») et de
+// l'item 9 (économie + reproduction). La SEULE croissance de schéma, née de l'échec
+// de la version pure-donnée (round-robin → 50 % de prédateurs, sans pyramide
+// possible → effondrement), est le champ `agents_per_species` (effectif par espèce),
+// additif et rétro-compatible — l'éditeur piloté par les scénarios (§8) au travail.
+//
+//   plantes (espèce 2)  →  proies (espèce 1)  →  prédateurs (espèce 0)
+//        Food sessile         Hunter, mange       Hunter, mange la proie
+//        repousse globale     la plante           (sa seule source d'énergie)
+//
+// Comment trois rôles tiennent dans UN cerveau partagé : le canal « cible » de la
+// perception (item 16) se calcule PAR espèce qui perçoit, via la table de
+// relations (`acts_on`). Le même `Brain::Hunter` fait donc d'une proie un
+// herbivore (sa cible = la plante) et d'un prédateur un carnivore (sa cible = la
+// proie). Une proie ne FUIT pas encore son prédateur — elle ne le voit que comme
+// un obstacle qu'elle contourne (le champ de pilotage du chasseur, item 16) ;
+// c'est assez pour une première boucle co-évolutive (la pression sélectionne la
+// vitesse/vision), la fuite active (un canal « menace » symétrique) reste à venir.
+//
+// Co-évolution : prédateurs et proies partent du MÊME archétype fondateur (le
+// schéma v1 n'a qu'un génotype global), mais ce sont deux LIGNÉES séparées qui
+// dérivent indépendamment. La question falsifiable : leurs distributions de gènes
+// divergent-elles selon le rôle ? Contraste avec evolution.ron (errance) — là la
+// vision DÉRIVE VERS LE BAS, pur coût qu'aucun cerveau n'exploite ; ici le
+// chasseur s'en SERT, donc on attend qu'elle se maintienne (voire monte).
+//
+// Calibration (§7 : « du réglage, pas de l'algo ») — cycles de Lotka-Volterra.
+// L'énergie n'entre QUE par les plantes : food_regen × food_energy ≈ 18 × 45 ≈
+// 810/s. Elle remonte la chaîne, amputée du métabolisme à chaque maillon. Les
+// prédateurs, plus haut, vivent sur un flux plus maigre → population plus faible,
+// plus volatile. On vise la COEXISTENCE bornée, pas un point fixe : les deux
+// populations oscillent sans que l'une s'éteigne (le STABILISATEUR décisif est
+// spatial — voir l'arène ci-dessous). Le driver `tests/predator_prey` vérifie cette
+// bande sur 5 graines.
+//
+//     cargo run --bin teemlab  scenarios/proie_predateur.ron
+//     cargo run --bin headless scenarios/proie_predateur.ron
+(
+    // Grande arène : le STABILISATEUR clé d'un proie-prédateur. Elle disperse les
+    // proies (refuges spatiaux) et plafonne la cueillette des prédateurs (ils ne
+    // peuvent pas tout trouver) → l'oscillation de Lotka-Volterra s'amortit au lieu
+    // de diverger vers l'extinction. C'est de la spatialité, pas un réglage fin.
+    arena_half_extent: 480.0,
+    tick_hz: 64.0,
+
+    // La pyramide trophique, par effectifs explicites (item 17) : peu de
+    // prédateurs (espèce 0), beaucoup de proies (espèce 1). C'est CE ratio — et non
+    // un réglage fin — qui rend la coexistence robuste : un round-robin uniforme
+    // imposerait 50 % de prédateurs, sans marge, et l'écosystème s'effondrerait.
+    // L'archétype reste partagé entre les deux ; seul l'effectif diffère.
+    species_count: 2,
+    agents_per_species: [10, 60],
+    agent_radius: 8.0,
+    reserve_max: 120.0,
+
+    // Le cerveau compétent (item 16), partagé. Le rôle (chasser la proie / brouter
+    // la plante) sort de la table de relations, pas du cerveau.
+    brain: Hunter,
+
+    // Vision : utile ici (le chasseur la lit), contrairement à l'errance. Portée
+    // généreuse pour repérer cible et nourriture ; son coût borne quand même la
+    // dérive (cf. metabolic_cost).
+    vision_rays: 7,
+    vision_fov_deg: 130.0,
+    vision_range: 170.0,
+
+    // Coûts (par seconde), partagés par les deux lignées (non héritables par
+    // défaut : ils SONT la pression de sélection). Le prédateur paie le même
+    // métabolisme que la proie mais doit l'arracher à une ressource mobile et
+    // clairsemée — d'où une vie plus précaire en haut de la chaîne.
+    base_metabolism: 4.0,
+    move_cost: 2.0,
+
+    // Niveau 1 — les plantes (espèce 2). Le seul robinet d'énergie du monde.
+    // Abondantes et à repousse rapide : c'est ce qui permet aux proies de SE
+    // REMPLIR vite (donc de se reproduire souvent) et de regarnir leurs rangs plus
+    // vite que les prédateurs ne les fauchent. Repousse à débit fini → capacité de
+    // charge pour les proies (item 9).
+    food_count: 220,
+    food_radius: 7.0,
+    food_energy: 45.0,
+    food_regen: 18.0,
+    food_species: 2,
+
+    // La chaîne trophique, en deux relations dirigées (l'unique primitive, §3).
+    // C'est CE tableau — et lui seul — qui distingue prédateur de proie.
+    relations: [
+        // Le prédateur (0) mange la proie (1) : sa seule entrée d'énergie. Débit
+        // modéré : une proie n'est pas vidée d'un seul contact, elle a une chance
+        // de se dégager — la prédation est une ponction, pas une exécution.
+        (actor: 0, target: 1, transfer: true, rate: 30.0, range: 20.0),
+        // La proie (1) mange la plante (2). Débit élevé : brouter est rapide, donc
+        // une proie qui trouve un buisson se remplit (et se reproduit) en un éclair.
+        (actor: 1, target: 2, transfer: true, rate: 220.0, range: 26.0),
+    ],
+
+    // La boucle évolutive (item 9), partagée. Avec la pyramide (peu de prédateurs),
+    // plus besoin d'étrangler la reproduction par un seuil haut : un seuil MODÉRÉ
+    // laisse les deux lignées se renouveler régulièrement, ce qui amortit les
+    // creux du cycle au lieu de les laisser filer vers l'extinction. Seuil ≤
+    // reserve_max pour rester atteignable ; l'enfant emporte offspring_energy,
+    // déduite du parent (conservation).
+    reproduction_threshold: 90.0,
+    offspring_energy: 40.0,
+    mutation_rate: 0.06,
+
+    // Bornes des gènes (le « bornes » du triplet du §2).
+    speed_bounds: (min: 40.0, max: 280.0),
+    agility_bounds: (min: 0.02, max: 0.5),
+    vision_range_bounds: (min: 30.0, max: 320.0),
+    vision_fov_bounds: (min: 40.0, max: 280.0),
+)

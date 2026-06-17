@@ -74,7 +74,7 @@ pub(crate) fn species_color32(species: u16) -> egui::Color32 {
 pub fn make_items(config: &SimConfig) -> Vec<Archetype> {
     let mut items = Vec::new();
     let base = Genotype::base(config);
-    for species in 0..config.species_count.max(1) {
+    for species in 0..config.species_cardinality() {
         items.push(Archetype {
             name: format!("Agent · espèce {species}"),
             kind: ArchetypeKind::Agent {
