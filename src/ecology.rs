@@ -121,8 +121,7 @@ pub fn reproduce(
         reserve.current -= genotype.offspring_energy;
         let child = genotype.mutate(&mut rng.0, &config);
         // L'enfant naît légèrement décalé pour ne pas chevaucher exactement.
-        let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed())
-            .normalize_or_zero()
+        let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero()
             * config.agent_radius
             * 2.5;
         let pos = transform.translation.truncate() + offset;
@@ -132,8 +131,7 @@ pub fn reproduce(
         // pour muter ses poids (neuroévolution), pilotée par `mutation_rate` (item 18b).
         let heading = rng.0.next_f32() * std::f32::consts::TAU;
         let brain_seed = rng.0.next_u64();
-        let child_brain =
-            brain.reproduce(brain_seed, heading, &mut rng.0, genotype.mutation_rate);
+        let child_brain = brain.reproduce(brain_seed, heading, &mut rng.0, genotype.mutation_rate);
         spawn_agent_with_brain(
             &mut commands,
             &config,
@@ -201,7 +199,12 @@ pub fn spawn_food(commands: &mut Commands, config: &SimConfig, pos: Vec2) {
 /// Variante posant une source avec une réserve **partielle** donnée (au lieu de
 /// pleine) : chemin de la restauration d'un snapshot (item 13), qui réinjecte une
 /// nourriture à demi mangée à l'identique. [`spawn_food`] en est le cas « pleine ».
-pub fn spawn_food_with_energy(commands: &mut Commands, config: &SimConfig, pos: Vec2, current: f32) {
+pub fn spawn_food_with_energy(
+    commands: &mut Commands,
+    config: &SimConfig,
+    pos: Vec2,
+    current: f32,
+) {
     commands.spawn((
         Food,
         Species(config.food_species),

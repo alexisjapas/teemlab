@@ -10,13 +10,13 @@
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
+use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Agent, Food, Reserve, Species, Wall};
 use teemlab::ecology::{FoodRegen, SimRng, spawn_food_with_energy};
 use teemlab::genotype::Genotype;
 use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
 use teemlab::spawn::{spawn_agent_with_brain, spawn_arena};
-use teemlab::SimConfig;
 
 mod common;
 

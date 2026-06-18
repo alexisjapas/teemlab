@@ -239,15 +239,39 @@ impl Default for SimConfig {
             mutation_rate: 0.0,
             reproduction_threshold: 0.0,
             offspring_energy: 30.0,
-            speed_bounds: Bounds { min: 40.0, max: 260.0 },
-            agility_bounds: Bounds { min: 0.02, max: 0.5 },
-            vision_range_bounds: Bounds { min: 40.0, max: 300.0 },
-            vision_fov_bounds: Bounds { min: 40.0, max: 280.0 },
-            reproduction_threshold_bounds: Bounds { min: 0.0, max: 200.0 },
-            offspring_energy_bounds: Bounds { min: 10.0, max: 120.0 },
+            speed_bounds: Bounds {
+                min: 40.0,
+                max: 260.0,
+            },
+            agility_bounds: Bounds {
+                min: 0.02,
+                max: 0.5,
+            },
+            vision_range_bounds: Bounds {
+                min: 40.0,
+                max: 300.0,
+            },
+            vision_fov_bounds: Bounds {
+                min: 40.0,
+                max: 280.0,
+            },
+            reproduction_threshold_bounds: Bounds {
+                min: 0.0,
+                max: 200.0,
+            },
+            offspring_energy_bounds: Bounds {
+                min: 10.0,
+                max: 120.0,
+            },
             mutation_rate_bounds: Bounds { min: 0.0, max: 0.5 },
-            base_metabolism_bounds: Bounds { min: 0.0, max: 20.0 },
-            move_cost_bounds: Bounds { min: 0.0, max: 20.0 },
+            base_metabolism_bounds: Bounds {
+                min: 0.0,
+                max: 20.0,
+            },
+            move_cost_bounds: Bounds {
+                min: 0.0,
+                max: 20.0,
+            },
             heritable: Heritability::default(),
             seed: 0x00C0_FFEE,
         }
@@ -517,7 +541,10 @@ mod tests {
             SimConfig::from_ron_str("()").unwrap().brain,
             BrainKind::Wander { .. }
         ));
-        assert!(matches!(SimConfig::default().brain, BrainKind::Wander { .. }));
+        assert!(matches!(
+            SimConfig::default().brain,
+            BrainKind::Wander { .. }
+        ));
     }
 
     /// `acts_on` reflète la table de relations : c'est le filtre de cible du
@@ -634,7 +661,10 @@ mod tests {
     fn bundled_evolution_scenario_closes_the_loop() {
         let text = include_str!("../scenarios/evolution.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario évolution valide");
-        assert!(cfg.reproduction_threshold > 0.0, "la reproduction doit être active");
+        assert!(
+            cfg.reproduction_threshold > 0.0,
+            "la reproduction doit être active"
+        );
         assert!(cfg.mutation_rate > 0.0, "la mutation doit être active");
         assert!(cfg.food_regen > 0.0, "repousse finie → capacité de charge");
         assert!(
@@ -649,9 +679,8 @@ mod tests {
     #[test]
     fn brains_per_species_parses_and_brain_of_resolves() {
         use crate::brain::BrainKind;
-        let cfg =
-            SimConfig::from_ron_str("(brains_per_species: [Hunter, Wander(turn_rate: 0.3)])")
-                .expect("RON valide");
+        let cfg = SimConfig::from_ron_str("(brains_per_species: [Hunter, Wander(turn_rate: 0.3)])")
+            .expect("RON valide");
         assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
         assert_eq!(cfg.brain_of(1), BrainKind::Wander { turn_rate: 0.3 });
         // Espèce au-delà de la longueur → repli sur le `brain` uniforme (défaut Wander).
@@ -675,7 +704,11 @@ mod tests {
         let cfg = SimConfig::from_ron_str(text).expect("scénario cohabitation valide");
         // Départ équitable : mêmes effectifs, seul le cerveau diffère.
         assert_eq!(cfg.agents_per_species, vec![30, 30]);
-        assert_eq!(cfg.brain_of(0), BrainKind::Hunter, "espèce 0 = témoin compétent");
+        assert_eq!(
+            cfg.brain_of(0),
+            BrainKind::Hunter,
+            "espèce 0 = témoin compétent"
+        );
         assert!(
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "espèce 1 = témoin naïf"

@@ -200,8 +200,29 @@ mod tests {
     #[test]
     fn reserve_fraction_is_clamped() {
         assert_eq!(Reserve::full(100.0).fraction(), 1.0);
-        assert_eq!(Reserve { current: 50.0, max: 100.0 }.fraction(), 0.5);
-        assert_eq!(Reserve { current: 0.0, max: 0.0 }.fraction(), 0.0);
-        assert_eq!(Reserve { current: 999.0, max: 100.0 }.fraction(), 1.0);
+        assert_eq!(
+            Reserve {
+                current: 50.0,
+                max: 100.0
+            }
+            .fraction(),
+            0.5
+        );
+        assert_eq!(
+            Reserve {
+                current: 0.0,
+                max: 0.0
+            }
+            .fraction(),
+            0.0
+        );
+        assert_eq!(
+            Reserve {
+                current: 999.0,
+                max: 100.0
+            }
+            .fraction(),
+            1.0
+        );
     }
 }

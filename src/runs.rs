@@ -108,7 +108,11 @@ pub(crate) fn runs_section(ui: &mut egui::Ui, panel: &mut RunsPanel) {
                     ui.selectable_value(&mut selected, Some(i), path);
                 }
             });
-        if ui.button("↻").on_hover_text("Rescanner scenarios/").clicked() {
+        if ui
+            .button("↻")
+            .on_hover_text("Rescanner scenarios/")
+            .clicked()
+        {
             rescan = true;
         }
     });

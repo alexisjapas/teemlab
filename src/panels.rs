@@ -73,7 +73,9 @@ pub fn left_tools(
                     .show(ui, |ui| editor::selector_section(ui, &mut palette));
                 egui::CollapsingHeader::new("Éditeur d'archétype")
                     .default_open(true)
-                    .show(ui, |ui| editor::editor_section(ui, &mut palette, &mut config));
+                    .show(ui, |ui| {
+                        editor::editor_section(ui, &mut palette, &mut config)
+                    });
             });
         });
     Ok(())
@@ -99,7 +101,15 @@ pub fn bottom_panel(
     mut history: ResMut<History>,
     selection: Res<Selection>,
     agents: Query<
-        (&Species, &Reserve, &Genotype, &Vision, &Perception, &Action, &Brain),
+        (
+            &Species,
+            &Reserve,
+            &Genotype,
+            &Vision,
+            &Perception,
+            &Action,
+            &Brain,
+        ),
         With<Agent>,
     >,
 ) -> Result {

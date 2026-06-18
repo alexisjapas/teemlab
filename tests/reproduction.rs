@@ -111,7 +111,10 @@ fn reproduction_is_refused_when_offspring_costs_more_than_reserve() {
         app.update();
         let (population, energy) = population_and_energy(&mut app);
         // Jamais d'enfant (coût impayable), donc jamais d'énergie créée.
-        assert_eq!(population, 1, "aucune reproduction : le coût dépasse la réserve");
+        assert_eq!(
+            population, 1,
+            "aucune reproduction : le coût dépasse la réserve"
+        );
         assert!(
             (energy - initial).abs() < 1e-3,
             "énergie figée à {initial} (rien créé, rien mis en négatif) : {energy}"

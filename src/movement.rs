@@ -26,7 +26,14 @@ pub fn perceive(
     spatial: SpatialQuery,
     config: Res<SimConfig>,
     mut agents: Query<
-        (Entity, &Transform, &LinearVelocity, &Species, &Vision, &mut Perception),
+        (
+            Entity,
+            &Transform,
+            &LinearVelocity,
+            &Species,
+            &Vision,
+            &mut Perception,
+        ),
         With<Agent>,
     >,
     species_of: Query<&Species>,
@@ -34,7 +41,11 @@ pub fn perceive(
     for (entity, transform, velocity, species, vision, mut perception) in &mut agents {
         // Cap = direction de déplacement, repli sur +X à l'arrêt (1er tick).
         let facing = velocity.0.normalize_or_zero();
-        let facing = if facing == Vec2::ZERO { Vec2::X } else { facing };
+        let facing = if facing == Vec2::ZERO {
+            Vec2::X
+        } else {
+            facing
+        };
         perception.heading = facing;
 
         // Buffers de la bonne taille (l'espèce peut avoir changé de forme entre

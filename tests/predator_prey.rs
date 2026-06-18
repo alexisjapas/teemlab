@@ -15,9 +15,9 @@
 //! coexistence d'une seule graine serait anecdotique, pas une bande.
 
 use bevy::prelude::*;
+use teemlab::SimConfig;
 use teemlab::components::{Agent, Species};
 use teemlab::genotype::Genotype;
-use teemlab::SimConfig;
 
 mod common;
 
@@ -100,7 +100,9 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
     let founder_vision = SimConfig::from_ron_str(SCENARIO).unwrap().vision_range;
 
     let mut failures = Vec::new();
-    eprintln!("  seed       | préd(min..max) | proie(min..max) | vision préd/proie (fond {founder_vision:.0})");
+    eprintln!(
+        "  seed       | préd(min..max) | proie(min..max) | vision préd/proie (fond {founder_vision:.0})"
+    );
     for seed in SEEDS {
         let run = run_seed(seed);
         // On juge sur la 2ᵉ moitié : on laisse passer le transitoire initial
@@ -126,7 +128,9 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
 
         // --- Volet 1 : bande de population (coexistence bornée), pour CETTE graine. ---
         if pred_min == 0 {
-            failures.push(format!("seed {seed:#x} : prédateurs éteints (chaîne non soutenue)"));
+            failures.push(format!(
+                "seed {seed:#x} : prédateurs éteints (chaîne non soutenue)"
+            ));
         }
         if prey_min == 0 {
             failures.push(format!("seed {seed:#x} : proies éteintes (surprédation)"));

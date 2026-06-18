@@ -55,7 +55,11 @@ fn record_binary() -> PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
-        let sibling = dir.join(if cfg!(windows) { "record.exe" } else { "record" });
+        let sibling = dir.join(if cfg!(windows) {
+            "record.exe"
+        } else {
+            "record"
+        });
         if sibling.exists() {
             return sibling;
         }
@@ -153,11 +157,16 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
     match Command::new(record_binary())
         .arg(&scenario)
         .args([
-            "--out", &out,
-            "--fps", &fps.to_string(),
-            "--seconds", &seconds.to_string(),
-            "--width", &width.to_string(),
-            "--height", &height.to_string(),
+            "--out",
+            &out,
+            "--fps",
+            &fps.to_string(),
+            "--seconds",
+            &seconds.to_string(),
+            "--width",
+            &width.to_string(),
+            "--height",
+            &height.to_string(),
         ])
         .spawn()
     {

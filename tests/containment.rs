@@ -8,8 +8,8 @@
 //! éjecterait au contraire tout le monde *hors* de l'arène).
 
 use bevy::prelude::*;
-use teemlab::components::Agent;
 use teemlab::SimConfig;
+use teemlab::components::Agent;
 
 mod common;
 
@@ -45,7 +45,10 @@ fn agents_stay_within_arena() {
         }
     }
     let population = query.iter(world).count();
-    assert!(population > 0, "la population s'est éteinte — test non concluant");
+    assert!(
+        population > 0,
+        "la population s'est éteinte — test non concluant"
+    );
     assert!(
         escaped.is_empty(),
         "{} agent(s) hors de l'arène (|x|,|y| ≤ {:.0} attendu) : {:?}",

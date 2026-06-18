@@ -14,13 +14,13 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use teemlab::SimConfig;
 use teemlab::brain::{BrainKind, MlpBrain};
 use teemlab::components::{Agent, Food, Reserve, Species};
 use teemlab::config::Relation;
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
-use teemlab::SimConfig;
 
 /// Ce qu'un archétype produit une fois déposé. L'archétype est le *modèle*
 /// éditable (item 5) ; le génome porté ici en est la valeur d'instance.
@@ -146,7 +146,11 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
     let mut started = None;
     let mut clicked = None;
     for (i, arch) in palette.items.iter().enumerate() {
-        let mark = if palette.selected == Some(i) { "▶ " } else { "⬤ " };
+        let mark = if palette.selected == Some(i) {
+            "▶ "
+        } else {
+            "⬤ "
+        };
         let label = egui::RichText::new(format!("{mark}{}", arch.name)).color(arch.color);
         let resp = ui.add_sized(
             [ui.available_width(), 28.0],
@@ -203,7 +207,9 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                         let bounds = (t.bounds)(config);
                         let mut value = (t.get)(genotype);
                         if ui
-                            .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
+                            .add(
+                                egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name),
+                            )
                             .changed()
                         {
                             (t.set)(genotype, value);
@@ -211,7 +217,9 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                         let mut heritable = (t.heritable)(&config.heritable);
                         if ui
                             .checkbox(&mut heritable, "héritable")
-                            .on_hover_text("Décoché : ce gène reste figé à l'archétype, il ne mute pas.")
+                            .on_hover_text(
+                                "Décoché : ce gène reste figé à l'archétype, il ne mute pas.",
+                            )
                             .changed()
                         {
                             (t.set_heritable)(&mut config.heritable, heritable);
@@ -299,9 +307,7 @@ fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
         // manquantes — l'éditeur ne peut alors plus *mentir* sur une réalité
         // per-espèce. Sémantiquement identique au champ vide quand tous sont égaux.
         let fallback = config.brain.clone();
-        config
-            .brains_per_species
-            .resize(species as usize, fallback);
+        config.brains_per_species.resize(species as usize, fallback);
         for s in 0..species as usize {
             ui.push_id(s, |ui| {
                 ui.label(format!("Espèce {s}"));
@@ -363,7 +369,11 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
             ui.label(format!("cachée {i}"));
             ui.add(egui::DragValue::new(n));
             *n = (*n).clamp(1, 64); // au moins un neurone, plafond raisonnable.
-            if ui.small_button("✕").on_hover_text("retirer cette couche").clicked() {
+            if ui
+                .small_button("✕")
+                .on_hover_text("retirer cette couche")
+                .clicked()
+            {
                 remove = Some(i);
             }
         });
@@ -450,9 +460,7 @@ pub(crate) fn draw_mlp_graph(
     // Arêtes d'abord (sous les nœuds). En mode live, teinte/épaisseur par poids.
     for col in 0..cols - 1 {
         let (from_n, to_n) = (sizes[col], sizes[col + 1]);
-        let weights = brain.and_then(|m| {
-            (col < m.weight_layers()).then(|| m.layer_weights(col))
-        });
+        let weights = brain.and_then(|m| (col < m.weight_layers()).then(|| m.layer_weights(col)));
         for o in 0..to_n {
             for i in 0..from_n {
                 let stroke = match weights {
@@ -483,7 +491,11 @@ pub(crate) fn draw_mlp_graph(
                 .copied();
             let center = pos(col, node, n);
             painter.circle_filled(center, radius, activation_color(act));
-            painter.circle_stroke(center, radius, Stroke::new(0.6, egui::Color32::from_gray(25)));
+            painter.circle_stroke(
+                center,
+                radius,
+                Stroke::new(0.6, egui::Color32::from_gray(25)),
+            );
         }
     }
 }
@@ -519,7 +531,11 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .range(1..=21)
             .prefix("rayons de vision (reset) : "),
     );
-    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0).prefix("graine (reset) : "));
+    ui.add(
+        egui::DragValue::new(&mut config.seed)
+            .speed(1.0)
+            .prefix("graine (reset) : "),
+    );
 
     ui.separator();
     ui.strong("Nourriture");
@@ -548,9 +564,21 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     for (i, rel) in config.relations.iter_mut().enumerate() {
         ui.separator();
         ui.horizontal(|ui| {
-            ui.add(egui::DragValue::new(&mut rel.actor).range(0..=8).prefix("acteur "));
-            ui.add(egui::DragValue::new(&mut rel.target).range(0..=8).prefix("→ cible "));
-            if ui.button("🗑").on_hover_text("Retirer cette relation").clicked() {
+            ui.add(
+                egui::DragValue::new(&mut rel.actor)
+                    .range(0..=8)
+                    .prefix("acteur "),
+            );
+            ui.add(
+                egui::DragValue::new(&mut rel.target)
+                    .range(0..=8)
+                    .prefix("→ cible "),
+            );
+            if ui
+                .button("🗑")
+                .on_hover_text("Retirer cette relation")
+                .clicked()
+            {
                 to_remove = Some(i);
             }
         });

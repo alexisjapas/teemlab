@@ -12,9 +12,9 @@
 //! pas-à-pas manuel (cf. §6).
 
 use bevy::prelude::*;
+use teemlab::SimConfig;
 use teemlab::components::{Agent, Species};
 use teemlab::genotype::Genotype;
-use teemlab::SimConfig;
 
 mod common;
 

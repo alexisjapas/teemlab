@@ -182,7 +182,11 @@ fn draw_population(ui: &mut egui::Ui, history: &History) {
             pts,
         });
     }
-    let food: Vec<[f32; 2]> = history.samples.iter().map(|s| [s.t, s.food as f32]).collect();
+    let food: Vec<[f32; 2]> = history
+        .samples
+        .iter()
+        .map(|s| [s.t, s.food as f32])
+        .collect();
     for q in &food {
         y_max = y_max.max(q[1]);
     }
@@ -257,7 +261,11 @@ fn plot(ui: &mut egui::Ui, height: f32, lines: &[Line], y_min: f32, y_max: f32) 
     let width = ui.available_width().max(64.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, egui::CornerRadius::same(2), egui::Color32::from_gray(18));
+    painter.rect_filled(
+        rect,
+        egui::CornerRadius::same(2),
+        egui::Color32::from_gray(18),
+    );
 
     let (mut x_min, mut x_max) = (f32::MAX, f32::MIN);
     for l in lines {

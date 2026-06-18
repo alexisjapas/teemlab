@@ -41,7 +41,10 @@ fn tick_and_maybe_exit(
         // Smoke test du raycast sans fenêtre : proportion de rayons qui voient
         // quelque chose. > 0 prouve que la vision fonctionne aussi en headless.
         let (seen, total) = agents.iter().fold((0usize, 0usize), |(s, t), (p, _, _)| {
-            (s + p.vision.iter().filter(|&&v| v > 0.0).count(), t + p.vision.len())
+            (
+                s + p.vision.iter().filter(|&&v| v > 0.0).count(),
+                t + p.vision.len(),
+            )
         });
         let ratio = seen as f32 / total.max(1) as f32;
         let mean_reserve = agents.iter().map(|(_, r, _)| r.current).sum::<f32>() / n;
@@ -53,7 +56,12 @@ fn tick_and_maybe_exit(
         println!(
             "headless: {} ticks, population = {}, réserve moy = {:.1}, \
              rayons occupés = {:.0}%, gènes moy : vitesse = {:.1}, vision = {:.1}",
-            counter.0, population, mean_reserve, ratio * 100.0, mean_speed, mean_vision
+            counter.0,
+            population,
+            mean_reserve,
+            ratio * 100.0,
+            mean_speed,
+            mean_vision
         );
         exit.write(AppExit::Success);
     }

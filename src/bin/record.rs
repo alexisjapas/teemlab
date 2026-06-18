@@ -72,7 +72,9 @@ impl Settings {
             match arg.as_str() {
                 "--out" | "-o" => s.out = next(),
                 "--fps" => s.fps = next().parse().expect("--fps : nombre attendu"),
-                "--seconds" | "-s" => s.seconds = next().parse().expect("--seconds : nombre attendu"),
+                "--seconds" | "-s" => {
+                    s.seconds = next().parse().expect("--seconds : nombre attendu")
+                }
                 "--width" | "-w" => s.width = next().parse().expect("--width : entier attendu"),
                 "--height" | "-h" => s.height = next().parse().expect("--height : entier attendu"),
                 other if other.starts_with('-') => {
@@ -133,7 +135,10 @@ fn main() -> AppExit {
         && !parent.as_os_str().is_empty()
         && let Err(err) = std::fs::create_dir_all(parent)
     {
-        eprintln!("record : dossier de sortie « {} » impossible : {err}", parent.display());
+        eprintln!(
+            "record : dossier de sortie « {} » impossible : {err}",
+            parent.display()
+        );
         std::process::exit(1);
     }
 
@@ -142,13 +147,20 @@ fn main() -> AppExit {
     let mut child: Child = Command::new("ffmpeg")
         .args([
             "-y",
-            "-f", "rawvideo",
-            "-pixel_format", "rgba",
-            "-video_size", &format!("{}x{}", settings.width, settings.height),
-            "-framerate", &format!("{}", settings.fps),
-            "-i", "-",
-            "-pix_fmt", "yuv420p",
-            "-crf", "18",
+            "-f",
+            "rawvideo",
+            "-pixel_format",
+            "rgba",
+            "-video_size",
+            &format!("{}x{}", settings.width, settings.height),
+            "-framerate",
+            &format!("{}", settings.fps),
+            "-i",
+            "-",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
             &settings.out,
         ])
         .stdin(Stdio::piped())
@@ -277,24 +289,22 @@ fn capture_frame(
     let tx = sink.0.clone();
     // Une capture par frame rendue : le pipeline de rendu les livre dans l'ordre
     // de soumission et le canal est FIFO → l'ordre des frames est préservé.
-    commands
-        .spawn(Screenshot::image(target.0.clone()))
-        .observe(
-            move |captured: On<ScreenshotCaptured>,
-                  plan: Res<RecordPlan>,
-                  mut progress: ResMut<RecordProgress>,
-                  mut exit: MessageWriter<AppExit>| {
-                if let Some(data) = captured.image.data.clone() {
-                    // Canal plein/fermé = thread ffmpeg parti : rien à faire de
-                    // plus, la fin de run gérera la sortie.
-                    let _ = tx.send(data);
-                }
-                progress.written += 1;
-                if progress.written >= plan.frames {
-                    exit.write(AppExit::Success);
-                }
-            },
-        );
+    commands.spawn(Screenshot::image(target.0.clone())).observe(
+        move |captured: On<ScreenshotCaptured>,
+              plan: Res<RecordPlan>,
+              mut progress: ResMut<RecordProgress>,
+              mut exit: MessageWriter<AppExit>| {
+            if let Some(data) = captured.image.data.clone() {
+                // Canal plein/fermé = thread ffmpeg parti : rien à faire de
+                // plus, la fin de run gérera la sortie.
+                let _ = tx.send(data);
+            }
+            progress.written += 1;
+            if progress.written >= plan.frames {
+                exit.write(AppExit::Success);
+            }
+        },
+    );
 }
 
 /// Thread d'écriture : draine les frames brutes et les pousse sur le stdin de

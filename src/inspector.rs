@@ -132,7 +132,15 @@ pub(crate) fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
     agents: &Query<
-        (&Species, &Reserve, &Genotype, &Vision, &Perception, &Action, &Brain),
+        (
+            &Species,
+            &Reserve,
+            &Genotype,
+            &Vision,
+            &Perception,
+            &Action,
+            &Brain,
+        ),
         With<Agent>,
     >,
 ) {

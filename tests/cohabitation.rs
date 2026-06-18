@@ -21,9 +21,9 @@
 //! binaires), en pas-à-pas manuel (cf. débit headless, §6).
 
 use bevy::prelude::*;
+use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Agent, Species};
-use teemlab::SimConfig;
 
 mod common;
 
@@ -101,11 +101,15 @@ fn run_seed(seed: u64) -> Run {
 
 #[test]
 fn hunter_outforages_wanderer_across_seeds() {
-    let founders = SimConfig::from_ron_str(SCENARIO).unwrap().agents_per_species;
+    let founders = SimConfig::from_ron_str(SCENARIO)
+        .unwrap()
+        .agents_per_species;
     let hunter_founders = founders[HUNTER as usize];
 
     let mut failures = Vec::new();
-    eprintln!("  seed         | chasseur(moy 2e moitié) | errance(moy 2e moitié) | pic chasseur (fond {hunter_founders})");
+    eprintln!(
+        "  seed         | chasseur(moy 2e moitié) | errance(moy 2e moitié) | pic chasseur (fond {hunter_founders})"
+    );
     for seed in SEEDS {
         let run = run_seed(seed);
         // On juge la domination sur la 2ᵉ moitié : on laisse passer le transitoire

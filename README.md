@@ -100,7 +100,15 @@ cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60
 #   options : --out F  --fps N  --seconds S  --width W  --height H  (défaut 1080×1080, arène carrée)
 
 cargo test                            # tests unitaires + intégration (confinement, snapshot)
+cargo fmt                             # formatage — rustfmt par défaut fait foi
+cargo clippy --all-targets            # lint — l'arbre est tenu à zéro warning
 ```
+
+> **Convention de format.** On suit le **formatter de cargo** (`cargo fmt`,
+> rustfmt par défaut) : pas de `rustfmt.toml`, c'est l'outil qui tranche. Tout
+> commit doit laisser `cargo fmt --check` propre (et `cargo clippy --all-targets`
+> sans warning). On formate donc *avant* de committer plutôt que d'aligner à la
+> main — la mise en page n'est pas un terrain de revue.
 
 > **Lancer le fenêtré : la commande `play`** (fournie par le dev shell Nix —
 > `flake.nix`, `writeShellScriptBin`, pas de script versionné). Le menu d'enregistrement

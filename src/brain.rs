@@ -233,7 +233,11 @@ impl HunterBrain {
         }
         let dir = steer.normalize_or_zero();
         // Encerclé (tout occlus) ou aveugle (zéro rayon) : on garde le cap.
-        let dir = if dir == Vec2::ZERO { perception.heading } else { dir };
+        let dir = if dir == Vec2::ZERO {
+            perception.heading
+        } else {
+            dir
+        };
         Action { dir, throttle: 1.0 }
     }
 }
@@ -464,7 +468,11 @@ mod tests {
     fn hunter_favors_the_nearer_target() {
         let p = perception([0.3, 0.0, 0.9], [0.3, 0.0, 0.9]);
         let action = HunterBrain.think(&p);
-        assert!(action.dir.y < 0.0, "penche vers la cible la plus proche (-Y), dir={:?}", action.dir);
+        assert!(
+            action.dir.y < 0.0,
+            "penche vers la cible la plus proche (-Y), dir={:?}",
+            action.dir
+        );
         assert_eq!(action.throttle, 1.0);
     }
 
@@ -487,14 +495,22 @@ mod tests {
     #[test]
     fn hunter_steers_toward_open_space_when_no_target() {
         let action = HunterBrain.think(&perception([0.9, 0.0, 0.0], [0.0, 0.0, 0.0]));
-        assert!(action.dir.y < 0.0, "doit s'écarter de l'obstacle en +Y, dir={:?}", action.dir);
+        assert!(
+            action.dir.y < 0.0,
+            "doit s'écarter de l'obstacle en +Y, dir={:?}",
+            action.dir
+        );
     }
 
     /// Terrain entièrement dégagé : poussées symétriques → cap maintenu vers l'avant.
     #[test]
     fn hunter_cruises_forward_in_the_open() {
         let action = HunterBrain.think(&perception([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]));
-        assert!(action.dir.x > 0.9, "doit filer droit devant, dir={:?}", action.dir);
+        assert!(
+            action.dir.x > 0.9,
+            "doit filer droit devant, dir={:?}",
+            action.dir
+        );
         assert!(action.dir.y.abs() < 1e-6);
     }
 
@@ -540,20 +556,29 @@ mod tests {
         let mut rng = Rng::new(0);
         // Hunter → Hunter (déterministe, cloné).
         let hunter = Brain::Hunter(HunterBrain);
-        assert!(matches!(hunter.reproduce(7, 1.0, &mut rng, 0.1), Brain::Hunter(_)));
+        assert!(matches!(
+            hunter.reproduce(7, 1.0, &mut rng, 0.1),
+            Brain::Hunter(_)
+        ));
 
         // Wander → Wander, turn_rate hérité, état RNG distinct (graine ≠).
         let parent = Brain::Wander(WanderBrain::new(1, 0.0, 0.37));
         match parent.reproduce(2, 0.5, &mut rng, 0.1) {
             Brain::Wander(child) => {
                 assert_eq!(child.turn_rate, 0.37, "le turn_rate du parent est hérité");
-                let Brain::Wander(p) = &parent else { unreachable!() };
+                let Brain::Wander(p) = &parent else {
+                    unreachable!()
+                };
                 assert_ne!(child.rng, p.rng, "l'enfant a un état RNG frais");
             }
             other => panic!("attendu Wander, obtenu {other:?}"),
         }
         // Wander/Hunter n'ont pas consommé `rng` : son état est celui du départ.
-        assert_eq!(rng, Rng::new(0), "les cerveaux non-MLP ne touchent pas au flux RNG");
+        assert_eq!(
+            rng,
+            Rng::new(0),
+            "les cerveaux non-MLP ne touchent pas au flux RNG"
+        );
     }
 
     /// Perception à 3 rayons pour les tests MLP : 6 entrées (vision ++ cible).

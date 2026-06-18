@@ -38,10 +38,10 @@ pub fn populate(commands: &mut Commands, config: &SimConfig) {
 pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     let h = config.arena_half_extent;
     let walls = [
-        (Vec2::new(0.0, -h), Vec2::Y),     // bas    : solide en dessous
-        (Vec2::new(0.0, h), Vec2::NEG_Y),  // haut   : solide au-dessus
-        (Vec2::new(-h, 0.0), Vec2::X),     // gauche : solide à gauche
-        (Vec2::new(h, 0.0), Vec2::NEG_X),  // droite : solide à droite
+        (Vec2::new(0.0, -h), Vec2::Y),    // bas    : solide en dessous
+        (Vec2::new(0.0, h), Vec2::NEG_Y), // haut   : solide au-dessus
+        (Vec2::new(-h, 0.0), Vec2::X),    // gauche : solide à gauche
+        (Vec2::new(h, 0.0), Vec2::NEG_X), // droite : solide à droite
     ];
     for (origin, inward_normal) in walls {
         commands.spawn((
@@ -122,7 +122,9 @@ pub fn spawn_agent(
     // les cerveaux à état (errance, poids initiaux du MLP) ; `n_inputs` dimensionne la
     // couche d'entrée du MLP (= les canaux de perception, item 18b).
     let n_inputs = MlpBrain::input_size(config.vision_rays);
-    let brain = config.brain_of(species.0).build(brain_seed, heading, n_inputs);
+    let brain = config
+        .brain_of(species.0)
+        .build(brain_seed, heading, n_inputs);
     spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
 }
 

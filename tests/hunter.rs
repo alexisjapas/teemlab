@@ -9,11 +9,11 @@
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
+use teemlab::SimConfig;
 use teemlab::components::{Agent, Perception, Species};
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
-use teemlab::SimConfig;
 
 mod common;
 
