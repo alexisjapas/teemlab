@@ -46,6 +46,27 @@ impl Brain {
             Brain::Hunter(_) => "Chasseur",
         }
     }
+
+    /// Cerveau d'un enfant à partir de **celui du parent** (et non d'un
+    /// [`BrainKind`] global) : la couture par laquelle un comportement *appris* se
+    /// transmet — la neuroévolution (item 18b) l'étendra pour **muter les poids**.
+    /// Ici, sans état appris, elle ne fait que reconduire le type :
+    ///
+    /// - `Wander` hérite le `turn_rate` du parent (paramètre d'archétype, non mué),
+    ///   avec un état RNG **frais** (`seed`/`heading`) pour décorréler la lignée ;
+    /// - `Hunter`, déterministe et sans état, est simplement cloné.
+    ///
+    /// `seed`/`heading` ne servent qu'aux cerveaux à état (l'errance). En les
+    /// recevant de [`crate::ecology::reproduce`] — qui les tirait déjà pour
+    /// `config.brain.build` —, le flux RNG reste **identique** aux scénarios
+    /// d'avant cet item (le Wander mono-espèce hérite le même `turn_rate` que le
+    /// config ; le Hunter ignore les deux arguments, comme `build`).
+    pub fn reproduce(&self, seed: u64, heading: f32) -> Brain {
+        match self {
+            Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
+            Brain::Hunter(_) => Brain::Hunter(HunterBrain),
+        }
+    }
 }
 
 /// Le **type** de cerveau — le choix de l'auteur de la décision (§1), donnée de
@@ -92,6 +113,25 @@ impl BrainKind {
         match self {
             BrainKind::Wander { .. } => "Errance",
             BrainKind::Hunter => "Chasseur",
+        }
+    }
+
+    /// Description *fonctionnelle* du cerveau — comment il décide, pas seulement son
+    /// nom — affichée par le sélecteur d'éditeur. Contrepartie **hétérogène** de
+    /// [`name`](Self::name) : le `match` exhaustif force tout futur variant à se
+    /// décrire.
+    pub fn description(&self) -> &'static str {
+        match self {
+            BrainKind::Wander { .. } => {
+                "Dérive de cap aléatoire à chaque tick : ignore la perception, \
+                 fourrage au hasard. Le groupe témoin naïf."
+            }
+            BrainKind::Hunter => {
+                "Champ de pilotage : attiré vers la cible visible la plus proche \
+                 (table de relations), contourne murs et autres entités sans les \
+                 fuir. Sans mémoire : hors de portée, il explore. Le groupe témoin \
+                 compétent."
+            }
         }
     }
 }
@@ -257,5 +297,28 @@ mod tests {
             (BrainKind::Hunter).build(1, 0.0),
             Brain::Hunter(_)
         ));
+    }
+
+    /// L'héritage du cerveau (item 18a) : un enfant **reconduit le type** de son
+    /// parent — c'est ce qui fera cohabiter un témoin déterministe et un cerveau
+    /// appris (§4), et que 18b étendra pour muter les poids. Le Wander hérite le
+    /// `turn_rate` du parent (paramètre d'archétype) mais reçoit un état RNG frais ;
+    /// le Hunter, sans état, est cloné.
+    #[test]
+    fn reproduce_keeps_the_parent_variant() {
+        // Hunter → Hunter (déterministe, cloné).
+        let hunter = Brain::Hunter(HunterBrain);
+        assert!(matches!(hunter.reproduce(7, 1.0), Brain::Hunter(_)));
+
+        // Wander → Wander, turn_rate hérité, état RNG distinct (graine ≠).
+        let parent = Brain::Wander(WanderBrain::new(1, 0.0, 0.37));
+        match parent.reproduce(2, 0.5) {
+            Brain::Wander(child) => {
+                assert_eq!(child.turn_rate, 0.37, "le turn_rate du parent est hérité");
+                let Brain::Wander(p) = &parent else { unreachable!() };
+                assert_ne!(child.rng, p.rng, "l'enfant a un état RNG frais");
+            }
+            other => panic!("attendu Wander, obtenu {other:?}"),
+        }
     }
 }

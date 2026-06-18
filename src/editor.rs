@@ -317,44 +317,68 @@ fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConf
 }
 
 /// Sélecteur de cerveau (item 15) : le **type** de cerveau des agents + les
-/// paramètres **propres au variant** choisi. Global au scénario en v1, comme le
-/// génotype fondateur (cf. [`sync_config_from_palette`]) — édité directement sur le
+/// paramètres **propres au variant** choisi — édité directement sur le
 /// [`SimConfig`], donc persisté par « Sauver » sans passe de synchro.
 ///
-/// Le choix se fait par *kind* (et non par valeur) : éditer un paramètre ne doit
-/// pas désélectionner le type. Le `match` est exhaustif → ajouter un variant de
-/// `Brain` force à exposer ses paramètres ici. C'est la contrepartie *hétérogène*
-/// (des paramètres propres à chaque cerveau) de la table `TRAITS`, elle homogène.
+/// **Par espèce** dès qu'il y en a plusieurs (item 18a) : un sélecteur par espèce,
+/// adossé à [`SimConfig::brains_per_species`], pour authoring la cohabitation
+/// témoin/appris (§4) ; à une seule espèce, on édite le `brain` uniforme. Chaque
+/// variant affiche en plus une **description fonctionnelle** de son comportement,
+/// pas seulement son nom (cf. [`BrainKind::description`]).
 fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.separator();
     ui.strong("Cerveau (auteur de la décision)");
-    ui.small(
-        "Le type de cerveau des agents, global au scénario en v1. Chaque variant \
-         expose ses propres paramètres d'archétype.",
-    );
-    egui::ComboBox::from_label("type")
-        .selected_text(config.brain.name())
-        .show_ui(ui, |ui| {
-            // Sélection par KIND : on ne réécrit le config que si l'on change de
-            // type, pour ne pas réinitialiser les paramètres du variant courant.
-            let is_wander = matches!(config.brain, BrainKind::Wander { .. });
-            if ui.selectable_label(is_wander, "Errance").clicked() && !is_wander {
-                config.brain = BrainKind::default();
-            }
-            let is_hunter = matches!(config.brain, BrainKind::Hunter);
-            if ui.selectable_label(is_hunter, "Chasseur").clicked() && !is_hunter {
-                config.brain = BrainKind::Hunter;
-            }
-        });
-    match &mut config.brain {
-        BrainKind::Wander { turn_rate } => {
-            ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
-                .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
-        }
-        BrainKind::Hunter => {
-            ui.weak("Réflexe déterministe — aucun paramètre.");
+    let species = config.species_cardinality();
+    if species <= 1 {
+        ui.small(
+            "Le type de cerveau des agents. Chaque variant expose ses propres \
+             paramètres d'archétype.",
+        );
+        brain_kind_editor(ui, &mut config.brain);
+    } else {
+        ui.small(
+            "Un cerveau par espèce (cohabitation témoin/appris, §4) : corps partagé, \
+             cerveau distinct.",
+        );
+        // Matérialise un cerveau par espèce, en clonant l'uniforme pour les entrées
+        // manquantes — l'éditeur ne peut alors plus *mentir* sur une réalité
+        // per-espèce. Sémantiquement identique au champ vide quand tous sont égaux.
+        let fallback = config.brain;
+        config
+            .brains_per_species
+            .resize(species as usize, fallback);
+        for s in 0..species as usize {
+            ui.push_id(s, |ui| {
+                ui.label(format!("Espèce {s}"));
+                brain_kind_editor(ui, &mut config.brains_per_species[s]);
+            });
         }
     }
+}
+
+/// Édite **un** [`BrainKind`] : combo de type (sélection par *kind*, pour ne pas
+/// réinitialiser les paramètres du variant courant), paramètres propres au variant,
+/// puis sa description fonctionnelle. Le `match` exhaustif force tout futur variant
+/// de `Brain` à exposer ses paramètres ici — la contrepartie *hétérogène* (des
+/// paramètres propres à chaque cerveau) de la table `TRAITS`, elle homogène.
+fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind) {
+    egui::ComboBox::from_label("type")
+        .selected_text(kind.name())
+        .show_ui(ui, |ui| {
+            let is_wander = matches!(kind, BrainKind::Wander { .. });
+            if ui.selectable_label(is_wander, "Errance").clicked() && !is_wander {
+                *kind = BrainKind::default();
+            }
+            let is_hunter = matches!(kind, BrainKind::Hunter);
+            if ui.selectable_label(is_hunter, "Chasseur").clicked() && !is_hunter {
+                *kind = BrainKind::Hunter;
+            }
+        });
+    if let BrainKind::Wander { turn_rate } = kind {
+        ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
+            .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
+    }
+    ui.weak(kind.description());
 }
 
 /// La fenêtre flottante « Monde » : les paramètres de **scénario** — l'arène, la

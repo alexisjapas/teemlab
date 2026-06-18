@@ -56,6 +56,16 @@ pub struct SimConfig {
     /// l'échafaudage d'avant l'item 16). La substitution par espèce et le
     /// sélecteur d'éditeur (item 15) viendront se poser dessus.
     pub brain: BrainKind,
+    /// Cerveau **par espèce** au fondateur (item 18a) : `brains_per_species[s]`
+    /// fonde l’espèce `s`. Vide par défaut → le [`brain`](Self::brain) uniforme
+    /// s’applique partout (rétro-compatible, aucun `.ron` à migrer) ; une espèce
+    /// au-delà de la longueur retombe aussi sur `brain`. C’est le levier de la
+    /// **cohabitation** témoin/appris (§4) — corps partagé, cerveau distinct : la
+    /// substitution par espèce que les items 16 et 17 réservaient. Calqué sur
+    /// [`agents_per_species`](Self::agents_per_species), additif. Au-delà du
+    /// fondateur, le cerveau se transmet par **héritage** à la reproduction
+    /// ([`crate::brain::Brain::reproduce`]), sans relire ce champ.
+    pub brains_per_species: Vec<BrainKind>,
     /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). Vide par
     /// défaut → aucune interaction (monde inerte, comme avant l'item 7).
     pub relations: Vec<Relation>,
@@ -216,6 +226,7 @@ impl Default for SimConfig {
             agents_per_species: Vec::new(),
             reserve_max: 100.0,
             brain: BrainKind::default(),
+            brains_per_species: Vec::new(),
             relations: Vec::new(),
             base_metabolism: 0.0,
             move_cost: 0.0,
@@ -264,6 +275,18 @@ impl SimConfig {
         self.species_count
             .max(self.agents_per_species.len() as u16)
             .max(1)
+    }
+
+    /// Le **type de cerveau** fondateur de l’espèce `species` : l’entrée de
+    /// [`brains_per_species`](Self::brains_per_species) si elle existe, sinon le
+    /// [`brain`](Self::brain) uniforme (champ vide, ou espèce au-delà de sa
+    /// longueur). C’est le résolveur unique du peuplement (item 18a) ; au-delà du
+    /// fondateur, le cerveau se transmet par héritage et non par ce champ.
+    pub fn brain_of(&self, species: u16) -> BrainKind {
+        self.brains_per_species
+            .get(species as usize)
+            .copied()
+            .unwrap_or(self.brain)
     }
 
     /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une
@@ -616,5 +639,53 @@ mod tests {
             cfg.reproduction_threshold <= cfg.reserve_max,
             "un seuil au-dessus du max serait inatteignable"
         );
+    }
+
+    /// Le cerveau par espèce (item 18a) parse depuis le RON, et `brain_of` résout :
+    /// l'entrée explicite si elle existe, sinon le `brain` uniforme (champ vide, ou
+    /// espèce au-delà de la longueur).
+    #[test]
+    fn brains_per_species_parses_and_brain_of_resolves() {
+        use crate::brain::BrainKind;
+        let cfg =
+            SimConfig::from_ron_str("(brains_per_species: [Hunter, Wander(turn_rate: 0.3)])")
+                .expect("RON valide");
+        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
+        assert_eq!(cfg.brain_of(1), BrainKind::Wander { turn_rate: 0.3 });
+        // Espèce au-delà de la longueur → repli sur le `brain` uniforme (défaut Wander).
+        assert_eq!(cfg.brain_of(2), cfg.brain);
+
+        // Champ vide (défaut) → toutes les espèces sur le `brain` uniforme.
+        let cfg = SimConfig::default();
+        assert!(cfg.brains_per_species.is_empty());
+        assert_eq!(cfg.brain_of(0), cfg.brain);
+        assert_eq!(cfg.brain_of(5), cfg.brain);
+    }
+
+    /// Le scénario de cohabitation versionné oppose DEUX cerveaux sur la MÊME
+    /// nourriture : effectifs égaux, un cerveau par espèce (chasseur vs errance), et
+    /// les deux espèces mangent la nourriture. La dynamique (domination du chasseur)
+    /// est vérifiée par le driver `tests/cohabitation`.
+    #[test]
+    fn bundled_cohabitation_pits_two_brains_on_shared_food() {
+        use crate::brain::BrainKind;
+        let text = include_str!("../scenarios/cohabitation.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario cohabitation valide");
+        // Départ équitable : mêmes effectifs, seul le cerveau diffère.
+        assert_eq!(cfg.agents_per_species, vec![30, 30]);
+        assert_eq!(cfg.brain_of(0), BrainKind::Hunter, "espèce 0 = témoin compétent");
+        assert!(
+            matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
+            "espèce 1 = témoin naïf"
+        );
+        // Les deux broutent la même nourriture (canal d'énergie commun).
+        for s in [0u16, 1] {
+            assert!(
+                cfg.relations
+                    .iter()
+                    .any(|r| r.actor == s && r.target == cfg.food_species && r.transfer),
+                "l'espèce {s} doit pouvoir manger la nourriture"
+            );
+        }
     }
 }

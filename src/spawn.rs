@@ -117,10 +117,10 @@ pub fn spawn_agent(
     brain_seed: u64,
     energy: f32,
 ) {
-    // Le scénario choisit le *type* de cerveau ; on le compile ici en un cerveau
-    // frais (§1, l'auteur de la décision). La graine ne sert qu'aux cerveaux à
-    // état (errance) ; le chasseur, déterministe, l'ignore.
-    let brain = config.brain.build(brain_seed, heading);
+    // Le scénario choisit le *type* de cerveau **par espèce** (item 18a) ; on le
+    // compile ici en un cerveau frais (§1, l'auteur de la décision). La graine ne
+    // sert qu'aux cerveaux à état (errance) ; le chasseur, déterministe, l'ignore.
+    let brain = config.brain_of(species.0).build(brain_seed, heading);
     spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
 }
 

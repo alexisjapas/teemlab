@@ -13,11 +13,12 @@
 //! Manger, lui, n'est pas ici : c'est la primitive d'interaction (item 7) qui
 //! transfère l'énergie de la nourriture vers l'agent. Le moteur n'a qu'un verbe.
 
+use crate::brain::Brain;
 use crate::components::{Agent, Food, Radius, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::rng::Rng;
-use crate::spawn::spawn_agent;
+use crate::spawn::spawn_agent_with_brain;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -89,13 +90,18 @@ pub fn reap(mut commands: Commands, agents: Query<(Entity, &Reserve), With<Agent
 /// Seuil, coût et taux de mutation sont des **gènes de l'entité** (§1, *le
 /// corps*) : la stratégie de reproduction évolue elle-même et peut différer d'une
 /// espèce à l'autre.
+///
+/// Le cerveau de l'enfant **hérite de celui du parent**
+/// ([`Brain::reproduce`], item 18a) plutôt que d'être reconstruit depuis le
+/// `config` : c'est ce qui fait cohabiter durablement un témoin déterministe et un
+/// cerveau appris (§4), et la couture que 18b étendra pour muter les poids.
 pub fn reproduce(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut rng: ResMut<SimRng>,
-    mut parents: Query<(&Transform, &mut Reserve, &Genotype, &Species), With<Agent>>,
+    mut parents: Query<(&Transform, &mut Reserve, &Genotype, &Species, &Brain), With<Agent>>,
 ) {
-    for (transform, mut reserve, genotype, species) in &mut parents {
+    for (transform, mut reserve, genotype, species, brain) in &mut parents {
         // Seuil et coût sont des **gènes** (per-entité, évolvables) : un seuil nul
         // = cet agent ne se reproduit pas.
         if genotype.reproduction_threshold <= 0.0
@@ -111,16 +117,19 @@ pub fn reproduce(
             * config.agent_radius
             * 2.5;
         let pos = transform.translation.truncate() + offset;
+        // Mêmes tirages (heading puis seed) qu'avant l'héritage : le cerveau enfant
+        // les consomme via `reproduce` au lieu de `config.brain.build` → flux RNG
+        // inchangé pour les scénarios existants.
         let heading = rng.0.next_f32() * std::f32::consts::TAU;
         let brain_seed = rng.0.next_u64();
-        spawn_agent(
+        let child_brain = brain.reproduce(brain_seed, heading);
+        spawn_agent_with_brain(
             &mut commands,
             &config,
             child,
             *species,
             pos,
-            heading,
-            brain_seed,
+            child_brain,
             genotype.offspring_energy,
         );
     }

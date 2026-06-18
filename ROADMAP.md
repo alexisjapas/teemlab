@@ -224,8 +224,9 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
 
 L'évolution d'intelligence est la frontière de l'abstraction *dans* la sélection naturelle. L'éditeur
 grandit ici, piloté par ces scénarios — à ce jour : gènes d'archétype (valeur/bornes/héritable),
-sélecteur de cerveau, **paramètres de monde** (arène, économie de nourriture, table de relations),
-placement et **suppression** d'entités (touche Suppr).
+sélecteur de cerveau **par espèce** (+ description fonctionnelle de chaque variant), **paramètres de
+monde** (arène, économie de nourriture, table de relations), placement et **suppression** d'entités
+(touche Suppr).
 
 15. Éditeur générique de caractéristiques **(réalisé)** : (valeur, bornes) + toggle « héritable ? »
     par trait — table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
@@ -268,9 +269,39 @@ placement et **suppression** d'entités (touche Suppr).
     espèce* (cohabitation témoin/appris, §4) et l'**archétype complet par espèce** (gènes fondateurs +
     cerveau distincts ; couture du founder de §9), différés jusqu'à un scénario exigeant des *corps*
     distincts — et la **fuite active** d'une proie (un canal « menace » symétrique du canal « cible »).
-18. MLP fait maison + neuroévolution, en substitution par espèce, dans le régime continu. Mutation
-    gaussienne sur les poids ; crossover paramétrique (gènes) trivial. Le déterministe reste le
-    groupe témoin.
+18a. Couture « cerveau par espèce » + héritage du cerveau **(réalisé)** : le prérequis que les items
+    16 et 17 réservaient en « Reste » (substitution *par espèce* — cohabitation témoin/appris, §4).
+    Deux coutures, falsifiées avec les cerveaux **déterministes existants** avant que le MLP n'arrive
+    (« stub le comportement, jamais le schéma », §8). (1) `brains_per_species` fonde un cerveau par
+    espèce — calqué sur `agents_per_species` (item 17), **additif et rétro-compatible** (vide →
+    `brain` uniforme ; `brain_of` résout, repli sur l'uniforme ; zéro `.ron` à migrer) ; l'archétype
+    (le *corps*) reste **partagé**, seul le cerveau (l'*auteur de la décision*) diffère. (2) À la
+    reproduction, l'enfant **hérite du cerveau du parent** (`Brain::reproduce`) au lieu d'être
+    reconstruit depuis le config global — sinon les lignées convergeraient vers le cerveau uniforme ;
+    c'est la couture que la neuroévolution (18b) étendra pour **muter les poids**. Flux RNG préservé
+    (mêmes tirages qu'avant → `predator_prey`/`snapshot` inchangés). Éditeur : sélecteur de cerveau
+    **par espèce** dès qu'il y en a plusieurs, + **description fonctionnelle** de chaque variant
+    (`BrainKind::description`, contrepartie hétérogène de `name`). **Driver** `tests/cohabitation`
+    (`scenarios/cohabitation.ron`, 5 graines) : chasseur (témoin compétent) vs errance (témoin naïf),
+    **même corps et même économie**, nourriture commune — seul le cerveau diffère. Critère en trois
+    volets : (a) *invariant d'héritage* — tout descendant d'espèce 0 reste chasseur, d'espèce 1 reste
+    errant ; (b) *reproduction effective* — les chasseurs croissent au-delà de leurs fondateurs ; (c)
+    *domination du témoin* — exclusion compétitive nette (~110 chasseurs contre ~1 errant), le §4
+    réalisé : « un cerveau qui ne bat pas le déterministe n'a rien appris ».
+18b. MLP fait maison + neuroévolution, dans le régime continu, **en substitution par espèce** (la
+    couture 18a). Mutation gaussienne sur les poids (pilotée par `genotype.mutation_rate`) ; crossover
+    paramétrique (gènes) trivial. Entrées = canaux normalisés `vision`/`target` (pas la géométrie
+    `ray_dirs`) ; sortie **égocentrique** tournée par `perception.heading`. Le déterministe reste le
+    groupe témoin (driver multi-graines : le MLP fourrage mieux que l'errance, approche le chasseur).
+    **Architecture éditable** : `BrainKind::Mlp` porte la topologie des **couches cachées** (nombre de
+    couches **et** de neurones par couche) ; entrée/sortie restent *contraintes* par le contrat
+    `Perception → Action` (topologie cachée = choix de designer fixé au fondateur, **non muée** par
+    l'évolution — la topologie variable/NEAT reste repoussée, §2/item 21). **Visualisation graphe** :
+    l'éditeur dessine le MLP pendant l'édition de l'architecture ; l'**inspecteur** (item 12) le dessine
+    pour l'agent sélectionné **avec l'activation courante de chaque neurone** (`MlpBrain` mémorise les
+    activations de son dernier `think` — le contrat reste pur, l'état exposé n'est que lecture pour
+    l'UI ; la couture 18a — `enum Brain`, un cerveau par agent, inspecteur lisant déjà `Brain` —
+    l'accueille sans changement).
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -294,9 +325,11 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
 - **Stepping manuel headless** : `app.update()` en boucle serrée exige `app.finish()` puis
   `app.cleanup()` au préalable (Avian insère des ressources dans `Plugin::finish()`). Éprouvé dans
   `tests/containment.rs` et `tests/snapshot.rs`.
-- **MLP** (item 18) : nouveau variant de `Brain` (enum déjà `serde`) sur le contrat
+- **MLP** (item 18b) : nouveau variant de `Brain` (enum déjà `serde`) sur le contrat
   `Perception → Action`, déjà matérialisé par les systèmes perceive/decide/act. Arrive en régime
-  continu, en substitution.
+  continu, en substitution **par espèce** — la couture est désormais en place (item 18a :
+  `brains_per_species` au fondateur + `Brain::reproduce` qui transmet le cerveau par héritage ; il ne
+  restera qu'à muter les poids dans `reproduce`).
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
@@ -306,10 +339,12 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   `Genotype`. Les replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base`
   et cette duplication ; le pas suivant naturel est un `founder` **par espèce** (`Vec<Archetype>`),
   pour que prédateur et proie aient des *corps* distincts. L'item 17 a posé le **premier levier par
-  espèce — l'effectif** (`agents_per_species`), additif et rétro-compatible ; l'archétype, lui, reste
-  *partagé*. Le replier (et le rendre per-espèce) casse le RON de tous les scénarios (champs de premier
-  niveau → imbriqués) → à faire avec une migration des `.ron` versionnés, le jour où un scénario exige
-  des corps distincts (le driver de cette croissance-là, pas encore rencontré).
+  espèce — l'effectif** (`agents_per_species`), additif et rétro-compatible ; l'item 18a un **second —
+  le cerveau** (`brains_per_species`), tout aussi additif. Mais ces deux leviers portent sur des axes
+  *distincts du corps* (l'effectif d'une espèce, l'auteur de sa décision) ; l'archétype — le *corps*
+  lui-même — reste *partagé*. Le replier (et le rendre per-espèce) casse le RON de tous les scénarios
+  (champs de premier niveau → imbriqués) → à faire avec une migration des `.ron` versionnés, le jour où
+  un scénario exige des corps distincts (le driver de cette croissance-là, pas encore rencontré).
 - **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
   vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
   pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des
