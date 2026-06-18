@@ -117,23 +117,46 @@ pub fn bottom_panel(
         With<Agent>,
     >,
 ) -> Result {
+    /// Largeur minimale du panneau central sous laquelle on n'essaie plus de le
+    /// scinder en deux colonnes. `egui::Ui::columns` calcule une largeur de colonne
+    /// négative — et **panique** (`ui.rs:958`, « Negative width makes no sense ») —
+    /// quand l'espace dispo est presque nul, ce qui arrive dès que les colonnes
+    /// latérales (gauche + droite) mangent quasiment toute la fenêtre. En deçà, on
+    /// empile les deux sections au lieu de planter (et d'emporter tout le pass egui,
+    /// panneau d'enregistrement compris).
+    const MIN_TWO_COLUMN_WIDTH: f32 = 160.0;
+
     let ctx = contexts.ctx_mut()?;
     egui::TopBottomPanel::bottom("bottom_panel")
         .resizable(true)
         .default_height(220.0)
         .show(ctx, |ui| {
-            ui.columns(2, |cols| {
-                // Courbes : on les enveloppe d'un défilement (elles n'en ont pas).
+            // Courbes : on les enveloppe d'un défilement (elles n'en ont pas).
+            let mut courbes = |ui: &mut egui::Ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("courbes")
-                    .show(&mut cols[0], |ui| {
+                    .show(ui, |ui| {
                         ui.strong("Évolution — courbes");
                         hud::hud_section(ui, &mut history);
                     });
-                // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`.
-                cols[1].strong("Inspecteur d'agent");
-                inspector::inspector_section(&mut cols[1], &selection, &agents);
-            });
+            };
+            // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`.
+            let inspecteur = |ui: &mut egui::Ui| {
+                ui.strong("Inspecteur d'agent");
+                inspector::inspector_section(ui, &selection, &agents);
+            };
+
+            if ui.available_width() >= MIN_TWO_COLUMN_WIDTH {
+                ui.columns(2, |cols| {
+                    courbes(&mut cols[0]);
+                    inspecteur(&mut cols[1]);
+                });
+            } else {
+                // Panneau central trop étroit : empilé, chacun gardant son défilement.
+                courbes(ui);
+                ui.separator();
+                inspecteur(ui);
+            }
         });
     Ok(())
 }
