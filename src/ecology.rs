@@ -143,7 +143,7 @@ pub fn reproduce(
         let child = genotype.mutate(&mut rng.0, &config);
         // L'enfant naît légèrement décalé pour ne pas chevaucher exactement.
         let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero()
-            * config.agent_radius
+            * config.agent_radius_of(species.0)
             * 2.5;
         let pos = transform.translation.truncate() + offset;
         // Mêmes tirages (heading puis seed) qu'avant l'héritage : le cerveau enfant

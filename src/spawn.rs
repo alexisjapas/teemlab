@@ -153,7 +153,7 @@ pub fn spawn_agent_with_brain(
     generation: u32,
     age: f32,
 ) {
-    let r = config.agent_radius;
+    let r = config.agent_radius_of(species.0);
     // La forme (nombre de rayons) vient désormais du gène de précision visuelle.
     let vision = genotype.vision();
     commands.spawn((

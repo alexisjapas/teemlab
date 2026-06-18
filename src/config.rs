@@ -25,8 +25,16 @@ pub struct SimConfig {
     pub arena_half_extent: f32,
     /// Nombre d'agents au spawn.
     pub agent_count: usize,
-    /// Rayon d'un agent.
+    /// Rayon d'un agent (uniforme). Repli de
+    /// [`agent_radius_per_species`](Self::agent_radius_per_species).
     pub agent_radius: f32,
+    /// Rayon du corps **par espèce** : `agent_radius_per_species[s]` est le rayon de
+    /// l'espèce `s`. Vide par défaut → le [`agent_radius`](Self::agent_radius) uniforme
+    /// s'applique partout (rétro-compatible) ; une espèce au-delà de la longueur
+    /// retombe aussi dessus. Calqué sur [`reserve_max_per_species`](Self::reserve_max_per_species),
+    /// additif. C'est une propriété de *corps* propre à l'espèce (pas un gène) — comme
+    /// la réserve max ; un futur gène de taille corporelle pourra s'y substituer.
+    pub agent_radius_per_species: Vec<f32>,
     /// Vitesse maximale d'un agent.
     pub max_speed: f32,
     /// Nombre de rayons de vision du **fondateur** (la précision visuelle de
@@ -246,6 +254,7 @@ impl Default for SimConfig {
             arena_half_extent: 400.0,
             agent_count: 48,
             agent_radius: 8.0,
+            agent_radius_per_species: Vec::new(),
             max_speed: 140.0,
             vision_rays: 7,
             vision_fov_deg: 120.0,
@@ -355,6 +364,17 @@ impl SimConfig {
             .get(species as usize)
             .copied()
             .unwrap_or(self.reserve_max)
+    }
+
+    /// Le **rayon du corps** de l'espèce `species` : l'entrée de
+    /// [`agent_radius_per_species`](Self::agent_radius_per_species) si elle existe,
+    /// sinon le [`agent_radius`](Self::agent_radius) uniforme. Résolveur unique pour le
+    /// spawn (taille du corps + collider), calqué sur [`reserve_max_of`](Self::reserve_max_of).
+    pub fn agent_radius_of(&self, species: u16) -> f32 {
+        self.agent_radius_per_species
+            .get(species as usize)
+            .copied()
+            .unwrap_or(self.agent_radius)
     }
 
     /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une

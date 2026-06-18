@@ -65,6 +65,9 @@ pub(crate) fn species_color32(species: u16) -> egui::Color32 {
     egui::Color32::from_rgb(q(c.red), q(c.green), q(c.blue))
 }
 
+/// Teinte d'alerte (ambre) — collision de numérotation d'espèce (agent/nourriture).
+const COLLISION_WARN: egui::Color32 = egui::Color32::from_rgb(230, 170, 60);
+
 /// Les archétypes déduits d'un scénario : une entrée par espèce d'agent (avec le
 /// génotype fondateur, l'« archétype ») + la nourriture. Reconstruit aussi après
 /// un chargement RON.
@@ -247,6 +250,7 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                 {
                     let species = *species;
                     let arch_rays = genotype.ray_count();
+                    species_radius_editor(ui, config, species);
                     species_reserve_editor(ui, config, species);
                     species_brain_editor(ui, config, species, arch_rays);
                 }
@@ -287,6 +291,33 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
     });
     if !palette.status.is_empty() {
         ui.weak(&palette.status);
+    }
+}
+
+/// Rayon du corps **de l'espèce sélectionnée**. Comme la réserve max, c'est une
+/// propriété de corps éditée directement sur le [`SimConfig`] (persistée par
+/// « Sauver ») : à une seule espèce on règle le [`SimConfig::agent_radius`] uniforme,
+/// sinon l'entrée `species` de [`SimConfig::agent_radius_per_species`], matérialisée à
+/// la demande depuis l'uniforme. Le corps prend cette taille au spawn (peuplement
+/// initial et reproduction) ; les agents déjà nés gardent la leur.
+fn species_radius_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16) {
+    ui.separator();
+    ui.strong("Taille du corps de cette espèce");
+    ui.small("Rayon du corps (et du collider). Adopté par les nouveaux agents au spawn.");
+    if config.species_cardinality() <= 1 {
+        ui.add(egui::Slider::new(&mut config.agent_radius, 2.0..=30.0).text("rayon"));
+    } else {
+        let fallback = config.agent_radius;
+        config
+            .agent_radius_per_species
+            .resize(config.species_cardinality() as usize, fallback);
+        ui.add(
+            egui::Slider::new(
+                &mut config.agent_radius_per_species[species as usize],
+                2.0..=30.0,
+            )
+            .text("rayon"),
+        );
     }
 }
 
@@ -606,15 +637,13 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.strong("Arène & population");
     ui.add(egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("demi-arène"));
     ui.add(
-        egui::DragValue::new(&mut config.agent_count)
-            .range(0..=5000)
-            .prefix("agents au spawn (reset) : "),
-    );
-    ui.add(
         egui::DragValue::new(&mut config.species_count)
             .range(1..=8)
             .prefix("espèces (reset) : "),
     );
+    // Effectif au spawn : uniforme à une espèce, un effectif par espèce au-delà
+    // (le levier d'une pyramide trophique) — cf. species_spawn_counts.
+    species_spawn_counts(ui, config);
     // La réserve max (capacité du corps) et le nombre de rayons de vision sont
     // désormais des propriétés d'archétype, éditées par espèce dans l'éditeur
     // d'archétype : la réserve directement, les rayons via le gène « Rayons ».
@@ -639,6 +668,12 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .range(0..=8)
             .prefix("espèce nourriture : "),
     );
+    if config.food_species < config.species_cardinality() {
+        ui.colored_label(
+            COLLISION_WARN,
+            "⚠ partage un numéro avec une espèce d'agent (cf. Relations).",
+        );
+    }
 
     ui.separator();
     ui.strong("Relations (qui agit sur qui)");
@@ -647,6 +682,36 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
          qui fait d'une espèce une CIBLE comestible — ce que poursuit Brain::Hunter. \
          transfert = prédation (l'acteur gagne l'énergie) ; sinon simple destruction.",
     );
+    // Les relations ne parlent qu'en NUMÉROS d'espèce, et agents et nourriture
+    // partagent le même espace de numéros (cf. interaction::interact) : on rappelle
+    // donc qui est qui, et on alerte sur une collision agent/nourriture.
+    let n_species = config.species_cardinality();
+    let food = config.food_species;
+    ui.small(format!(
+        "Numérotation : agents = espèces 0–{}, nourriture = espèce {food}. \
+         Une relation cible un NUMÉRO.",
+        n_species.saturating_sub(1),
+    ));
+    if food < n_species {
+        ui.colored_label(
+            COLLISION_WARN,
+            format!(
+                "⚠ Nourriture (espèce {food}) = agent espèce {food} : une relation \
+                 ciblant {food} touche les DEUX. Mets « espèce nourriture » ≥ {n_species} \
+                 pour les séparer.",
+            ),
+        );
+    }
+    // Traduit un numéro d'espèce en (couleur, rôle) pour rendre la table lisible.
+    let describe = |num: u16| -> (egui::Color32, String) {
+        let role = match (num < n_species, num == food) {
+            (true, true) => "agent + nourriture ⚠",
+            (true, false) => "agent",
+            (false, true) => "nourriture",
+            (false, false) => "inutilisé",
+        };
+        (species_color32(num), format!("espèce {num} · {role}"))
+    };
     let mut to_remove = None;
     for (i, rel) in config.relations.iter_mut().enumerate() {
         ui.separator();
@@ -669,6 +734,14 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                 to_remove = Some(i);
             }
         });
+        // En clair : acteur → cible, couleurs et rôles résolus dans le scénario.
+        let (actor_color, actor_label) = describe(rel.actor);
+        let (target_color, target_label) = describe(rel.target);
+        ui.horizontal(|ui| {
+            ui.colored_label(actor_color, actor_label);
+            ui.label("→");
+            ui.colored_label(target_color, target_label);
+        });
         ui.checkbox(&mut rel.transfer, "transfert (prédation)");
         ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("débit/s"));
         ui.add(egui::Slider::new(&mut rel.range, 1.0..=100.0).text("portée"));
@@ -687,6 +760,46 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             range: 20.0,
         });
     }
+}
+
+/// Effectif au spawn, **par espèce** (item 17, levier de la pyramide trophique). À
+/// une seule espèce : l'effectif uniforme [`SimConfig::agent_count`], et
+/// [`SimConfig::agents_per_species`] reste vide (partage round-robin historique). À
+/// plusieurs espèces : un effectif par espèce dans `agents_per_species` — qui
+/// **prime** alors sur `agent_count` —, calé sur le nombre d'espèces et initialisé
+/// depuis le partage uniforme courant. Comme `species_count`, c'est un paramètre
+/// *(reset)* : il ne prend effet qu'à la (ré)génération du monde.
+fn species_spawn_counts(ui: &mut egui::Ui, config: &mut SimConfig) {
+    let n = config.species_count.max(1) as usize;
+    if n <= 1 {
+        // Une espèce : effectif uniforme ; on garde `agents_per_species` vide pour
+        // rester sur le partage round-robin historique.
+        config.agents_per_species.clear();
+        ui.add(
+            egui::DragValue::new(&mut config.agent_count)
+                .range(0..=5000)
+                .prefix("agents au spawn (reset) : "),
+        );
+        return;
+    }
+    // Plusieurs espèces : on cale le vecteur sur le nombre d'espèces (tronque si on
+    // en retire, complète depuis le partage uniforme courant si on en ajoute) ; les
+    // valeurs déjà éditées sont conservées.
+    let fill = (config.agent_count / n).max(1);
+    config.agents_per_species.resize(n, fill);
+    ui.label("Agents au spawn, par espèce (reset) :");
+    for (s, count) in config.agents_per_species.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            ui.colored_label(species_color32(s as u16), "⬤");
+            ui.add(
+                egui::DragValue::new(count)
+                    .range(0..=5000)
+                    .prefix(format!("espèce {s} : ")),
+            );
+        });
+    }
+    let total: usize = config.agents_per_species.iter().sum();
+    ui.weak(format!("total : {total} agents"));
 }
 
 /// Statistiques en direct, rendues **à droite de la barre du haut** (dock fixe) par
