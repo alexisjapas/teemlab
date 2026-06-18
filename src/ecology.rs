@@ -104,8 +104,17 @@ pub fn reproduce(
     for (transform, mut reserve, genotype, species, brain) in &mut parents {
         // Seuil et coût sont des **gènes** (per-entité, évolvables) : un seuil nul
         // = cet agent ne se reproduit pas.
+        //
+        // On exige aussi `current >= offspring_energy` : seuil et coût étant deux
+        // gènes qui dérivent indépendamment, rien ne garantit `seuil >= coût`. Sans
+        // ce garde, un parent dont le coût dépasse la réserve passerait en négatif
+        // (puis mourrait), MAIS l'enfant emporterait quand même la pleine
+        // `offspring_energy` → de l'énergie créée ex nihilo, et une lignée
+        // « seuil bas / enfant cher » serait *avantagée* (runaway). Le garde rend la
+        // conservation **inconditionnelle** : on ne paie jamais plus qu'on n'a.
         if genotype.reproduction_threshold <= 0.0
             || reserve.current < genotype.reproduction_threshold
+            || reserve.current < genotype.offspring_energy
         {
             continue;
         }

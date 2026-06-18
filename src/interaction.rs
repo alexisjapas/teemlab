@@ -46,17 +46,26 @@ pub fn interact(
     let dt = time.delta_secs();
     let mut deltas: HashMap<Entity, f32> = HashMap::default();
 
+    // Un collider de portée par relation, construit **une seule fois** : la forme
+    // ne dépend que de la relation, pas de l'acteur. Construire un collider parry
+    // n'est pas gratuit ; le faire par (acteur × relation × tick) était du gâchis.
+    let reaches: Vec<Collider> = config
+        .relations
+        .iter()
+        .map(|r| Collider::circle(r.range))
+        .collect();
+
     for (actor, transform, species) in &actors {
         let origin = transform.translation.truncate();
-        for relation in &config.relations {
+        // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur. Construit une
+        // fois par acteur (il ne dépend pas de la relation).
+        let filter = SpatialQueryFilter::from_excluded_entities([actor]);
+        for (relation, reach) in config.relations.iter().zip(&reaches) {
             if relation.actor != species.0 {
                 continue;
             }
             let amount = relation.rate * dt;
-            let reach = Collider::circle(relation.range);
-            // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur.
-            let filter = SpatialQueryFilter::from_excluded_entities([actor]);
-            spatial.shape_intersections_callback(&reach, origin, 0.0, &filter, |target| {
+            spatial.shape_intersections_callback(reach, origin, 0.0, &filter, |target| {
                 if species_of.get(target).is_ok_and(|s| s.0 == relation.target) {
                     *deltas.entry(target).or_insert(0.0) -= amount;
                     if relation.transfer {

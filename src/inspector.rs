@@ -201,7 +201,10 @@ pub(crate) fn inspector_section(
             ui.separator();
             ui.strong("Cerveau MLP (activations)");
             ui.weak("entrée (vision/cible) → couches cachées → pilotage · froid<0<chaud");
-            draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp));
+            // Les activations sont recalculées ici, à la demande, pour le seul agent
+            // inspecté (le `think` du cœur de sim ne les mémorise plus).
+            let activations = mlp.forward_activations(perception);
+            draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
         }
 
         ui.separator();

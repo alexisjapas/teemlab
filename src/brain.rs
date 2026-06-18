@@ -313,13 +313,10 @@ impl Layer {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MlpBrain {
     /// Couches denses, entrée→sortie. Topologie figée à la construction (héritée
-    /// telle quelle) ; seuls les poids muent.
+    /// telle quelle) ; seuls les poids muent. **Seul état** du cerveau : son égalité
+    /// et sa sérialisation ne portent que la topologie + les poids (pas d'activations
+    /// transitoires — celles-ci se recalculent à la demande, cf. [`MlpBrain::forward_activations`]).
     layers: Vec<Layer>,
-    /// Activations du dernier `think`, couche par couche (entrée comprise), pour la
-    /// visualisation de l'inspecteur (tranche viz à venir). Recalculées chaque tick →
-    /// **hors sérialisation** (un snapshot n'a pas à les porter).
-    #[serde(skip)]
-    activations: Vec<Vec<f32>>,
 }
 
 impl MlpBrain {
@@ -347,10 +344,7 @@ impl MlpBrain {
             .windows(2)
             .map(|w| Layer::random(&mut rng, w[0], w[1]))
             .collect();
-        Self {
-            layers,
-            activations: Vec::new(),
-        }
+        Self { layers }
     }
 
     /// Enfant : **même topologie**, poids perturbés (neuroévolution). `rate` =
@@ -359,7 +353,6 @@ impl MlpBrain {
         let std = rate * Self::WEIGHT_STEP;
         Self {
             layers: self.layers.iter().map(|l| l.mutated(rng, std)).collect(),
-            activations: Vec::new(),
         }
     }
 
@@ -374,12 +367,8 @@ impl MlpBrain {
             .collect()
     }
 
-    fn think(&mut self, perception: &Perception) -> Action {
-        let input = Self::input_vector(perception);
-        // Mémorise les activations (entrée + chaque couche) pour l'inspecteur.
-        self.activations.clear();
-        self.activations.push(input.clone());
-        let mut signal = input;
+    fn think(&self, perception: &Perception) -> Action {
+        let mut signal = Self::input_vector(perception);
         for layer in &self.layers {
             // Robuste à une perception de mauvaise taille (forme changée entre runs) :
             // si le fan-in ne colle pas, on garde le cap (réseau muet ce tick).
@@ -390,7 +379,6 @@ impl MlpBrain {
                 };
             }
             signal = layer.forward(&signal);
-            self.activations.push(signal.clone());
         }
         // 2 sorties = vecteur de pilotage en repère du corps, tourné vers le monde
         // par le cap (le +X du corps pointe vers `heading`).
@@ -408,10 +396,26 @@ impl MlpBrain {
         }
     }
 
-    /// Les activations du dernier `think`, couche par couche (entrée d'abord) : pour
-    /// la visualisation de l'inspecteur (item 18b-viz). Vide tant qu'aucun `think`.
-    pub fn activations(&self) -> &[Vec<f32>] {
-        &self.activations
+    /// Rejoue la propagation pour exposer les activations couche par couche (entrée
+    /// comprise) : `[input, h0, …, sortie]`. Pour la **visualisation** de l'inspecteur
+    /// (item 18b-viz), calculée **à la demande** sur le seul agent inspecté — le
+    /// `think` du cœur de sim ne porte donc plus ce coût (clone par couche × agent ×
+    /// tick, inutile en headless/`record`). Déterministe : mêmes poids + même
+    /// perception ⇒ mêmes activations que le dernier `think`. S'arrête (vecteur
+    /// tronqué) si la perception n'a pas le bon fan-in — l'inspecteur colore alors les
+    /// nœuds restants en neutre.
+    pub fn forward_activations(&self, perception: &Perception) -> Vec<Vec<f32>> {
+        let mut signal = Self::input_vector(perception);
+        let mut acts = Vec::with_capacity(self.layers.len() + 1);
+        acts.push(signal.clone());
+        for layer in &self.layers {
+            if signal.len() != layer.inputs {
+                break;
+            }
+            signal = layer.forward(&signal);
+            acts.push(signal.clone());
+        }
+        acts
     }
 
     /// Tailles des couches pour le dessin du graphe (item 18b-viz), **entrée
@@ -588,7 +592,7 @@ mod tests {
     /// action tournée d'autant (la décision vit en repère du corps).
     #[test]
     fn mlp_is_deterministic_and_orientation_equivariant() {
-        let mut brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
         let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
 
         let a1 = brain.think(&mlp_perception(Vec2::X, vision, target));
@@ -614,7 +618,8 @@ mod tests {
         let mut rng = Rng::new(3);
         let parent = MlpBrain::random(11, MlpBrain::input_size(4), &[8, 4]);
 
-        // Taux nul → clone fidèle (les activations sont vides de part et d'autre).
+        // Taux nul → clone fidèle. L'égalité ne porte que topologie + poids (le
+        // cerveau n'a pas d'autre état : les activations se recalculent à la demande).
         assert_eq!(parent.mutated(&mut rng, 0.0), parent, "taux nul = identité");
 
         // Taux non nul → poids changés, mais même nombre de couches et mêmes dims.
@@ -625,5 +630,54 @@ mod tests {
             assert_eq!(c.inputs, p.inputs);
             assert_eq!(c.outputs(), p.outputs());
         }
+    }
+
+    /// La visualisation des activations est calculée **à la demande**, hors du cœur
+    /// de sim : `forward_activations` rejoue la propagation et expose une couche par
+    /// colonne (`[input, h0, …, sortie]`, tailles = `layer_sizes`), et sa dernière
+    /// couche coïncide avec la sortie brute du `think` (avant rotation/normalisation).
+    /// C'est ce qui permet à `think` de ne plus rien mémoriser.
+    #[test]
+    fn forward_activations_match_topology_and_think() {
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6, 4]);
+        let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
+        let p = mlp_perception(Vec2::X, vision, target);
+
+        let acts = brain.forward_activations(&p);
+        // Une couche d'activations par colonne du graphe (entrée incluse).
+        assert_eq!(acts.len(), brain.layer_sizes().len());
+        for (layer, &size) in acts.iter().zip(&brain.layer_sizes()) {
+            assert_eq!(layer.len(), size);
+        }
+        // L'entrée exposée = vision ++ cible (le vecteur d'entrée du réseau).
+        assert_eq!(acts[0], vec![0.2, 0.7, 0.1, 0.0, 0.7, 0.0]);
+
+        // La sortie brute (dernière couche) est cohérente avec l'action de `think` :
+        // `throttle = min(|sortie|, 1)`, et la direction est cette sortie tournée par
+        // le cap (+X ici, donc inchangée à la normalisation près).
+        let out = acts.last().unwrap();
+        assert_eq!(out.len(), MlpBrain::OUTPUTS);
+        let action = brain.think(&p);
+        let raw = Vec2::new(out[0], out[1]);
+        assert!((action.throttle - raw.length().min(1.0)).abs() < 1e-6);
+        assert!((action.dir - raw.normalize_or_zero()).length() < 1e-5);
+    }
+
+    /// Une perception de mauvaise taille (fan-in qui ne colle pas) tronque la
+    /// propagation sans paniquer : on récupère au moins l'entrée, l'inspecteur
+    /// colorant les nœuds manquants en neutre.
+    #[test]
+    fn forward_activations_is_robust_to_wrong_input_size() {
+        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // attend 6 entrées
+        // Perception à 2 rayons → 4 entrées (≠ 6) : le premier produit ne colle pas.
+        let p = Perception {
+            heading: Vec2::X,
+            vision: [0.1, 0.2].into(),
+            target: [0.0, 0.0].into(),
+            ray_dirs: vec![Vec2::X, Vec2::Y].into_boxed_slice(),
+        };
+        let acts = brain.forward_activations(&p);
+        assert_eq!(acts.len(), 1, "seule l'entrée est exposée, sans panique");
+        assert_eq!(acts[0].len(), 4);
     }
 }

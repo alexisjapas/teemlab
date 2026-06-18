@@ -384,7 +384,7 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     let mut sizes = vec![MlpBrain::input_size(vision_rays)];
     sizes.extend_from_slice(hidden);
     sizes.push(MlpBrain::OUTPUTS);
-    draw_mlp_graph(ui, &sizes, None);
+    draw_mlp_graph(ui, &sizes, None, None);
 }
 
 /// Couleur d'un nœud selon son activation `v` : froid (bleu) pour négatif, chaud
@@ -408,13 +408,21 @@ fn activation_color(v: Option<f32>) -> egui::Color32 {
 /// Dessine un MLP en **graphe** (item 18b-viz) : une colonne de nœuds par couche
 /// (entrée à gauche, sortie à droite), arêtes entre couches consécutives.
 ///
-/// - `live = Some(mlp)` (inspecteur) : nœuds colorés par leur **activation courante**
-///   et arêtes teintées par le **signe/intensité du poids** (bleu négatif, orange
-///   positif) — le réseau « en action ».
-/// - `live = None` (éditeur) : aperçu structurel, nœuds neutres et arêtes ténues.
+/// - `brain = Some(mlp)` (inspecteur) : arêtes teintées par le **signe/intensité du
+///   poids** (bleu négatif, orange positif) — le réseau réel. Avec `activations`
+///   (calculées à la demande par [`MlpBrain::forward_activations`]), les nœuds se
+///   colorent par leur **activation courante** : le réseau « en action ».
+/// - `brain = None` (éditeur) : aperçu structurel, nœuds neutres et arêtes ténues.
 ///
-/// `sizes` donne le nombre de nœuds par colonne (entrée incluse).
-pub(crate) fn draw_mlp_graph(ui: &mut egui::Ui, sizes: &[usize], live: Option<&MlpBrain>) {
+/// `sizes` donne le nombre de nœuds par colonne (entrée incluse). Séparer poids
+/// (`brain`) et activations (`activations`) permet à `MlpBrain::think` de ne plus
+/// porter d'état transitoire : c'est l'inspecteur qui rejoue la propagation.
+pub(crate) fn draw_mlp_graph(
+    ui: &mut egui::Ui,
+    sizes: &[usize],
+    brain: Option<&MlpBrain>,
+    activations: Option<&[Vec<f32>]>,
+) {
     use egui::{Pos2, Sense, Stroke, vec2};
     if sizes.len() < 2 {
         return;
@@ -443,10 +451,9 @@ pub(crate) fn draw_mlp_graph(ui: &mut egui::Ui, sizes: &[usize], live: Option<&M
     };
 
     // Arêtes d'abord (sous les nœuds). En mode live, teinte/épaisseur par poids.
-    let activations = live.map(|m| m.activations());
     for col in 0..cols - 1 {
         let (from_n, to_n) = (sizes[col], sizes[col + 1]);
-        let weights = live.and_then(|m| {
+        let weights = brain.and_then(|m| {
             (col < m.weight_layers()).then(|| m.layer_weights(col))
         });
         for o in 0..to_n {
