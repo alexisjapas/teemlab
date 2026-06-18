@@ -409,9 +409,32 @@ impl MlpBrain {
     }
 
     /// Les activations du dernier `think`, couche par couche (entrée d'abord) : pour
-    /// la visualisation de l'inspecteur (tranche viz). Vide tant qu'aucun `think`.
+    /// la visualisation de l'inspecteur (item 18b-viz). Vide tant qu'aucun `think`.
     pub fn activations(&self) -> &[Vec<f32>] {
         &self.activations
+    }
+
+    /// Tailles des couches pour le dessin du graphe (item 18b-viz), **entrée
+    /// incluse** : `[n_inputs, h0, …, OUTPUTS]`. Une colonne de nœuds par taille.
+    pub fn layer_sizes(&self) -> Vec<usize> {
+        let mut sizes = Vec::with_capacity(self.layers.len() + 1);
+        if let Some(first) = self.layers.first() {
+            sizes.push(first.inputs);
+        }
+        sizes.extend(self.layers.iter().map(Layer::outputs));
+        sizes
+    }
+
+    /// Nombre de couches de poids (= nombre d'inter-colonnes d'arêtes à dessiner).
+    pub fn weight_layers(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// Poids de la couche `l` (`outputs × inputs`, row-major) + ses dimensions, pour
+    /// dessiner les arêtes pondérées (item 18b-viz). `l < weight_layers()`.
+    pub fn layer_weights(&self, l: usize) -> (&[f32], usize, usize) {
+        let layer = &self.layers[l];
+        (&layer.weights, layer.inputs, layer.outputs())
     }
 }
 
@@ -552,6 +575,12 @@ mod tests {
         assert_eq!(m.layers[0].outputs(), 5, "couche cachée demandée");
         assert_eq!(m.layers[1].inputs, 5);
         assert_eq!(m.layers[1].outputs(), MlpBrain::OUTPUTS);
+        // L'API de visualisation (item 18b-viz) reflète la même topologie.
+        assert_eq!(m.layer_sizes(), vec![6, 5, MlpBrain::OUTPUTS]);
+        assert_eq!(m.weight_layers(), 2);
+        let (w, fan_in, fan_out) = m.layer_weights(0);
+        assert_eq!((fan_in, fan_out), (6, 5));
+        assert_eq!(w.len(), 6 * 5);
     }
 
     /// Le MLP est déterministe (mêmes poids + même perception → même action) et

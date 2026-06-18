@@ -420,6 +420,111 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     if ui.button("+ couche cachée").clicked() {
         hidden.push(8);
     }
+
+    // Aperçu structurel du réseau (item 18b-viz) : entrée → cachées → sortie. Pas
+    // d'activations ici (on édite un *type*, pas un cerveau vivant) — c'est
+    // l'inspecteur qui montre le réseau en action.
+    let mut sizes = vec![MlpBrain::input_size(vision_rays)];
+    sizes.extend_from_slice(hidden);
+    sizes.push(MlpBrain::OUTPUTS);
+    draw_mlp_graph(ui, &sizes, None);
+}
+
+/// Couleur d'un nœud selon son activation `v` : froid (bleu) pour négatif, chaud
+/// (orange) pour positif, gris foncé au repos — l'échelle naturelle d'un `tanh`
+/// (∈ [-1, 1] ; l'entrée ∈ [0, 1] tombe côté chaud). `None` → nœud neutre (aperçu
+/// structurel, sans activation).
+fn activation_color(v: Option<f32>) -> egui::Color32 {
+    let Some(v) = v else {
+        return egui::Color32::from_gray(110);
+    };
+    let t = v.clamp(-1.0, 1.0).abs();
+    let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
+    let base = 60; // gris de repos
+    if v >= 0.0 {
+        egui::Color32::from_rgb(lerp(base, 240), lerp(base, 150), lerp(base, 40)) // chaud
+    } else {
+        egui::Color32::from_rgb(lerp(base, 60), lerp(base, 140), lerp(base, 240)) // froid
+    }
+}
+
+/// Dessine un MLP en **graphe** (item 18b-viz) : une colonne de nœuds par couche
+/// (entrée à gauche, sortie à droite), arêtes entre couches consécutives.
+///
+/// - `live = Some(mlp)` (inspecteur) : nœuds colorés par leur **activation courante**
+///   et arêtes teintées par le **signe/intensité du poids** (bleu négatif, orange
+///   positif) — le réseau « en action ».
+/// - `live = None` (éditeur) : aperçu structurel, nœuds neutres et arêtes ténues.
+///
+/// `sizes` donne le nombre de nœuds par colonne (entrée incluse).
+pub(crate) fn draw_mlp_graph(ui: &mut egui::Ui, sizes: &[usize], live: Option<&MlpBrain>) {
+    use egui::{Pos2, Sense, Stroke, vec2};
+    if sizes.len() < 2 {
+        return;
+    }
+    let cols = sizes.len();
+    let widest = *sizes.iter().max().unwrap_or(&1);
+    // Hauteur proportionnée à la colonne la plus large, bornée pour rester compacte.
+    let height = (widest as f32 * 16.0).clamp(60.0, 220.0);
+    let width = ui.available_width().max(120.0);
+    let (resp, painter) = ui.allocate_painter(vec2(width, height), Sense::hover());
+    let rect = resp.rect.shrink(10.0);
+
+    // Position du nœud `node` (0-based) de la colonne `col`.
+    let pos = |col: usize, node: usize, n: usize| -> Pos2 {
+        let x = if cols == 1 {
+            rect.center().x
+        } else {
+            rect.left() + rect.width() * col as f32 / (cols - 1) as f32
+        };
+        let y = if n == 1 {
+            rect.center().y
+        } else {
+            rect.top() + rect.height() * (node as f32 + 0.5) / n as f32
+        };
+        Pos2::new(x, y)
+    };
+
+    // Arêtes d'abord (sous les nœuds). En mode live, teinte/épaisseur par poids.
+    let activations = live.map(|m| m.activations());
+    for col in 0..cols - 1 {
+        let (from_n, to_n) = (sizes[col], sizes[col + 1]);
+        let weights = live.and_then(|m| {
+            (col < m.weight_layers()).then(|| m.layer_weights(col))
+        });
+        for o in 0..to_n {
+            for i in 0..from_n {
+                let stroke = match weights {
+                    Some((w, fan_in, _)) if i + o * fan_in < w.len() => {
+                        let wt = w[o * fan_in + i];
+                        let a = (wt.abs() * 0.9).clamp(0.04, 0.9);
+                        let c = if wt >= 0.0 {
+                            egui::Color32::from_rgb(230, 150, 60)
+                        } else {
+                            egui::Color32::from_rgb(70, 140, 230)
+                        };
+                        Stroke::new(1.0, c.gamma_multiply(a))
+                    }
+                    _ => Stroke::new(0.5, egui::Color32::from_gray(80)),
+                };
+                painter.line_segment([pos(col, i, from_n), pos(col + 1, o, to_n)], stroke);
+            }
+        }
+    }
+
+    // Nœuds par-dessus, colorés par activation (live) ou neutres (aperçu).
+    let radius = (rect.height() / (widest as f32 * 2.2)).clamp(2.5, 8.0);
+    for (col, &n) in sizes.iter().enumerate() {
+        for node in 0..n {
+            let act = activations
+                .and_then(|a| a.get(col))
+                .and_then(|layer| layer.get(node))
+                .copied();
+            let center = pos(col, node, n);
+            painter.circle_filled(center, radius, activation_color(act));
+            painter.circle_stroke(center, radius, Stroke::new(0.6, egui::Color32::from_gray(25)));
+        }
+    }
 }
 
 /// La fenêtre flottante « Monde » : les paramètres de **scénario** — l'arène, la

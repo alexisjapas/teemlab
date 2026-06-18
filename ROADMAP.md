@@ -224,9 +224,9 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
 
 L'évolution d'intelligence est la frontière de l'abstraction *dans* la sélection naturelle. L'éditeur
 grandit ici, piloté par ces scénarios — à ce jour : gènes d'archétype (valeur/bornes/héritable),
-sélecteur de cerveau **par espèce** (+ description fonctionnelle de chaque variant), **paramètres de
-monde** (arène, économie de nourriture, table de relations), placement et **suppression** d'entités
-(touche Suppr).
+sélecteur de cerveau **par espèce** (+ description fonctionnelle, **architecture & graphe du MLP**),
+**paramètres de monde** (arène, économie de nourriture, table de relations), placement et
+**suppression** d'entités (touche Suppr). L'inspecteur, lui, montre le **MLP en action** (activations).
 
 15. Éditeur générique de caractéristiques **(réalisé)** : (valeur, bornes) + toggle « héritable ? »
     par trait — table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
@@ -308,12 +308,15 @@ monde** (arène, économie de nourriture, table de relations), placement et **su
     variance (une cohorte initiale médiocre est exclue avant d'apprendre) ; le levier décisif est la
     **diversité des fondateurs** (40/espèce → 3 graines sur 5 ; 70 → les 5) — ce qui motive d'autant les
     lots générationnels de P5. **Reste** : les **visualisations graphe** (18b-viz).
-18b-viz. Visualisation du MLP en graphe. `MlpBrain` mémorise déjà les **activations** de son dernier
-    `think` (champ `activations`, hors sérialisation — le contrat reste pur, l'état n'est exposé qu'en
-    lecture pour l'UI). Reste à dessiner : (a) **éditeur** — le réseau en graphe (nœuds par couche,
-    arêtes) pendant l'édition de l'architecture ; (b) **inspecteur** (item 12) — le réseau de l'agent
-    sélectionné **avec l'activation courante de chaque neurone**. La couture (un cerveau par agent,
-    inspecteur lisant déjà `Brain`) l'accueille sans changement de schéma — purement de l'UI.
+18b-viz. Visualisation du MLP en graphe **(réalisé)** — purement de l'UI, sans changement de schéma
+    (la couture 18a — un cerveau par agent, inspecteur lisant déjà `Brain` — l'accueille). API de lecture
+    minimale sur `MlpBrain` (`layer_sizes`, `weight_layers`, `layer_weights`, `activations`) ; un
+    dessinateur partagé `editor::draw_mlp_graph` (une colonne de nœuds par couche, arêtes entre colonnes,
+    via `egui::Painter`). Deux usages : (a) **éditeur** — aperçu *structurel* (nœuds neutres) qui suit
+    l'édition de l'architecture ; (b) **inspecteur** (item 12) — le réseau de l'agent sélectionné **en
+    action** : nœuds colorés par l'**activation courante** de chaque neurone (le dernier `think`, échelle
+    `tanh` froid<0<chaud) et arêtes teintées par signe/intensité du poids. L'item 18 (MLP +
+    neuroévolution) est ainsi complet ; reste, plus loin (P5/§9), crossover sur poids + NEAT.
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -339,8 +342,8 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   `tests/containment.rs` et `tests/snapshot.rs`.
 - **MLP** (item 18b, **fait** pour le cœur) : variant `Brain::Mlp` (enum déjà `serde`) sur le contrat
   `Perception → Action`, en régime continu, substitution **par espèce** (couture 18a). Poids mutés dans
-  `Brain::reproduce` (neuroévolution mutation-seule). **Reste** la visualisation graphe (18b-viz, l'UI),
-  les activations étant déjà mémorisées par `think`.
+  `Brain::reproduce` (neuroévolution mutation-seule). Visualisation graphe **faite** (18b-viz : éditeur
+  structurel + inspecteur avec activations). **Reste**, plus loin : crossover sur poids + NEAT (P5).
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection

@@ -16,7 +16,7 @@ use teemlab::brain::Brain;
 use teemlab::components::{Action, Agent, Perception, Radius, Reserve, Species, Vision};
 use teemlab::genotype::{Genotype, TRAITS};
 
-use crate::editor::Palette;
+use crate::editor::{Palette, draw_mlp_graph};
 
 /// L'agent actuellement inspecté, le cas échéant. Vit dans le binaire fenêtré.
 #[derive(Resource, Default)]
@@ -221,6 +221,16 @@ pub fn inspector_section(
         };
         ui.label(format!("cap désiré : {heading_deg:+.0}°"));
         ui.add(egui::ProgressBar::new(throttle).text(format!("accélérateur {throttle:.2}")));
+
+        // Cerveau MLP : le réseau en action (item 18b-viz). Nœuds colorés par leur
+        // activation courante (le dernier `think`), arêtes par signe/poids — la
+        // décision apprise rendue lisible. Les autres cerveaux n'ont pas de graphe.
+        if let Brain::Mlp(mlp) = brain {
+            ui.separator();
+            ui.strong("Cerveau MLP (activations)");
+            ui.weak("entrée (vision/cible) → couches cachées → pilotage · froid<0<chaud");
+            draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp));
+        }
 
         ui.separator();
         ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
