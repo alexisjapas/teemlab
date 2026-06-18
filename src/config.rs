@@ -438,8 +438,10 @@ mod tests {
     /// Aller-retour sérialisation : ce que l'éditeur sauve se relit à l'identique.
     #[test]
     fn ron_roundtrip_is_lossless() {
-        let mut cfg = SimConfig::default();
-        cfg.agent_count = 17;
+        let mut cfg = SimConfig {
+            agent_count: 17,
+            ..SimConfig::default()
+        };
         cfg.relations.push(Relation {
             actor: 0,
             target: 1,
