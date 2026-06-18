@@ -105,49 +105,6 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
     });
 }
 
-/// Les fenêtres flottantes d'archétypes : le **sélecteur** (où l'on pioche par
-/// glisser-déposer) et l'**éditeur** de l'archétype choisi. Tourne dans
-/// `EguiPrimaryContextPass`. La résolution du glisser-déposer vit dans
-/// [`resolve_drag`] (système distinct, ordonné **après** toutes les fenêtres) et
-/// les statistiques dans [`stats_ui`].
-pub fn editor_ui(
-    mut contexts: EguiContexts,
-    mut palette: ResMut<Palette>,
-    mut config: ResMut<SimConfig>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-) -> Result {
-    use crate::controls::{WindowSlot, tidy_pos};
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-
-    if vis.palette {
-        let mut w = egui::Window::new("Archétypes")
-            .open(&mut vis.palette)
-            .default_pos([1180.0, 84.0])
-            .default_width(220.0)
-            .resizable(true);
-        if tidy {
-            w = w.current_pos(tidy_pos(screen, WindowSlot::Archetypes));
-        }
-        w.show(ctx, |ui| selector_section(ui, &mut palette));
-    }
-    if vis.editor {
-        let mut w = egui::Window::new("Éditeur d'archétype")
-            .open(&mut vis.editor)
-            .default_pos([1180.0, 400.0])
-            .default_width(250.0)
-            .resizable(true)
-            .vscroll(true);
-        if tidy {
-            w = w.current_pos(tidy_pos(screen, WindowSlot::Editor));
-        }
-        w.show(ctx, |ui| editor_section(ui, &mut palette, &mut config));
-    }
-
-    Ok(())
-}
-
 /// Résolution du glisser-déposer d'un archétype dans l'aire de jeu. Système
 /// **distinct**, ordonné après tous les panneaux egui : `is_pointer_over_area`
 /// connaît alors toutes les arêtes, sinon un dépôt au-dessus d'un panneau (bas ou
@@ -185,8 +142,8 @@ pub fn resolve_drag(
 }
 
 /// Section « sélecteur » : la liste des archétypes (glisser pour poser, cliquer
-/// pour éditer). Rendue en haut du panneau de droite.
-fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
+/// pour éditer). Rendue dans le panneau de gauche (item dock).
+pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
     ui.label("Glisse dans l'aire pour poser ; clique pour éditer ; Suppr (curseur sur une entité) pour retirer.");
     ui.separator();
     let mut started = None;
@@ -221,7 +178,7 @@ fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
 /// RON. Rendue sous le sélecteur. Rend explicite la distinction **archétype** (le
 /// modèle édité ici) / **génome** (la copie héritée par chaque instance, qui mute
 /// ensuite seule).
-fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
+pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
     match palette.selected {
         Some(i) => {
             let is_agent = matches!(
@@ -527,40 +484,13 @@ pub(crate) fn draw_mlp_graph(ui: &mut egui::Ui, sizes: &[usize], live: Option<&M
     }
 }
 
-/// La fenêtre flottante « Monde » : les paramètres de **scénario** — l'arène, la
-/// population, l'économie de nourriture, la table d'interactions — par opposition à
-/// l'éditeur d'**archétype** (le génotype d'une espèce). Édités directement sur le
-/// [`SimConfig`], donc persistés par « Sauver ». Tourne dans `EguiPrimaryContextPass`.
-pub fn world_ui(
-    mut contexts: EguiContexts,
-    mut config: ResMut<SimConfig>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-) -> Result {
-    if !vis.world {
-        return Ok(());
-    }
-    use crate::controls::{WindowSlot, tidy_pos};
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    let mut w = egui::Window::new("Monde")
-        .open(&mut vis.world)
-        .default_pos([520.0, 130.0])
-        .default_width(280.0)
-        .resizable(true)
-        .vscroll(true);
-    if tidy {
-        w = w.current_pos(tidy_pos(screen, WindowSlot::World));
-    }
-    w.show(ctx, |ui| world_section(ui, &mut config));
-    Ok(())
-}
-
-/// Le contenu de la fenêtre « Monde » : lecture/écriture directe du [`SimConfig`].
-/// Certains champs ne prennent effet qu'à la (ré)génération du monde (annotés
-/// *reset*) ; les autres — nourriture maintenue, relations — sont lus en continu
-/// par la sim et agissent **à chaud**.
-fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+/// Section « Monde » : les paramètres de **scénario** — arène, population, économie
+/// de nourriture, table d'interactions — par opposition à l'éditeur d'**archétype**
+/// (le génotype d'une espèce). Lecture/écriture directe du [`SimConfig`], donc
+/// persistée par « Sauver ». Certains champs ne prennent effet qu'à la (ré)génération
+/// du monde (annotés *reset*) ; les autres — nourriture maintenue, relations — sont
+/// lus en continu par la sim et agissent **à chaud**.
+pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.small(
         "Paramètres de scénario. Les champs notés (reset) ne s'appliquent qu'à la \
          (ré)génération du monde (⟲ du bandeau) ; les autres agissent à chaud.",
@@ -640,48 +570,33 @@ fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     }
 }
 
-/// Fenêtre de statistiques en direct. Lecture seule du monde : c'est de
-/// l'observation pour affichage, pas de la logique de sim.
-pub fn stats_ui(
-    mut contexts: EguiContexts,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-    agents: Query<(&Reserve, &Genotype), With<Agent>>,
-    food: Query<(), With<Food>>,
-) -> Result {
-    if !vis.stats {
-        return Ok(());
-    }
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    let mut window = egui::Window::new("Stats")
-        .open(&mut vis.stats)
-        .default_pos([560.0, 84.0])
-        .resizable(false);
-    if tidy {
-        window = window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Stats));
-    }
-    window.show(ctx, |ui| {
-        let population = agents.iter().count();
-        let n = population.max(1) as f32;
-        let mean_reserve = agents.iter().map(|(r, _)| r.current).sum::<f32>() / n;
-        let food_count = food.iter().count();
-        ui.horizontal(|ui| {
-            ui.label(format!("Population : {population}"));
-            ui.separator();
-            ui.label(format!("Nourriture : {food_count}"));
-            ui.separator();
-            ui.label(format!("Réserve moy. : {mean_reserve:.0}"));
-            ui.separator();
-            ui.label("Gènes moy. —");
-            // Une moyenne par caractéristique de TRAITS, sans champ codé en dur.
-            for t in &TRAITS {
-                let mean = agents.iter().map(|(_, g)| (t.get)(g)).sum::<f32>() / n;
-                ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
-            }
-        });
+/// Statistiques en direct, rendues **à droite de la barre du haut** (dock fixe) par
+/// [`crate::panels::top_bar`]. Lecture seule du monde : de l'observation pour
+/// affichage, pas de la logique de sim. En `horizontal_wrapped` pour passer à la
+/// ligne plutôt que déborder quand la fenêtre est étroite.
+pub(crate) fn stats_section(
+    ui: &mut egui::Ui,
+    agents: &Query<(&Reserve, &Genotype), With<Agent>>,
+    food: &Query<(), With<Food>>,
+) {
+    let population = agents.iter().count();
+    let n = population.max(1) as f32;
+    let mean_reserve = agents.iter().map(|(r, _)| r.current).sum::<f32>() / n;
+    let food_count = food.iter().count();
+    ui.horizontal_wrapped(|ui| {
+        ui.label(format!("Population : {population}"));
+        ui.separator();
+        ui.label(format!("Nourriture : {food_count}"));
+        ui.separator();
+        ui.label(format!("Réserve moy. : {mean_reserve:.0}"));
+        ui.separator();
+        ui.label("Gènes moy. —");
+        // Une moyenne par caractéristique de TRAITS, sans champ codé en dur.
+        for t in &TRAITS {
+            let mean = agents.iter().map(|(_, g)| (t.get)(g)).sum::<f32>() / n;
+            ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
+        }
     });
-    Ok(())
 }
 
 /// Reporte les gènes de l'archétype d'agent (le premier) dans le génotype

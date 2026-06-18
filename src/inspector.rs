@@ -130,38 +130,10 @@ pub fn delete_under_cursor(
     Ok(())
 }
 
-/// La fenêtre flottante de l'inspecteur : génotype, énergie, perception, action de
-/// l'agent sélectionné. Tourne dans `EguiPrimaryContextPass`. Lecture seule.
-pub fn inspector_ui(
-    mut contexts: EguiContexts,
-    selection: Res<Selection>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-    agents: Query<(&Species, &Reserve, &Genotype, &Vision, &Perception, &Action, &Brain), With<Agent>>,
-) -> Result {
-    if !vis.inspector {
-        return Ok(());
-    }
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    // Pas de `vscroll` ici : `inspector_section` a déjà sa propre `ScrollArea`
-    // (la liste des rayons de vision peut être longue).
-    let mut window = egui::Window::new("Inspecteur d'agent")
-        .open(&mut vis.inspector)
-        .default_pos([560.0, 820.0])
-        .default_width(260.0)
-        .resizable(true);
-    if tidy {
-        window = window
-            .current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Inspector));
-    }
-    window.show(ctx, |ui| inspector_section(ui, &selection, &agents));
-    Ok(())
-}
-
-/// Le contenu de l'inspecteur (sans le cadre de fenêtre). Si l'agent sélectionné a
-/// disparu (mort), on le signale. Lecture seule du monde.
-pub fn inspector_section(
+/// L'inspecteur d'agent — génotype, énergie, perception, action (+ graphe MLP) de
+/// l'agent sélectionné. Rendu dans le panneau du bas (à droite, item dock). Si
+/// l'agent sélectionné a disparu (mort), on le signale. Lecture seule du monde.
+pub(crate) fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
     agents: &Query<

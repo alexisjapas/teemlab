@@ -15,7 +15,7 @@
 //! reconstruire le monde — pas de logique de peuplement dupliquée ici.
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::egui;
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Agent, Food, Reserve, Species, Wall};
@@ -82,33 +82,10 @@ pub fn build_runs_panel(mut commands: Commands) {
 }
 
 /// La fenêtre flottante « Runs & scénarios ». Tourne dans `EguiPrimaryContextPass`.
-pub fn runs_ui(
-    mut contexts: EguiContexts,
-    mut panel: ResMut<RunsPanel>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-) -> Result {
-    if !vis.runs {
-        return Ok(());
-    }
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    let mut window = egui::Window::new("Runs & scénarios")
-        .open(&mut vis.runs)
-        .default_pos([12.0, 84.0])
-        .default_width(290.0)
-        .resizable(true);
-    if tidy {
-        window =
-            window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Runs));
-    }
-    window.show(ctx, |ui| runs_section(ui, &mut panel));
-    Ok(())
-}
-
-/// Le contenu de « Runs & scénarios ». Ne fait que lire/écrire son propre état et
-/// poser une action en attente — aucun accès au monde ici (cf. systèmes `PreUpdate`).
-fn runs_section(ui: &mut egui::Ui, panel: &mut RunsPanel) {
+/// La section « Runs & scénarios », rendue dans le panneau de gauche (item dock).
+/// Ne fait que lire/écrire son propre état et poser une action en attente — aucun
+/// accès au monde ici (cf. systèmes `PreUpdate`).
+pub(crate) fn runs_section(ui: &mut egui::Ui, panel: &mut RunsPanel) {
     // On travaille sur des copies locales pour que la fermeture egui ne capture
     // pas `panel` (évite les emprunts croisés dans le combo).
     let scenarios = panel.scenarios.clone();

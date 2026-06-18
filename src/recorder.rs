@@ -12,7 +12,7 @@
 //! d'outil — comme l'éditeur, c'est de l'action manuelle hors `FixedUpdate`.
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::egui;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use teemlab::SimConfig;
@@ -63,35 +63,10 @@ fn record_binary() -> PathBuf {
     PathBuf::from("record")
 }
 
-/// La fenêtre flottante « Enregistrement ». Tourne dans `EguiPrimaryContextPass`.
-pub fn recorder_ui(
-    mut contexts: EguiContexts,
-    mut panel: ResMut<RecorderPanel>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-) -> Result {
-    if !vis.recorder {
-        return Ok(());
-    }
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    let mut window = egui::Window::new("Enregistrement")
-        .open(&mut vis.recorder)
-        .default_pos([12.0, 300.0])
-        .default_width(240.0)
-        .resizable(true);
-    if tidy {
-        window = window
-            .current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Recorder));
-    }
-    window.show(ctx, |ui| recorder_section(ui, &mut panel));
-    Ok(())
-}
-
-/// Le contenu de la fenêtre d'enregistrement. Ne fait que lire/écrire son propre
-/// état et poser `launch_requested` ; le lancement et le suivi vivent dans
-/// [`drive_recorder`].
-pub fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
+/// La section « Enregistrement », rendue dans le panneau de droite (item dock). Ne
+/// fait que lire/écrire son propre état et poser `launch_requested` ; le lancement et
+/// le suivi vivent dans [`drive_recorder`].
+pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     let recording = panel.child.is_some();
     ui.small(
         "Ré-exécute le scénario courant à frais (rendu headless propre, \

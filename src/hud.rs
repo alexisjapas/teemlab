@@ -16,7 +16,7 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::egui;
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Food, Species};
 use teemlab::config::Bounds;
@@ -134,36 +134,10 @@ pub fn sample_history(
     }
 }
 
-/// La fenêtre flottante des courbes d'évolution : population par espèce + dérive
-/// des gènes. Tourne dans `EguiPrimaryContextPass`. Lecture seule de l'historique.
-pub fn hud_ui(
-    mut contexts: EguiContexts,
-    mut history: ResMut<History>,
-    mut vis: ResMut<crate::controls::PanelVisibility>,
-) -> Result {
-    if !vis.hud {
-        return Ok(());
-    }
-    let tidy = vis.tidy_windows;
-    let ctx = contexts.ctx_mut()?;
-    let screen = ctx.content_rect();
-    let mut window = egui::Window::new("Évolution — courbes")
-        .open(&mut vis.hud)
-        .default_pos([12.0, 820.0])
-        .default_width(360.0)
-        .resizable(true)
-        .vscroll(true);
-    if tidy {
-        window =
-            window.current_pos(crate::controls::tidy_pos(screen, crate::controls::WindowSlot::Hud));
-    }
-    window.show(ctx, |ui| hud_section(ui, &mut history));
-    Ok(())
-}
-
-/// Le contenu des courbes (sans le cadre de fenêtre, pour rester testable et
-/// composable). Population par espèce puis dérive des gènes normalisée.
-pub fn hud_section(ui: &mut egui::Ui, history: &mut History) {
+/// Les courbes d'évolution — population par espèce puis dérive des gènes normalisée.
+/// Rendue dans le panneau du bas (à gauche, item dock). Lecture seule de
+/// l'historique.
+pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History) {
     ui.horizontal(|ui| {
         ui.weak(format!("{} échantillons", history.samples.len()));
         if ui.button("↻ Effacer").clicked() {

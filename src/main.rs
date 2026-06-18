@@ -8,6 +8,7 @@ mod controls;
 mod editor;
 mod hud;
 mod inspector;
+mod panels;
 mod recorder;
 mod runs;
 
@@ -41,7 +42,6 @@ fn main() {
         .init_resource::<controls::SimControls>()
         .init_resource::<inspector::Selection>()
         .init_resource::<recorder::RecorderPanel>()
-        .init_resource::<controls::PanelVisibility>()
         // La sim démarre **en pause** (on prépare la run avant de la lancer).
         .add_systems(
             Startup,
@@ -81,26 +81,20 @@ fn main() {
                 draw_play_area,
             ),
         )
-        // UI egui — un bandeau de contrôles docké en haut (chrome) ; tous les
-        // outils sont des **fenêtres flottantes** au-dessus de la sim plein cadre.
-        // L'ordre est **chaîné** et compte : `pick_agent` et `resolve_drag` tournent
-        // APRÈS toutes les fenêtres, sinon `is_pointer_over_area` lit un
-        // `available_rect`/un état de survol périmé — un clic sur une fenêtre
-        // désélectionnerait l'agent, et un dépôt au-dessus d'une fenêtre poserait
-        // une entité cachée. `set_sim_camera` clôt le pass, zone centrale connue.
+        // UI egui — **panneaux dockés fixes** autour de la zone de simulation
+        // centrale (cf. `panels`). L'ordre est **chaîné** et compte : les panneaux
+        // d'abord (ils réservent les bords), puis les interactions APRÈS — sinon
+        // `is_pointer_over_area` lit un état périmé (un clic sur un panneau
+        // désélectionnerait l'agent, un dépôt au-dessus poserait une entité cachée).
+        // `set_sim_camera` clôt le pass : `available_rect` reflète alors tous les
+        // panneaux, donc la sim est cadrée pile dans la zone centrale.
         .add_systems(
             EguiPrimaryContextPass,
             (
-                controls::controls_ui,
-                controls::auto_tidy,
-                editor::editor_ui,
-                editor::world_ui,
-                runs::runs_ui,
-                recorder::recorder_ui,
-                hud::hud_ui,
-                editor::stats_ui,
-                inspector::inspector_ui,
-                controls::clear_tidy,
+                panels::top_bar,
+                panels::left_tools,
+                panels::right_panel,
+                panels::bottom_panel,
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,
