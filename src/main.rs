@@ -80,6 +80,7 @@ fn main() {
             (
                 hud::sample_history,
                 inspector::highlight_selection,
+                inspector::draw_selected_vision,
                 recorder::drive_recorder,
                 draw_play_area,
             ),

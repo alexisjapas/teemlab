@@ -249,3 +249,30 @@ pub fn highlight_selection(
         );
     }
 }
+
+/// Rendu seul : l'éventail de rayons de vision de l'agent **sélectionné**
+/// uniquement — pour *voir* l'occlusion à l'œuvre sans saturer l'écran en le
+/// traçant pour tous les agents (le cap de chacun reste lisible via l'indicateur
+/// de `visuals::draw_heading`). On relit l'état sensoriel déjà calculé par la sim
+/// (`Perception`) — aucun raycast recalculé ici. Rayon clair = rien vu ; il rougit
+/// et raccourcit à mesure qu'un obstacle se rapproche.
+pub fn draw_selected_vision(
+    mut gizmos: Gizmos,
+    selection: Res<Selection>,
+    agents: Query<(&Transform, &Vision, &Perception), With<Agent>>,
+) {
+    let Some(entity) = selection.0 else {
+        return;
+    };
+    let Ok((transform, vision, perception)) = agents.get(entity) else {
+        return;
+    };
+    let origin = transform.translation.truncate();
+    let facing = perception.heading;
+    for (i, &proximity) in perception.vision.iter().enumerate() {
+        let dir = vision.ray_dir(i, facing);
+        let length = vision.range * (1.0 - proximity);
+        let color = Color::srgb(0.25 + 0.75 * proximity, 0.55 * (1.0 - proximity), 0.15);
+        gizmos.line_2d(origin, origin + dir * length, color);
+    }
+}

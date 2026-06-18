@@ -438,9 +438,15 @@ pub(crate) fn draw_mlp_graph(
     let widest = *sizes.iter().max().unwrap_or(&1);
     // Hauteur proportionnée à la colonne la plus large, bornée pour rester compacte.
     let height = (widest as f32 * 16.0).clamp(60.0, 220.0);
-    let width = ui.available_width().max(120.0);
+    let width = ui.available_width().max(180.0);
     let (resp, painter) = ui.allocate_painter(vec2(width, height), Sense::hover());
-    let rect = resp.rect.shrink(10.0);
+    // Marges horizontales réservées aux étiquettes d'entrée (gauche) et de sortie
+    // (droite) ; petites marges verticales. Les colonnes de nœuds vivent dans `rect`.
+    const LABEL_W: f32 = 42.0;
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(resp.rect.left() + LABEL_W, resp.rect.top() + 8.0),
+        egui::pos2(resp.rect.right() - LABEL_W, resp.rect.bottom() - 8.0),
+    );
 
     // Position du nœud `node` (0-based) de la colonne `col`.
     let pos = |col: usize, node: usize, n: usize| -> Pos2 {
@@ -497,6 +503,52 @@ pub(crate) fn draw_mlp_graph(
                 Stroke::new(0.6, egui::Color32::from_gray(25)),
             );
         }
+    }
+
+    // Étiquettes des canaux d'entrée / sortie — « ce à quoi ça correspond », déduit
+    // du contrat d'E/S du MLP : l'entrée concatène les canaux *vision* (obstacle)
+    // puis *cible* (cf. `MlpBrain::input_vector`) ; la sortie est le pilotage en
+    // repère du corps (avant, côté). Dessinées dans les marges réservées de part et
+    // d'autre, à hauteur de chaque nœud concerné.
+    let font = egui::FontId::monospace(8.0);
+    let ink = egui::Color32::from_gray(165);
+    let n_in = sizes[0];
+    let rays = n_in / 2; // entrée = 2 × rayons (vision ++ cible)
+    for node in 0..n_in {
+        let text = if n_in.is_multiple_of(2) {
+            if node < rays {
+                format!("vis {node}")
+            } else {
+                format!("cib {}", node - rays)
+            }
+        } else {
+            format!("in {node}")
+        };
+        let p = pos(0, node, n_in);
+        painter.text(
+            egui::pos2(rect.left() - 4.0, p.y),
+            egui::Align2::RIGHT_CENTER,
+            text,
+            font.clone(),
+            ink,
+        );
+    }
+    let last = cols - 1;
+    let n_out = sizes[last];
+    for node in 0..n_out {
+        let text = match (n_out == MlpBrain::OUTPUTS).then_some(node) {
+            Some(0) => "avant",
+            Some(1) => "côté",
+            _ => continue, // sortie non standard : pas d'étiquette devinable.
+        };
+        let p = pos(last, node, n_out);
+        painter.text(
+            egui::pos2(rect.right() + 4.0, p.y),
+            egui::Align2::LEFT_CENTER,
+            text,
+            font.clone(),
+            ink,
+        );
     }
 }
 

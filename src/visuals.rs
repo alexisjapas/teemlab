@@ -7,12 +7,13 @@
 //! l'inclut pas. Centraliser ici évite de dupliquer le rendu entre l'aperçu live
 //! et l'enregistrement (item 14, §7 : *re-render frais* d'une run).
 
-use crate::components::{Agent, Food, Perception, Radius, Reserve, Species, Vision};
+use crate::components::{Agent, Food, Perception, Radius, Reserve, Species};
 use bevy::prelude::*;
 
 /// Ajoute les systèmes de rendu de la sim (mesh des entités, teinte par réserve,
-/// arène, rayons de vision). À combiner avec une caméra fournie par le binaire
-/// (fenêtre pour `main`, cible image pour `record`).
+/// arène, indicateur de cap). À combiner avec une caméra fournie par le binaire
+/// (fenêtre pour `main`, cible image pour `record`). L'éventail détaillé des rayons
+/// de vision n'en fait pas partie : il est réservé à l'agent inspecté, côté fenêtré.
 pub struct VisualsPlugin;
 
 impl Plugin for VisualsPlugin {
@@ -24,7 +25,7 @@ impl Plugin for VisualsPlugin {
                 attach_food_visuals,
                 shade_by_reserve,
                 draw_arena,
-                draw_vision,
+                draw_heading,
             ),
         );
     }
@@ -91,20 +92,30 @@ fn shade_by_reserve(
     }
 }
 
-/// Rendu seul : visualiser les rayons de vision pour *voir* l'occlusion à
-/// l'œuvre. On relit l'état sensoriel calculé par la sim (`Perception`) — on ne
-/// recalcule aucun raycast ici. Rayon clair = rien vu ; il rougit et raccourcit
-/// à mesure qu'un obstacle se rapproche.
-fn draw_vision(mut gizmos: Gizmos, agents: Query<(&Transform, &Vision, &Perception)>) {
-    for (transform, vision, perception) in &agents {
-        let origin = transform.translation.truncate();
+/// Rendu seul : un court **indicateur de cap** pour *tous* les agents — un trait du
+/// centre au bord du corps, le long du cap, pour lire d'un coup d'œil l'orientation
+/// d'une entité mouvante. Il s'arrête au rayon (`Radius`) : il ne déborde jamais du
+/// corps. On relit le cap déjà calculé par la sim (`Perception::heading`), sans rien
+/// recalculer.
+///
+/// Le **détail** de la vision (l'éventail complet des rayons, l'occlusion à l'œuvre)
+/// n'est PAS dessiné ici : à tous les agents il saturerait l'écran. C'est le binaire
+/// fenêtré qui le trace, pour le seul agent **inspecté** (cf. `inspector`).
+fn draw_heading(
+    mut gizmos: Gizmos,
+    agents: Query<(&Transform, &Radius, &Perception), With<Agent>>,
+) {
+    for (transform, radius, perception) in &agents {
         let facing = perception.heading;
-        for (i, &proximity) in perception.vision.iter().enumerate() {
-            let dir = vision.ray_dir(i, facing);
-            let length = vision.range * (1.0 - proximity);
-            let color = Color::srgb(0.25 + 0.75 * proximity, 0.55 * (1.0 - proximity), 0.15);
-            gizmos.line_2d(origin, origin + dir * length, color);
+        if facing == Vec2::ZERO {
+            continue; // pas encore de cap (1er tick) : rien à montrer.
         }
+        let origin = transform.translation.truncate();
+        gizmos.line_2d(
+            origin,
+            origin + facing * radius.0,
+            Color::srgb(0.95, 0.95, 0.98),
+        );
     }
 }
 
