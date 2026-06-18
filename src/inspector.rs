@@ -22,6 +22,37 @@ use crate::editor::{Palette, draw_mlp_graph};
 #[derive(Resource, Default)]
 pub struct Selection(pub Option<Entity>);
 
+/// Position **monde** du curseur dans l'aire de jeu (caméra et fenêtre uniques),
+/// si elle existe. Partagée par le picking de l'inspecteur et la suppression : le
+/// `viewport_to_world_2d` tient compte de l'offset de la sim centrée (cf.
+/// `main::set_sim_camera`), donc le curseur fenêtre reste la bonne entrée.
+fn pointer_world(
+    cameras: &Query<(&Camera, &GlobalTransform)>,
+    windows: &Query<&Window>,
+) -> Option<Vec2> {
+    let (camera, cam_tf) = cameras.single().ok()?;
+    let window = windows.single().ok()?;
+    let cursor = window.cursor_position()?;
+    camera.viewport_to_world_2d(cam_tf, cursor).ok()
+}
+
+/// L'entité (corps) la plus proche dont le rayon **contient** `world`, le cas
+/// échéant. Même critère pour sélectionner (inspecteur) et supprimer — d'où le
+/// partage. `None` = curseur dans le vide.
+fn body_at<'a>(
+    world: Vec2,
+    bodies: impl IntoIterator<Item = (Entity, &'a Transform, &'a Radius)>,
+) -> Option<Entity> {
+    let mut best: Option<(Entity, f32)> = None;
+    for (entity, transform, radius) in bodies {
+        let d = transform.translation.truncate().distance(world);
+        if d <= radius.0 && best.is_none_or(|(_, bd)| d < bd) {
+            best = Some((entity, d));
+        }
+    }
+    best.map(|(entity, _)| entity)
+}
+
 /// Sélectionne l'agent sous le curseur au clic dans l'aire de jeu. Un clic dans
 /// le vide désélectionne ; un clic sur un panneau egui ou pendant un glisser
 /// d'archétype est ignoré (c'est l'éditeur qui gère ce dernier).
@@ -42,30 +73,11 @@ pub fn pick_agent(
     {
         return Ok(());
     }
-
-    let Ok((camera, cam_tf)) = cameras.single() else {
+    let Some(world) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
-    let Ok(window) = windows.single() else {
-        return Ok(());
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return Ok(());
-    };
-    let Ok(world) = camera.viewport_to_world_2d(cam_tf, cursor) else {
-        return Ok(());
-    };
-
-    // L'agent le plus proche dont le corps contient le clic (rayon). Sinon, clic
-    // dans le vide → désélection.
-    let mut best: Option<(Entity, f32)> = None;
-    for (entity, transform, radius) in &agents {
-        let d = transform.translation.truncate().distance(world);
-        if d <= radius.0 && best.is_none_or(|(_, bd)| d < bd) {
-            best = Some((entity, d));
-        }
-    }
-    selection.0 = best.map(|(entity, _)| entity);
+    // L'agent le plus proche dont le corps contient le clic ; sinon (vide) → None.
+    selection.0 = body_at(world, agents);
     Ok(())
 }
 
@@ -99,29 +111,12 @@ pub fn delete_under_cursor(
     if palette.dragging.is_some() || ctx.is_pointer_over_area() {
         return Ok(());
     }
-    let Ok((camera, cam_tf)) = cameras.single() else {
+    let Some(world) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
-    let Ok(window) = windows.single() else {
-        return Ok(());
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return Ok(());
-    };
-    let Ok(world) = camera.viewport_to_world_2d(cam_tf, cursor) else {
-        return Ok(());
-    };
-
     // Le corps le plus proche dont le rayon contient le curseur (même critère que
     // le picking de l'inspecteur).
-    let mut best: Option<(Entity, f32)> = None;
-    for (entity, transform, radius) in &bodies {
-        let d = transform.translation.truncate().distance(world);
-        if d <= radius.0 && best.is_none_or(|(_, bd)| d < bd) {
-            best = Some((entity, d));
-        }
-    }
-    if let Some((entity, _)) = best {
+    if let Some(entity) = body_at(world, bodies) {
         commands.entity(entity).despawn();
         if selection.0 == Some(entity) {
             selection.0 = None; // ne pas garder une sélection fantôme.

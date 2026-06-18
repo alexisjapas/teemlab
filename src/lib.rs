@@ -7,6 +7,12 @@
 //! deux points d'entrée (fenêtré et headless), pour qu'ils fassent avancer
 //! exactement le même monde.
 
+// Les requêtes Bevy (tuples de composants + filtres) déclenchent `type_complexity`
+// par nature ; c'est la forme idiomatique d'un système ECS, pas une dette. On
+// l'autorise au niveau du crate plutôt que de saupoudrer des `#[allow]` ou
+// d'inventer des alias qui masqueraient ce qu'un système lit vraiment.
+#![allow(clippy::type_complexity)]
+
 pub mod brain;
 pub mod components;
 pub mod config;

@@ -7,16 +7,15 @@
 //! qu'il s'en rapproche franchement — preuve que percevoir→décider→agir est devenu
 //! PORTEUR (et que la sélection de cerveau par scénario fonctionne).
 
-use std::time::Duration;
-
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Perception, Species};
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
-use teemlab::{SimConfig, SimPlugin};
+use teemlab::SimConfig;
+
+mod common;
 
 #[test]
 fn hunter_sees_and_chases_its_target() {
@@ -40,17 +39,8 @@ fn hunter_sees_and_chases_its_target() {
     )
     .expect("config valide");
 
-    let mut app = App::new();
-    // Un tick fixe pile par `update()` (cf. débit headless, §6 ; comme containment).
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        1.0 / config.tick_hz,
-    )));
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(SimPlugin::new(config.clone()));
-    // Stepping manuel : déclencher soi-même finish()/cleanup() (Avian y insère des
-    // ressources) avant de pomper update().
-    app.finish();
-    app.cleanup();
+    // Un tick fixe pile par `update()` (cf. `common::stepping_app`).
+    let mut app = common::stepping_app(&config);
 
     // Chasseur à l'origine (cap +X), nourriture droit devant à 200 u (< portée).
     let food_x = 200.0_f32;

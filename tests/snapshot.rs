@@ -5,18 +5,20 @@
 //! du cœur (`Snapshot`, `spawn_agent_with_brain`, `spawn_food_with_energy`,
 //! `spawn_arena`). Il couvre surtout le chemin **restauration**, le plus risqué.
 
-use std::time::Duration;
+// Les requêtes Bevy (tuples + filtres) déclenchent `type_complexity` par nature.
+#![allow(clippy::type_complexity)]
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
 use teemlab::brain::Brain;
 use teemlab::components::{Agent, Food, Reserve, Species, Wall};
 use teemlab::ecology::{FoodRegen, SimRng, spawn_food_with_energy};
 use teemlab::genotype::Genotype;
 use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
 use teemlab::spawn::{spawn_agent_with_brain, spawn_arena};
-use teemlab::{SimConfig, SimPlugin};
+use teemlab::SimConfig;
+
+mod common;
 
 /// Réceptacle de la capture (résultat de `capture_system`).
 #[derive(Resource, Default)]
@@ -86,26 +88,13 @@ fn restore_system(
     }
 }
 
-/// Construit une App de sim « pas à pas » (un tick fixe par `update()`).
-fn stepping_app(config: &SimConfig) -> App {
-    let mut app = App::new();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        1.0 / config.tick_hz,
-    )));
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(SimPlugin::new(config.clone()));
-    app.finish();
-    app.cleanup();
-    app
-}
-
 #[test]
 fn run_survives_snapshot_roundtrip() {
     let config =
         SimConfig::from_ron_file("scenarios/evolution.ron").expect("scénario evolution.ron");
 
     // — Source : on laisse vivre la run, puis on capture. —
-    let mut source = stepping_app(&config);
+    let mut source = common::stepping_app(&config);
     for _ in 0..400 {
         source.update();
     }
@@ -130,7 +119,7 @@ fn run_survives_snapshot_roundtrip() {
 
     // — Cible : un monde neuf, peuplé par le Startup, qu'on écrase par la run
     //   restaurée. —
-    let mut target = stepping_app(&config);
+    let mut target = common::stepping_app(&config);
     target.update(); // Startup peuple la population par défaut…
     target.world_mut().insert_resource(ToRestore(snapshot));
     target

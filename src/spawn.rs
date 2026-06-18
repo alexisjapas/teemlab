@@ -81,7 +81,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
             .agents_per_species
             .iter()
             .enumerate()
-            .flat_map(|(s, &n)| std::iter::repeat(s as u16).take(n))
+            .flat_map(|(s, &n)| std::iter::repeat_n(s as u16, n))
             .collect()
     };
 

@@ -55,17 +55,14 @@ pub struct Palette {
     pub status: String,
 }
 
-/// Couleur d'une espèce, en `egui::Color32` (miroir de la palette du rendu).
-/// Partagée avec le HUD (item 10) pour que courbes et entités s'accordent.
+/// Couleur d'une espèce, en `egui::Color32`, **dérivée** de l'unique palette du
+/// rendu ([`teemlab::visuals::species_color`]) plutôt que recopiée : courbes du HUD,
+/// pastilles de la palette et entités à l'écran ne peuvent plus diverger. Partagée
+/// avec le HUD (item 10).
 pub(crate) fn species_color32(species: u16) -> egui::Color32 {
-    const PALETTE: [(u8, u8, u8); 4] = [
-        (77, 179, 255),  // bleu
-        (255, 115, 89),  // corail
-        (140, 230, 115), // vert
-        (242, 204, 77),  // ambre
-    ];
-    let (r, g, b) = PALETTE[species as usize % PALETTE.len()];
-    egui::Color32::from_rgb(r, g, b)
+    let c = teemlab::visuals::species_color(Species(species));
+    let q = |channel: f32| (channel * 255.0).round() as u8;
+    egui::Color32::from_rgb(q(c.red), q(c.green), q(c.blue))
 }
 
 /// Les archétypes déduits d'un scénario : une entrée par espèce d'agent (avec le
@@ -109,7 +106,7 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
 /// **distinct**, ordonné après tous les panneaux egui : `is_pointer_over_area`
 /// connaît alors toutes les arêtes, sinon un dépôt au-dessus d'un panneau (bas ou
 /// gauche) poserait une entité cachée sous l'UI. `viewport_to_world_2d` tient
-/// compte de l'offset du viewport (sim centrée, cf. `set_sim_viewport`) → le
+/// compte de l'offset du viewport (sim centrée, cf. `set_sim_camera`) → le
 /// curseur fenêtre reste la bonne entrée.
 pub fn resolve_drag(
     mut contexts: EguiContexts,

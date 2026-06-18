@@ -14,13 +14,12 @@
 //! population par espèce au fil du temps, **pour plusieurs graines** : la
 //! coexistence d'une seule graine serait anecdotique, pas une bande.
 
-use std::time::Duration;
-
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Species};
 use teemlab::genotype::Genotype;
-use teemlab::{SimConfig, SimPlugin};
+use teemlab::SimConfig;
+
+mod common;
 
 /// Le scénario versionné, chargé tel quel : le driver mesure CE que lancent les
 /// binaires, pas une variante de test.
@@ -50,16 +49,7 @@ fn run_seed(seed: u64) -> Run {
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
-    let mut app = App::new();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        1.0 / config.tick_hz,
-    )));
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(SimPlugin::new(config));
-    // Pas-à-pas manuel : finish()/cleanup() avant de pomper (Avian y insère ses
-    // ressources), comme dans `tests/hunter.rs`.
-    app.finish();
-    app.cleanup();
+    let mut app = common::stepping_app(&config);
 
     let mut traj = Vec::with_capacity(SECONDS);
     for _ in 0..SECONDS {

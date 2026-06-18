@@ -4,6 +4,9 @@
 //! qu'on ajoute ici vit dans `Update` et ne touche QUE le rendu / l'UI — jamais
 //! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
 
+// Cf. `lib.rs` : les requêtes Bevy déclenchent `type_complexity` par nature.
+#![allow(clippy::type_complexity)]
+
 mod controls;
 mod editor;
 mod hud;

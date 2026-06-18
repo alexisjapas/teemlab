@@ -7,12 +7,11 @@
 //! un agent peut tunneler ou naître dehors) **et** une normale inversée (qui
 //! éjecterait au contraire tout le monde *hors* de l'arène).
 
-use std::time::Duration;
-
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
 use teemlab::components::Agent;
-use teemlab::{SimConfig, SimPlugin};
+use teemlab::SimConfig;
+
+mod common;
 
 #[test]
 fn agents_stay_within_arena() {
@@ -21,21 +20,8 @@ fn agents_stay_within_arena() {
     let config = SimConfig::from_ron_file("scenarios/evolution.ron")
         .expect("scénario evolution.ron chargeable");
 
-    let mut app = App::new();
-    // Pas de temps manuel : chaque `update()` avance le temps d'un tick fixe pile,
-    // donc la boucle fixe (sim + physique) tourne exactement une fois par update —
-    // sans dépendre de l'horloge murale (cf. débit headless, §6).
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        1.0 / config.tick_hz,
-    )));
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(SimPlugin::new(config.clone()));
-
-    // En stepping manuel, `app.run()` n'est pas appelé : il faut déclencher
-    // soi-même les hooks `Plugin::finish()`/`cleanup()` (Avian y insère certaines
-    // de ses ressources, p. ex. ses diagnostics) avant de pomper `update()`.
-    app.finish();
-    app.cleanup();
+    // Chaque `update()` avance d'un tick fixe pile (cf. `common::stepping_app`).
+    let mut app = common::stepping_app(&config);
 
     // ~30 s de temps simulé : largement de quoi atteindre les murs et enchaîner
     // des générations près des bords.

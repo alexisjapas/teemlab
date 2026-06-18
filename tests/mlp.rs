@@ -11,13 +11,12 @@
 //! On fait tourner le *vrai* monde de sim (le même `SimPlugin` que les binaires), en
 //! pas-à-pas manuel (cf. §6).
 
-use std::time::Duration;
-
 use bevy::prelude::*;
-use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Species};
 use teemlab::genotype::Genotype;
-use teemlab::{SimConfig, SimPlugin};
+use teemlab::SimConfig;
+
+mod common;
 
 const SCENARIO: &str = include_str!("../scenarios/cerveau_mlp.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
@@ -40,14 +39,7 @@ fn run_seed(seed: u64) -> Run {
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
-    let mut app = App::new();
-    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
-        1.0 / config.tick_hz,
-    )));
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(SimPlugin::new(config));
-    app.finish();
-    app.cleanup();
+    let mut app = common::stepping_app(&config);
 
     let mut traj = Vec::with_capacity(SECONDS);
     for _ in 0..SECONDS {
