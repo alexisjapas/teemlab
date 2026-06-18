@@ -79,18 +79,22 @@
     mutation_rate_bounds: (min: 0.0, max: 0.5),
     base_metabolism_bounds: (min: 0.0, max: 20.0),
     move_cost_bounds: (min: 0.0, max: 20.0),
+    // Bornes (entières) du gène de précision visuelle : 1 à 21 rayons.
+    vision_rays_bounds: (min: 1.0, max: 21.0),
 
-    // Facet « héritable ? » par trait (§2) : true → le gène mute et dérive ;
-    // false → il reste cloué à la valeur d'archétype ci-dessus. Tout héritable
-    // par défaut → comportement d'avant l'item 15.
-    heritable: (
+    // Facet « mutable ? » par trait (§2) : true → le gène mute et dérive ;
+    // false → il est quand même transmis mais reste cloué à la valeur du fondateur
+    // ci-dessus. Tout mutable par défaut sauf les coûts et le taux de mutation.
+    mutable: (
         max_speed: true,
         agility: true,
         vision_range: true,
         vision_fov: true,
         reproduction_threshold: true,
         offspring_energy: true,
-        // Non héritables : taux de mutation (méta-évolution) et les coûts, qui
+        // Précision visuelle (nombre de rayons) : mutable, bornée par son coût.
+        vision_rays: true,
+        // Non mutables : taux de mutation (méta-évolution) et les coûts, qui
         // SONT la pression de sélection (évolvables, ils tomberaient à 0).
         mutation_rate: false,
         base_metabolism: false,

@@ -58,6 +58,19 @@ pub struct Food;
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Radius(pub f32);
 
+/// Génération de l'agent : `0` pour un fondateur (peuplement, placement éditeur),
+/// `parent + 1` pour un nouveau-né. Fixée à la naissance et jamais modifiée — c'est
+/// la profondeur généalogique, pas un état vivant. Lisible pour suivre l'avancée
+/// d'une lignée (inspecteur, snapshot).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Generation(pub u32);
+
+/// Âge de l'agent, en **secondes simulées** écoulées depuis sa naissance.
+/// Incrémenté à chaque tick par [`crate::ecology::age_agents`]. À zéro à la
+/// naissance ; restauré tel quel depuis un snapshot.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Age(pub f32);
+
 /// Magnitudes de locomotion — ce que les gènes feront varier (v1 : fixe).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Locomotion {

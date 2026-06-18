@@ -61,18 +61,28 @@ impl Brain {
     /// - `Wander` hérite le `turn_rate` du parent (paramètre d'archétype, non mué),
     ///   avec un état RNG **frais** (`seed`/`heading`) pour décorréler la lignée ;
     /// - `Hunter`, déterministe et sans état, est simplement cloné ;
-    /// - `Mlp` hérite la **topologie** du parent et **mute ses poids** par
-    ///   perturbation gaussienne d'écart `rate · WEIGHT_STEP` (cf. [`MlpBrain::mutated`]).
+    /// - `Mlp` hérite la **topologie cachée** du parent, **adapte sa couche d'entrée**
+    ///   à `n_inputs` (la précision visuelle de l'enfant peut différer de celle du
+    ///   parent, gène `vision_rays`) et **mute ses poids** par perturbation gaussienne
+    ///   d'écart `rate · WEIGHT_STEP` (cf. [`MlpBrain::reproduced`]).
     ///
-    /// `seed`/`heading` n'alimentent que les cerveaux à état (l'errance) ; `rng`/`rate`
-    /// que la mutation des poids (le MLP). Wander et Hunter **ne tirent pas** dans
-    /// `rng` → le flux RNG reste **identique** aux scénarios non-MLP (ceux d'avant
-    /// cet item), `rate` venant du génotype (`mutation_rate`, le gène par lignée, §2).
-    pub fn reproduce(&self, seed: u64, heading: f32, rng: &mut Rng, rate: f32) -> Brain {
+    /// `n_inputs` (= `2 × rayons` de l'enfant) ne sert qu'au MLP ; Wander et Hunter
+    /// l'ignorent. `seed`/`heading` n'alimentent que les cerveaux à état (l'errance) ;
+    /// `rng`/`rate` la mutation/adaptation du MLP. Wander et Hunter **ne tirent pas**
+    /// dans `rng` → le flux RNG reste **identique** aux scénarios non-MLP, `rate`
+    /// venant du génotype (`mutation_rate`, le gène par lignée, §2).
+    pub fn reproduce(
+        &self,
+        seed: u64,
+        heading: f32,
+        rng: &mut Rng,
+        rate: f32,
+        n_inputs: usize,
+    ) -> Brain {
         match self {
             Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
             Brain::Hunter(_) => Brain::Hunter(HunterBrain),
-            Brain::Mlp(m) => Brain::Mlp(m.mutated(rng, rate)),
+            Brain::Mlp(m) => Brain::Mlp(m.reproduced(rng, rate, n_inputs)),
         }
     }
 }
@@ -316,8 +326,10 @@ impl Layer {
 /// comme le chasseur lit « rayon i » relativement au cap).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MlpBrain {
-    /// Couches denses, entrée→sortie. Topologie figée à la construction (héritée
-    /// telle quelle) ; seuls les poids muent. **Seul état** du cerveau : son égalité
+    /// Couches denses, entrée→sortie. Topologie cachée figée à la construction
+    /// (héritée telle quelle) ; la couche d'entrée peut, elle, être redimensionnée à
+    /// la reproduction quand la précision visuelle de l'enfant change (cf.
+    /// [`MlpBrain::reproduced`]) ; les poids muent. **Seul état** du cerveau : son égalité
     /// et sa sérialisation ne portent que la topologie + les poids (pas d'activations
     /// transitoires — celles-ci se recalculent à la demande, cf. [`MlpBrain::forward_activations`]).
     layers: Vec<Layer>,
@@ -357,6 +369,67 @@ impl MlpBrain {
         let std = rate * Self::WEIGHT_STEP;
         Self {
             layers: self.layers.iter().map(|l| l.mutated(rng, std)).collect(),
+        }
+    }
+
+    /// Enfant à la reproduction : comme [`MlpBrain::mutated`] (topologie cachée
+    /// héritée, poids mutés), **mais** la couche d'entrée est d'abord redimensionnée
+    /// à `n_inputs` si la précision visuelle de l'enfant diffère de celle du parent
+    /// (gène `vision_rays`, item 3). C'est le premier pas vers une topologie variable.
+    ///
+    /// Quand `n_inputs` est inchangé, aucun tirage de redimensionnement n'a lieu et
+    /// le résultat coïncide bit à bit avec `mutated` (flux RNG des scénarios à
+    /// précision fixe préservé).
+    pub fn reproduced(&self, rng: &mut Rng, rate: f32, n_inputs: usize) -> Self {
+        let std = rate * Self::WEIGHT_STEP;
+        let layers = self
+            .layers
+            .iter()
+            .enumerate()
+            .map(|(idx, layer)| {
+                // Seule la première couche voit le vecteur de perception : c'est sa
+                // seule dont le fan-in dépend du nombre de rayons.
+                let adapted = if idx == 0 && layer.inputs != n_inputs {
+                    Self::resize_input_fan(layer, rng, n_inputs)
+                } else {
+                    layer.clone()
+                };
+                adapted.mutated(rng, std)
+            })
+            .collect();
+        Self { layers }
+    }
+
+    /// Redimensionne le fan-in de la couche d'entrée à `n_inputs`, **en respectant
+    /// les deux blocs** du vecteur de perception (`vision` puis `target`, chacun de
+    /// `rayons` canaux — cf. [`MlpBrain::input_vector`]). Chaque bloc est tronqué (si
+    /// l'enfant voit moins fin) ou complété de poids neufs façon Xavier (s'il voit
+    /// plus fin), de sorte que les poids conservés restent **alignés sur le bon
+    /// canal**. Les biais (par neurone de sortie) sont inchangés.
+    fn resize_input_fan(layer: &Layer, rng: &mut Rng, n_inputs: usize) -> Layer {
+        let outputs = layer.outputs();
+        let old_in = layer.inputs;
+        let old_rays = old_in / 2; // entrée = 2 × rayons (vision ++ cible)
+        let new_rays = n_inputs / 2;
+        let scale = 1.0 / (n_inputs.max(1) as f32).sqrt();
+        let mut weights = Vec::with_capacity(n_inputs * outputs);
+        for o in 0..outputs {
+            let row = &layer.weights[o * old_in..(o + 1) * old_in];
+            // Bloc vision (offset 0) puis bloc cible (offset `old_rays`).
+            for block_start in [0usize, old_rays] {
+                for r in 0..new_rays {
+                    weights.push(if r < old_rays {
+                        row[block_start + r]
+                    } else {
+                        rng.next_gaussian() * scale
+                    });
+                }
+            }
+        }
+        Layer {
+            inputs: n_inputs,
+            weights,
+            biases: layer.biases.clone(),
         }
     }
 
@@ -554,16 +627,16 @@ mod tests {
     #[test]
     fn reproduce_keeps_the_parent_variant() {
         let mut rng = Rng::new(0);
-        // Hunter → Hunter (déterministe, cloné).
+        // Hunter → Hunter (déterministe, cloné). `n_inputs` ignoré par Hunter.
         let hunter = Brain::Hunter(HunterBrain);
         assert!(matches!(
-            hunter.reproduce(7, 1.0, &mut rng, 0.1),
+            hunter.reproduce(7, 1.0, &mut rng, 0.1, 6),
             Brain::Hunter(_)
         ));
 
         // Wander → Wander, turn_rate hérité, état RNG distinct (graine ≠).
         let parent = Brain::Wander(WanderBrain::new(1, 0.0, 0.37));
-        match parent.reproduce(2, 0.5, &mut rng, 0.1) {
+        match parent.reproduce(2, 0.5, &mut rng, 0.1, 6) {
             Brain::Wander(child) => {
                 assert_eq!(child.turn_rate, 0.37, "le turn_rate du parent est hérité");
                 let Brain::Wander(p) = &parent else {
@@ -655,6 +728,28 @@ mod tests {
             assert_eq!(c.inputs, p.inputs);
             assert_eq!(c.outputs(), p.outputs());
         }
+    }
+
+    /// La reproduction adapte la **couche d'entrée** au nombre de rayons de l'enfant
+    /// (gène `vision_rays`, item 3) : la première couche prend `2 × rayons` entrées,
+    /// la topologie cachée et la sortie ne bougent pas. À précision constante et taux
+    /// nul, c'est exactement l'identité (même flux RNG que `mutated`).
+    #[test]
+    fn mlp_reproduce_resizes_input_layer_to_child_rays() {
+        let mut rng = Rng::new(5);
+        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 6 entrées
+
+        // Précision inchangée + taux nul = clone fidèle.
+        let same = parent.reproduced(&mut rng, 0.0, MlpBrain::input_size(3));
+        assert_eq!(same, parent, "précision constante, taux nul → identité");
+
+        // Enfant qui voit plus fin : 5 rayons → 10 entrées (couche d'entrée agrandie).
+        let grown = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(5));
+        assert_eq!(grown.layer_sizes(), vec![10, 8, 4, MlpBrain::OUTPUTS]);
+
+        // Enfant qui voit plus grossier : 2 rayons → 4 entrées (couche d'entrée rétrécie).
+        let shrunk = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(2));
+        assert_eq!(shrunk.layer_sizes(), vec![4, 8, 4, MlpBrain::OUTPUTS]);
     }
 
     /// La visualisation des activations est calculée **à la demande**, hors du cœur

@@ -13,8 +13,8 @@
 //! Manger, lui, n'est pas ici : c'est la primitive d'interaction (item 7) qui
 //! transfère l'énergie de la nourriture vers l'agent. Le moteur n'a qu'un verbe.
 
-use crate::brain::Brain;
-use crate::components::{Agent, Food, Radius, Reserve, Species, Vision};
+use crate::brain::{Brain, MlpBrain};
+use crate::components::{Age, Agent, Food, Generation, Radius, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::rng::Rng;
@@ -80,6 +80,17 @@ pub fn reap(mut commands: Commands, agents: Query<(Entity, &Reserve), With<Agent
     }
 }
 
+/// VIEILLIR : chaque agent vivant gagne `dt` secondes d'âge à chaque tick. Système
+/// trivial mais à part — l'âge est une propriété d'entité **observable** (généalogie,
+/// et un jour des stratégies dépendantes de l'âge), pas un sous-produit d'un autre
+/// système. Tourne dans `FixedUpdate`, donc headless et fenêtré vieillissent pareil.
+pub fn age_agents(time: Res<Time>, mut agents: Query<&mut Age, With<Agent>>) {
+    let dt = time.delta_secs();
+    for mut age in &mut agents {
+        age.0 += dt;
+    }
+}
+
 /// REPRODUCTION (régime continu-implicite, §4) : la fitness est endogène — *tu
 /// t'es reproduit*. Un agent dont l'énergie atteint son seuil paie son
 /// `offspring_energy` (conservation : rien n'est créé) pour engendrer un enfant
@@ -99,9 +110,19 @@ pub fn reproduce(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut rng: ResMut<SimRng>,
-    mut parents: Query<(&Transform, &mut Reserve, &Genotype, &Species, &Brain), With<Agent>>,
+    mut parents: Query<
+        (
+            &Transform,
+            &mut Reserve,
+            &Genotype,
+            &Species,
+            &Brain,
+            &Generation,
+        ),
+        With<Agent>,
+    >,
 ) {
-    for (transform, mut reserve, genotype, species, brain) in &mut parents {
+    for (transform, mut reserve, genotype, species, brain, generation) in &mut parents {
         // Seuil et coût sont des **gènes** (per-entité, évolvables) : un seuil nul
         // = cet agent ne se reproduit pas.
         //
@@ -131,7 +152,17 @@ pub fn reproduce(
         // pour muter ses poids (neuroévolution), pilotée par `mutation_rate` (item 18b).
         let heading = rng.0.next_f32() * std::f32::consts::TAU;
         let brain_seed = rng.0.next_u64();
-        let child_brain = brain.reproduce(brain_seed, heading, &mut rng.0, genotype.mutation_rate);
+        // Taille d'entrée du MLP enfant = sa précision visuelle (gène `vision_rays`,
+        // item 3) ; si elle diffère de celle du parent, `reproduce` adapte la couche
+        // d'entrée. Sans MLP, c'est ignoré → flux RNG des scénarios non-MLP intact.
+        let n_inputs = MlpBrain::input_size(child.ray_count());
+        let child_brain = brain.reproduce(
+            brain_seed,
+            heading,
+            &mut rng.0,
+            genotype.mutation_rate,
+            n_inputs,
+        );
         spawn_agent_with_brain(
             &mut commands,
             &config,
@@ -140,6 +171,8 @@ pub fn reproduce(
             pos,
             child_brain,
             genotype.offspring_energy,
+            generation.0 + 1,
+            0.0, // un nouveau-né naît à l'âge 0.
         );
     }
 }

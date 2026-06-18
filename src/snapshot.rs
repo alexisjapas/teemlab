@@ -27,6 +27,10 @@ pub struct AgentSnap {
     pub genotype: Genotype,
     pub reserve: f32,
     pub species: u16,
+    /// Profondeur généalogique de l'agent au moment de la capture.
+    pub generation: u32,
+    /// Âge (secondes simulées) au moment de la capture.
+    pub age: f32,
     /// Le cerveau entier, état du RNG d'errance compris → la run reprend son cours
     /// fidèlement, pas seulement la population.
     pub brain: Brain,
@@ -98,6 +102,8 @@ mod tests {
                 genotype: Genotype::base(&config),
                 reserve: 73.0,
                 species: 0,
+                generation: 3,
+                age: 4.5,
                 brain: Brain::Wander(WanderBrain::new(99, 1.2, 0.25)),
             }],
             food: vec![FoodSnap {

@@ -200,7 +200,7 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                 }) = palette.items.get_mut(i)
                 {
                     // Une seule boucle sur TRAITS : slider (valeur, bornes) + case
-                    // « héritable » par caractéristique. Ajouter un trait n'ajoute
+                    // « mutable » par caractéristique. Ajouter un trait n'ajoute
                     // pas une ligne ici — c'est la falsification de l'item 15
                     // contre la pluralité de traits existante.
                     for t in &TRAITS {
@@ -214,15 +214,18 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                         {
                             (t.set)(genotype, value);
                         }
-                        let mut heritable = (t.heritable)(&config.heritable);
+                        let mut mutable = (t.mutable)(&config.mutable);
                         if ui
-                            .checkbox(&mut heritable, "héritable")
+                            .checkbox(&mut mutable, "mutable")
                             .on_hover_text(
-                                "Décoché : ce gène reste figé à l'archétype, il ne mute pas.",
+                                "Coché : ce gène mute à la reproduction (il dérive et se \
+                                 transmet avec variation). Décoché : il est quand même \
+                                 transmis, mais figé sur la valeur du fondateur — rien à \
+                                 sélectionner.",
                             )
                             .changed()
                         {
-                            (t.set_heritable)(&mut config.heritable, heritable);
+                            (t.set_mutable)(&mut config.mutable, mutable);
                         }
                     }
                 }
@@ -236,6 +239,16 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                         *genotype = base;
                     }
                 }
+                // Cerveau de CETTE espèce uniquement : on lit l'espèce et la précision
+                // fondatrice de l'archétype sélectionné (le `get_mut` ci-dessus est
+                // refermé), puis on édite le cerveau correspondant.
+                if let Some(ArchetypeKind::Agent { species, genotype }) =
+                    palette.items.get(i).map(|a| &a.kind)
+                {
+                    let species = *species;
+                    let arch_rays = genotype.ray_count();
+                    species_brain_editor(ui, config, species, arch_rays);
+                }
             } else {
                 ui.label("La nourriture n'a pas de gènes éditables.");
             }
@@ -244,8 +257,6 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
             ui.label("Clique un archétype dans la palette pour l'éditer.");
         }
     }
-
-    brain_selector(ui, config);
 
     ui.separator();
     ui.label("Scénario (RON)");
@@ -278,42 +289,36 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
     }
 }
 
-/// Sélecteur de cerveau (item 15) : le **type** de cerveau des agents + les
-/// paramètres **propres au variant** choisi — édité directement sur le
-/// [`SimConfig`], donc persisté par « Sauver » sans passe de synchro.
+/// Éditeur de cerveau (item 15) **ciblé sur l'espèce sélectionnée** : on ne voit ni
+/// n'édite que le cerveau de l'archétype choisi, jamais ceux des autres espèces. Le
+/// **type** de cerveau + ses paramètres **propres au variant** sont édités directement
+/// sur le [`SimConfig`], donc persistés par « Sauver » sans passe de synchro.
 ///
-/// **Par espèce** dès qu'il y en a plusieurs (item 18a) : un sélecteur par espèce,
-/// adossé à [`SimConfig::brains_per_species`], pour authoring la cohabitation
-/// témoin/appris (§4) ; à une seule espèce, on édite le `brain` uniforme. Chaque
-/// variant affiche en plus une **description fonctionnelle** de son comportement,
-/// pas seulement son nom (cf. [`BrainKind::description`]).
-fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
+/// À une seule espèce, on édite le [`SimConfig::brain`] uniforme ; sinon l'entrée
+/// `species` de [`SimConfig::brains_per_species`] (item 18a, cohabitation
+/// témoin/appris §4), matérialisée à la demande en clonant l'uniforme pour les
+/// entrées manquantes. `arch_rays` = précision visuelle du fondateur, pour afficher
+/// la taille (au fondateur) de la couche d'entrée du MLP. Chaque variant affiche en
+/// plus sa **description fonctionnelle** (cf. [`BrainKind::description`]).
+fn species_brain_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16, arch_rays: usize) {
     ui.separator();
-    ui.strong("Cerveau (auteur de la décision)");
-    let species = config.species_cardinality();
-    let vision_rays = config.vision_rays;
-    if species <= 1 {
-        ui.small(
-            "Le type de cerveau des agents. Chaque variant expose ses propres \
-             paramètres d'archétype.",
-        );
-        brain_kind_editor(ui, &mut config.brain, vision_rays);
+    ui.strong("Cerveau de cette espèce (auteur de la décision)");
+    ui.small(
+        "Le cerveau de l'espèce sélectionnée uniquement. Chaque variant expose ses \
+         propres paramètres d'archétype.",
+    );
+    if config.species_cardinality() <= 1 {
+        brain_kind_editor(ui, &mut config.brain, arch_rays);
     } else {
-        ui.small(
-            "Un cerveau par espèce (cohabitation témoin/appris, §4) : corps partagé, \
-             cerveau distinct.",
-        );
-        // Matérialise un cerveau par espèce, en clonant l'uniforme pour les entrées
-        // manquantes — l'éditeur ne peut alors plus *mentir* sur une réalité
-        // per-espèce. Sémantiquement identique au champ vide quand tous sont égaux.
         let fallback = config.brain.clone();
-        config.brains_per_species.resize(species as usize, fallback);
-        for s in 0..species as usize {
-            ui.push_id(s, |ui| {
-                ui.label(format!("Espèce {s}"));
-                brain_kind_editor(ui, &mut config.brains_per_species[s], vision_rays);
-            });
-        }
+        config
+            .brains_per_species
+            .resize(config.species_cardinality() as usize, fallback);
+        brain_kind_editor(
+            ui,
+            &mut config.brains_per_species[species as usize],
+            arch_rays,
+        );
     }
 }
 
@@ -359,7 +364,9 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
 /// graphe arrive à la tranche suivante.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
     ui.small(format!(
-        "Entrée {} (= 2 × {vision_rays} rayons) → sortie {} : fixées par le contrat.",
+        "Entrée {} au fondateur (= 2 × {vision_rays} rayons) → sortie {} (contrat). La \
+         couche d'entrée s'adapte ensuite à la précision visuelle de chaque individu \
+         (gène « Rayons »).",
         MlpBrain::input_size(vision_rays),
         MlpBrain::OUTPUTS,
     ));
@@ -578,11 +585,8 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .prefix("espèces (reset) : "),
     );
     ui.add(egui::Slider::new(&mut config.reserve_max, 10.0..=500.0).text("réserve max"));
-    ui.add(
-        egui::DragValue::new(&mut config.vision_rays)
-            .range(1..=21)
-            .prefix("rayons de vision (reset) : "),
-    );
+    // Le nombre de rayons de vision est désormais le gène « Rayons (précision) » de
+    // l'archétype (éditeur d'archétype), hérité et mutable — plus un réglage de monde.
     ui.add(
         egui::DragValue::new(&mut config.seed)
             .speed(1.0)
@@ -704,6 +708,8 @@ fn sync_config_from_palette(config: &mut SimConfig, palette: &Palette) {
         config.mutation_rate = g.mutation_rate;
         config.base_metabolism = g.base_metabolism;
         config.move_cost = g.move_cost;
+        // La précision visuelle (gène f32) repasse au fondateur (usize) du scénario.
+        config.vision_rays = g.ray_count();
     }
 }
 
@@ -728,6 +734,7 @@ fn place(
                 0.0,
                 seed,
                 config.reserve_max,
+                0, // posé à la main : génération 0 (fondateur).
             );
         }
         ArchetypeKind::Food => spawn_food(commands, config, world),

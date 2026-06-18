@@ -5,16 +5,17 @@
 //! [`Vision`], …) au spawn. L'évolution ne touche jamais l'état physique en
 //! cours : elle réécrit la recette, pas le plat.
 //!
-//! v1 — *forme verrouillée par espèce* : les gènes font varier les **magnitudes**
-//! (portée de vision, vitesse, …), jamais le **nombre** de canaux sensoriels
-//! (qui reste `vision_rays` du scénario). La topologie variable (NEAT) est le
-//! mode hard, repoussé à l'item 16.
+//! Les gènes font varier les **magnitudes** (portée de vision, vitesse, …) *et*,
+//! depuis le gène `vision_rays`, le **nombre de canaux sensoriels** (la précision
+//! visuelle). Ce nombre varie donc par individu : la couche d'entrée du MLP s'y
+//! adapte à la reproduction (cf. [`crate::brain::MlpBrain::reproduced`]) — un
+//! premier pas vers la topologie variable, sans aller jusqu'au NEAT complet.
 //!
 //! Chaque gène forme avec ses bornes ([`crate::config::Bounds`]) et son couplage
 //! de coût (l'économie d'énergie) le triplet du §2.
 
 use crate::components::{Locomotion, Vision};
-use crate::config::{Bounds, Heritability, SimConfig};
+use crate::config::{Bounds, Mutability, SimConfig};
 use crate::rng::Rng;
 use bevy::prelude::*;
 
@@ -40,18 +41,24 @@ pub struct Genotype {
     /// Énergie passée à l'enfant, déduite du parent (conservation : rien créé).
     pub offspring_energy: f32,
     /// Taux de mutation transmis à la descendance (écart-type, en fraction de
-    /// l'étendue d'un gène). Le gène qui pilote sa propre lignée. **Non héritable
-    /// par défaut** ([`crate::config::Heritability`]) : laissé héritable, il dérive
+    /// l'étendue d'un gène). Le gène qui pilote sa propre lignée. **Non mutable
+    /// par défaut** ([`crate::config::Mutability`]) : laissé mutable, il dérive
     /// (méta-évolution) et peut se figer à 0 → évolution morte.
     pub mutation_rate: f32,
     /// Métabolisme de base : énergie drainée **par seconde** au repos — le coût de
-    /// survie (§2), pression de sélection de base. Per-espèce, **non héritable par
+    /// survie (§2), pression de sélection de base. Per-espèce, **non mutable par
     /// défaut** : évolvable, il se ferait raboter à 0 (la pression disparaîtrait).
     pub base_metabolism: f32,
     /// Surcoût de locomotion : énergie/s à pleine vitesse. Couple la vitesse à un
-    /// coût (§2). Per-espèce, **non héritable par défaut** : sinon le gène de
+    /// coût (§2). Per-espèce, **non mutable par défaut** : sinon le gène de
     /// vitesse pourrait « s'auto-annuler » son coût.
     pub move_cost: f32,
+    /// Précision visuelle : le **nombre de rayons** de vision. Gène à part entière
+    /// (mutable, hérité), stocké en `f32` pour entrer dans la mécanique de mutation
+    /// gaussienne commune, et arrondi en entier à la compilation du phénotype (cf.
+    /// [`Genotype::ray_count`]). Plus de rayons = vision plus fine *mais* plus
+    /// chère ([`Vision::metabolic_cost`]) — le couplage de coût qui borne sa dérive.
+    pub vision_rays: f32,
 }
 
 impl Genotype {
@@ -69,6 +76,7 @@ impl Genotype {
             mutation_rate: config.mutation_rate,
             base_metabolism: config.base_metabolism,
             move_cost: config.move_cost,
+            vision_rays: config.vision_rays as f32,
         }
     }
 
@@ -80,23 +88,32 @@ impl Genotype {
         }
     }
 
+    /// Nombre de rayons *effectif* : le gène `vision_rays` arrondi à l'entier le
+    /// plus proche, au moins 1. Le seul point où la précision visuelle (gène f32)
+    /// devient une forme discrète (nombre de canaux).
+    pub fn ray_count(&self) -> usize {
+        (self.vision_rays.round() as usize).max(1)
+    }
+
     /// Compile les gènes de vision vers son phénotype. La *forme* (nombre de
-    /// rayons) vient du scénario, pas du génotype. **Seul point** où le fov passe
-    /// des degrés (gène) aux radians (phénotype, attendus par le raycast).
-    pub fn vision(&self, ray_count: usize) -> Vision {
+    /// rayons) vient désormais du gène `vision_rays` ([`Genotype::ray_count`]), donc
+    /// varie par individu. **Seul point** où le fov passe des degrés (gène) aux
+    /// radians (phénotype, attendus par le raycast).
+    pub fn vision(&self) -> Vision {
         Vision {
-            ray_count,
+            ray_count: self.ray_count(),
             fov: self.vision_fov_deg.to_radians(),
             range: self.vision_range,
         }
     }
 
-    /// Copie mutée pour un enfant : chaque gène **héritable** de la table
-    /// [`TRAITS`] reçoit une perturbation gaussienne d'écart-type
-    /// `mutation_rate · étendue`, puis est ramené dans ses bornes ; un gène non
-    /// héritable reste à la valeur d'archétype. Boucle générique → ajouter un
-    /// trait n'y touche pas. Tous les gènes sont dans l'unité de leurs bornes
-    /// (fov en degrés), donc un seul chemin, sans conversion.
+    /// Copie mutée pour un enfant : chaque gène **mutable** de la table [`TRAITS`]
+    /// reçoit une perturbation gaussienne d'écart-type `mutation_rate · étendue`,
+    /// puis est ramené dans ses bornes ; un gène non mutable est **quand même copié
+    /// du parent** mais sans perturbation (il reste donc figé sur la valeur du
+    /// fondateur le long d'une lignée). Boucle générique → ajouter un trait n'y
+    /// touche pas. Tous les gènes sont dans l'unité de leurs bornes (fov en degrés),
+    /// donc un seul chemin, sans conversion.
     ///
     /// Le taux vient **du génotype** (`self.mutation_rate`), pas d'un réglage
     /// global : chaque lignée porte sa propre vitesse d'évolution.
@@ -104,9 +121,9 @@ impl Genotype {
         let rate = self.mutation_rate;
         let mut child = *self;
         for t in &TRAITS {
-            // Trait non héritable : l'enfant garde la valeur d'archétype (déjà
-            // copiée dans `child`) et ne consomme aucun tirage.
-            if !(t.heritable)(&config.heritable) {
+            // Trait non mutable : l'enfant garde la valeur du parent (déjà copiée
+            // dans `child`) et ne consomme aucun tirage.
+            if !(t.mutable)(&config.mutable) {
                 continue;
             }
             let bounds = (t.bounds)(config);
@@ -132,26 +149,27 @@ pub struct TraitSpec {
     pub set: fn(&mut Genotype, f32),
     /// Bornes du gène, lues dans le scénario.
     pub bounds: fn(&SimConfig) -> Bounds,
-    /// Le facet « héritable ? » de ce trait dans le scénario (lecture).
-    pub heritable: fn(&Heritability) -> bool,
-    /// Le facet « héritable ? » de ce trait (écriture, pour l'éditeur).
-    pub set_heritable: fn(&mut Heritability, bool),
+    /// Le facet « mutable ? » de ce trait dans le scénario (lecture).
+    pub mutable: fn(&Mutability) -> bool,
+    /// Le facet « mutable ? » de ce trait (écriture, pour l'éditeur).
+    pub set_mutable: fn(&mut Mutability, bool),
     /// Décimales d'affichage (inspecteur).
     pub decimals: u8,
 }
 
-/// Les caractéristiques héritables, **dans l'ordre des champs de [`Genotype`]**
+/// Les caractéristiques mutables, **dans l'ordre des champs de [`Genotype`]**
 /// (cet ordre fixe le flux de tirages de [`Genotype::mutate`], donc la
-/// reproductibilité d'une config seedée). v1 — forme verrouillée par espèce —
-/// une table constante partagée par tous les agents.
-pub const TRAITS: [TraitSpec; 9] = [
+/// reproductibilité d'une config seedée — d'où l'ajout en **fin** de table, qui
+/// laisse intact le flux des traits préexistants). Table constante partagée par
+/// tous les agents.
+pub const TRAITS: [TraitSpec; 10] = [
     TraitSpec {
         name: "Vitesse max",
         get: |g| g.max_speed,
         set: |g, v| g.max_speed = v,
         bounds: |c| c.speed_bounds,
-        heritable: |h| h.max_speed,
-        set_heritable: |h, b| h.max_speed = b,
+        mutable: |m| m.max_speed,
+        set_mutable: |m, b| m.max_speed = b,
         decimals: 1,
     },
     TraitSpec {
@@ -159,8 +177,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.agility,
         set: |g, v| g.agility = v,
         bounds: |c| c.agility_bounds,
-        heritable: |h| h.agility,
-        set_heritable: |h, b| h.agility = b,
+        mutable: |m| m.agility,
+        set_mutable: |m, b| m.agility = b,
         decimals: 3,
     },
     TraitSpec {
@@ -168,8 +186,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.vision_range,
         set: |g, v| g.vision_range = v,
         bounds: |c| c.vision_range_bounds,
-        heritable: |h| h.vision_range,
-        set_heritable: |h, b| h.vision_range = b,
+        mutable: |m| m.vision_range,
+        set_mutable: |m, b| m.vision_range = b,
         decimals: 1,
     },
     TraitSpec {
@@ -177,8 +195,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.vision_fov_deg,
         set: |g, v| g.vision_fov_deg = v,
         bounds: |c| c.vision_fov_bounds,
-        heritable: |h| h.vision_fov,
-        set_heritable: |h, b| h.vision_fov = b,
+        mutable: |m| m.vision_fov,
+        set_mutable: |m, b| m.vision_fov = b,
         decimals: 0,
     },
     TraitSpec {
@@ -186,8 +204,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.reproduction_threshold,
         set: |g, v| g.reproduction_threshold = v,
         bounds: |c| c.reproduction_threshold_bounds,
-        heritable: |h| h.reproduction_threshold,
-        set_heritable: |h, b| h.reproduction_threshold = b,
+        mutable: |m| m.reproduction_threshold,
+        set_mutable: |m, b| m.reproduction_threshold = b,
         decimals: 0,
     },
     TraitSpec {
@@ -195,8 +213,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.offspring_energy,
         set: |g, v| g.offspring_energy = v,
         bounds: |c| c.offspring_energy_bounds,
-        heritable: |h| h.offspring_energy,
-        set_heritable: |h, b| h.offspring_energy = b,
+        mutable: |m| m.offspring_energy,
+        set_mutable: |m, b| m.offspring_energy = b,
         decimals: 0,
     },
     TraitSpec {
@@ -204,8 +222,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.mutation_rate,
         set: |g, v| g.mutation_rate = v,
         bounds: |c| c.mutation_rate_bounds,
-        heritable: |h| h.mutation_rate,
-        set_heritable: |h, b| h.mutation_rate = b,
+        mutable: |m| m.mutation_rate,
+        set_mutable: |m, b| m.mutation_rate = b,
         decimals: 3,
     },
     TraitSpec {
@@ -213,8 +231,8 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.base_metabolism,
         set: |g, v| g.base_metabolism = v,
         bounds: |c| c.base_metabolism_bounds,
-        heritable: |h| h.base_metabolism,
-        set_heritable: |h, b| h.base_metabolism = b,
+        mutable: |m| m.base_metabolism,
+        set_mutable: |m, b| m.base_metabolism = b,
         decimals: 1,
     },
     TraitSpec {
@@ -222,9 +240,18 @@ pub const TRAITS: [TraitSpec; 9] = [
         get: |g| g.move_cost,
         set: |g, v| g.move_cost = v,
         bounds: |c| c.move_cost_bounds,
-        heritable: |h| h.move_cost,
-        set_heritable: |h, b| h.move_cost = b,
+        mutable: |m| m.move_cost,
+        set_mutable: |m, b| m.move_cost = b,
         decimals: 1,
+    },
+    TraitSpec {
+        name: "Rayons (précision)",
+        get: |g| g.vision_rays,
+        set: |g, v| g.vision_rays = v,
+        bounds: |c| c.vision_rays_bounds,
+        mutable: |m| m.vision_rays,
+        set_mutable: |m, b| m.vision_rays = b,
+        decimals: 0,
     },
 ];
 
@@ -280,13 +307,13 @@ mod tests {
         assert_eq!(g.mutate(&mut rng, &c), g);
     }
 
-    /// Le facet « héritable ? » : un trait marqué non héritable reste figé sur la
-    /// valeur d'archétype au fil des générations, alors que les héritables dérivent.
+    /// Le facet « mutable ? » : un trait marqué non mutable reste figé sur la
+    /// valeur du fondateur au fil des générations, alors que les mutables dérivent.
     #[test]
-    fn non_heritable_trait_stays_fixed() {
+    fn non_mutable_trait_stays_fixed() {
         let mut c = config();
         c.mutation_rate = 0.4; // forte mutation, pour que la dérive soit nette
-        c.heritable.max_speed = false; // figé
+        c.mutable.max_speed = false; // figé
         let mut rng = Rng::new(7);
         let base = Genotype::base(&c);
         let mut g = base;

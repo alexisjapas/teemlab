@@ -56,6 +56,7 @@ fn hunter_sees_and_chases_its_target() {
                 0.0,
                 0,
                 config.reserve_max,
+                0, // fondateur : génération 0.
             );
             spawn_food(&mut commands, &config, Vec2::new(food_x, 0.0));
         })

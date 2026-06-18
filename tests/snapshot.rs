@@ -12,7 +12,7 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{Agent, Food, Reserve, Species, Wall};
+use teemlab::components::{Age, Agent, Food, Generation, Reserve, Species, Wall};
 use teemlab::ecology::{FoodRegen, SimRng, spawn_food_with_energy};
 use teemlab::genotype::Genotype;
 use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
@@ -30,7 +30,18 @@ fn capture_system(
     config: Res<SimConfig>,
     sim_rng: Res<SimRng>,
     regen: Res<FoodRegen>,
-    agents: Query<(&Transform, &Genotype, &Reserve, &Species, &Brain), With<Agent>>,
+    agents: Query<
+        (
+            &Transform,
+            &Genotype,
+            &Reserve,
+            &Species,
+            &Brain,
+            &Generation,
+            &Age,
+        ),
+        With<Agent>,
+    >,
     food: Query<(&Transform, &Reserve), With<Food>>,
 ) {
     captured.0 = Some(Snapshot {
@@ -39,11 +50,13 @@ fn capture_system(
         food_regen: regen.0,
         agents: agents
             .iter()
-            .map(|(t, g, r, s, b)| AgentSnap {
+            .map(|(t, g, r, s, b, generation, age)| AgentSnap {
                 pos: t.translation.truncate().to_array(),
                 genotype: *g,
                 reserve: r.current,
                 species: s.0,
+                generation: generation.0,
+                age: age.0,
                 brain: b.clone(),
             })
             .collect(),
@@ -81,6 +94,8 @@ fn restore_system(
             Vec2::from(a.pos),
             a.brain.clone(),
             a.reserve,
+            a.generation,
+            a.age,
         );
     }
     for f in &snap.food {

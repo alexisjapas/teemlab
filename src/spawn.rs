@@ -2,7 +2,9 @@
 //! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Action, Agent, Perception, Radius, Reserve, Species, Wall};
+use crate::components::{
+    Action, Age, Agent, Generation, Perception, Radius, Reserve, Species, Wall,
+};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::rng::Rng;
@@ -98,6 +100,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
             heading,
             brain_seed,
             config.reserve_max,
+            0, // fondateur : génération 0.
         );
     }
 }
@@ -116,16 +119,21 @@ pub fn spawn_agent(
     heading: f32,
     brain_seed: u64,
     energy: f32,
+    generation: u32,
 ) {
     // Le scénario choisit le *type* de cerveau **par espèce** (item 18a) ; on le
     // compile ici en un cerveau frais (§1, l'auteur de la décision). La graine sert
     // les cerveaux à état (errance, poids initiaux du MLP) ; `n_inputs` dimensionne la
-    // couche d'entrée du MLP (= les canaux de perception, item 18b).
-    let n_inputs = MlpBrain::input_size(config.vision_rays);
+    // couche d'entrée du MLP (= les canaux de perception), tirée du **gène** de
+    // précision visuelle de cet agent (item 3) et non plus d'un réglage de scénario.
+    let n_inputs = MlpBrain::input_size(genotype.ray_count());
     let brain = config
         .brain_of(species.0)
         .build(brain_seed, heading, n_inputs);
-    spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
+    // Un agent fraîchement compilé naît à l'âge 0.
+    spawn_agent_with_brain(
+        commands, config, genotype, species, pos, brain, energy, generation, 0.0,
+    );
 }
 
 /// Variante prenant un [`Brain`] **déjà construit** plutôt qu'une graine : c'est
@@ -142,9 +150,12 @@ pub fn spawn_agent_with_brain(
     pos: Vec2,
     brain: Brain,
     energy: f32,
+    generation: u32,
+    age: f32,
 ) {
     let r = config.agent_radius;
-    let vision = genotype.vision(config.vision_rays);
+    // La forme (nombre de rayons) vient désormais du gène de précision visuelle.
+    let vision = genotype.vision();
     commands.spawn((
         Agent,
         species,
@@ -154,6 +165,9 @@ pub fn spawn_agent_with_brain(
             max: config.reserve_max,
         },
         Radius(r),
+        // Généalogie : profondeur (fixe) et âge (croît au tick). Groupés en
+        // sous-tuple pour rester sous la borne d'arité des bundles Bevy.
+        (Generation(generation), Age(age)),
         genotype.locomotion(),
         vision,
         Perception {

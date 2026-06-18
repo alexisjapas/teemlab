@@ -18,7 +18,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{Agent, Food, Reserve, Species, Wall};
+use teemlab::components::{Age, Agent, Food, Generation, Reserve, Species, Wall};
 use teemlab::ecology::{FoodRegen, SimRng};
 use teemlab::genotype::Genotype;
 use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
@@ -190,7 +190,18 @@ pub fn save_snapshot(
     config: Res<SimConfig>,
     sim_rng: Res<SimRng>,
     regen: Res<FoodRegen>,
-    agents: Query<(&Transform, &Genotype, &Reserve, &Species, &Brain), With<Agent>>,
+    agents: Query<
+        (
+            &Transform,
+            &Genotype,
+            &Reserve,
+            &Species,
+            &Brain,
+            &Generation,
+            &Age,
+        ),
+        With<Agent>,
+    >,
     food: Query<(&Transform, &Reserve), With<Food>>,
 ) {
     if !matches!(panel.pending, Some(RunAction::SaveSnapshot(_))) {
@@ -206,13 +217,17 @@ pub fn save_snapshot(
         food_regen: regen.0,
         agents: agents
             .iter()
-            .map(|(transform, genotype, reserve, species, brain)| AgentSnap {
-                pos: transform.translation.truncate().to_array(),
-                genotype: *genotype,
-                reserve: reserve.current,
-                species: species.0,
-                brain: brain.clone(),
-            })
+            .map(
+                |(transform, genotype, reserve, species, brain, generation, age)| AgentSnap {
+                    pos: transform.translation.truncate().to_array(),
+                    genotype: *genotype,
+                    reserve: reserve.current,
+                    species: species.0,
+                    generation: generation.0,
+                    age: age.0,
+                    brain: brain.clone(),
+                },
+            )
             .collect(),
         food: food
             .iter()
@@ -273,6 +288,8 @@ pub fn apply_snapshot_load(
             Vec2::from(agent.pos),
             agent.brain.clone(),
             agent.reserve,
+            agent.generation,
+            agent.age,
         );
     }
     for source in &snapshot.food {

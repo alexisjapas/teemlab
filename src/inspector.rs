@@ -13,7 +13,9 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::brain::Brain;
-use teemlab::components::{Action, Agent, Perception, Radius, Reserve, Species, Vision};
+use teemlab::components::{
+    Action, Age, Agent, Generation, Perception, Radius, Reserve, Species, Vision,
+};
 use teemlab::genotype::{Genotype, TRAITS};
 
 use crate::editor::{Palette, draw_mlp_graph};
@@ -140,6 +142,8 @@ pub(crate) fn inspector_section(
             &Perception,
             &Action,
             &Brain,
+            &Generation,
+            &Age,
         ),
         With<Agent>,
     >,
@@ -148,7 +152,8 @@ pub(crate) fn inspector_section(
         ui.weak("Clique un agent dans l'aire pour l'inspecter.");
         return;
     };
-    let Ok((species, reserve, genotype, vision, perception, action, brain)) = agents.get(entity)
+    let Ok((species, reserve, genotype, vision, perception, action, brain, generation, age)) =
+        agents.get(entity)
     else {
         ui.colored_label(
             egui::Color32::from_rgb(255, 140, 120),
@@ -163,6 +168,8 @@ pub(crate) fn inspector_section(
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.label(format!("Espèce : {}", species.0));
         ui.label(format!("Cerveau : {}", brain.name()));
+        ui.label(format!("Génération : {}", generation.0));
+        ui.label(format!("Âge : {:.1} s", age.0));
 
         ui.separator();
         ui.strong("Énergie / réserve");

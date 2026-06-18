@@ -29,7 +29,11 @@ pub struct SimConfig {
     pub agent_radius: f32,
     /// Vitesse maximale d'un agent.
     pub max_speed: f32,
-    /// Nombre de rayons de vision par agent (forme verrouillée par espèce, v1).
+    /// Nombre de rayons de vision du **fondateur** (la précision visuelle de
+    /// l'archétype). N'est plus verrouillé : c'est le gène `vision_rays` du
+    /// [`crate::genotype::Genotype`] qui le porte ensuite par individu, mutable et
+    /// hérité (cf. [`crate::genotype::TRAITS`]). Ce champ ne fait que graîner la
+    /// valeur fondatrice (`Genotype::base`).
     pub vision_rays: usize,
     /// Champ de vision *total*, en degrés, réparti symétriquement autour du cap.
     pub vision_fov_deg: f32,
@@ -118,9 +122,13 @@ pub struct SimConfig {
     pub base_metabolism_bounds: Bounds,
     /// Bornes du gène de surcoût de locomotion.
     pub move_cost_bounds: Bounds,
-    /// Facet « héritable ? » par trait (§2) : un gène mute, ou reste figé à la
-    /// valeur d'archétype. `Default` = tout héritable.
-    pub heritable: Heritability,
+    /// Bornes du gène de nombre de rayons de vision (la précision visuelle). Bornes
+    /// entières en pratique (le gène est arrondi à la compilation du phénotype).
+    pub vision_rays_bounds: Bounds,
+    /// Facet « mutable ? » par trait (§2) : un gène mute (il dérive et se transmet
+    /// avec variation), ou reste figé à la valeur du fondateur. `Default` = tout
+    /// mutable sauf les coûts et le taux de mutation.
+    pub mutable: Mutability,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -147,15 +155,20 @@ impl Bounds {
     }
 }
 
-/// Le facet **héritable ?** du §2, par trait : un gène participe-t-il à
-/// l'hérédité (il mute, cf. [`crate::genotype::Genotype::mutate`]) ou reste-t-il
-/// cloué à la valeur d'archétype ? Donnée de scénario, modifiable à l'édition.
-/// `Default` = tout héritable → un scénario qui omet ce champ garde le
-/// comportement d'avant l'item 15. Un champ par caractéristique de
+/// Le facet **mutable ?** du §2, par trait : un gène a-t-il le droit de muter
+/// (cf. [`crate::genotype::Genotype::mutate`]) — donc de dériver et de transmettre
+/// de la variation sélectionnable — ou reste-t-il cloué à la valeur du fondateur ?
+///
+/// À noter (et c'est volontairement le mot *mutable*, pas *héritable*) : un gène
+/// non mutable est **quand même transmis** à l'enfant (copie du parent) ; ce que
+/// cette case gouverne, c'est uniquement la **mutation**. Un gène gelé reste donc à
+/// la valeur du fondateur pour toute la lignée (variance héritable nulle → rien à
+/// sélectionner). Donnée de scénario, modifiable à l'édition. `Default` = tout
+/// mutable sauf les coûts et le taux de mutation. Un champ par caractéristique de
 /// [`crate::genotype::TRAITS`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Heritability {
+pub struct Mutability {
     pub max_speed: bool,
     pub agility: bool,
     pub vision_range: bool,
@@ -165,9 +178,10 @@ pub struct Heritability {
     pub mutation_rate: bool,
     pub base_metabolism: bool,
     pub move_cost: bool,
+    pub vision_rays: bool,
 }
 
-impl Default for Heritability {
+impl Default for Mutability {
     fn default() -> Self {
         Self {
             max_speed: true,
@@ -176,7 +190,11 @@ impl Default for Heritability {
             vision_fov: true,
             reproduction_threshold: true,
             offspring_energy: true,
-            // Non héritables par défaut : taux de mutation (méta-évolution
+            // Précision visuelle (nombre de rayons) : mutable — c'est l'objet du
+            // gène, et son coût métabolique (cf. `Vision::metabolic_cost`) borne sa
+            // dérive.
+            vision_rays: true,
+            // Non mutables par défaut : taux de mutation (méta-évolution
             // instable) et les coûts (métabolisme, locomotion) qui *sont* la
             // pression de sélection — évolvables, ils se raboteraient à 0.
             mutation_rate: false,
@@ -272,7 +290,11 @@ impl Default for SimConfig {
                 min: 0.0,
                 max: 20.0,
             },
-            heritable: Heritability::default(),
+            vision_rays_bounds: Bounds {
+                min: 1.0,
+                max: 21.0,
+            },
+            mutable: Mutability::default(),
             seed: 0x00C0_FFEE,
         }
     }

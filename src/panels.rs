@@ -17,7 +17,9 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{Action, Agent, Food, Perception, Reserve, Species, Vision};
+use teemlab::components::{
+    Action, Age, Agent, Food, Generation, Perception, Reserve, Species, Vision,
+};
 use teemlab::genotype::Genotype;
 
 use crate::controls::{self, SimControls};
@@ -109,6 +111,8 @@ pub fn bottom_panel(
             &Perception,
             &Action,
             &Brain,
+            &Generation,
+            &Age,
         ),
         With<Agent>,
     >,

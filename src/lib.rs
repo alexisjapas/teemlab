@@ -74,6 +74,7 @@ impl Plugin for SimPlugin {
                     interaction::interact,
                     ecology::metabolize,
                     ecology::reap,
+                    ecology::age_agents,
                     ecology::reproduce,
                     ecology::replenish_food,
                 )
