@@ -247,6 +247,7 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
                 {
                     let species = *species;
                     let arch_rays = genotype.ray_count();
+                    species_reserve_editor(ui, config, species);
                     species_brain_editor(ui, config, species, arch_rays);
                 }
             } else {
@@ -286,6 +287,36 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
     });
     if !palette.status.is_empty() {
         ui.weak(&palette.status);
+    }
+}
+
+/// Réserve max **de l'espèce sélectionnée** (capacité du corps). Comme le cerveau,
+/// c'est une propriété d'espèce éditée directement sur le [`SimConfig`] (persistée par
+/// « Sauver ») : à une seule espèce on règle la [`SimConfig::reserve_max`] uniforme,
+/// sinon l'entrée `species` de [`SimConfig::reserve_max_per_species`], matérialisée à
+/// la demande depuis l'uniforme. Le **% de remplissage** reste normalisé `[0, 1]`
+/// (cf. [`teemlab::components::Reserve::fraction`]), donc comparable entre espèces.
+fn species_reserve_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16) {
+    ui.separator();
+    ui.strong("Réserve max de cette espèce");
+    ui.small(
+        "Capacité d'énergie/PV de l'espèce. Le % de remplissage reste normalisé \
+         (0–100 %) quelle que soit la capacité.",
+    );
+    if config.species_cardinality() <= 1 {
+        ui.add(egui::Slider::new(&mut config.reserve_max, 10.0..=500.0).text("réserve max"));
+    } else {
+        let fallback = config.reserve_max;
+        config
+            .reserve_max_per_species
+            .resize(config.species_cardinality() as usize, fallback);
+        ui.add(
+            egui::Slider::new(
+                &mut config.reserve_max_per_species[species as usize],
+                10.0..=500.0,
+            )
+            .text("réserve max"),
+        );
     }
 }
 
@@ -584,9 +615,9 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .range(1..=8)
             .prefix("espèces (reset) : "),
     );
-    ui.add(egui::Slider::new(&mut config.reserve_max, 10.0..=500.0).text("réserve max"));
-    // Le nombre de rayons de vision est désormais le gène « Rayons (précision) » de
-    // l'archétype (éditeur d'archétype), hérité et mutable — plus un réglage de monde.
+    // La réserve max (capacité du corps) et le nombre de rayons de vision sont
+    // désormais des propriétés d'archétype, éditées par espèce dans l'éditeur
+    // d'archétype : la réserve directement, les rayons via le gène « Rayons ».
     ui.add(
         egui::DragValue::new(&mut config.seed)
             .speed(1.0)
@@ -733,7 +764,7 @@ fn place(
                 world,
                 0.0,
                 seed,
-                config.reserve_max,
+                config.reserve_max_of(species),
                 0, // posé à la main : génération 0 (fondateur).
             );
         }

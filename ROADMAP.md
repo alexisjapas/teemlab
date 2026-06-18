@@ -30,15 +30,18 @@ Les casser fait perdre la modularité.
   (réseau de neurones, arbre de décision, FSM) est interchangeable.
 - **Stockage en `enum`, pas `Box<dyn>`** : dispatch statique, `serde` propre, `match` exhaustif
   vérifié à la compilation. Le crossover est intra-type (on ne croise pas un NN avec une FSM).
-- **Le corps impose la forme des I/O du cerveau.** v1 : forme verrouillée par espèce ; les gènes
-  font varier les *magnitudes* (portée de vision, vitesse), jamais le *nombre* de canaux. La
-  topologie variable (NEAT) est repoussée.
+- **Le corps impose la forme des I/O du cerveau.** Les gènes font varier les *magnitudes* (portée de
+  vision, vitesse) **et**, depuis le gène `vision_rays` (item 18c), le *nombre de canaux* (la précision
+  visuelle) : la couche d'entrée du MLP s'y adapte à la reproduction — un premier pas vers la topologie
+  variable. La topologie *cachée* reste fixée au fondateur ; le NEAT complet (cf. item 21) est toujours
+  repoussé.
 - **Génotype ≠ phénotype** : on mute le génotype (description héritée), compilé en phénotype vivant
   (composants Avian + cerveau) au spawn. L'évolution ne touche jamais l'état physique courant.
 - **Une caractéristique = (valeur, bornes, couplage de coût)** — plus, à l'édition, un facet
-  **héritable ?** (participe-t-elle à l'hérédité, ou reste-t-elle fixée par l'archétype ?). Sans
-  coût, tout converge vers le maximum et rien n'émerge ; le coût est défini par le scénario, pas
-  par le moteur.
+  **mutable ?** : le gène a-t-il le droit de muter (dériver, transmettre de la variation sélectionnable),
+  ou reste-t-il figé à la valeur du fondateur ? Il est **transmis dans les deux cas** ; la case ne
+  gouverne que la mutation (d'où *mutable*, pas *héritable*). Sans coût, tout converge vers le maximum et
+  rien n'émerge ; le coût est défini par le scénario, pas par le moteur.
 
 ---
 
@@ -223,13 +226,16 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
 ### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu, en cours)
 
 L'évolution d'intelligence est la frontière de l'abstraction *dans* la sélection naturelle. L'éditeur
-grandit ici, piloté par ces scénarios — à ce jour : gènes d'archétype (valeur/bornes/héritable),
-sélecteur de cerveau **par espèce** (+ description fonctionnelle, **architecture & graphe du MLP**),
+grandit ici, piloté par ces scénarios — à ce jour : gènes d'archétype (valeur/bornes/**mutable**, dont
+la **précision visuelle** `vision_rays`), cerveau **et réserve max par espèce** (sélecteur de cerveau
+ciblé sur l'espèce sélectionnée + description fonctionnelle, **architecture & graphe du MLP**),
 **paramètres de monde** (arène, économie de nourriture, table de relations), placement et
-**suppression** d'entités (touche Suppr). L'inspecteur, lui, montre le **MLP en action** (activations).
+**suppression** d'entités (touche Suppr). L'inspecteur, lui, montre le **MLP en action** (activations),
+plus la **généalogie** (génération, âge).
 
-15. Éditeur générique de caractéristiques **(réalisé)** : (valeur, bornes) + toggle « héritable ? »
-    par trait — table `TRAITS` + facet `Heritability`, exposés sans code dédié par éditeur/HUD/
+15. Éditeur générique de caractéristiques **(réalisé)** : (valeur, bornes) + toggle « mutable ? »
+    par trait — table `TRAITS` + facet `Mutability` (renommé depuis `Heritability` à l'item 18c : la
+    case gouverne la mutation, pas l'hérédité), exposés sans code dédié par éditeur/HUD/
     inspecteur ; reproduction, métabolisme et coût de locomotion migrés en gènes — **et** sélecteur de
     cerveau, chaque variant de `Brain` exposant ses propres paramètres éditables (`turn_rate` pour
     l'errance, aucun pour le chasseur) via un `BrainKind` *porteur de données*. Le sélecteur édite par
@@ -317,6 +323,22 @@ sélecteur de cerveau **par espèce** (+ description fonctionnelle, **architectu
     action** : nœuds colorés par l'**activation courante** de chaque neurone (le dernier `think`, échelle
     `tanh` froid<0<chaud) et arêtes teintées par signe/intensité du poids. L'item 18 (MLP +
     neuroévolution) est ainsi complet ; reste, plus loin (P5/§9), crossover sur poids + NEAT.
+18c. Précision visuelle évolutive + généalogie + 1ᵉʳ corps par espèce **(réalisé)** : trois extensions
+    de la machinerie existante, sans système cœur nouveau. (1) **`vision_rays` devient un gène**
+    (10ᵉ entrée de `TRAITS`, ajoutée en *fin* pour préserver le flux RNG des autres traits ; stocké en
+    `f32`, arrondi au phénotype) : la précision visuelle varie par individu, mutable et bornée par son
+    coût métabolique déjà couplé (portée × rayons). La couche d'entrée du **MLP s'adapte** à la précision
+    de l'enfant à la reproduction (`MlpBrain::reproduced` : resize par bloc `vision|cible`, poids neufs
+    Xavier, identité à précision constante) — *brèche* assumée dans « forme verrouillée » (§2), premier
+    pas vers la topologie variable. (2) **Généalogie** : composants `Generation` (0 au fondateur,
+    parent+1 à la repro) et `Age` (secondes simulées, `ecology::age_agents` en `FixedUpdate`), capturés
+    au snapshot et affichés à l'inspecteur. (3) **Réserve max par espèce** (`reserve_max_per_species`,
+    `reserve_max_of`) — calqué sur `brains_per_species`, additif/rétro-compatible — éditée par espèce ;
+    le **% de remplissage** reste normalisé `[0,1]` (`Reserve::fraction`), donc comparable. Le premier
+    levier du *corps* par espèce (§9, « archétype par espèce »), après l'effectif (17) et le cerveau
+    (18a). Renommage `Heritability → Mutability` (la case gouverne la mutation, le gène est transmis dans
+    tous les cas). Éditeur de cerveau désormais **ciblé sur l'espèce sélectionnée**. UX : « Recharger
+    dans le monde » repart **en pause** (monde neuf figé, à placer/éditer avant lancement).
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -348,17 +370,28 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
   générationnelle et le batch inter-matchs en place (P5).
-- **Repli des valeurs fondatrices → archétype par espèce** (items 15, 17) : `SimConfig` porte
+- **Repli des valeurs fondatrices → archétype par espèce** (items 15, 17, 18c) : `SimConfig` porte
   aujourd'hui les valeurs d'archétype en champs épars (`max_speed`, `agility`, …) qui doublent ceux du
   `Genotype`. Les replier en un seul `founder: Genotype` supprimerait les accesseurs `base`/`set_base`
   et cette duplication ; le pas suivant naturel est un `founder` **par espèce** (`Vec<Archetype>`),
-  pour que prédateur et proie aient des *corps* distincts. L'item 17 a posé le **premier levier par
-  espèce — l'effectif** (`agents_per_species`), additif et rétro-compatible ; l'item 18a un **second —
-  le cerveau** (`brains_per_species`), tout aussi additif. Mais ces deux leviers portent sur des axes
-  *distincts du corps* (l'effectif d'une espèce, l'auteur de sa décision) ; l'archétype — le *corps*
-  lui-même — reste *partagé*. Le replier (et le rendre per-espèce) casse le RON de tous les scénarios
-  (champs de premier niveau → imbriqués) → à faire avec une migration des `.ron` versionnés, le jour où
-  un scénario exige des corps distincts (le driver de cette croissance-là, pas encore rencontré).
+  pour que prédateur et proie aient des *corps* distincts. Trois leviers par espèce sont déjà posés,
+  tous additifs et rétro-compatibles (vecteurs parallèles, repli sur l'uniforme) : l'**effectif**
+  (`agents_per_species`, item 17), le **cerveau** (`brains_per_species`, item 18a) et la **réserve max**
+  (`reserve_max_per_species`, item 18c — la première capacité du *corps* par espèce). Mais le *génotype
+  fondateur* lui-même (vitesse, vision, …) reste **partagé** entre espèces. Le replier (et le rendre
+  per-espèce) casse le RON de tous les scénarios (champs de premier niveau → imbriqués) → à faire avec
+  une migration des `.ron` versionnés, le jour où un scénario exige des corps distincts.
+- **Espèces persistables et réutilisables hors scénario** (demande utilisateur — *à concevoir*) :
+  aujourd'hui une « espèce » n'existe qu'**à l'intérieur** d'un `SimConfig` (son génotype fondateur, son
+  cerveau, sa réserve max, ses facets de mutabilité y sont dispersés). Objectif : faire de l'espèce une
+  **unité de premier ordre, sérialisable, sauvegardable et réutilisable** entre scénarios — on définit/
+  élève une espèce une fois, on la **réimporte** dans plusieurs scénarios (bibliothèque d'espèces). C'est
+  l'extension directe du « repli en archétype par espèce » ci-dessus. **Forks à trancher (non conçus) :**
+  périmètre exact d'une déf espèce (génotype fondateur + cerveau + réserve max + facets de mutabilité ?
+  couleur ? relations, *non* — elles sont inter-espèces, donc scénario) ; où vivent les fichiers
+  (`species/*.ron` ?) ; comment un scénario les **référence** (par chemin/nom, copie à l'import vs lien) ;
+  articulation avec les vecteurs par espèce existants ; migration/rétro-compat des `.ron`. À concevoir
+  avant implémentation.
 - **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
   vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
   pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des
@@ -377,4 +410,4 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   - **Driver** : à faire naître d'un scénario réel (une plante co-évolutive), pas spéculativement
     (§8) ; l'item 17 (proie-prédateur) en est le candidat naturel.
   - **Subtilités** : le semis spatial recalibre toute l'économie (cycles de Lotka-Volterra, §7) ;
-    `mutation_rate` héritable = méta-évolution instable, d'où son réglage non héritable par défaut.
+    `mutation_rate` mutable = méta-évolution instable, d'où son réglage non mutable par défaut.

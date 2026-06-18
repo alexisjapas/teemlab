@@ -157,13 +157,19 @@ pub(crate) fn runs_section(ui: &mut egui::Ui, panel: &mut RunsPanel) {
 }
 
 /// Recharge un scénario dans le monde vivant : remplace le `SimConfig`, resynchro
-/// la palette de l'éditeur, puis **délègue la reconstruction au reset** (item 11)
-/// en levant son drapeau. Doit tourner avant `controls::apply_reset` (chaîné).
+/// la palette de l'éditeur, **met la sim en pause**, puis **délègue la reconstruction
+/// au reset** (item 11) en levant son drapeau. Doit tourner avant
+/// `controls::apply_reset` (chaîné).
+///
+/// La pause (sur `Time<Virtual>`, comme [`crate::controls`]) avant le reset : on
+/// repart sur un monde neuf **figé**, pour le placer/éditer/inspecter avant de le
+/// lancer — calqué sur le démarrage en pause (`controls::pause_at_launch`).
 pub fn apply_scenario_load(
     mut panel: ResMut<RunsPanel>,
     mut config: ResMut<SimConfig>,
     mut palette: ResMut<Palette>,
     mut controls: ResMut<SimControls>,
+    mut vtime: ResMut<Time<Virtual>>,
 ) {
     if !matches!(panel.pending, Some(RunAction::LoadScenario(_))) {
         return;
@@ -177,8 +183,10 @@ pub fn apply_scenario_load(
             palette.items = editor::make_items(&config);
             palette.selected = None;
             palette.dragging = None;
+            // Pause avant la reconstruction : le monde neuf naît figé.
+            vtime.pause();
             controls.reset_requested = true;
-            format!("Scénario rechargé ← {path}")
+            format!("Scénario rechargé (en pause) ← {path}")
         }
         Err(e) => format!("Échec : {e}"),
     };

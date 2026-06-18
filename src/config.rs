@@ -52,8 +52,18 @@ pub struct SimConfig {
     /// beaucoup de proies) qu'un ratio uniforme 50/50 interdit — l'archétype reste
     /// partagé, seul l'effectif diffère.
     pub agents_per_species: Vec<usize>,
-    /// Réserve initiale (= max) de chaque agent.
+    /// Réserve initiale (= max) **uniforme** : la capacité d'un agent quand le
+    /// scénario ne distingue pas les espèces. Repli de
+    /// [`reserve_max_per_species`](Self::reserve_max_per_species).
     pub reserve_max: f32,
+    /// Réserve max **par espèce** : `reserve_max_per_species[s]` est la capacité de
+    /// l'espèce `s`. Vide par défaut → la [`reserve_max`](Self::reserve_max) uniforme
+    /// s'applique partout (rétro-compatible) ; une espèce au-delà de la longueur
+    /// retombe aussi dessus. Calqué sur [`brains_per_species`](Self::brains_per_species),
+    /// additif. C'est une capacité de *corps*, propre à l'espèce — pas un gène : le
+    /// **% de remplissage** ([`crate::components::Reserve::fraction`]) reste, lui,
+    /// normalisé `[0, 1]` quelle que soit la capacité, donc comparable entre espèces.
+    pub reserve_max_per_species: Vec<f32>,
     /// Le **type de cerveau** des agents (l'auteur de la décision, §1) : choix de
     /// scénario, compilé en un [`crate::brain::Brain`] frais à chaque spawn
     /// (peuplement initial **et** reproduction). `Wander` par défaut (errance,
@@ -243,6 +253,7 @@ impl Default for SimConfig {
             species_count: 1,
             agents_per_species: Vec::new(),
             reserve_max: 100.0,
+            reserve_max_per_species: Vec::new(),
             brain: BrainKind::default(),
             brains_per_species: Vec::new(),
             relations: Vec::new(),
@@ -333,6 +344,17 @@ impl SimConfig {
             .get(species as usize)
             .cloned()
             .unwrap_or_else(|| self.brain.clone())
+    }
+
+    /// La **réserve max** de l'espèce `species` : l'entrée de
+    /// [`reserve_max_per_species`](Self::reserve_max_per_species) si elle existe,
+    /// sinon la [`reserve_max`](Self::reserve_max) uniforme. Résolveur unique pour le
+    /// spawn (capacité du corps + niveau de remplissage initial d'un fondateur).
+    pub fn reserve_max_of(&self, species: u16) -> f32 {
+        self.reserve_max_per_species
+            .get(species as usize)
+            .copied()
+            .unwrap_or(self.reserve_max)
     }
 
     /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une

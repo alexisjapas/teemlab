@@ -99,7 +99,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
             pos,
             heading,
             brain_seed,
-            config.reserve_max,
+            config.reserve_max_of(species),
             0, // fondateur : génération 0.
         );
     }
@@ -162,7 +162,7 @@ pub fn spawn_agent_with_brain(
         genotype,
         Reserve {
             current: energy,
-            max: config.reserve_max,
+            max: config.reserve_max_of(species.0),
         },
         Radius(r),
         // Généalogie : profondeur (fixe) et âge (croît au tick). Groupés en
