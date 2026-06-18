@@ -119,10 +119,12 @@ pub fn reproduce(
         let pos = transform.translation.truncate() + offset;
         // Mêmes tirages (heading puis seed) qu'avant l'héritage : le cerveau enfant
         // les consomme via `reproduce` au lieu de `config.brain.build` → flux RNG
-        // inchangé pour les scénarios existants.
+        // inchangé pour les scénarios non-MLP. Le MLP, lui, tire en plus dans `rng.0`
+        // pour muter ses poids (neuroévolution), pilotée par `mutation_rate` (item 18b).
         let heading = rng.0.next_f32() * std::f32::consts::TAU;
         let brain_seed = rng.0.next_u64();
-        let child_brain = brain.reproduce(brain_seed, heading);
+        let child_brain =
+            brain.reproduce(brain_seed, heading, &mut rng.0, genotype.mutation_rate);
         spawn_agent_with_brain(
             &mut commands,
             &config,

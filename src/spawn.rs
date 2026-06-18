@@ -1,7 +1,7 @@
 //! Peuplement initial du monde : l'arène (murs statiques) et les agents
 //! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
 
-use crate::brain::Brain;
+use crate::brain::{Brain, MlpBrain};
 use crate::components::{Action, Agent, Perception, Radius, Reserve, Species, Wall};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
@@ -118,9 +118,11 @@ pub fn spawn_agent(
     energy: f32,
 ) {
     // Le scénario choisit le *type* de cerveau **par espèce** (item 18a) ; on le
-    // compile ici en un cerveau frais (§1, l'auteur de la décision). La graine ne
-    // sert qu'aux cerveaux à état (errance) ; le chasseur, déterministe, l'ignore.
-    let brain = config.brain_of(species.0).build(brain_seed, heading);
+    // compile ici en un cerveau frais (§1, l'auteur de la décision). La graine sert
+    // les cerveaux à état (errance, poids initiaux du MLP) ; `n_inputs` dimensionne la
+    // couche d'entrée du MLP (= les canaux de perception, item 18b).
+    let n_inputs = MlpBrain::input_size(config.vision_rays);
+    let brain = config.brain_of(species.0).build(brain_seed, heading, n_inputs);
     spawn_agent_with_brain(commands, config, genotype, species, pos, brain, energy);
 }
 

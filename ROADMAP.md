@@ -288,20 +288,32 @@ monde** (arène, économie de nourriture, table de relations), placement et **su
     errant ; (b) *reproduction effective* — les chasseurs croissent au-delà de leurs fondateurs ; (c)
     *domination du témoin* — exclusion compétitive nette (~110 chasseurs contre ~1 errant), le §4
     réalisé : « un cerveau qui ne bat pas le déterministe n'a rien appris ».
-18b. MLP fait maison + neuroévolution, dans le régime continu, **en substitution par espèce** (la
-    couture 18a). Mutation gaussienne sur les poids (pilotée par `genotype.mutation_rate`) ; crossover
-    paramétrique (gènes) trivial. Entrées = canaux normalisés `vision`/`target` (pas la géométrie
-    `ray_dirs`) ; sortie **égocentrique** tournée par `perception.heading`. Le déterministe reste le
-    groupe témoin (driver multi-graines : le MLP fourrage mieux que l'errance, approche le chasseur).
-    **Architecture éditable** : `BrainKind::Mlp` porte la topologie des **couches cachées** (nombre de
-    couches **et** de neurones par couche) ; entrée/sortie restent *contraintes* par le contrat
-    `Perception → Action` (topologie cachée = choix de designer fixé au fondateur, **non muée** par
-    l'évolution — la topologie variable/NEAT reste repoussée, §2/item 21). **Visualisation graphe** :
-    l'éditeur dessine le MLP pendant l'édition de l'architecture ; l'**inspecteur** (item 12) le dessine
-    pour l'agent sélectionné **avec l'activation courante de chaque neurone** (`MlpBrain` mémorise les
-    activations de son dernier `think` — le contrat reste pur, l'état exposé n'est que lecture pour
-    l'UI ; la couture 18a — `enum Brain`, un cerveau par agent, inspecteur lisant déjà `Brain` —
-    l'accueille sans changement).
+18b. MLP fait maison + neuroévolution (cœur) **(réalisé)** : le cerveau **appris**, dans le régime
+    continu, **en substitution par espèce** (la couture 18a). `Brain::Mlp` — perceptron multicouche
+    fait maison (couches denses `tanh`, init Xavier seedée). **Entrées** = canaux normalisés
+    `vision`/`target` concaténés (`2 × vision_rays`, pas la géométrie `ray_dirs`) ; **sortie** = 2
+    neurones lus comme un vecteur de pilotage *en repère du corps*, tourné vers le monde par
+    `perception.heading` → orientation-équivariant (le réseau n'apprend pas l'orientation absolue).
+    **Neuroévolution** : `Brain::reproduce` étendu — l'enfant hérite la topologie et **mute ses poids**
+    (perturbation gaussienne d'écart `mutation_rate · WEIGHT_STEP`) ; crossover sur poids repoussé
+    (permutation, §9), mutation-seule d'abord. Flux RNG des scénarios non-MLP préservé (Wander/Hunter ne
+    tirent pas). **Architecture éditable** (numérique) : `BrainKind::Mlp { hidden }` porte la topologie
+    des **couches cachées** (nombre + largeur) ; entrée/sortie restent *contraintes* par le contrat
+    (topologie cachée = choix de designer fixé au fondateur, **non muée** — NEAT/topologie variable
+    toujours repoussée, §2/item 21). **Driver** `tests/mlp` (`scenarios/cerveau_mlp.ron`, 5 graines) :
+    cohabitation MLP vs errance, **même corps et même économie**, nourriture commune et limitée — partant
+    de poids **aléatoires**, le MLP passe de la parité (~145/145) à la **domination** par exclusion
+    compétitive (~220 contre ~10, errance quasi éteinte) sur **chaque** graine — le §4 réalisé pour le
+    cerveau appris. **Finding (§7)** : la neuroévolution depuis l'aléatoire, en tête-à-tête, est à forte
+    variance (une cohorte initiale médiocre est exclue avant d'apprendre) ; le levier décisif est la
+    **diversité des fondateurs** (40/espèce → 3 graines sur 5 ; 70 → les 5) — ce qui motive d'autant les
+    lots générationnels de P5. **Reste** : les **visualisations graphe** (18b-viz).
+18b-viz. Visualisation du MLP en graphe. `MlpBrain` mémorise déjà les **activations** de son dernier
+    `think` (champ `activations`, hors sérialisation — le contrat reste pur, l'état n'est exposé qu'en
+    lecture pour l'UI). Reste à dessiner : (a) **éditeur** — le réseau en graphe (nœuds par couche,
+    arêtes) pendant l'édition de l'architecture ; (b) **inspecteur** (item 12) — le réseau de l'agent
+    sélectionné **avec l'activation courante de chaque neurone**. La couture (un cerveau par agent,
+    inspecteur lisant déjà `Brain`) l'accueille sans changement de schéma — purement de l'UI.
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -325,11 +337,10 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
 - **Stepping manuel headless** : `app.update()` en boucle serrée exige `app.finish()` puis
   `app.cleanup()` au préalable (Avian insère des ressources dans `Plugin::finish()`). Éprouvé dans
   `tests/containment.rs` et `tests/snapshot.rs`.
-- **MLP** (item 18b) : nouveau variant de `Brain` (enum déjà `serde`) sur le contrat
-  `Perception → Action`, déjà matérialisé par les systèmes perceive/decide/act. Arrive en régime
-  continu, en substitution **par espèce** — la couture est désormais en place (item 18a :
-  `brains_per_species` au fondateur + `Brain::reproduce` qui transmet le cerveau par héritage ; il ne
-  restera qu'à muter les poids dans `reproduce`).
+- **MLP** (item 18b, **fait** pour le cœur) : variant `Brain::Mlp` (enum déjà `serde`) sur le contrat
+  `Perception → Action`, en régime continu, substitution **par espèce** (couture 18a). Poids mutés dans
+  `Brain::reproduce` (neuroévolution mutation-seule). **Reste** la visualisation graphe (18b-viz, l'UI),
+  les activations étant déjà mémorisées par `think`.
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection

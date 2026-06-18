@@ -285,8 +285,8 @@ impl SimConfig {
     pub fn brain_of(&self, species: u16) -> BrainKind {
         self.brains_per_species
             .get(species as usize)
-            .copied()
-            .unwrap_or(self.brain)
+            .cloned()
+            .unwrap_or_else(|| self.brain.clone())
     }
 
     /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une
@@ -679,6 +679,35 @@ mod tests {
             "espèce 1 = témoin naïf"
         );
         // Les deux broutent la même nourriture (canal d'énergie commun).
+        for s in [0u16, 1] {
+            assert!(
+                cfg.relations
+                    .iter()
+                    .any(|r| r.actor == s && r.target == cfg.food_species && r.transfer),
+                "l'espèce {s} doit pouvoir manger la nourriture"
+            );
+        }
+    }
+
+    /// Le scénario MLP versionné oppose un cerveau APPRIS (espèce 0) au témoin
+    /// d'errance (espèce 1) sur la même nourriture : le cadre de falsification de
+    /// l'item 18b. La dynamique (le MLP domine) est vérifiée par le driver `tests/mlp`.
+    #[test]
+    fn bundled_cerveau_mlp_pits_a_learned_brain_against_wander() {
+        use crate::brain::BrainKind;
+        let text = include_str!("../scenarios/cerveau_mlp.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario MLP valide");
+        assert!(
+            matches!(cfg.brain_of(0), BrainKind::Mlp { ref hidden } if !hidden.is_empty()),
+            "espèce 0 = MLP avec au moins une couche cachée"
+        );
+        assert!(
+            matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
+            "espèce 1 = témoin d'errance"
+        );
+        // Départ équitable et nourriture commune.
+        assert_eq!(cfg.agents_per_species.len(), 2);
+        assert_eq!(cfg.agents_per_species[0], cfg.agents_per_species[1]);
         for s in [0u16, 1] {
             assert!(
                 cfg.relations

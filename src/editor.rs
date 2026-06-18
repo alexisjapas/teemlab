@@ -14,7 +14,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-use teemlab::brain::BrainKind;
+use teemlab::brain::{BrainKind, MlpBrain};
 use teemlab::components::{Agent, Food, Reserve, Species};
 use teemlab::config::Relation;
 use teemlab::ecology::spawn_food;
@@ -329,12 +329,13 @@ fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.separator();
     ui.strong("Cerveau (auteur de la décision)");
     let species = config.species_cardinality();
+    let vision_rays = config.vision_rays;
     if species <= 1 {
         ui.small(
             "Le type de cerveau des agents. Chaque variant expose ses propres \
              paramètres d'archétype.",
         );
-        brain_kind_editor(ui, &mut config.brain);
+        brain_kind_editor(ui, &mut config.brain, vision_rays);
     } else {
         ui.small(
             "Un cerveau par espèce (cohabitation témoin/appris, §4) : corps partagé, \
@@ -343,14 +344,14 @@ fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
         // Matérialise un cerveau par espèce, en clonant l'uniforme pour les entrées
         // manquantes — l'éditeur ne peut alors plus *mentir* sur une réalité
         // per-espèce. Sémantiquement identique au champ vide quand tous sont égaux.
-        let fallback = config.brain;
+        let fallback = config.brain.clone();
         config
             .brains_per_species
             .resize(species as usize, fallback);
         for s in 0..species as usize {
             ui.push_id(s, |ui| {
                 ui.label(format!("Espèce {s}"));
-                brain_kind_editor(ui, &mut config.brains_per_species[s]);
+                brain_kind_editor(ui, &mut config.brains_per_species[s], vision_rays);
             });
         }
     }
@@ -361,7 +362,10 @@ fn brain_selector(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// puis sa description fonctionnelle. Le `match` exhaustif force tout futur variant
 /// de `Brain` à exposer ses paramètres ici — la contrepartie *hétérogène* (des
 /// paramètres propres à chaque cerveau) de la table `TRAITS`, elle homogène.
-fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind) {
+///
+/// `vision_rays` ne sert qu'au MLP, pour afficher la taille (contrainte) de sa couche
+/// d'entrée.
+fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize) {
     egui::ComboBox::from_label("type")
         .selected_text(kind.name())
         .show_ui(ui, |ui| {
@@ -373,12 +377,49 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind) {
             if ui.selectable_label(is_hunter, "Chasseur").clicked() && !is_hunter {
                 *kind = BrainKind::Hunter;
             }
+            let is_mlp = matches!(kind, BrainKind::Mlp { .. });
+            if ui.selectable_label(is_mlp, "Réseau (MLP)").clicked() && !is_mlp {
+                *kind = BrainKind::Mlp { hidden: vec![8] };
+            }
         });
-    if let BrainKind::Wander { turn_rate } = kind {
-        ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
-            .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
+    match kind {
+        BrainKind::Wander { turn_rate } => {
+            ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
+                .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
+        }
+        BrainKind::Hunter => {}
+        BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
     }
     ui.weak(kind.description());
+}
+
+/// Édition **numérique** de l'architecture d'un MLP (item 18b, cœur) : le nombre de
+/// couches cachées et la largeur de chacune. L'entrée (`2 × rayons`) et la sortie (2)
+/// sont *contraintes* par le contrat et seulement affichées. La visualisation en
+/// graphe arrive à la tranche suivante.
+fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
+    ui.small(format!(
+        "Entrée {} (= 2 × {vision_rays} rayons) → sortie {} : fixées par le contrat.",
+        MlpBrain::input_size(vision_rays),
+        MlpBrain::OUTPUTS,
+    ));
+    let mut remove = None;
+    for (i, n) in hidden.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label(format!("cachée {i}"));
+            ui.add(egui::DragValue::new(n));
+            *n = (*n).clamp(1, 64); // au moins un neurone, plafond raisonnable.
+            if ui.small_button("✕").on_hover_text("retirer cette couche").clicked() {
+                remove = Some(i);
+            }
+        });
+    }
+    if let Some(i) = remove {
+        hidden.remove(i); // 0 couche cachée = perceptron simple, valide.
+    }
+    if ui.button("+ couche cachée").clicked() {
+        hidden.push(8);
+    }
 }
 
 /// La fenêtre flottante « Monde » : les paramètres de **scénario** — l'arène, la

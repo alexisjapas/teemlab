@@ -27,6 +27,11 @@ pub enum Brain {
     /// rien appris (§4) — et le 2ᵉ variant qui rend le sélecteur de cerveau
     /// falsifiable.
     Hunter(HunterBrain),
+    /// Perceptron multicouche fait maison (item 18b), le **cerveau appris** : ses
+    /// poids muent à la reproduction (neuroévolution). C'est ce que le chasseur et
+    /// l'errance servaient à jauger (§4) — le seul variant dont la décision n'est
+    /// pas écrite à la main mais découverte par la sélection.
+    Mlp(MlpBrain),
 }
 
 impl Brain {
@@ -36,6 +41,7 @@ impl Brain {
         match self {
             Brain::Wander(b) => b.think(perception),
             Brain::Hunter(b) => b.think(perception),
+            Brain::Mlp(b) => b.think(perception),
         }
     }
 
@@ -44,27 +50,29 @@ impl Brain {
         match self {
             Brain::Wander(_) => "Errance",
             Brain::Hunter(_) => "Chasseur",
+            Brain::Mlp(_) => "MLP",
         }
     }
 
     /// Cerveau d'un enfant à partir de **celui du parent** (et non d'un
     /// [`BrainKind`] global) : la couture par laquelle un comportement *appris* se
-    /// transmet — la neuroévolution (item 18b) l'étendra pour **muter les poids**.
-    /// Ici, sans état appris, elle ne fait que reconduire le type :
+    /// transmet (item 18a). C'est ici que vit la **neuroévolution** (item 18b) :
     ///
     /// - `Wander` hérite le `turn_rate` du parent (paramètre d'archétype, non mué),
     ///   avec un état RNG **frais** (`seed`/`heading`) pour décorréler la lignée ;
-    /// - `Hunter`, déterministe et sans état, est simplement cloné.
+    /// - `Hunter`, déterministe et sans état, est simplement cloné ;
+    /// - `Mlp` hérite la **topologie** du parent et **mute ses poids** par
+    ///   perturbation gaussienne d'écart `rate · WEIGHT_STEP` (cf. [`MlpBrain::mutated`]).
     ///
-    /// `seed`/`heading` ne servent qu'aux cerveaux à état (l'errance). En les
-    /// recevant de [`crate::ecology::reproduce`] — qui les tirait déjà pour
-    /// `config.brain.build` —, le flux RNG reste **identique** aux scénarios
-    /// d'avant cet item (le Wander mono-espèce hérite le même `turn_rate` que le
-    /// config ; le Hunter ignore les deux arguments, comme `build`).
-    pub fn reproduce(&self, seed: u64, heading: f32) -> Brain {
+    /// `seed`/`heading` n'alimentent que les cerveaux à état (l'errance) ; `rng`/`rate`
+    /// que la mutation des poids (le MLP). Wander et Hunter **ne tirent pas** dans
+    /// `rng` → le flux RNG reste **identique** aux scénarios non-MLP (ceux d'avant
+    /// cet item), `rate` venant du génotype (`mutation_rate`, le gène par lignée, §2).
+    pub fn reproduce(&self, seed: u64, heading: f32, rng: &mut Rng, rate: f32) -> Brain {
         match self {
             Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
             Brain::Hunter(_) => Brain::Hunter(HunterBrain),
+            Brain::Mlp(m) => Brain::Mlp(m.mutated(rng, rate)),
         }
     }
 }
@@ -75,15 +83,23 @@ impl Brain {
 /// *état vivant* : un `BrainKind` (RON : `Wander(turn_rate: …)` / `Hunter`) se
 /// compile en un [`Brain`] frais au spawn, comme un génotype en phénotype (§2).
 /// Édité par le sélecteur de cerveau de l'éditeur (item 15) ; chaque variant y
-/// expose ses propres paramètres. Substitution par scénario (§4) faite ; la
-/// substitution *par espèce* reste à venir.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// expose ses propres paramètres. Substitution par scénario (§4) **et** par espèce
+/// (item 18a) faites.
+///
+/// Plus `Copy` depuis l'item 18b : le MLP porte sa topologie en `Vec`. On le
+/// `clone()` donc explicitement (peu fréquent : spawn, repli de `brain_of`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BrainKind {
     /// [`Brain::Wander`] — errance. `turn_rate` : amplitude de la dérive de cap par
     /// tick (le paramètre propre à ce variant). Défaut rétro-compatible (item 16).
     Wander { turn_rate: f32 },
     /// [`Brain::Hunter`] — réflexe déterministe, sans paramètre.
     Hunter,
+    /// [`Brain::Mlp`] — perceptron multicouche évolué (item 18b). `hidden` : la
+    /// largeur de chaque **couche cachée** (donnée de designer, éditable). L'entrée
+    /// (canaux de perception) et la sortie (2) sont fixées par le contrat → seule la
+    /// topologie cachée est libre (la topologie variable/NEAT reste repoussée, §2).
+    Mlp { hidden: Vec<usize> },
 }
 
 impl Default for BrainKind {
@@ -97,14 +113,17 @@ impl Default for BrainKind {
 }
 
 impl BrainKind {
-    /// Compile le choix en un cerveau frais. La graine n'alimente que les cerveaux
-    /// à état stochastique (l'errance) ; le chasseur, déterministe, l'ignore.
-    pub fn build(&self, seed: u64, heading: f32) -> Brain {
+    /// Compile le choix en un cerveau frais. `seed` graine les cerveaux à état
+    /// (l'errance ; les poids initiaux *aléatoires* du MLP) ; `heading` l'errance ;
+    /// `n_inputs` (= nombre de canaux de perception, `2 × vision_rays`) dimensionne la
+    /// couche d'entrée du MLP. Le chasseur ignore tout, l'errance ignore `n_inputs`.
+    pub fn build(&self, seed: u64, heading: f32, n_inputs: usize) -> Brain {
         match self {
             BrainKind::Wander { turn_rate } => {
                 Brain::Wander(WanderBrain::new(seed, heading, *turn_rate))
             }
             BrainKind::Hunter => Brain::Hunter(HunterBrain),
+            BrainKind::Mlp { hidden } => Brain::Mlp(MlpBrain::random(seed, n_inputs, hidden)),
         }
     }
 
@@ -113,6 +132,7 @@ impl BrainKind {
         match self {
             BrainKind::Wander { .. } => "Errance",
             BrainKind::Hunter => "Chasseur",
+            BrainKind::Mlp { .. } => "Réseau (MLP)",
         }
     }
 
@@ -131,6 +151,12 @@ impl BrainKind {
                  (table de relations), contourne murs et autres entités sans les \
                  fuir. Sans mémoire : hors de portée, il explore. Le groupe témoin \
                  compétent."
+            }
+            BrainKind::Mlp { .. } => {
+                "Perceptron multicouche évolué : décide en lisant ses canaux de \
+                 vision/cible, et APPREND par neuroévolution (mutation gaussienne des \
+                 poids à la reproduction). Couches cachées éditables ; entrée et sortie \
+                 fixées par le contrat."
             }
         }
     }
@@ -212,6 +238,183 @@ impl HunterBrain {
     }
 }
 
+/// Une couche dense : `out × in` poids (row-major, `weights[o*inputs + i]`) + `out`
+/// biais. Pré-activation du neurone de sortie `o` : `bias[o] + Σ_i w[o,i]·in[i]`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct Layer {
+    /// Fan-in (taille du vecteur d'entrée attendu).
+    inputs: usize,
+    /// Poids aplatis, `outputs × inputs` en row-major.
+    weights: Vec<f32>,
+    /// Biais, un par neurone de sortie (sa longueur = nombre de sorties).
+    biases: Vec<f32>,
+}
+
+impl Layer {
+    fn outputs(&self) -> usize {
+        self.biases.len()
+    }
+
+    /// Poids initiaux aléatoires, façon Xavier (écart `1/√fan_in`) pour éviter la
+    /// saturation de `tanh` dès le départ ; biais nuls.
+    fn random(rng: &mut Rng, inputs: usize, outputs: usize) -> Self {
+        let scale = 1.0 / (inputs.max(1) as f32).sqrt();
+        let weights = (0..inputs * outputs)
+            .map(|_| rng.next_gaussian() * scale)
+            .collect();
+        Self {
+            inputs,
+            weights,
+            biases: vec![0.0; outputs],
+        }
+    }
+
+    /// Propagation `tanh(bias + W·in)` ; `input.len()` doit valoir `self.inputs`.
+    fn forward(&self, input: &[f32]) -> Vec<f32> {
+        (0..self.outputs())
+            .map(|o| {
+                let row = &self.weights[o * self.inputs..(o + 1) * self.inputs];
+                let sum = self.biases[o] + row.iter().zip(input).map(|(w, x)| w * x).sum::<f32>();
+                sum.tanh()
+            })
+            .collect()
+    }
+
+    /// Couche enfant : chaque poids et biais perturbé d'un bruit gaussien d'écart
+    /// `std` (la neuroévolution, mutation-seule).
+    fn mutated(&self, rng: &mut Rng, std: f32) -> Self {
+        Self {
+            inputs: self.inputs,
+            weights: self
+                .weights
+                .iter()
+                .map(|w| w + rng.next_gaussian() * std)
+                .collect(),
+            biases: self
+                .biases
+                .iter()
+                .map(|b| b + rng.next_gaussian() * std)
+                .collect(),
+        }
+    }
+}
+
+/// Perceptron multicouche fait maison (item 18b) — le cerveau **appris**. Même
+/// contrat `Perception → Action` que tout cerveau (§2), mais sa décision n'est pas
+/// écrite à la main : elle émerge des poids, que la sélection façonne par mutation à
+/// la reproduction ([`MlpBrain::mutated`]). Fait maison à dessein : les libs ML
+/// visent le gros réseau GPU, l'inverse du besoin (§5).
+///
+/// **Entrée** : les canaux normalisés `vision` puis `target` concaténés (il ignore la
+/// géométrie `ray_dirs`, cf. `components.rs`). **Sortie** : 2 neurones lus comme un
+/// vecteur de pilotage *en repère du corps*, tourné vers le monde par le cap →
+/// orientation-équivariant (le réseau n'a pas à apprendre l'orientation absolue,
+/// comme le chasseur lit « rayon i » relativement au cap).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MlpBrain {
+    /// Couches denses, entrée→sortie. Topologie figée à la construction (héritée
+    /// telle quelle) ; seuls les poids muent.
+    layers: Vec<Layer>,
+    /// Activations du dernier `think`, couche par couche (entrée comprise), pour la
+    /// visualisation de l'inspecteur (tranche viz à venir). Recalculées chaque tick →
+    /// **hors sérialisation** (un snapshot n'a pas à les porter).
+    #[serde(skip)]
+    activations: Vec<Vec<f32>>,
+}
+
+impl MlpBrain {
+    /// Nombre de neurones de sortie : le vecteur de pilotage égocentrique (x, y).
+    pub const OUTPUTS: usize = 2;
+    /// Échelle d'un pas de mutation de poids (multiplié par `mutation_rate`).
+    const WEIGHT_STEP: f32 = 0.6;
+
+    /// Taille de la couche d'entrée pour `vision_rays` rayons : les canaux `vision`
+    /// ET `target`, d'où `2 × vision_rays`.
+    pub fn input_size(vision_rays: usize) -> usize {
+        2 * vision_rays
+    }
+
+    /// Réseau aux poids **aléatoires** : dims = `[n_inputs] ++ hidden ++ [OUTPUTS]`.
+    /// Les fondateurs d'une espèce MLP partent ainsi de cerveaux aléatoires — c'est
+    /// l'évolution qui doit *découvrir* le fourrage (tout l'enjeu de l'item 18b).
+    pub fn random(seed: u64, n_inputs: usize, hidden: &[usize]) -> Self {
+        let mut rng = Rng::new(seed);
+        let mut dims = Vec::with_capacity(hidden.len() + 2);
+        dims.push(n_inputs);
+        dims.extend_from_slice(hidden);
+        dims.push(Self::OUTPUTS);
+        let layers = dims
+            .windows(2)
+            .map(|w| Layer::random(&mut rng, w[0], w[1]))
+            .collect();
+        Self {
+            layers,
+            activations: Vec::new(),
+        }
+    }
+
+    /// Enfant : **même topologie**, poids perturbés (neuroévolution). `rate` =
+    /// `mutation_rate` du génotype (le gène par lignée, §2).
+    pub fn mutated(&self, rng: &mut Rng, rate: f32) -> Self {
+        let std = rate * Self::WEIGHT_STEP;
+        Self {
+            layers: self.layers.iter().map(|l| l.mutated(rng, std)).collect(),
+            activations: Vec::new(),
+        }
+    }
+
+    /// Vecteur d'entrée : `vision` puis `target` (les mêmes canaux que l'inspecteur
+    /// affiche, dans le même ordre).
+    fn input_vector(perception: &Perception) -> Vec<f32> {
+        perception
+            .vision
+            .iter()
+            .chain(perception.target.iter())
+            .copied()
+            .collect()
+    }
+
+    fn think(&mut self, perception: &Perception) -> Action {
+        let input = Self::input_vector(perception);
+        // Mémorise les activations (entrée + chaque couche) pour l'inspecteur.
+        self.activations.clear();
+        self.activations.push(input.clone());
+        let mut signal = input;
+        for layer in &self.layers {
+            // Robuste à une perception de mauvaise taille (forme changée entre runs) :
+            // si le fan-in ne colle pas, on garde le cap (réseau muet ce tick).
+            if signal.len() != layer.inputs {
+                return Action {
+                    dir: perception.heading,
+                    throttle: 0.0,
+                };
+            }
+            signal = layer.forward(&signal);
+            self.activations.push(signal.clone());
+        }
+        // 2 sorties = vecteur de pilotage en repère du corps, tourné vers le monde
+        // par le cap (le +X du corps pointe vers `heading`).
+        let body = Vec2::new(signal[0], signal[1]);
+        let world = perception.heading.rotate(body);
+        let dir = world.normalize_or_zero();
+        let dir = if dir == Vec2::ZERO {
+            perception.heading
+        } else {
+            dir
+        };
+        Action {
+            dir,
+            throttle: body.length().min(1.0),
+        }
+    }
+
+    /// Les activations du dernier `think`, couche par couche (entrée d'abord) : pour
+    /// la visualisation de l'inspecteur (tranche viz). Vide tant qu'aucun `think`.
+    pub fn activations(&self) -> &[Vec<f32>] {
+        &self.activations
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -286,39 +489,112 @@ mod tests {
 
     /// Le paramètre propre au variant `Wander` (turn_rate) est bien transmis au
     /// cerveau compilé : c'est ce que le sélecteur d'éditeur (item 15) fait varier.
+    /// (`n_inputs` n'importe que pour le MLP ; ici 0.)
     #[test]
     fn brainkind_wander_carries_its_turn_rate() {
-        match (BrainKind::Wander { turn_rate: 0.4 }).build(1, 0.0) {
+        match (BrainKind::Wander { turn_rate: 0.4 }).build(1, 0.0, 0) {
             Brain::Wander(w) => assert_eq!(w.turn_rate, 0.4),
             other => panic!("attendu Wander, obtenu {other:?}"),
         }
         assert!(matches!(BrainKind::default(), BrainKind::Wander { .. }));
         assert!(matches!(
-            (BrainKind::Hunter).build(1, 0.0),
+            (BrainKind::Hunter).build(1, 0.0, 0),
             Brain::Hunter(_)
         ));
     }
 
     /// L'héritage du cerveau (item 18a) : un enfant **reconduit le type** de son
-    /// parent — c'est ce qui fera cohabiter un témoin déterministe et un cerveau
-    /// appris (§4), et que 18b étendra pour muter les poids. Le Wander hérite le
-    /// `turn_rate` du parent (paramètre d'archétype) mais reçoit un état RNG frais ;
-    /// le Hunter, sans état, est cloné.
+    /// parent — c'est ce qui fait cohabiter un témoin déterministe et un cerveau
+    /// appris (§4). Le Wander hérite le `turn_rate` du parent (paramètre d'archétype)
+    /// mais reçoit un état RNG frais ; le Hunter, sans état, est cloné. Ni l'un ni
+    /// l'autre ne tire dans `rng` (le flux des scénarios non-MLP reste intact).
     #[test]
     fn reproduce_keeps_the_parent_variant() {
+        let mut rng = Rng::new(0);
         // Hunter → Hunter (déterministe, cloné).
         let hunter = Brain::Hunter(HunterBrain);
-        assert!(matches!(hunter.reproduce(7, 1.0), Brain::Hunter(_)));
+        assert!(matches!(hunter.reproduce(7, 1.0, &mut rng, 0.1), Brain::Hunter(_)));
 
         // Wander → Wander, turn_rate hérité, état RNG distinct (graine ≠).
         let parent = Brain::Wander(WanderBrain::new(1, 0.0, 0.37));
-        match parent.reproduce(2, 0.5) {
+        match parent.reproduce(2, 0.5, &mut rng, 0.1) {
             Brain::Wander(child) => {
                 assert_eq!(child.turn_rate, 0.37, "le turn_rate du parent est hérité");
                 let Brain::Wander(p) = &parent else { unreachable!() };
                 assert_ne!(child.rng, p.rng, "l'enfant a un état RNG frais");
             }
             other => panic!("attendu Wander, obtenu {other:?}"),
+        }
+        // Wander/Hunter n'ont pas consommé `rng` : son état est celui du départ.
+        assert_eq!(rng, Rng::new(0), "les cerveaux non-MLP ne touchent pas au flux RNG");
+    }
+
+    /// Perception à 3 rayons pour les tests MLP : 6 entrées (vision ++ cible).
+    fn mlp_perception(heading: Vec2, vision: [f32; 3], target: [f32; 3]) -> Perception {
+        Perception {
+            heading,
+            vision: vision.into(),
+            target: target.into(),
+            ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
+        }
+    }
+
+    /// Le MLP construit par `BrainKind` respecte le contrat d'E/S : entrée =
+    /// `2 × vision_rays`, sortie = `OUTPUTS`, couches cachées telles que demandées.
+    #[test]
+    fn brainkind_mlp_builds_with_contract_io() {
+        let n_inputs = MlpBrain::input_size(3); // 6
+        let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![5] }).build(42, 0.0, n_inputs) else {
+            panic!("attendu un MLP");
+        };
+        assert_eq!(m.layers.len(), 2, "1 cachée + 1 sortie");
+        assert_eq!(m.layers[0].inputs, 6, "entrée = 2 × rayons");
+        assert_eq!(m.layers[0].outputs(), 5, "couche cachée demandée");
+        assert_eq!(m.layers[1].inputs, 5);
+        assert_eq!(m.layers[1].outputs(), MlpBrain::OUTPUTS);
+    }
+
+    /// Le MLP est déterministe (mêmes poids + même perception → même action) et
+    /// **orientation-équivariant** : tournés du même cap, les mêmes canaux donnent une
+    /// action tournée d'autant (la décision vit en repère du corps).
+    #[test]
+    fn mlp_is_deterministic_and_orientation_equivariant() {
+        let mut brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
+
+        let a1 = brain.think(&mlp_perception(Vec2::X, vision, target));
+        let a2 = brain.think(&mlp_perception(Vec2::X, vision, target));
+        assert_eq!(a1.dir, a2.dir, "déterministe");
+        assert_eq!(a1.throttle, a2.throttle);
+
+        // Même perception relative, cap tourné de +90° → l'action tourne de +90°.
+        let a_y = brain.think(&mlp_perception(Vec2::Y, vision, target));
+        let expected = Vec2::Y.rotate(a1.dir); // rotation de +90°
+        assert!(
+            (a_y.dir - expected).length() < 1e-5,
+            "la sortie doit être en repère du corps : {:?} vs {:?}",
+            a_y.dir,
+            expected
+        );
+    }
+
+    /// La neuroévolution : muter **perturbe les poids** mais **garde la topologie** ;
+    /// un taux nul est l'identité (régime évolution éteinte).
+    #[test]
+    fn mlp_mutation_perturbs_weights_keeps_topology() {
+        let mut rng = Rng::new(3);
+        let parent = MlpBrain::random(11, MlpBrain::input_size(4), &[8, 4]);
+
+        // Taux nul → clone fidèle (les activations sont vides de part et d'autre).
+        assert_eq!(parent.mutated(&mut rng, 0.0), parent, "taux nul = identité");
+
+        // Taux non nul → poids changés, mais même nombre de couches et mêmes dims.
+        let child = parent.mutated(&mut rng, 0.2);
+        assert_ne!(child, parent, "les poids ont bougé");
+        assert_eq!(child.layers.len(), parent.layers.len());
+        for (c, p) in child.layers.iter().zip(&parent.layers) {
+            assert_eq!(c.inputs, p.inputs);
+            assert_eq!(c.outputs(), p.outputs());
         }
     }
 }

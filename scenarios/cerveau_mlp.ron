@@ -1,0 +1,90 @@
+// Scénario — CERVEAU MLP ÉVOLUÉ vs ERRANCE (item 18b, cœur).
+//
+// La frontière de l'abstraction *dans* la sélection naturelle : un cerveau dont la
+// décision n'est PAS écrite à la main mais DÉCOUVERTE par l'évolution. Les fondateurs
+// MLP partent de poids ALÉATOIRES ; à chaque reproduction, l'enfant hérite la
+// topologie de son parent (couture item 18a) et ses poids mutent (perturbation
+// gaussienne). La sélection — survivre assez pour se reproduire — fait le reste.
+//
+// La falsification du §4 (« un cerveau qui ne bat pas le témoin n'a rien appris »),
+// par l'expérience la plus robuste : la COHABITATION (cf. cohabitation.ron). Deux
+// espèces, MÊME corps et MÊME économie, nourriture COMMUNE et limitée — seul le
+// cerveau diffère :
+//
+//   espèce 0 — MLP (appris)   : part aléatoire, doit DÉCOUVRIR le fourrage.
+//   espèce 1 — ERRANCE (témoin naïf) : dérive au hasard, compétence fixe.
+//
+// À ressource limitée, le meilleur fourrageur exclut l'autre (exclusion compétitive —
+// c'est ce mécanisme qui a fait dominer le chasseur dans cohabitation.ron). Si la
+// neuroévolution apprend quoi que ce soit d'utile, le MLP prend l'avantage sur
+// l'errance. Le driver `tests/mlp` le vérifie sur plusieurs graines : le MLP passe de
+// la PARITÉ (~145/145) à la DOMINATION (~220 contre ~10, l'errance quasi éteinte) sur
+// chaque graine. Contrairement à une économie abondante (où même un fourrage aléatoire
+// suffit, donc rien à apprendre), la compétition pour une ressource rare CRÉE la
+// pression de sélection.
+//
+// Calibration (§7, « du réglage, pas de l'algo ») : la neuroévolution depuis des poids
+// ALÉATOIRES, en tête-à-tête, est à forte variance — une cohorte initiale médiocre est
+// exclue avant d'avoir appris. Le levier décisif s'est révélé la DIVERSITÉ DES
+// FONDATEURS : 40 par espèce → le MLP gagne ~3 graines sur 5 ; 70 → les 5. Plus de
+// poids initiaux tirés = plus de chances qu'une lignée fourrage assez bien pour
+// essaimer durant la fenêtre de grâce (population sous la capacité de charge). La
+// nourriture est dimensionnée (repousse 24 → capacité ~185) pour laisser cette grâce
+// aux 140 fondateurs.
+//
+//     cargo run --bin teemlab  scenarios/cerveau_mlp.ron
+//     cargo run --bin headless scenarios/cerveau_mlp.ron
+(
+    // Économie de cohabitation.ron, éprouvée : la compétition pour une nourriture
+    // limitée fait que le fourrage habile l'emporte (exclusion compétitive).
+    arena_half_extent: 360.0,
+    tick_hz: 64.0,
+
+    // Effectifs égaux au départ : seul le cerveau diffère. Beaucoup de fondateurs MLP
+    // = diversité de poids initiaux = l'évolution trouve plus vite une configuration
+    // qui fourrage. L'archétype (génotype) est PARTAGÉ.
+    species_count: 2,
+    agents_per_species: [70, 70],
+    agent_radius: 8.0,
+    reserve_max: 120.0,
+
+    // LA variable indépendante : MLP (appris) contre errance (témoin). Une couche
+    // cachée de 8 neurones : assez pour mapper « ce que je vois » → « où aller ».
+    brain: Wander(turn_rate: 0.25),
+    brains_per_species: [Mlp(hidden: [8]), Wander(turn_rate: 0.25)],
+
+    // Vision : l'unique fenêtre du MLP sur le monde (14 entrées = 7 rayons ×
+    // {obstacle, cible}). L'errance la subit sans la lire (même génotype partagé).
+    vision_rays: 7,
+    vision_fov_deg: 120.0,
+    vision_range: 180.0,
+
+    base_metabolism: 4.0,
+    move_cost: 2.0,
+
+    // Nourriture (espèce 2) commune et LIMITÉE (repousse finie → capacité de charge).
+    // C'est la rareté qui rend le fourrage habile payant et crée la pression.
+    food_count: 200,
+    food_radius: 7.0,
+    food_energy: 50.0,
+    food_regen: 24.0,
+    food_species: 2,
+
+    // Les deux espèces broutent la même nourriture, au même débit.
+    relations: [
+        (actor: 0, target: 2, transfer: true, rate: 200.0, range: 26.0),
+        (actor: 1, target: 2, transfer: true, rate: 200.0, range: 26.0),
+    ],
+
+    // La boucle évolutive. Mutation un peu plus vive : elle pilote à la fois la dérive
+    // des gènes ET l'exploration des poids du réseau (× WEIGHT_STEP).
+    reproduction_threshold: 95.0,
+    offspring_energy: 45.0,
+    mutation_rate: 0.10,
+
+    // Bornes des gènes (le « bornes » du triplet du §2).
+    speed_bounds: (min: 40.0, max: 260.0),
+    agility_bounds: (min: 0.02, max: 0.5),
+    vision_range_bounds: (min: 30.0, max: 300.0),
+    vision_fov_bounds: (min: 40.0, max: 280.0),
+)
