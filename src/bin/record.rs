@@ -54,8 +54,8 @@ impl Settings {
         let mut s = Settings {
             scenario: None,
             out: "outputs/out.mp4".into(),
-            fps: 60.0,
-            seconds: 10.0,
+            fps: 30.0,
+            seconds: 61.0,
             // Carré par défaut : l'arène est carrée, donc 1080×1080 la cadre sans
             // bandes de hors-jeu (cf. menu d'enregistrement du fenêtré).
             width: 1080,

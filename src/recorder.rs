@@ -36,8 +36,8 @@ impl Default for RecorderPanel {
     fn default() -> Self {
         Self {
             out: "outputs/run.mp4".into(),
-            fps: 60.0,
-            seconds: 10.0,
+            fps: 30.0,
+            seconds: 61.0,
             // Carré 1080×1080 par défaut : l'arène est carrée (cadrage « tout
             // voir »), donc une cible carrée évite les bandes de hors-jeu.
             width: 1080,
