@@ -39,6 +39,10 @@ pub struct Palette {
     pub save_path: String,
     /// Dernier message d'état (sauvegarde/chargement).
     pub status: String,
+    /// Bibliothèque d'espèces : fichiers `species/*.ron` trouvés au dernier scan.
+    pub species_files: Vec<String>,
+    /// Index, dans [`species_files`](Self::species_files), de l'espèce choisie pour l'import.
+    pub species_selected: Option<usize>,
 }
 
 /// Couleur d'une espèce, en `egui::Color32`, **dérivée** de l'unique palette du
@@ -66,7 +70,27 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         next_seed: config.seed ^ 0xED17,
         save_path: "scenarios/edited.ron".to_string(),
         status: String::new(),
+        species_files: scan_species(),
+        species_selected: None,
     });
+}
+
+/// Liste les espèces de la bibliothèque (`species/*.ron`), triées. Miroir du scan de
+/// scénarios ([`crate::runs`]) ; un dossier absent donne simplement une liste vide.
+fn scan_species() -> Vec<String> {
+    let mut found = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("species") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("ron")
+                && let Some(s) = path.to_str()
+            {
+                found.push(s.to_string());
+            }
+        }
+    }
+    found.sort();
+    found
 }
 
 /// Résolution du glisser-déposer d'un archétype dans l'aire de jeu. Système
@@ -205,10 +229,100 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
         palette.selected = None;
     }
 
+    ui.separator();
+    species_library_section(ui, palette, config);
+
     if palette.dragging.is_some() {
         ui.separator();
         ui.weak("Relâche au-dessus de l'aire pour déposer.");
     }
+}
+
+/// **Bibliothèque d'espèces** (item 4) : rendre une espèce réutilisable hors scénario.
+///
+/// - **Exporter** l'archétype sélectionné vers `species/<nom>.ron` (`source` effacé : le
+///   fichier *est* la source).
+/// - **Importer** une espèce : une **copie** rejoint le scénario (qui reste autonome,
+///   §9), en retenant le fichier comme `source`.
+/// - **Synchroniser** un archétype importé : recharge sa définition depuis `source`, en
+///   gardant l'effectif local. Le choix « copie + lien de resynchro » de l'item 4.
+fn species_library_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
+    egui::CollapsingHeader::new("Bibliothèque d'espèces")
+        .default_open(false)
+        .show(ui, |ui| {
+            // Export / synchro de l'archétype sélectionné.
+            if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
+                if ui
+                    .button("📤 Exporter la sélection → species/")
+                    .on_hover_text("Sauve l'archétype comme espèce réutilisable.")
+                    .clicked()
+                {
+                    palette.status = export_species(&config.archetypes[i]);
+                    palette.species_files = scan_species();
+                }
+                if let Some(src) = config.archetypes[i].source.clone()
+                    && ui
+                        .button("↻ Synchroniser depuis la source")
+                        .on_hover_text(format!(
+                            "Recharge la définition depuis {src} (garde l'effectif local)."
+                        ))
+                        .clicked()
+                {
+                    palette.status = sync_species(config, i);
+                }
+            } else {
+                ui.weak("Sélectionne un archétype pour l'exporter / le synchroniser.");
+            }
+
+            ui.separator();
+            // Import : combo des `species/*.ron`. On travaille sur des copies locales
+            // pour ne pas emprunter `palette` à la fois en lecture (liste) et en écriture
+            // (sélection) dans la fermeture du combo (cf. `crate::runs`).
+            let files = palette.species_files.clone();
+            let mut sel = palette.species_selected;
+            let mut rescan = false;
+            let mut to_import = None;
+            ui.horizontal(|ui| {
+                let label = sel
+                    .and_then(|j| files.get(j))
+                    .map(String::as_str)
+                    .unwrap_or("(choisir une espèce…)");
+                egui::ComboBox::from_id_salt("species_import")
+                    .selected_text(label)
+                    .show_ui(ui, |ui| {
+                        for (j, path) in files.iter().enumerate() {
+                            ui.selectable_value(&mut sel, Some(j), path);
+                        }
+                    });
+                if ui.button("↻").on_hover_text("Rescanner species/").clicked() {
+                    rescan = true;
+                }
+            });
+            if ui
+                .add_enabled(sel.is_some(), egui::Button::new("📥 Importer (copie)"))
+                .on_hover_text(
+                    "Ajoute une COPIE de l'espèce au scénario (réimporter pour resynchroniser).",
+                )
+                .clicked()
+                && let Some(path) = sel.and_then(|j| files.get(j))
+            {
+                to_import = Some(path.clone());
+            }
+
+            palette.species_selected = sel;
+            if rescan {
+                palette.species_files = scan_species();
+                palette.species_selected = None;
+            }
+            if let Some(path) = to_import {
+                palette.status = import_species(config, &path);
+                palette.selected = Some(config.archetypes.len().saturating_sub(1));
+            }
+
+            if !palette.status.is_empty() {
+                ui.weak(&palette.status);
+            }
+        });
 }
 
 /// Retire l'archétype `i` et **remappe la table de relations** : les relations qui le
@@ -260,6 +374,80 @@ fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
     for r in &mut config.relations {
         transpose(&mut r.actor);
         transpose(&mut r.target);
+    }
+}
+
+/// Exporte un archétype comme **espèce réutilisable** vers `species/<nom>.ron`. Le champ
+/// `source` est effacé : le fichier exporté *est* la source (pas d'auto-référence si on
+/// ré-exporte une espèce importée). Renvoie un message d'état pour l'UI.
+fn export_species(arch: &Archetype) -> String {
+    let _ = std::fs::create_dir_all("species");
+    let path = format!("species/{}.ron", sanitize_filename(&arch.name));
+    let mut def = arch.clone();
+    def.source = None;
+    match def.save_ron_file(&path) {
+        Ok(()) => format!("Espèce exportée → {path}"),
+        Err(e) => format!("Échec export : {e}"),
+    }
+}
+
+/// Importe une espèce : une **copie** rejoint le scénario (qui reste autonome, §9), en
+/// retenant le fichier comme `source` (pour la resynchro). Ajoutée en fin de liste, donc
+/// sans décaler les index de relations. Renvoie un message d'état.
+fn import_species(config: &mut SimConfig, path: &str) -> String {
+    match Archetype::from_ron_file(path) {
+        Ok(mut arch) => {
+            arch.source = Some(path.to_string());
+            config.archetypes.push(arch);
+            format!("Espèce importée (copie) ← {path}")
+        }
+        Err(e) => format!("Échec import : {e}"),
+    }
+}
+
+/// Resynchronise l'archétype `i` depuis son fichier `source` : recharge la définition et
+/// la réapplique en **gardant l'effectif local** (`count`). Renvoie un message d'état.
+fn sync_species(config: &mut SimConfig, i: usize) -> String {
+    let Some(src) = config.archetypes[i].source.clone() else {
+        return "Cet archétype n'a pas de source à synchroniser.".to_string();
+    };
+    match Archetype::from_ron_file(&src) {
+        Ok(loaded) => {
+            merge_species_def(&mut config.archetypes[i], loaded, src.clone());
+            format!("Espèce resynchronisée ← {src}")
+        }
+        Err(e) => format!("Échec synchro : {e}"),
+    }
+}
+
+/// Réapplique une définition d'espèce `loaded` sur `target`, en **préservant l'effectif**
+/// (`count`, propre au scénario) et en re-fixant le lien `source`. Le reste (corps,
+/// cerveau, couleur, nom, mutabilité) vient de la définition. Pur (sans I/O) → testable ;
+/// [`sync_species`] n'y ajoute que la lecture du fichier.
+fn merge_species_def(target: &mut Archetype, loaded: Archetype, source: String) {
+    let count = target.count;
+    *target = loaded;
+    target.count = count;
+    target.source = Some(source);
+}
+
+/// Nettoie un nom d'espèce en un nom de fichier sûr : on garde lettres/chiffres, `-` et
+/// `_`, tout le reste devient `_` ; un nom vide retombe sur « espece ».
+fn sanitize_filename(name: &str) -> String {
+    let s: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if s.is_empty() {
+        "espece".to_string()
+    } else {
+        s
     }
 }
 
@@ -918,5 +1106,41 @@ mod tests {
         let n = config.archetypes.len();
         assert_eq!(duplicate_archetype(&mut config, 99), None);
         assert_eq!(config.archetypes.len(), n, "rien ajouté");
+    }
+
+    /// Resynchroniser une espèce importée **préserve l'effectif local** (`count`) et
+    /// re-fixe le lien `source` ; tout le reste (corps, nom…) vient de la définition.
+    #[test]
+    fn merge_species_preserves_local_count_and_relinks() {
+        let mut target = Archetype::new_agent(0);
+        target.count = 50; // effectif propre à CE scénario
+        target.name = "renommé localement".into();
+        // La définition rechargée : autre corps (nourriture), autre nom, autre effectif.
+        let mut loaded = Archetype::new_food(1);
+        loaded.count = 7;
+        loaded.name = "depuis le fichier".into();
+
+        merge_species_def(&mut target, loaded, "species/x.ron".into());
+
+        assert_eq!(target.count, 50, "l'effectif local est préservé");
+        assert_eq!(
+            target.name, "depuis le fichier",
+            "le reste vient de la définition"
+        );
+        assert!(target.is_food(), "le corps vient de la définition");
+        assert_eq!(
+            target.source.as_deref(),
+            Some("species/x.ron"),
+            "le lien de resynchro est re-fixé"
+        );
+    }
+
+    /// La sanitisation d'un nom d'espèce en nom de fichier : caractères sûrs gardés, le
+    /// reste en `_`, un nom vide retombe sur un défaut.
+    #[test]
+    fn sanitize_filename_keeps_safe_chars() {
+        assert_eq!(sanitize_filename("Loup gris/2"), "Loup_gris_2");
+        assert_eq!(sanitize_filename("alpha-1_b"), "alpha-1_b");
+        assert_eq!(sanitize_filename(""), "espece");
     }
 }

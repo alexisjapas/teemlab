@@ -31,9 +31,13 @@ ouverts au §9.
   prédateur approche, un prédateur de sommet reste un pur chasseur (le pendant, côté fuite,
   de l'insight de l'item 17). Driver `tests/flight.rs` (miroir de `hunter.rs`) ;
   `proie_predateur` recalibré (arène élargie = refuges, la leçon spatiale de l'item 17).
-- **Phase 2 — finitions d'éditeur** (partiel) : l'éditeur d'archétypes sait désormais
+- **Phase 2 — finitions d'éditeur + bibliothèque d'espèces** : l'éditeur d'archétypes sait
   **dupliquer** (clone en fin de liste, relations non copiées) et **réordonner** (▲/▼, avec
-  *transposition* des index dans la table de relations), en plus de créer/supprimer.
+  *transposition* des index dans la table de relations), en plus de créer/supprimer. Et une
+  espèce est désormais une unité **sérialisable, réutilisable** entre scénarios (item 4) :
+  export vers `species/*.ron`, import par **copie** (le scénario reste autonome, §9) avec un
+  lien de provenance (`Archetype.source`, additif/rétro-compatible) pour une
+  **resynchronisation** qui préserve l'effectif local.
 - **Paramètres de monde dans l'UI** : `tick_hz` (cadence de sim, « (reset) » — ré-appliquée
   au reset, le point de passage unique que le rechargement de scénario déclenche aussi) et
   les **10 bornes de gènes** (`*_bounds`, section « Bornes des gènes ») rejoignent l'éditeur,
@@ -45,9 +49,6 @@ ouverts au §9.
 
 **Reste à faire.**
 
-- **Phase 2 — bibliothèque d'espèces** réutilisables hors scénario (§9, demande
-  utilisateur — à concevoir : périmètre d'une déf, fichiers `species/*.ron`,
-  référencement, migration). *(Réordonner / dupliquer des archétypes : **fait**, cf. « Fait ».)*
 - **Phase 3 — flore évolutive** (le vrai « tout est entité ») : dissoudre le type spécial
   `Food` en un archétype à **génotype sessile** (croissance, dissémination, semis local).
   Verrou : `Genotype` doit devenir variable par type d'entité (enum / superset /
@@ -510,17 +511,17 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   fondateur* lui-même (vitesse, vision, …) reste **partagé** entre espèces. Le replier (et le rendre
   per-espèce) casse le RON de tous les scénarios (champs de premier niveau → imbriqués) → à faire avec
   une migration des `.ron` versionnés, le jour où un scénario exige des corps distincts.
-- **Espèces persistables et réutilisables hors scénario** (demande utilisateur — *à concevoir*) :
-  aujourd'hui une « espèce » n'existe qu'**à l'intérieur** d'un `SimConfig` (son génotype fondateur, son
-  cerveau, sa réserve max, ses facets de mutabilité y sont dispersés). Objectif : faire de l'espèce une
-  **unité de premier ordre, sérialisable, sauvegardable et réutilisable** entre scénarios — on définit/
-  élève une espèce une fois, on la **réimporte** dans plusieurs scénarios (bibliothèque d'espèces). C'est
-  l'extension directe du « repli en archétype par espèce » ci-dessus. **Forks à trancher (non conçus) :**
-  périmètre exact d'une déf espèce (génotype fondateur + cerveau + réserve max + facets de mutabilité ?
-  couleur ? relations, *non* — elles sont inter-espèces, donc scénario) ; où vivent les fichiers
-  (`species/*.ron` ?) ; comment un scénario les **référence** (par chemin/nom, copie à l'import vs lien) ;
-  articulation avec les vecteurs par espèce existants ; migration/rétro-compat des `.ron`. À concevoir
-  avant implémentation.
+- **Espèces persistables et réutilisables hors scénario** (demande utilisateur) — **fait (item 4)**.
+  L'archétype-first (item 18d) avait déjà fait de l'espèce une unité de premier ordre *dans* le
+  `SimConfig` (un `Archetype` = corps + cerveau + réserve + mutabilité + couleur) ; l'item 4 la rend
+  **sérialisable et réutilisable entre scénarios** : un `Archetype` s'exporte vers `species/*.ron` et
+  s'importe ailleurs. **Forks tranchés** : *périmètre* = l'`Archetype` entier **moins les relations**
+  (inter-espèces → scénario) ; *fichiers* = `species/*.ron`, un archétype par fichier ; *référencement*
+  = **copie à l'import** (le scénario reste autonome et reproductible — aucun changement de schéma
+  `SimConfig`, aucune migration) **avec lien de provenance** (`Archetype.source`, `Option`, omis du RON
+  quand absent) ouvrant une **resynchronisation** qui **préserve l'effectif local** (`count`, propre au
+  scénario). L'effectif reste donc per-scénario ; à la resynchro, tout le reste (corps, cerveau, couleur,
+  nom, mutabilité) vient de la définition. Espèce de démonstration versionnée : `species/chasseur.ron`.
 - **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
   vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
   pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des

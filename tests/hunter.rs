@@ -43,6 +43,7 @@ fn hunter_sees_and_chases_its_target() {
                     brain: BrainKind::Hunter,
                     mutable: Mutability::default(),
                 },
+                source: None,
             },
             Archetype {
                 name: "Nourriture".into(),
@@ -51,6 +52,7 @@ fn hunter_sees_and_chases_its_target() {
                 radius: 6.0,
                 reserve_max: 50.0,
                 kind: ArchetypeKind::Food { regen: 0.0 },
+                source: None,
             },
         ],
         relations: vec![Relation {

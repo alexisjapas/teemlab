@@ -85,6 +85,14 @@ pub struct Archetype {
     pub reserve_max: f32,
     /// Ce qui distingue un agent (décideur mobile) d'une nourriture (source sessile).
     pub kind: ArchetypeKind,
+    /// Provenance : le fichier `species/*.ron` d'où cet archétype a été **importé**
+    /// (bibliothèque d'espèces). L'import en fait une *copie* (le scénario reste
+    /// autonome, §9), mais retient ce lien pour permettre la **resynchronisation** —
+    /// recharger la définition à jour depuis le fichier, tout en gardant l'effectif
+    /// local. `None` pour un archétype défini directement dans le scénario. Omis du RON
+    /// quand absent (`skip_serializing_if`) : les scénarios sans import sont inchangés.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// Ce qu'un archétype *est* : un décideur mobile, ou une source sessile. Point
@@ -133,6 +141,7 @@ impl Archetype {
                 brain: BrainKind::default(),
                 mutable: Mutability::default(),
             },
+            source: None,
         }
     }
 
@@ -145,6 +154,7 @@ impl Archetype {
             radius: 6.0,
             reserve_max: 50.0,
             kind: ArchetypeKind::Food { regen: 0.0 },
+            source: None,
         }
     }
 
@@ -156,6 +166,32 @@ impl Archetype {
     /// `true` si c'est une source de nourriture.
     pub fn is_food(&self) -> bool {
         matches!(self.kind, ArchetypeKind::Food { .. })
+    }
+
+    /// Sérialise l'archétype en RON lisible — l'**export** d'une espèce réutilisable
+    /// vers la bibliothèque (`species/*.ron`, item 4).
+    pub fn to_ron_string(&self) -> Result<String, ron::Error> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+    }
+
+    /// Désérialise un archétype (une *espèce*) depuis une chaîne RON.
+    pub fn from_ron_str(text: &str) -> Result<Self, ron::error::SpannedError> {
+        ron::from_str(text)
+    }
+
+    /// Charge une espèce depuis un fichier RON de la bibliothèque.
+    pub fn from_ron_file(path: impl AsRef<Path>) -> Result<Self, ScenarioError> {
+        let text = std::fs::read_to_string(path)?;
+        Ok(Self::from_ron_str(&text)?)
+    }
+
+    /// Écrit l'archétype dans un fichier RON (une *espèce* réutilisable).
+    pub fn save_ron_file(&self, path: impl AsRef<Path>) -> Result<(), ScenarioError> {
+        let text = self
+            .to_ron_string()
+            .map_err(|e| ScenarioError::Io(std::io::Error::other(e.to_string())))?;
+        std::fs::write(path, text)?;
+        Ok(())
     }
 }
 
@@ -536,6 +572,45 @@ mod tests {
         let text = cfg.to_ron_string().expect("sérialisation RON");
         let back = SimConfig::from_ron_str(&text).expect("relecture RON");
         assert_eq!(cfg, back);
+    }
+
+    /// Une espèce (archétype) fait l'aller-retour RON sans perte, `source` compris —
+    /// l'export/import de la bibliothèque (item 4).
+    #[test]
+    fn archetype_ron_roundtrip_is_lossless() {
+        let mut a = Archetype::new_agent(0);
+        a.source = Some("species/loup.ron".into());
+        let back =
+            Archetype::from_ron_str(&a.to_ron_string().expect("sérialisation")).expect("relecture");
+        assert_eq!(a, back);
+    }
+
+    /// L'espèce versionnée de la bibliothèque parse en un archétype d'agent chasseur,
+    /// sans `source` (le fichier *est* la source). Garde-fou : son schéma suit `Archetype`.
+    #[test]
+    fn bundled_species_parses_as_a_hunter_agent() {
+        let text = include_str!("../species/chasseur.ron");
+        let a = Archetype::from_ron_str(text).expect("espèce chasseur valide");
+        assert!(a.is_agent());
+        let ArchetypeKind::Agent { brain, .. } = &a.kind else {
+            unreachable!()
+        };
+        assert_eq!(*brain, BrainKind::Hunter);
+        assert_eq!(a.source, None, "un fichier d'espèce n'a pas de source");
+    }
+
+    /// Une espèce sans `source` n'émet pas le champ (skip_serializing_if) et se relit en
+    /// `None` : les archétypes de scénario non importés restent inchangés (pas de migration).
+    #[test]
+    fn archetype_without_source_omits_the_field() {
+        let a = Archetype::new_food(1);
+        assert_eq!(a.source, None);
+        let text = a.to_ron_string().expect("sérialisation");
+        assert!(
+            !text.contains("source"),
+            "le champ source doit être omis quand None :\n{text}"
+        );
+        assert_eq!(Archetype::from_ron_str(&text).expect("relecture"), a);
     }
 
     /// Le scénario par défaut versionné reste synchronisé avec [`SimConfig::default`].

@@ -43,6 +43,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
                 brain: BrainKind::default(),
                 mutable: Mutability::default(),
             },
+            source: None,
         }],
         relations: Vec::new(),
         seed: 0x5EED,
