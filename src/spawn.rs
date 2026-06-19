@@ -55,46 +55,32 @@ pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     }
 }
 
-/// Population fondatrice : agents dispersés au hasard, tous issus du génotype
-/// fondateur du scénario (l'« archétype »), graînés de façon déterministe.
-///
-/// Deux modes pour l'**effectif par espèce** : explicite si le scénario donne
-/// `agents_per_species` (`[s]` agents de l'espèce `s` — le levier d'une pyramide
-/// trophique), sinon le partage *uniforme* historique (`agent_count` en
-/// round-robin sur `species_count`). Dans le cas uniforme, la suite (espèce,
-/// tirages RNG) est rigoureusement celle d'avant l'ajout → un scénario existant
-/// spawn à l'identique.
+/// Population fondatrice : pour chaque archétype d'**agent**, son effectif (`count`)
+/// d'agents dispersés au hasard, chacun compilé depuis le génotype et le cerveau de
+/// son archétype, graîné de façon déterministe. La nourriture est peuplée par
+/// [`crate::ecology::replenish_food`]. L'ordre — espèces **contiguës** dans l'ordre
+/// des archétypes — fixe le flux de tirages RNG.
 fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     let mut rng = Rng::new(config.seed);
-    let r = config.agent_radius;
-    let span = config.arena_half_extent - r - 5.0;
-    let genotype = Genotype::base(config);
-
-    // La suite des espèces à peupler, dans l'ordre de spawn.
-    let species_seq: Vec<u16> = if config.agents_per_species.is_empty() {
-        // Uniforme : round-robin (au moins une espèce, même si un scénario met 0).
-        let species_count = config.species_count.max(1);
-        (0..config.agent_count)
-            .map(|i| (i as u16) % species_count)
-            .collect()
-    } else {
-        // Explicite : `n` agents de l'espèce `s`, espèces dans l'ordre.
-        config
-            .agents_per_species
-            .iter()
-            .enumerate()
-            .flat_map(|(s, &n)| std::iter::repeat_n(s as u16, n))
-            .collect()
-    };
+    // La suite des espèces à peupler : `count` agents par archétype d'agent, dans
+    // l'ordre des archétypes.
+    let species_seq: Vec<u16> = config
+        .archetypes
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.is_agent())
+        .flat_map(|(i, a)| std::iter::repeat_n(i as u16, a.count))
+        .collect();
 
     for (i, species) in species_seq.into_iter().enumerate() {
+        let span = config.arena_half_extent - config.agent_radius_of(species) - 5.0;
         let pos = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
         let heading = rng.next_f32() * std::f32::consts::TAU;
         let brain_seed = config.seed ^ (i as u64).wrapping_mul(0x9E37_79B1);
         spawn_agent(
             commands,
             config,
-            genotype,
+            config.genotype_of(species),
             Species(species),
             pos,
             heading,

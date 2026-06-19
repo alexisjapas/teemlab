@@ -1,90 +1,143 @@
-// Scénario — COHABITATION TÉMOIN / APPRIS (item 18a).
-//
-// La couture « cerveau par espèce » mise à l'épreuve : deux espèces partagent LE
-// MÊME corps (un seul génotype fondateur, v1) et LA MÊME économie, et ne diffèrent
-// QUE par le cerveau. C'est l'expérience contrôlée du §4 — « le déterministe sert de
-// groupe témoin : un cerveau qui ne le bat pas n'a rien appris » — montée ici avec
-// les DEUX cerveaux déterministes existants, avant que le MLP (18b) n'arrive :
-//
-//   espèce 0 — CHASSEUR (témoin compétent) : voit la nourriture, fonce dessus.
-//   espèce 1 — ERRANCE  (témoin naïf)      : dérive au hasard, ignore la perception.
-//
-// Les deux broutent la MÊME nourriture (espèce 2), avec le même débit. La seule
-// variable indépendante étant le cerveau, l'écart de réussite qui en résulte mesure
-// exactement ce que « fourrager intelligemment » rapporte. Compétition pour une
-// ressource limitée (repousse finie) → le fourrageur efficace prend la plus grosse
-// part : on attend la DOMINATION du chasseur (population/énergie) sur l'errant, et ce
-// robustement (driver `tests/cohabitation`, 5 graines).
-//
-// La couture est double (item 18a) : (1) `brains_per_species` fonde un cerveau par
-// espèce ; (2) à la reproduction, l'enfant HÉRITE du cerveau de son parent
-// (`Brain::reproduce`) — sinon les deux lignées convergeraient vers le cerveau global.
-// Le driver vérifie justement que tout descendant d'espèce 0 reste un chasseur, et
-// tout descendant d'espèce 1 un errant, sur de nombreuses générations.
-//
-//     cargo run --bin teemlab  scenarios/cohabitation.ron
-//     cargo run --bin headless scenarios/cohabitation.ron
 (
-    // Arène modérée : assez d'espace pour que l'errance ne trébuche pas constamment
-    // sur la nourriture (sinon l'avantage du chasseur s'effacerait), assez dense pour
-    // que les deux lignées vivent.
-    arena_half_extent: 360.0,
     tick_hz: 64.0,
-
-    // Effectifs égaux : départ équitable, seul le cerveau diffère. Espèce 0 = témoin
-    // compétent (chasseur), espèce 1 = témoin naïf (errance). L'archétype (génotype)
-    // est PARTAGÉ — seul le cerveau est per-espèce (la couture de l'item 18a).
-    species_count: 2,
-    agents_per_species: [30, 30],
-    agent_radius: 8.0,
-    reserve_max: 120.0,
-
-    // LA variable indépendante : un cerveau par espèce. `brain` (uniforme) ne sert
-    // que de repli ; ici les deux entrées sont explicites.
-    brain: Hunter,
-    brains_per_species: [Hunter, Wander(turn_rate: 0.25)],
-
-    // Vision : le chasseur s'en sert, l'errant la subit (il en paie le coût sans la
-    // lire) — c'est exactement le prix d'un capteur inexploité, et c'est équitable
-    // puisque le génotype est partagé.
-    vision_rays: 7,
-    vision_fov_deg: 130.0,
-    vision_range: 160.0,
-
-    // Coûts (par seconde), identiques pour les deux espèces (génotype partagé,
-    // non héritables par défaut : ils SONT la pression de sélection).
-    base_metabolism: 4.0,
-    move_cost: 2.0,
-
-    // La nourriture (espèce 2) : ressource commune et LIMITÉE (repousse finie → une
-    // capacité de charge). Énergie entrante ≈ food_regen × food_energy ≈ 14 × 50 =
-    // 700/s ; rapportée au métabolisme par tête (~6,5/s), capacité ~108 agents pour
-    // 60 fondateurs → marge de croissance, puis compétition. C'est cette compétition
-    // qui creuse l'écart : le chasseur trouve la nourriture, l'errant l'épuise moins.
-    food_count: 120,
-    food_radius: 7.0,
-    food_energy: 50.0,
-    food_regen: 14.0,
-    food_species: 2,
-
-    // Les deux espèces broutent la MÊME nourriture, au MÊME débit. Manger reste la
-    // primitive d'interaction (§3) au contact — le chasseur n'a qu'à venir dessus,
-    // l'errant n'y arrive que par hasard.
-    relations: [
-        (actor: 0, target: 2, transfer: true, rate: 200.0, range: 26.0),
-        (actor: 1, target: 2, transfer: true, rate: 200.0, range: 26.0),
+    arena_half_extent: 360.0,
+    archetypes: [
+        (
+            name: "Chasseur",
+            color: (0.3, 0.7, 1.0),
+            count: 30,
+            radius: 8.0,
+            reserve_max: 120.0,
+            kind: Agent(
+                genotype: (
+                    max_speed: 140.0,
+                    agility: 0.12,
+                    vision_range: 160.0,
+                    vision_fov_deg: 130.0,
+                    reproduction_threshold: 95.0,
+                    offspring_energy: 45.0,
+                    mutation_rate: 0.06,
+                    base_metabolism: 4.0,
+                    move_cost: 2.0,
+                    vision_rays: 7.0,
+                ),
+                brain: Hunter,
+                mutable: (
+                    max_speed: true,
+                    agility: true,
+                    vision_range: true,
+                    vision_fov: true,
+                    reproduction_threshold: true,
+                    offspring_energy: true,
+                    mutation_rate: false,
+                    base_metabolism: false,
+                    move_cost: false,
+                    vision_rays: true,
+                ),
+            ),
+        ),
+        (
+            name: "Errance",
+            color: (1.0, 0.45, 0.35),
+            count: 30,
+            radius: 8.0,
+            reserve_max: 120.0,
+            kind: Agent(
+                genotype: (
+                    max_speed: 140.0,
+                    agility: 0.12,
+                    vision_range: 160.0,
+                    vision_fov_deg: 130.0,
+                    reproduction_threshold: 95.0,
+                    offspring_energy: 45.0,
+                    mutation_rate: 0.06,
+                    base_metabolism: 4.0,
+                    move_cost: 2.0,
+                    vision_rays: 7.0,
+                ),
+                brain: Wander(
+                    turn_rate: 0.25,
+                ),
+                mutable: (
+                    max_speed: true,
+                    agility: true,
+                    vision_range: true,
+                    vision_fov: true,
+                    reproduction_threshold: true,
+                    offspring_energy: true,
+                    mutation_rate: false,
+                    base_metabolism: false,
+                    move_cost: false,
+                    vision_rays: true,
+                ),
+            ),
+        ),
+        (
+            name: "Nourriture",
+            color: (0.55, 0.9, 0.45),
+            count: 120,
+            radius: 7.0,
+            reserve_max: 50.0,
+            kind: Food(
+                regen: 14.0,
+            ),
+        ),
     ],
-
-    // La boucle évolutive (item 9), partagée par les deux lignées. Seuil ≤
-    // reserve_max pour rester atteignable. C'est elle qui exerce l'HÉRITAGE du
-    // cerveau : chaque enfant reconduit le cerveau de son espèce.
-    reproduction_threshold: 95.0,
-    offspring_energy: 45.0,
-    mutation_rate: 0.06,
-
-    // Bornes des gènes (le « bornes » du triplet du §2).
-    speed_bounds: (min: 40.0, max: 260.0),
-    agility_bounds: (min: 0.02, max: 0.5),
-    vision_range_bounds: (min: 30.0, max: 300.0),
-    vision_fov_bounds: (min: 40.0, max: 280.0),
+    relations: [
+        (
+            actor: 0,
+            target: 2,
+            transfer: true,
+            rate: 200.0,
+            range: 26.0,
+        ),
+        (
+            actor: 1,
+            target: 2,
+            transfer: true,
+            rate: 200.0,
+            range: 26.0,
+        ),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 260.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 30.0,
+        max: 300.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    seed: 12648430,
 )

@@ -1,106 +1,84 @@
-// Scénario par défaut de teemlab.
-//
-// Un scénario EST la donnée d'une run : le même fichier pilote le build fenêtré
-// et le build headless, à l'identique. Tous les champs sont optionnels —
-// `#[serde(default)]` retombe sur SimConfig::default — donc un `()` vide est un
-// scénario valide. Ce fichier liste les défauts en entier, à titre de doc.
-//
-//     cargo run --bin teemlab  scenarios/default.ron
-//     cargo run --bin headless scenarios/default.ron
 (
-    // Cadence du timestep fixe, en Hz. Stabilité du solveur, indépendante du
-    // rendu.
     tick_hz: 64.0,
-
-    // Demi-côté de l'arène carrée, en unités monde.
     arena_half_extent: 400.0,
-
-    // Peuplement initial.
-    agent_count: 48,
-    agent_radius: 8.0,
-
-    // Vitesse maximale d'un agent.
-    max_speed: 140.0,
-
-    // Vision par raycast. La *forme* (nombre de rayons) est verrouillée par
-    // espèce ; ce sont les magnitudes (portée, champ) que les gènes feront
-    // varier plus tard. Plus de portée = plus de coût métabolique (cf. §7).
-    vision_rays: 7,
-    vision_fov_deg: 120.0,
-    vision_range: 160.0,
-
-    // Espèces et réserve. Une seule espèce et une table de relations vide → monde
-    // inerte : personne n'agit sur personne. Voir scenarios/predation.ron pour
-    // un exemple de prédation entre deux espèces.
-    species_count: 1,
-    // Effectifs PAR espèce au spawn. Vide → partage uniforme : agent_count réparti
-    // en round-robin sur species_count. Non vide, il prime (et fixe le nombre
-    // d'espèces) : `[10, 60]` = 10 agents de l'espèce 0, 60 de l'espèce 1 — le
-    // levier d'une pyramide trophique (cf. scenarios/proie_predateur.ron).
-    agents_per_species: [],
-    reserve_max: 100.0,
-
-    // Type de cerveau des agents (l'auteur de la décision, §1). Chaque variant
-    // porte ses propres paramètres d'archétype (édités dans le sélecteur de cerveau
-    // de l'éditeur) : `Wander(turn_rate: …)` — errance, turn_rate = amplitude de la
-    // dérive de cap par tick — ou `Hunter` (réflexe déterministe qui fonce vers la
-    // cible perçue la plus proche, item 16 ; sans paramètre). Voir scenarios/chasse.ron.
-    brain: Wander(turn_rate: 0.25),
-
+    archetypes: [
+        (
+            name: "Espèce 0",
+            color: (0.3, 0.7, 1.0),
+            count: 48,
+            radius: 8.0,
+            reserve_max: 100.0,
+            kind: Agent(
+                genotype: (
+                    max_speed: 140.0,
+                    agility: 0.12,
+                    vision_range: 160.0,
+                    vision_fov_deg: 120.0,
+                    reproduction_threshold: 0.0,
+                    offspring_energy: 30.0,
+                    mutation_rate: 0.0,
+                    base_metabolism: 0.0,
+                    move_cost: 0.0,
+                    vision_rays: 7.0,
+                ),
+                brain: Wander(
+                    turn_rate: 0.25,
+                ),
+                mutable: (
+                    max_speed: true,
+                    agility: true,
+                    vision_range: true,
+                    vision_fov: true,
+                    reproduction_threshold: true,
+                    offspring_energy: true,
+                    mutation_rate: false,
+                    base_metabolism: false,
+                    move_cost: false,
+                    vision_rays: true,
+                ),
+            ),
+        ),
+    ],
     relations: [],
-
-    // Économie d'énergie (cf. item 8). Tout à zéro/néant ici → monde inerte :
-    // pas de métabolisme, pas de nourriture, personne ne meurt. Voir
-    // scenarios/selection.ron pour une économie de sélection naturelle calibrée.
-    base_metabolism: 0.0,
-    move_cost: 0.0,
-    food_count: 0,
-    food_radius: 6.0,
-    food_energy: 50.0,
-    food_regen: 0.0,
-    food_species: 1,
-
-    // Évolution (cf. item 9). agility, mutation_rate, reproduction_threshold et
-    // offspring_energy sont les valeurs FONDATRICES de gènes (l'archétype),
-    // compilées dans le génotype de chaque agent puis muables. À 0, mutation_rate
-    // et reproduction_threshold éteignent l'évolution (ni mutation ni
-    // reproduction). Les `*_bounds` sont les bornes de ces gènes (le « bornes » du
-    // triplet du §2). Voir scenarios/evolution.ron.
-    agility: 0.12,
-    mutation_rate: 0.0,
-    reproduction_threshold: 0.0,
-    offspring_energy: 30.0,
-    speed_bounds: (min: 40.0, max: 260.0),
-    agility_bounds: (min: 0.02, max: 0.5),
-    vision_range_bounds: (min: 40.0, max: 300.0),
-    vision_fov_bounds: (min: 40.0, max: 280.0),
-    reproduction_threshold_bounds: (min: 0.0, max: 200.0),
-    offspring_energy_bounds: (min: 10.0, max: 120.0),
-    mutation_rate_bounds: (min: 0.0, max: 0.5),
-    base_metabolism_bounds: (min: 0.0, max: 20.0),
-    move_cost_bounds: (min: 0.0, max: 20.0),
-    // Bornes (entières) du gène de précision visuelle : 1 à 21 rayons.
-    vision_rays_bounds: (min: 1.0, max: 21.0),
-
-    // Facet « mutable ? » par trait (§2) : true → le gène mute et dérive ;
-    // false → il est quand même transmis mais reste cloué à la valeur du fondateur
-    // ci-dessus. Tout mutable par défaut sauf les coûts et le taux de mutation.
-    mutable: (
-        max_speed: true,
-        agility: true,
-        vision_range: true,
-        vision_fov: true,
-        reproduction_threshold: true,
-        offspring_energy: true,
-        // Précision visuelle (nombre de rayons) : mutable, bornée par son coût.
-        vision_rays: true,
-        // Non mutables : taux de mutation (méta-évolution) et les coûts, qui
-        // SONT la pression de sélection (évolvables, ils tomberaient à 0).
-        mutation_rate: false,
-        base_metabolism: false,
-        move_cost: false,
+    speed_bounds: (
+        min: 40.0,
+        max: 260.0,
     ),
-
-    // Graine RNG. Rejoue une *config d'expérience* (littéral hex accepté).
-    seed: 0x00C0FFEE,
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 40.0,
+        max: 300.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    seed: 12648430,
 )

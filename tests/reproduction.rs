@@ -17,15 +17,33 @@ use teemlab::{SimConfig, SimPlugin};
 
 /// Un monde de reproduction *pur* : un seul agent, pas de métabolisme ni de
 /// nourriture ni d'interaction → la seule chose qui peut bouger l'énergie est la
-/// reproduction. On isole ainsi l'invariant testé.
-fn reproduction_only_config() -> SimConfig {
-    SimConfig {
-        agent_count: 1,
-        species_count: 1,
+/// reproduction. On isole ainsi l'invariant testé. La capacité, le seuil et le coût
+/// de reproduction sont paramétrés (gènes de l'unique archétype).
+fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
+    use teemlab::brain::BrainKind;
+    use teemlab::config::{Archetype, ArchetypeKind, Mutability};
+    use teemlab::genotype::Genotype;
+    let genotype = Genotype {
+        reproduction_threshold: threshold,
+        offspring_energy: offspring,
         mutation_rate: 0.0, // gènes stables : on raisonne sur des valeurs exactes.
         base_metabolism: 0.0,
         move_cost: 0.0,
-        food_count: 0,
+        ..Genotype::default()
+    };
+    SimConfig {
+        archetypes: vec![Archetype {
+            name: "Agent".into(),
+            color: Archetype::default_color(0),
+            count: 1,
+            radius: 8.0,
+            reserve_max,
+            kind: ArchetypeKind::Agent {
+                genotype,
+                brain: BrainKind::default(),
+                mutable: Mutability::default(),
+            },
+        }],
         relations: Vec::new(),
         seed: 0x5EED,
         ..SimConfig::default()
@@ -65,13 +83,9 @@ fn population_and_energy(app: &mut App) -> (usize, f32) {
 /// sans rien créer, et la population se stabilise à deux.
 #[test]
 fn reproduction_conserves_energy_in_the_normal_regime() {
-    let config = SimConfig {
-        reserve_max: 120.0,
-        reproduction_threshold: 95.0, // atteignable (= réserve de départ)
-        offspring_energy: 45.0,       // < seuil : régime sain
-        ..reproduction_only_config()
-    };
-    let initial = config.reserve_max; // l'unique fondateur naît plein.
+    // seuil atteignable (= réserve de départ), coût < seuil : régime sain.
+    let config = repro_world(120.0, 95.0, 45.0);
+    let initial = 120.0; // l'unique fondateur naît plein.
     let mut app = stepping_app(config);
 
     // Une seconde de sim : largement assez pour la (seule) reproduction.
@@ -98,13 +112,9 @@ fn reproduction_conserves_energy_in_the_normal_regime() {
 /// reproduction est simplement refusée : population et énergie restent figées.
 #[test]
 fn reproduction_is_refused_when_offspring_costs_more_than_reserve() {
-    let config = SimConfig {
-        reserve_max: 50.0,
-        reproduction_threshold: 40.0, // franchi (réserve de départ = 50)
-        offspring_energy: 80.0,       // > réserve : impossible à payer
-        ..reproduction_only_config()
-    };
-    let initial = config.reserve_max;
+    // seuil franchi (réserve de départ = 50), coût > réserve : impossible à payer.
+    let config = repro_world(50.0, 40.0, 80.0);
+    let initial = 50.0;
     let mut app = stepping_app(config);
 
     for _ in 0..64 {

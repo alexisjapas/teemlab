@@ -25,7 +25,7 @@ use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
 use teemlab::spawn;
 
 use crate::controls::SimControls;
-use crate::editor::{self, Palette};
+use crate::editor::Palette;
 use crate::hud::History;
 
 /// Une action demandée par l'UI, appliquée au prochain `PreUpdate`.
@@ -180,7 +180,6 @@ pub fn apply_scenario_load(
     panel.status = match SimConfig::from_ron_file(&path) {
         Ok(loaded) => {
             *config = loaded;
-            palette.items = editor::make_items(&config);
             palette.selected = None;
             palette.dragging = None;
             // Pause avant la reconstruction : le monde neuf naît figé.
@@ -210,7 +209,7 @@ pub fn save_snapshot(
         ),
         With<Agent>,
     >,
-    food: Query<(&Transform, &Reserve), With<Food>>,
+    food: Query<(&Transform, &Reserve, &Species), With<Food>>,
 ) {
     if !matches!(panel.pending, Some(RunAction::SaveSnapshot(_))) {
         return;
@@ -222,7 +221,7 @@ pub fn save_snapshot(
     let snapshot = Snapshot {
         config: config.clone(),
         sim_rng: sim_rng.0.clone(),
-        food_regen: regen.0,
+        food_regen: regen.0.clone(),
         agents: agents
             .iter()
             .map(
@@ -239,9 +238,10 @@ pub fn save_snapshot(
             .collect(),
         food: food
             .iter()
-            .map(|(transform, reserve)| FoodSnap {
+            .map(|(transform, reserve, species)| FoodSnap {
                 pos: transform.translation.truncate().to_array(),
                 reserve: reserve.current,
+                species: species.0,
             })
             .collect(),
     };
@@ -304,14 +304,14 @@ pub fn apply_snapshot_load(
         teemlab::ecology::spawn_food_with_energy(
             &mut commands,
             &config,
+            source.species,
             Vec2::from(source.pos),
             source.reserve,
         );
     }
 
     *sim_rng = SimRng(snapshot.sim_rng.clone());
-    regen.0 = snapshot.food_regen;
-    palette.items = editor::make_items(&config);
+    regen.0 = snapshot.food_regen.clone();
     palette.selected = None;
     palette.dragging = None;
     history.clear();

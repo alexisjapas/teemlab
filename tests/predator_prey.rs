@@ -97,7 +97,10 @@ fn run_seed(seed: u64) -> Run {
 
 #[test]
 fn predator_prey_coexists_in_a_band_across_seeds() {
-    let founder_vision = SimConfig::from_ron_str(SCENARIO).unwrap().vision_range;
+    let founder_vision = SimConfig::from_ron_str(SCENARIO)
+        .unwrap()
+        .genotype_of(0)
+        .vision_range;
 
     let mut failures = Vec::new();
     eprintln!(

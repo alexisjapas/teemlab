@@ -33,7 +33,7 @@ fn agents_stay_within_arena() {
     // Tolérance : un agent peut s'enfoncer de quelques pixels dans le demi-espace
     // avant que le solveur ne le repousse. Une évasion réelle, elle, se chiffre en
     // dizaines/centaines d'unités — donc cette marge serrée suffit à la détecter.
-    let margin = config.agent_radius + 2.0;
+    let margin = config.agent_radius_of(0) + 2.0;
 
     let world = app.world_mut();
     let mut query = world.query_filtered::<(Entity, &Transform), With<Agent>>();

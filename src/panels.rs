@@ -72,7 +72,9 @@ pub fn left_tools(
                     .show(ui, |ui| editor::world_section(ui, &mut config));
                 egui::CollapsingHeader::new("Archétypes")
                     .default_open(true)
-                    .show(ui, |ui| editor::selector_section(ui, &mut palette));
+                    .show(ui, |ui| {
+                        editor::selector_section(ui, &mut palette, &mut config)
+                    });
                 egui::CollapsingHeader::new("Éditeur d'archétype")
                     .default_open(true)
                     .show(ui, |ui| {

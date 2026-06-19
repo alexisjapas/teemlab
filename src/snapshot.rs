@@ -36,11 +36,13 @@ pub struct AgentSnap {
     pub brain: Brain,
 }
 
-/// Une source de nourriture figée (l'espèce se déduit du `SimConfig`).
+/// Une source de nourriture figée. `species` est son **index d'archétype** (une
+/// même run peut désormais porter plusieurs archétypes-nourriture distincts).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FoodSnap {
     pub pos: [f32; 2],
     pub reserve: f32,
+    pub species: u16,
 }
 
 /// L'état complet d'une run à un instant donné.
@@ -51,8 +53,8 @@ pub struct Snapshot {
     pub config: SimConfig,
     /// État du flux aléatoire de sim (repousse de nourriture, mutations).
     pub sim_rng: Rng,
-    /// Reliquat fractionnaire de repousse de nourriture.
-    pub food_regen: f32,
+    /// Reliquat fractionnaire de repousse de nourriture, **par archétype**.
+    pub food_regen: Vec<f32>,
     pub agents: Vec<AgentSnap>,
     pub food: Vec<FoodSnap>,
 }
@@ -96,10 +98,10 @@ mod tests {
         let snap = Snapshot {
             config: config.clone(),
             sim_rng: Rng::new(0xABCD),
-            food_regen: 0.42,
+            food_regen: vec![0.42],
             agents: vec![AgentSnap {
                 pos: [12.5, -7.0],
-                genotype: Genotype::base(&config),
+                genotype: Genotype::default(),
                 reserve: 73.0,
                 species: 0,
                 generation: 3,
@@ -109,6 +111,7 @@ mod tests {
             food: vec![FoodSnap {
                 pos: [-3.0, 4.0],
                 reserve: 21.0,
+                species: 1,
             }],
         };
         let text = snap.to_ron_string().expect("sérialisation RON");

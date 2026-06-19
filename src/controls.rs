@@ -151,6 +151,6 @@ pub fn apply_reset(
     spawn::populate(&mut commands, &config);
 
     *sim_rng = SimRng::from_config(&config);
-    regen.0 = 0.0;
+    regen.0.clear();
     history.clear();
 }

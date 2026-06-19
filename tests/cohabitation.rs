@@ -101,10 +101,8 @@ fn run_seed(seed: u64) -> Run {
 
 #[test]
 fn hunter_outforages_wanderer_across_seeds() {
-    let founders = SimConfig::from_ron_str(SCENARIO)
-        .unwrap()
-        .agents_per_species;
-    let hunter_founders = founders[HUNTER as usize];
+    let hunter_founders =
+        SimConfig::from_ron_str(SCENARIO).unwrap().archetypes[HUNTER as usize].count;
 
     let mut failures = Vec::new();
     eprintln!(

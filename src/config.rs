@@ -5,8 +5,15 @@
 //! *donnée* : un fichier RON que les deux points d'entrée (fenêtré et headless)
 //! chargent à l'identique. Faire varier une expérience = éditer un `.ron`, pas
 //! recompiler.
+//!
+//! La donnée **centrale** est la liste d'[`Archetype`]s : chaque entrée est une
+//! *espèce* de premier ordre (corps + décideur), et son **index** dans la liste est
+//! son identité ([`crate::components::Species`]) — ce que cible la table de
+//! [`Relation`]s. La nourriture est un archétype comme un autre
+//! ([`ArchetypeKind::Food`]) : plus de numéro spécial, donc plus de collision.
 
 use crate::brain::BrainKind;
+use crate::genotype::Genotype;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -23,105 +30,17 @@ pub struct SimConfig {
     pub tick_hz: f64,
     /// Demi-côté de l'arène carrée, en unités monde.
     pub arena_half_extent: f32,
-    /// Nombre d'agents au spawn.
-    pub agent_count: usize,
-    /// Rayon d'un agent (uniforme). Repli de
-    /// [`agent_radius_per_species`](Self::agent_radius_per_species).
-    pub agent_radius: f32,
-    /// Rayon du corps **par espèce** : `agent_radius_per_species[s]` est le rayon de
-    /// l'espèce `s`. Vide par défaut → le [`agent_radius`](Self::agent_radius) uniforme
-    /// s'applique partout (rétro-compatible) ; une espèce au-delà de la longueur
-    /// retombe aussi dessus. Calqué sur [`reserve_max_per_species`](Self::reserve_max_per_species),
-    /// additif. C'est une propriété de *corps* propre à l'espèce (pas un gène) — comme
-    /// la réserve max ; un futur gène de taille corporelle pourra s'y substituer.
-    pub agent_radius_per_species: Vec<f32>,
-    /// Vitesse maximale d'un agent.
-    pub max_speed: f32,
-    /// Nombre de rayons de vision du **fondateur** (la précision visuelle de
-    /// l'archétype). N'est plus verrouillé : c'est le gène `vision_rays` du
-    /// [`crate::genotype::Genotype`] qui le porte ensuite par individu, mutable et
-    /// hérité (cf. [`crate::genotype::TRAITS`]). Ce champ ne fait que graîner la
-    /// valeur fondatrice (`Genotype::base`).
-    pub vision_rays: usize,
-    /// Champ de vision *total*, en degrés, réparti symétriquement autour du cap.
-    pub vision_fov_deg: f32,
-    /// Portée de vision, en unités monde (= longueur max d'un rayon).
-    pub vision_range: f32,
-    /// Nombre d'espèces. Les agents sont répartis en round-robin (`i % count`)
-    /// — sauf si [`agents_per_species`](Self::agents_per_species) impose un partage
-    /// explicite.
-    pub species_count: u16,
-    /// Effectifs **par espèce** au spawn : `agents_per_species[s]` agents de
-    /// l'espèce `s`. Vide par défaut → repli sur le partage *uniforme*
-    /// (`agent_count` en round-robin sur `species_count`, le comportement d'avant
-    /// cet ajout). Non vide, il **prime** : il fixe à la fois l'effectif de chaque
-    /// espèce **et**, par sa longueur, le nombre d'espèces ; `agent_count` est alors
-    /// ignoré. C'est le levier d'une **pyramide trophique** (peu de prédateurs,
-    /// beaucoup de proies) qu'un ratio uniforme 50/50 interdit — l'archétype reste
-    /// partagé, seul l'effectif diffère.
-    pub agents_per_species: Vec<usize>,
-    /// Réserve initiale (= max) **uniforme** : la capacité d'un agent quand le
-    /// scénario ne distingue pas les espèces. Repli de
-    /// [`reserve_max_per_species`](Self::reserve_max_per_species).
-    pub reserve_max: f32,
-    /// Réserve max **par espèce** : `reserve_max_per_species[s]` est la capacité de
-    /// l'espèce `s`. Vide par défaut → la [`reserve_max`](Self::reserve_max) uniforme
-    /// s'applique partout (rétro-compatible) ; une espèce au-delà de la longueur
-    /// retombe aussi dessus. Calqué sur [`brains_per_species`](Self::brains_per_species),
-    /// additif. C'est une capacité de *corps*, propre à l'espèce — pas un gène : le
-    /// **% de remplissage** ([`crate::components::Reserve::fraction`]) reste, lui,
-    /// normalisé `[0, 1]` quelle que soit la capacité, donc comparable entre espèces.
-    pub reserve_max_per_species: Vec<f32>,
-    /// Le **type de cerveau** des agents (l'auteur de la décision, §1) : choix de
-    /// scénario, compilé en un [`crate::brain::Brain`] frais à chaque spawn
-    /// (peuplement initial **et** reproduction). `Wander` par défaut (errance,
-    /// l'échafaudage d'avant l'item 16). La substitution par espèce et le
-    /// sélecteur d'éditeur (item 15) viendront se poser dessus.
-    pub brain: BrainKind,
-    /// Cerveau **par espèce** au fondateur (item 18a) : `brains_per_species[s]`
-    /// fonde l’espèce `s`. Vide par défaut → le [`brain`](Self::brain) uniforme
-    /// s’applique partout (rétro-compatible, aucun `.ron` à migrer) ; une espèce
-    /// au-delà de la longueur retombe aussi sur `brain`. C’est le levier de la
-    /// **cohabitation** témoin/appris (§4) — corps partagé, cerveau distinct : la
-    /// substitution par espèce que les items 16 et 17 réservaient. Calqué sur
-    /// [`agents_per_species`](Self::agents_per_species), additif. Au-delà du
-    /// fondateur, le cerveau se transmet par **héritage** à la reproduction
-    /// ([`crate::brain::Brain::reproduce`]), sans relire ce champ.
-    pub brains_per_species: Vec<BrainKind>,
-    /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). Vide par
-    /// défaut → aucune interaction (monde inerte, comme avant l'item 7).
+    /// Les **archétypes** : la donnée centrale du scénario. Chaque entrée est une
+    /// *espèce* (nom, couleur, effectif, corps + décideur), et son **index** est son
+    /// identité ([`crate::components::Species`]) — ce que cible la table de
+    /// [`relations`](Self::relations). La nourriture y est un archétype
+    /// ([`ArchetypeKind::Food`]), sans collision de numéros avec les agents. Vide →
+    /// monde inerte (rien au spawn).
+    pub archetypes: Vec<Archetype>,
+    /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). `actor`/`target`
+    /// sont des **index d'archétype**. Vide par défaut → aucune interaction (monde
+    /// inerte, comme avant l'item 7).
     pub relations: Vec<Relation>,
-    /// Métabolisme de base : énergie drainée **par seconde**, au repos. `0` →
-    /// pas de drain (monde inerte, comme avant l'item 8).
-    pub base_metabolism: f32,
-    /// Surcoût de locomotion : énergie/seconde supplémentaire à pleine vitesse
-    /// (proportionnel à la fraction de vitesse). La vitesse devient un coût.
-    pub move_cost: f32,
-    /// Nombre de sources de nourriture maintenues dans l'arène. `0` → aucune.
-    pub food_count: usize,
-    /// Rayon d'une source de nourriture.
-    pub food_radius: f32,
-    /// Énergie contenue dans une source de nourriture (= sa réserve pleine).
-    pub food_energy: f32,
-    /// Vitesse de repousse de la nourriture, en sources **par seconde**. `0` →
-    /// maintien instantané à `food_count` (régime item 8). Une valeur finie crée
-    /// une **capacité de charge** : à population élevée, la nourriture est mangée
-    /// plus vite qu'elle ne repousse → la faim borne la croissance (item 9).
-    pub food_regen: f32,
-    /// Espèce assignée à la nourriture, pour que la table de relations puisse la
-    /// désigner comme cible (`(actor: <agent>, target: <food_species>, …)`).
-    pub food_species: u16,
-    /// Valeur initiale du gène d'agilité (vivacité du braquage, `[0, 1]`).
-    pub agility: f32,
-    /// Amplitude de mutation : écart-type d'une mutation de gène, en *fraction*
-    /// de l'amplitude (`max - min`) de ce gène. `0` → pas de mutation.
-    pub mutation_rate: f32,
-    /// Énergie nécessaire pour se reproduire. `0` → pas de reproduction (régime
-    /// pré-item-9 : la population ne fait que décliner).
-    pub reproduction_threshold: f32,
-    /// Énergie transmise à l'enfant, déduite du parent (conservation : aucune
-    /// énergie créée à la reproduction).
-    pub offspring_energy: f32,
     /// Bornes du gène de vitesse maximale.
     pub speed_bounds: Bounds,
     /// Bornes du gène d'agilité.
@@ -143,12 +62,101 @@ pub struct SimConfig {
     /// Bornes du gène de nombre de rayons de vision (la précision visuelle). Bornes
     /// entières en pratique (le gène est arrondi à la compilation du phénotype).
     pub vision_rays_bounds: Bounds,
-    /// Facet « mutable ? » par trait (§2) : un gène mute (il dérive et se transmet
-    /// avec variation), ou reste figé à la valeur du fondateur. `Default` = tout
-    /// mutable sauf les coûts et le taux de mutation.
-    pub mutable: Mutability,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
+}
+
+/// Un **archétype** : une espèce de premier ordre. Son index dans
+/// [`SimConfig::archetypes`] est son identité ([`crate::components::Species`]).
+/// Les propriétés communes (corps, effectif) vivent ici ; ce qui distingue un
+/// décideur mobile d'une source sessile est dans [`kind`](Self::kind).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Archetype {
+    /// Libellé pour la palette / l'inspecteur.
+    pub name: String,
+    /// Identité visuelle (sRGB linéaire, `[r, g, b]` dans `[0, 1]`).
+    pub color: [f32; 3],
+    /// Effectif au spawn (le levier d'une pyramide trophique).
+    pub count: usize,
+    /// Rayon du corps (et du collider).
+    pub radius: f32,
+    /// Capacité de réserve (énergie/PV). Pour la nourriture : son énergie pleine.
+    pub reserve_max: f32,
+    /// Ce qui distingue un agent (décideur mobile) d'une nourriture (source sessile).
+    pub kind: ArchetypeKind,
+}
+
+/// Ce qu'un archétype *est* : un décideur mobile, ou une source sessile. Point
+/// d'accroche pour la flore évolutive (Phase 3) — où `Food` gagnera un génotype.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ArchetypeKind {
+    /// Décideur mobile : génotype fondateur (corps évolvable), cerveau (auteur de la
+    /// décision, §1) et **mutabilité par espèce** (quels gènes ont le droit de muter).
+    Agent {
+        genotype: Genotype,
+        brain: BrainKind,
+        mutable: Mutability,
+    },
+    /// Source de nourriture sessile : `regen` = sources repoussées **par seconde**
+    /// (`0` → maintien instantané à `count`). Énergie/rayon viennent des champs
+    /// communs de l'archétype (`reserve_max`/`radius`).
+    Food { regen: f32 },
+}
+
+impl Archetype {
+    /// Palette de couleurs par défaut (partagée avec le rendu via les *valeurs*),
+    /// pour donner une teinte distincte à un archétype neuf sans dépendre de `visuals`.
+    pub const PALETTE: [[f32; 3]; 4] = [
+        [0.30, 0.70, 1.00], // bleu
+        [1.00, 0.45, 0.35], // corail
+        [0.55, 0.90, 0.45], // vert
+        [0.95, 0.80, 0.30], // ambre
+    ];
+
+    /// Couleur par défaut de l'archétype d'index `i` (cyclique sur la palette).
+    pub fn default_color(i: usize) -> [f32; 3] {
+        Self::PALETTE[i % Self::PALETTE.len()]
+    }
+
+    /// Archétype d'**agent** neuf, à l'index `i` : génotype/cerveau/mutabilité par
+    /// défaut, effectif standard, couleur de palette.
+    pub fn new_agent(i: usize) -> Self {
+        Self {
+            name: format!("Espèce {i}"),
+            color: Self::default_color(i),
+            count: 48,
+            radius: 8.0,
+            reserve_max: 100.0,
+            kind: ArchetypeKind::Agent {
+                genotype: Genotype::default(),
+                brain: BrainKind::default(),
+                mutable: Mutability::default(),
+            },
+        }
+    }
+
+    /// Archétype de **nourriture** neuf, à l'index `i` : sessile, sans repousse.
+    pub fn new_food(i: usize) -> Self {
+        Self {
+            name: "Nourriture".to_string(),
+            color: Self::default_color(i),
+            count: 0,
+            radius: 6.0,
+            reserve_max: 50.0,
+            kind: ArchetypeKind::Food { regen: 0.0 },
+        }
+    }
+
+    /// `true` si c'est un agent (décideur mobile).
+    pub fn is_agent(&self) -> bool {
+        matches!(self.kind, ArchetypeKind::Agent { .. })
+    }
+
+    /// `true` si c'est une source de nourriture.
+    pub fn is_food(&self) -> bool {
+        matches!(self.kind, ArchetypeKind::Food { .. })
+    }
 }
 
 /// Bornes `[min, max]` d'un gène. Matérialise, avec la valeur (dans le
@@ -173,17 +181,16 @@ impl Bounds {
     }
 }
 
-/// Le facet **mutable ?** du §2, par trait : un gène a-t-il le droit de muter
-/// (cf. [`crate::genotype::Genotype::mutate`]) — donc de dériver et de transmettre
-/// de la variation sélectionnable — ou reste-t-il cloué à la valeur du fondateur ?
+/// Le facet **mutable ?** du §2, par trait, **par espèce** : un gène a-t-il le droit
+/// de muter (cf. [`crate::genotype::Genotype::mutate`]) — donc de dériver et de
+/// transmettre de la variation sélectionnable — ou reste-t-il cloué à la valeur du
+/// fondateur ?
 ///
 /// À noter (et c'est volontairement le mot *mutable*, pas *héritable*) : un gène
 /// non mutable est **quand même transmis** à l'enfant (copie du parent) ; ce que
-/// cette case gouverne, c'est uniquement la **mutation**. Un gène gelé reste donc à
-/// la valeur du fondateur pour toute la lignée (variance héritable nulle → rien à
-/// sélectionner). Donnée de scénario, modifiable à l'édition. `Default` = tout
-/// mutable sauf les coûts et le taux de mutation. Un champ par caractéristique de
-/// [`crate::genotype::TRAITS`].
+/// cette case gouverne, c'est uniquement la **mutation**. Vit dans
+/// [`ArchetypeKind::Agent`], donc une espèce peut figer un gène qu'une autre laisse
+/// dériver. `Default` = tout mutable sauf les coûts et le taux de mutation.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Mutability {
@@ -230,14 +237,14 @@ impl Default for Mutability {
 ///   par l'acteur.
 /// - `transfer: false` → **combat** : la réserve est détruite, sans transfert.
 ///
-/// (La distinction énergie/PV attendra qu'un agent porte *plusieurs* réserves ;
-/// v1 n'en a qu'une.)
+/// `actor`/`target` sont des **index d'[`Archetype`]**. (La distinction énergie/PV
+/// attendra qu'un agent porte *plusieurs* réserves ; v1 n'en a qu'une.)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Relation {
-    /// Espèce de l'acteur.
+    /// Index d'archétype de l'acteur.
     pub actor: u16,
-    /// Espèce de la cible.
+    /// Index d'archétype de la cible.
     pub target: u16,
     /// Transfert (prédation) ou simple destruction (combat).
     pub transfer: bool,
@@ -252,31 +259,8 @@ impl Default for SimConfig {
         Self {
             tick_hz: 64.0,
             arena_half_extent: 400.0,
-            agent_count: 48,
-            agent_radius: 8.0,
-            agent_radius_per_species: Vec::new(),
-            max_speed: 140.0,
-            vision_rays: 7,
-            vision_fov_deg: 120.0,
-            vision_range: 160.0,
-            species_count: 1,
-            agents_per_species: Vec::new(),
-            reserve_max: 100.0,
-            reserve_max_per_species: Vec::new(),
-            brain: BrainKind::default(),
-            brains_per_species: Vec::new(),
+            archetypes: vec![Archetype::new_agent(0)],
             relations: Vec::new(),
-            base_metabolism: 0.0,
-            move_cost: 0.0,
-            food_count: 0,
-            food_radius: 6.0,
-            food_energy: 50.0,
-            food_regen: 0.0,
-            food_species: 1,
-            agility: 0.12,
-            mutation_rate: 0.0,
-            reproduction_threshold: 0.0,
-            offspring_energy: 30.0,
             speed_bounds: Bounds {
                 min: 40.0,
                 max: 260.0,
@@ -314,74 +298,91 @@ impl Default for SimConfig {
                 min: 1.0,
                 max: 21.0,
             },
-            mutable: Mutability::default(),
             seed: 0x00C0_FFEE,
         }
     }
 }
 
 impl SimConfig {
-    /// Scénario *vide* : l'arène et les archétypes du défaut, mais **aucune entité
-    /// au spawn** (ni agent, ni nourriture). La toile de l'éditeur — on place tout
-    /// à la main (glisser-déposer), puis on lance. C'est le repli sans-argument du
-    /// build fenêtré.
+    /// Scénario *vide* : l'arène et un archétype d'agent du défaut, mais **aucune
+    /// entité au spawn** (effectif 0). La toile de l'éditeur — on place tout à la
+    /// main (glisser-déposer), puis on lance. C'est le repli sans-argument du build
+    /// fenêtré.
     pub fn empty() -> Self {
+        let mut agent = Archetype::new_agent(0);
+        agent.count = 0;
         Self {
-            agent_count: 0,
-            food_count: 0,
+            archetypes: vec![agent],
             ..Self::default()
         }
     }
 
-    /// Nombre d'espèces d'agents *effectif* : le max entre `species_count` (le knob
-    /// uniforme) et la longueur d'[`agents_per_species`](Self::agents_per_species)
-    /// (effectifs explicites). HUD, éditeur et palette s'y réfèrent pour rester
-    /// cohérents même si un scénario ne renseigne que l'un des deux (au moins 1).
+    /// Nombre d'archétypes (= nombre d'espèces, agents **et** nourriture confondus),
+    /// au moins 1. HUD, éditeur et palette s'y réfèrent.
     pub fn species_cardinality(&self) -> u16 {
-        self.species_count
-            .max(self.agents_per_species.len() as u16)
-            .max(1)
+        (self.archetypes.len() as u16).max(1)
     }
 
-    /// Le **type de cerveau** fondateur de l’espèce `species` : l’entrée de
-    /// [`brains_per_species`](Self::brains_per_species) si elle existe, sinon le
-    /// [`brain`](Self::brain) uniforme (champ vide, ou espèce au-delà de sa
-    /// longueur). C’est le résolveur unique du peuplement (item 18a) ; au-delà du
-    /// fondateur, le cerveau se transmet par héritage et non par ce champ.
+    /// Le **génotype fondateur** de l'archétype `species` (l'« archétype » au sens
+    /// génétique). Repli sur le génotype par défaut pour un index hors-liste ou une
+    /// nourriture (sans génotype en v1).
+    pub fn genotype_of(&self, species: u16) -> Genotype {
+        match self.archetypes.get(species as usize).map(|a| &a.kind) {
+            Some(ArchetypeKind::Agent { genotype, .. }) => *genotype,
+            _ => Genotype::default(),
+        }
+    }
+
+    /// Le **type de cerveau** fondateur de l'archétype `species` (l'auteur de la
+    /// décision, §1). Repli sur l'errance pour un index hors-liste / une nourriture.
+    /// Au-delà du fondateur, le cerveau se transmet par héritage à la reproduction
+    /// ([`crate::brain::Brain::reproduce`]), sans relire ce champ.
     pub fn brain_of(&self, species: u16) -> BrainKind {
-        self.brains_per_species
-            .get(species as usize)
-            .cloned()
-            .unwrap_or_else(|| self.brain.clone())
+        match self.archetypes.get(species as usize).map(|a| &a.kind) {
+            Some(ArchetypeKind::Agent { brain, .. }) => brain.clone(),
+            _ => BrainKind::default(),
+        }
     }
 
-    /// La **réserve max** de l'espèce `species` : l'entrée de
-    /// [`reserve_max_per_species`](Self::reserve_max_per_species) si elle existe,
-    /// sinon la [`reserve_max`](Self::reserve_max) uniforme. Résolveur unique pour le
-    /// spawn (capacité du corps + niveau de remplissage initial d'un fondateur).
+    /// La **mutabilité** (facet « mutable ? » par gène) de l'archétype `species`.
+    /// Repli sur le défaut pour un index hors-liste / une nourriture.
+    pub fn mutable_of(&self, species: u16) -> Mutability {
+        match self.archetypes.get(species as usize).map(|a| &a.kind) {
+            Some(ArchetypeKind::Agent { mutable, .. }) => *mutable,
+            _ => Mutability::default(),
+        }
+    }
+
+    /// La **réserve max** (capacité de corps) de l'archétype `species`. Le **% de
+    /// remplissage** ([`crate::components::Reserve::fraction`]) reste normalisé
+    /// `[0, 1]` quelle que soit la capacité, donc comparable entre espèces.
     pub fn reserve_max_of(&self, species: u16) -> f32 {
-        self.reserve_max_per_species
+        self.archetypes
             .get(species as usize)
-            .copied()
-            .unwrap_or(self.reserve_max)
+            .map(|a| a.reserve_max)
+            .unwrap_or(100.0)
     }
 
-    /// Le **rayon du corps** de l'espèce `species` : l'entrée de
-    /// [`agent_radius_per_species`](Self::agent_radius_per_species) si elle existe,
-    /// sinon le [`agent_radius`](Self::agent_radius) uniforme. Résolveur unique pour le
-    /// spawn (taille du corps + collider), calqué sur [`reserve_max_of`](Self::reserve_max_of).
+    /// Le **rayon du corps** de l'archétype `species` (corps + collider).
     pub fn agent_radius_of(&self, species: u16) -> f32 {
-        self.agent_radius_per_species
+        self.archetypes
             .get(species as usize)
-            .copied()
-            .unwrap_or(self.agent_radius)
+            .map(|a| a.radius)
+            .unwrap_or(8.0)
     }
 
-    /// `true` si l'espèce `actor` peut agir sur l'espèce `target` — une
+    /// La **couleur** de l'archétype `species` (repli sur la palette par index).
+    pub fn color_of(&self, species: u16) -> [f32; 3] {
+        self.archetypes
+            .get(species as usize)
+            .map(|a| a.color)
+            .unwrap_or_else(|| Archetype::default_color(species as usize))
+    }
+
+    /// `true` si l'archétype `actor` peut agir sur l'archétype `target` — une
     /// [`Relation`] l'y autorise. C'est le **filtre de cible** de la primitive
-    /// d'interaction (§3 : *manger et attaquer sont le même verbe*), sans
-    /// distinction transfert/destruction : ce qui fait d'une entité une *cible*
-    /// dans le canal de perception du `Brain::Hunter` (item 16).
+    /// d'interaction (§3 : *manger et attaquer sont le même verbe*) : ce qui fait
+    /// d'une entité une *cible* dans le canal de perception du `Brain::Hunter` (item 16).
     pub fn acts_on(&self, actor: u16, target: u16) -> bool {
         self.relations
             .iter()
@@ -482,27 +483,25 @@ impl From<ron::error::SpannedError> for ScenarioError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::brain::BrainKind;
 
-    /// Un scénario complet parse vers exactement ses valeurs.
-    #[test]
-    fn parses_full_scenario() {
-        let cfg = SimConfig::from_ron_str(
-            "(tick_hz: 30.0, arena_half_extent: 200.0, agent_count: 12, \
-             agent_radius: 4.0, max_speed: 90.0, seed: 7)",
-        )
-        .expect("RON valide");
-        assert_eq!(cfg.tick_hz, 30.0);
-        assert_eq!(cfg.agent_count, 12);
-        assert_eq!(cfg.seed, 7);
+    /// Index du premier archétype d'agent (helper de test).
+    fn first_agent(cfg: &SimConfig) -> &Archetype {
+        cfg.archetypes
+            .iter()
+            .find(|a| a.is_agent())
+            .expect("un agent")
     }
 
-    /// `#[serde(default)]` : les champs omis retombent sur le défaut, donc un
-    /// scénario partiel — voire vide — reste valide.
+    /// Un scénario partiel parse, et les champs omis retombent sur le défaut.
     #[test]
     fn partial_scenario_falls_back_to_default() {
-        let cfg = SimConfig::from_ron_str("(agent_count: 100)").expect("RON valide");
-        assert_eq!(cfg.agent_count, 100);
-        assert_eq!(cfg.max_speed, SimConfig::default().max_speed);
+        let cfg = SimConfig::from_ron_str("(tick_hz: 30.0, arena_half_extent: 200.0, seed: 7)")
+            .expect("RON valide");
+        assert_eq!(cfg.tick_hz, 30.0);
+        assert_eq!(cfg.arena_half_extent, 200.0);
+        assert_eq!(cfg.seed, 7);
+        assert_eq!(cfg.archetypes, SimConfig::default().archetypes);
 
         let empty = SimConfig::from_ron_str("()").expect("RON vide valide");
         assert_eq!(empty, SimConfig::default());
@@ -516,20 +515,17 @@ mod tests {
     }
 
     /// Un champ inconnu est rejeté plutôt qu'ignoré silencieusement
-    /// (`deny_unknown_fields`) : une faute de frappe dans un scénario doit se
-    /// voir, pas se traduire par un monde subtilement faux.
+    /// (`deny_unknown_fields`) : une faute de frappe dans un scénario doit se voir.
     #[test]
     fn unknown_field_is_rejected() {
-        assert!(SimConfig::from_ron_str("(agent_kount: 9)").is_err());
+        assert!(SimConfig::from_ron_str("(seedz: 9)").is_err());
     }
 
     /// Aller-retour sérialisation : ce que l'éditeur sauve se relit à l'identique.
     #[test]
     fn ron_roundtrip_is_lossless() {
-        let mut cfg = SimConfig {
-            agent_count: 17,
-            ..SimConfig::default()
-        };
+        let mut cfg = SimConfig::default();
+        cfg.archetypes.push(Archetype::new_food(1));
         cfg.relations.push(Relation {
             actor: 0,
             target: 1,
@@ -542,8 +538,7 @@ mod tests {
         assert_eq!(cfg, back);
     }
 
-    /// Le scénario par défaut versionné dans le dépôt reste synchronisé avec
-    /// [`SimConfig::default`] : garde-fou contre la dérive des deux sources.
+    /// Le scénario par défaut versionné reste synchronisé avec [`SimConfig::default`].
     #[test]
     fn bundled_default_matches_default() {
         let text = include_str!("../scenarios/default.ron");
@@ -551,19 +546,17 @@ mod tests {
         assert_eq!(cfg, SimConfig::default());
     }
 
-    /// Le scénario vide versionné (repli sans-argument du fenêtré) reste
-    /// synchronisé avec [`SimConfig::empty`] et ne spawne aucune entité.
+    /// Le scénario vide versionné reste synchronisé avec [`SimConfig::empty`] et ne
+    /// spawne aucune entité.
     #[test]
     fn bundled_empty_matches_empty() {
         let text = include_str!("../scenarios/empty.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario vide valide");
         assert_eq!(cfg, SimConfig::empty());
-        assert_eq!(cfg.agent_count, 0);
-        assert_eq!(cfg.food_count, 0);
+        assert!(cfg.archetypes.iter().all(|a| a.count == 0));
     }
 
-    /// La table de relations parse depuis le RON et un champ inconnu y est aussi
-    /// rejeté (`deny_unknown_fields` sur `Relation`).
+    /// La table de relations parse, et un champ inconnu y est rejeté.
     #[test]
     fn relations_parse_from_ron() {
         let cfg = SimConfig::from_ron_str(
@@ -583,36 +576,7 @@ mod tests {
         );
     }
 
-    /// Le champ `brain` parse le type de cerveau **et ses paramètres de variant** ;
-    /// absent, il retombe sur l'errance — rétro-compatibilité d'avant l'item 16 (les
-    /// scénarios existants n'en parlent pas et restent des mondes d'errance).
-    #[test]
-    fn brain_kind_parses_and_defaults_to_wander() {
-        use crate::brain::BrainKind;
-        assert_eq!(
-            SimConfig::from_ron_str("(brain: Hunter)").unwrap().brain,
-            BrainKind::Hunter
-        );
-        // Le variant `Wander` porte son propre paramètre (turn_rate), lu depuis le RON.
-        assert_eq!(
-            SimConfig::from_ron_str("(brain: Wander(turn_rate: 0.4))")
-                .unwrap()
-                .brain,
-            BrainKind::Wander { turn_rate: 0.4 }
-        );
-        // Absent → errance au taux par défaut.
-        assert!(matches!(
-            SimConfig::from_ron_str("()").unwrap().brain,
-            BrainKind::Wander { .. }
-        ));
-        assert!(matches!(
-            SimConfig::default().brain,
-            BrainKind::Wander { .. }
-        ));
-    }
-
-    /// `acts_on` reflète la table de relations : c'est le filtre de cible du
-    /// chasseur (une espèce est « cible » ssi une relation l'autorise comme tel).
+    /// `acts_on` reflète la table de relations (le filtre de cible, dirigé).
     #[test]
     fn acts_on_follows_relations() {
         let cfg = SimConfig::from_ron_str(
@@ -624,150 +588,112 @@ mod tests {
         assert!(!cfg.acts_on(0, 2), "espèce non visée");
     }
 
-    /// Le scénario de chasse versionné est valide : cerveau chasseur **et** une
-    /// relation qui désigne la nourriture comme cible — sans elle, le canal
-    /// « cible » resterait nul et le chasseur ne ferait qu'errer.
+    /// Les résolveurs par archétype lisent l'entrée d'index, avec repli hors-liste.
+    #[test]
+    fn resolvers_read_archetype_by_index() {
+        let mut cfg = SimConfig::default();
+        // Espèce 0 : agent. Espèce 1 : nourriture (énergie 50, repousse 0 par défaut).
+        cfg.archetypes.push(Archetype::new_food(1));
+        if let ArchetypeKind::Agent { brain, .. } = &mut cfg.archetypes[0].kind {
+            *brain = BrainKind::Hunter;
+        }
+        cfg.archetypes[0].reserve_max = 120.0;
+        cfg.archetypes[0].radius = 10.0;
+        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
+        assert_eq!(cfg.reserve_max_of(0), 120.0);
+        assert_eq!(cfg.agent_radius_of(0), 10.0);
+        assert!(cfg.archetypes[1].is_food());
+        // Index hors-liste → replis.
+        assert_eq!(cfg.brain_of(9), BrainKind::default());
+        assert_eq!(cfg.reserve_max_of(9), 100.0);
+    }
+
+    /// Le scénario de chasse : un agent chasseur **et** une relation qui désigne la
+    /// nourriture (autre archétype) comme cible — sinon le canal « cible » reste nul.
     #[test]
     fn bundled_hunt_scenario_uses_hunter_on_a_target() {
-        use crate::brain::BrainKind;
         let text = include_str!("../scenarios/chasse.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario chasse valide");
-        assert_eq!(cfg.brain, BrainKind::Hunter);
+        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
+        let food = cfg
+            .archetypes
+            .iter()
+            .position(|a| a.is_food())
+            .expect("une nourriture") as u16;
         assert!(
-            cfg.relations.iter().any(|r| r.target == cfg.food_species),
+            cfg.relations.iter().any(|r| r.target == food),
             "le chasseur a besoin d'une cible désignée (la nourriture)"
         );
     }
 
-    /// Le scénario de prédication versionné reste valide (garde-fou contre une
-    /// dérive du format de la table de relations).
-    #[test]
-    fn bundled_predation_scenario_is_valid() {
-        let text = include_str!("../scenarios/predation.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("scénario prédation valide");
-        assert_eq!(cfg.species_count, 2);
-        assert_eq!(cfg.relations.len(), 1);
-    }
-
-    /// Le scénario de sélection naturelle versionné reste valide et constitue
-    /// bien une économie : métabolisme non nul, nourriture présente, et une
-    /// relation qui désigne cette nourriture comme cible.
-    #[test]
-    fn bundled_selection_scenario_is_an_economy() {
-        let text = include_str!("../scenarios/selection.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("scénario sélection valide");
-        assert!(cfg.base_metabolism > 0.0, "il faut un coût de survie");
-        assert!(cfg.food_count > 0, "il faut une source d'énergie");
-        assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.target == cfg.food_species && r.transfer),
-            "une relation doit permettre de manger la nourriture"
-        );
-    }
-
-    /// Les effectifs par espèce parsent depuis le RON, et `species_cardinality`
-    /// reflète bien le nombre d'espèces effectif (le max du knob uniforme et de la
-    /// longueur des effectifs explicites). Vide → repli sur `species_count`.
-    #[test]
-    fn agents_per_species_parses_and_drives_cardinality() {
-        let cfg = SimConfig::from_ron_str("(species_count: 2, agents_per_species: [10, 60])")
-            .expect("RON valide");
-        assert_eq!(cfg.agents_per_species, vec![10, 60]);
-        assert_eq!(cfg.species_cardinality(), 2);
-
-        // La longueur prime si elle dépasse species_count (scénario qui n'a renseigné
-        // que les effectifs).
-        let cfg = SimConfig::from_ron_str("(agents_per_species: [4, 4, 4])").expect("RON valide");
-        assert_eq!(cfg.species_cardinality(), 3);
-
-        // Vide (défaut) → repli sur species_count, au moins 1.
-        assert_eq!(SimConfig::default().agents_per_species, Vec::<usize>::new());
-        assert_eq!(SimConfig::default().species_cardinality(), 1);
-    }
-
-    /// Le scénario proie-prédateur versionné est une chaîne trophique à trois
-    /// niveaux exprimée en pure donnée : pyramide par effectifs (proies ≫
-    /// prédateurs), cerveau chasseur, et DEUX relations enchaînées
-    /// (prédateur→proie, proie→plante) — la dynamique elle-même est vérifiée par le
-    /// driver `tests/predator_prey`.
+    /// Le scénario proie-prédateur : chaîne trophique à trois niveaux en pure donnée
+    /// (pyramide par effectifs, cerveau chasseur, deux relations enchaînées).
     #[test]
     fn bundled_predator_prey_is_a_trophic_chain() {
-        use crate::brain::BrainKind;
         let text = include_str!("../scenarios/proie_predateur.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario proie-prédateur valide");
         // Pyramide : strictement moins de prédateurs (espèce 0) que de proies (1).
-        assert_eq!(cfg.agents_per_species.len(), 2);
         assert!(
-            cfg.agents_per_species[0] < cfg.agents_per_species[1],
+            cfg.archetypes[0].count < cfg.archetypes[1].count,
             "une pyramide veut proies ≫ prédateurs"
         );
-        assert_eq!(cfg.brain, BrainKind::Hunter);
-        // La chaîne : le prédateur mange une espèce qui, elle, mange la nourriture.
+        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
+        // Le prédateur mange une espèce qui, elle, mange une nourriture.
         let prey = cfg
             .relations
             .iter()
             .find(|r| r.actor == 0 && r.transfer)
             .expect("le prédateur mange quelqu'un")
             .target;
+        let foods: Vec<u16> = cfg
+            .archetypes
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.is_food())
+            .map(|(i, _)| i as u16)
+            .collect();
         assert!(
             cfg.relations
                 .iter()
-                .any(|r| r.actor == prey && r.target == cfg.food_species && r.transfer),
-            "la proie du prédateur doit elle-même brouter la nourriture (3 niveaux)"
+                .any(|r| r.actor == prey && foods.contains(&r.target) && r.transfer),
+            "la proie du prédateur doit elle-même brouter une nourriture (3 niveaux)"
         );
     }
 
-    /// Le scénario d'évolution versionné active bien la boucle (reproduction +
-    /// mutation) et borne la nourriture (capacité de charge), sinon la
-    /// population exploserait.
+    /// Le scénario d'évolution active la boucle (reproduction + mutation) et borne la
+    /// nourriture (repousse finie → capacité de charge).
     #[test]
     fn bundled_evolution_scenario_closes_the_loop() {
         let text = include_str!("../scenarios/evolution.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario évolution valide");
+        let agent = first_agent(&cfg);
+        let ArchetypeKind::Agent { genotype, .. } = &agent.kind else {
+            unreachable!()
+        };
         assert!(
-            cfg.reproduction_threshold > 0.0,
+            genotype.reproduction_threshold > 0.0,
             "la reproduction doit être active"
         );
-        assert!(cfg.mutation_rate > 0.0, "la mutation doit être active");
-        assert!(cfg.food_regen > 0.0, "repousse finie → capacité de charge");
+        assert!(genotype.mutation_rate > 0.0, "la mutation doit être active");
         assert!(
-            cfg.reproduction_threshold <= cfg.reserve_max,
+            cfg.archetypes
+                .iter()
+                .any(|a| matches!(a.kind, ArchetypeKind::Food { regen } if regen > 0.0)),
+            "repousse finie → capacité de charge"
+        );
+        assert!(
+            genotype.reproduction_threshold <= agent.reserve_max,
             "un seuil au-dessus du max serait inatteignable"
         );
     }
 
-    /// Le cerveau par espèce (item 18a) parse depuis le RON, et `brain_of` résout :
-    /// l'entrée explicite si elle existe, sinon le `brain` uniforme (champ vide, ou
-    /// espèce au-delà de la longueur).
-    #[test]
-    fn brains_per_species_parses_and_brain_of_resolves() {
-        use crate::brain::BrainKind;
-        let cfg = SimConfig::from_ron_str("(brains_per_species: [Hunter, Wander(turn_rate: 0.3)])")
-            .expect("RON valide");
-        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
-        assert_eq!(cfg.brain_of(1), BrainKind::Wander { turn_rate: 0.3 });
-        // Espèce au-delà de la longueur → repli sur le `brain` uniforme (défaut Wander).
-        assert_eq!(cfg.brain_of(2), cfg.brain);
-
-        // Champ vide (défaut) → toutes les espèces sur le `brain` uniforme.
-        let cfg = SimConfig::default();
-        assert!(cfg.brains_per_species.is_empty());
-        assert_eq!(cfg.brain_of(0), cfg.brain);
-        assert_eq!(cfg.brain_of(5), cfg.brain);
-    }
-
-    /// Le scénario de cohabitation versionné oppose DEUX cerveaux sur la MÊME
-    /// nourriture : effectifs égaux, un cerveau par espèce (chasseur vs errance), et
-    /// les deux espèces mangent la nourriture. La dynamique (domination du chasseur)
-    /// est vérifiée par le driver `tests/cohabitation`.
+    /// Le scénario de cohabitation oppose DEUX cerveaux (chasseur vs errance) à
+    /// effectifs égaux sur la même nourriture (driver `tests/cohabitation`).
     #[test]
     fn bundled_cohabitation_pits_two_brains_on_shared_food() {
-        use crate::brain::BrainKind;
         let text = include_str!("../scenarios/cohabitation.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario cohabitation valide");
-        // Départ équitable : mêmes effectifs, seul le cerveau diffère.
-        assert_eq!(cfg.agents_per_species, vec![30, 30]);
+        assert_eq!(cfg.archetypes[0].count, cfg.archetypes[1].count);
         assert_eq!(
             cfg.brain_of(0),
             BrainKind::Hunter,
@@ -777,43 +703,34 @@ mod tests {
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "espèce 1 = témoin naïf"
         );
-        // Les deux broutent la même nourriture (canal d'énergie commun).
+        let food = cfg
+            .archetypes
+            .iter()
+            .position(|a| a.is_food())
+            .expect("une nourriture") as u16;
         for s in [0u16, 1] {
             assert!(
                 cfg.relations
                     .iter()
-                    .any(|r| r.actor == s && r.target == cfg.food_species && r.transfer),
+                    .any(|r| r.actor == s && r.target == food && r.transfer),
                 "l'espèce {s} doit pouvoir manger la nourriture"
             );
         }
     }
 
-    /// Le scénario MLP versionné oppose un cerveau APPRIS (espèce 0) au témoin
-    /// d'errance (espèce 1) sur la même nourriture : le cadre de falsification de
-    /// l'item 18b. La dynamique (le MLP domine) est vérifiée par le driver `tests/mlp`.
+    /// Le scénario MLP oppose un cerveau APPRIS (espèce 0) au témoin d'errance
+    /// (espèce 1) sur la même nourriture (driver `tests/mlp`).
     #[test]
     fn bundled_cerveau_mlp_pits_a_learned_brain_against_wander() {
-        use crate::brain::BrainKind;
         let text = include_str!("../scenarios/cerveau_mlp.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario MLP valide");
         assert!(
             matches!(cfg.brain_of(0), BrainKind::Mlp { ref hidden } if !hidden.is_empty()),
-            "espèce 0 = MLP avec au moins une couche cachée"
+            "espèce 0 = cerveau appris (MLP)"
         );
         assert!(
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "espèce 1 = témoin d'errance"
         );
-        // Départ équitable et nourriture commune.
-        assert_eq!(cfg.agents_per_species.len(), 2);
-        assert_eq!(cfg.agents_per_species[0], cfg.agents_per_species[1]);
-        for s in [0u16, 1] {
-            assert!(
-                cfg.relations
-                    .iter()
-                    .any(|r| r.actor == s && r.target == cfg.food_species && r.transfer),
-                "l'espèce {s} doit pouvoir manger la nourriture"
-            );
-        }
     }
 }

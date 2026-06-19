@@ -15,7 +15,7 @@
 
 use crate::brain::{Brain, MlpBrain};
 use crate::components::{Age, Agent, Food, Generation, Radius, Reserve, Species, Vision};
-use crate::config::SimConfig;
+use crate::config::{ArchetypeKind, SimConfig};
 use crate::genotype::Genotype;
 use crate::rng::Rng;
 use crate::spawn::spawn_agent_with_brain;
@@ -37,33 +37,33 @@ impl SimRng {
     }
 }
 
-/// Reliquat fractionnaire de repousse de nourriture, accumulé entre les ticks
-/// pour qu'un débit `food_regen` non entier par tick produise quand même le bon
-/// nombre de sources au fil du temps.
+/// Reliquat fractionnaire de repousse de nourriture, **par archétype** (indexé par
+/// l'index d'archétype), accumulé entre les ticks pour qu'un débit `regen` non
+/// entier par tick produise quand même le bon nombre de sources au fil du temps.
+/// Redimensionné à la demande sur le nombre d'archétypes.
 #[derive(Resource, Default)]
-pub struct FoodRegen(pub f32);
+pub struct FoodRegen(pub Vec<f32>);
 
 /// MÉTABOLISME : drainer l'énergie de chaque agent — base + surcoût de vitesse +
 /// coût du capteur de vision. Plancher à zéro ; la mort est laissée à [`reap`].
 pub fn metabolize(
     time: Res<Time>,
     config: Res<SimConfig>,
-    mut agents: Query<(&mut Reserve, &Genotype, &Vision, &LinearVelocity), With<Agent>>,
+    mut agents: Query<(&mut Reserve, &Genotype, &Species, &Vision, &LinearVelocity), With<Agent>>,
 ) {
-    if config.base_metabolism == 0.0 && config.move_cost == 0.0 {
-        // Monde inerte : pas d'économie métabolique dans ce *scénario* (fondateurs
-        // à zéro) → on évite même le coût de vision (scénarios pré-item-8).
-        return;
-    }
     let dt = time.delta_secs();
-    // Vitesse de *référence* (génotype fondateur) : on rapporte le coût de
-    // locomotion à la vitesse absolue, pas à la fraction de la vitesse propre de
-    // l'agent — sinon un mutant deux fois plus rapide paierait pareil et le gène
-    // de vitesse n'aurait aucun coût. Ainsi « vitesse → énergie » (§2) tient.
-    let reference_speed = config.max_speed.max(1e-3);
-    for (mut reserve, genotype, vision, velocity) in &mut agents {
-        // Métabolisme et coût de locomotion sont des gènes (per-espèce) ; le coût
-        // de vision vient du phénotype, déjà per-entité.
+    for (mut reserve, genotype, species, vision, velocity) in &mut agents {
+        // Métabolisme et coût de locomotion sont des gènes (per-espèce). Un agent
+        // sans coût de survie (les deux à zéro) est dans un monde inerte (scénarios
+        // pré-item-8) : aucun drain, pas même le coût de vision.
+        if genotype.base_metabolism == 0.0 && genotype.move_cost == 0.0 {
+            continue;
+        }
+        // Vitesse de *référence* : la vitesse max **fondatrice de l'archétype** (pas
+        // celle, peut-être mutée, de l'agent) — sinon un mutant deux fois plus rapide
+        // paierait pareil et le gène de vitesse n'aurait aucun coût. Ainsi « vitesse →
+        // énergie » (§2) tient, et le coût reste rapporté à une référence par espèce.
+        let reference_speed = config.genotype_of(species.0).max_speed.max(1e-3);
         let speed_ratio = velocity.0.length() / reference_speed;
         let drain =
             genotype.base_metabolism + genotype.move_cost * speed_ratio + vision.metabolic_cost();
@@ -140,7 +140,7 @@ pub fn reproduce(
             continue;
         }
         reserve.current -= genotype.offspring_energy;
-        let child = genotype.mutate(&mut rng.0, &config);
+        let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
         // L'enfant naît légèrement décalé pour ne pas chevaucher exactement.
         let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero()
             * config.agent_radius_of(species.0)
@@ -186,38 +186,46 @@ pub fn replenish_food(
     config: Res<SimConfig>,
     mut rng: ResMut<SimRng>,
     mut regen: ResMut<FoodRegen>,
-    food: Query<(Entity, &Reserve), With<Food>>,
+    food: Query<(Entity, &Reserve, &Species), With<Food>>,
 ) {
-    if config.food_count == 0 {
-        return;
-    }
-    let mut alive = 0usize;
-    for (entity, reserve) in &food {
+    // Un reliquat de repousse par archétype (indexé comme `config.archetypes`).
+    regen.0.resize(config.archetypes.len(), 0.0);
+    // Compter les sources vivantes par espèce ; retirer les épuisées.
+    let mut alive = vec![0usize; config.archetypes.len()];
+    for (entity, reserve, species) in &food {
         if reserve.current <= 0.0 {
             commands.entity(entity).despawn();
-        } else {
-            alive += 1;
+        } else if let Some(slot) = alive.get_mut(species.0 as usize) {
+            *slot += 1;
         }
     }
-    let deficit = config.food_count.saturating_sub(alive);
-    if deficit == 0 {
-        regen.0 = 0.0; // à pleine capacité : pas de repousse en réserve.
-        return;
-    }
-    let to_spawn = if config.food_regen <= 0.0 {
-        deficit // maintien instantané (item 8).
-    } else {
-        // Repousse à débit limité : on accumule le reliquat fractionnaire.
-        regen.0 += config.food_regen * time.delta_secs();
-        let n = (regen.0 as usize).min(deficit);
-        regen.0 -= n as f32;
-        n
-    };
-    let span = config.arena_half_extent - config.food_radius - 5.0;
-    for _ in 0..to_spawn {
-        let x = rng.0.next_signed() * span;
-        let y = rng.0.next_signed() * span;
-        spawn_food(&mut commands, &config, Vec2::new(x, y));
+    let dt = time.delta_secs();
+    // Chaque archétype-nourriture maintient son propre effectif `count` à son débit
+    // `regen` : un robinet d'énergie par type de flore.
+    for (i, arch) in config.archetypes.iter().enumerate() {
+        let ArchetypeKind::Food { regen: rate } = arch.kind else {
+            continue;
+        };
+        let deficit = arch.count.saturating_sub(alive[i]);
+        if deficit == 0 {
+            regen.0[i] = 0.0; // à pleine capacité : pas de repousse en réserve.
+            continue;
+        }
+        let to_spawn = if rate <= 0.0 {
+            deficit // maintien instantané (item 8).
+        } else {
+            // Repousse à débit limité : on accumule le reliquat fractionnaire.
+            regen.0[i] += rate * dt;
+            let n = (regen.0[i] as usize).min(deficit);
+            regen.0[i] -= n as f32;
+            n
+        };
+        let span = config.arena_half_extent - arch.radius - 5.0;
+        for _ in 0..to_spawn {
+            let x = rng.0.next_signed() * span;
+            let y = rng.0.next_signed() * span;
+            spawn_food(&mut commands, &config, i as u16, Vec2::new(x, y));
+        }
     }
 }
 
@@ -225,29 +233,39 @@ pub fn replenish_food(
 /// (les agents la traversent sans la heurter), mangée via la primitive
 /// d'interaction comme n'importe quelle cible. Public pour que le placement
 /// manuel de l'éditeur (item 4) puisse en déposer.
-pub fn spawn_food(commands: &mut Commands, config: &SimConfig, pos: Vec2) {
-    spawn_food_with_energy(commands, config, pos, config.food_energy);
+pub fn spawn_food(commands: &mut Commands, config: &SimConfig, species: u16, pos: Vec2) {
+    spawn_food_with_energy(
+        commands,
+        config,
+        species,
+        pos,
+        config.reserve_max_of(species),
+    );
 }
 
-/// Variante posant une source avec une réserve **partielle** donnée (au lieu de
-/// pleine) : chemin de la restauration d'un snapshot (item 13), qui réinjecte une
-/// nourriture à demi mangée à l'identique. [`spawn_food`] en est le cas « pleine ».
+/// Variante posant une source de l'archétype `species` avec une réserve **partielle**
+/// donnée (au lieu de pleine) : chemin de la restauration d'un snapshot (item 13), qui
+/// réinjecte une nourriture à demi mangée à l'identique. [`spawn_food`] en est le cas
+/// « pleine ». L'énergie pleine et le rayon viennent de l'archétype (`reserve_max`,
+/// `radius`).
 pub fn spawn_food_with_energy(
     commands: &mut Commands,
     config: &SimConfig,
+    species: u16,
     pos: Vec2,
     current: f32,
 ) {
+    let radius = config.agent_radius_of(species);
     commands.spawn((
         Food,
-        Species(config.food_species),
+        Species(species),
         Reserve {
             current,
-            max: config.food_energy,
+            max: config.reserve_max_of(species),
         },
-        Radius(config.food_radius),
+        Radius(radius),
         RigidBody::Static,
-        Collider::circle(config.food_radius),
+        Collider::circle(radius),
         Sensor,
         Transform::from_translation(pos.extend(0.0)),
     ));

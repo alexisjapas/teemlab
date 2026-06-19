@@ -10,7 +10,9 @@
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use teemlab::SimConfig;
+use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
+use teemlab::config::{Archetype, ArchetypeKind, Mutability, Relation};
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
@@ -23,21 +25,43 @@ fn hunter_sees_and_chases_its_target() {
     // métabolisme (le chasseur ne meurt pas pendant le test), une relation à débit
     // NUL — la nourriture reste un appât stable : visée (donc « cible »), jamais
     // consommée. C'est `brain: Hunter` qu'on met à l'épreuve.
-    let config = SimConfig::from_ron_str(
-        "(
-            arena_half_extent: 400.0,
-            agent_count: 0,
-            food_count: 0,
-            reserve_max: 100.0,
-            brain: Hunter,
-            vision_rays: 7,
-            vision_fov_deg: 120.0,
-            vision_range: 260.0,
-            food_species: 1,
-            relations: [(actor: 0, target: 1, transfer: true, rate: 0.0, range: 10.0)],
-        )",
-    )
-    .expect("config valide");
+    let config = SimConfig {
+        arena_half_extent: 400.0,
+        archetypes: vec![
+            Archetype {
+                name: "Chasseur".into(),
+                color: Archetype::default_color(0),
+                count: 0,
+                radius: 8.0,
+                reserve_max: 100.0,
+                kind: ArchetypeKind::Agent {
+                    genotype: Genotype {
+                        vision_fov_deg: 120.0,
+                        vision_range: 260.0,
+                        ..Genotype::default()
+                    },
+                    brain: BrainKind::Hunter,
+                    mutable: Mutability::default(),
+                },
+            },
+            Archetype {
+                name: "Nourriture".into(),
+                color: Archetype::default_color(1),
+                count: 0,
+                radius: 6.0,
+                reserve_max: 50.0,
+                kind: ArchetypeKind::Food { regen: 0.0 },
+            },
+        ],
+        relations: vec![Relation {
+            actor: 0,
+            target: 1,
+            transfer: true,
+            rate: 0.0,
+            range: 10.0,
+        }],
+        ..SimConfig::default()
+    };
 
     // Un tick fixe pile par `update()` (cf. `common::stepping_app`).
     let mut app = common::stepping_app(&config);
@@ -46,7 +70,7 @@ fn hunter_sees_and_chases_its_target() {
     let food_x = 200.0_f32;
     app.world_mut()
         .run_system_once(move |mut commands: Commands, config: Res<SimConfig>| {
-            let genotype = Genotype::base(&config);
+            let genotype = config.genotype_of(0);
             spawn_agent(
                 &mut commands,
                 &config,
@@ -55,10 +79,10 @@ fn hunter_sees_and_chases_its_target() {
                 Vec2::ZERO,
                 0.0,
                 0,
-                config.reserve_max,
+                config.reserve_max_of(0),
                 0, // fondateur : génération 0.
             );
-            spawn_food(&mut commands, &config, Vec2::new(food_x, 0.0));
+            spawn_food(&mut commands, &config, 1, Vec2::new(food_x, 0.0));
         })
         .expect("spawn ponctuel");
 

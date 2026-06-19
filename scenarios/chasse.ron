@@ -1,45 +1,100 @@
-// Scénario — CHASSE (item 16) : le groupe témoin compétent.
-//
-// La MÊME économie que selection.ron (énergie, manger, mourir) — mais les agents
-// pensent avec `Brain::Hunter` au lieu d'errer. Le chasseur lit le canal « cible »
-// de sa perception (la nourriture, espèce 1, désignée par la relation) et fonce
-// vers la cible perçue la plus proche ; faute de cible en vue, il balaie le
-// terrain en évitant les murs. Même dépense d'énergie qu'un errant — il TROUVE
-// simplement sa pitance au lieu de tomber dessus par hasard.
-//
-// L'intérêt : un cerveau APPRIS (futur MLP, item 18) qui ne bat pas ce réflexe
-// n'a rien appris (§4). C'est aussi ce qui rend la chaîne percevoir→décider→agir
-// PORTEUSE : à perception identique, errance et chasse divergent nettement
-// (survie, agrégation autour de la nourriture). Comparer côte à côte :
-//
-//     cargo run --bin headless scenarios/selection.ron   # errance (témoin naïf)
-//     cargo run --bin headless scenarios/chasse.ron      # chasse  (témoin compétent)
 (
+    tick_hz: 64.0,
     arena_half_extent: 320.0,
-
-    agent_count: 40,
-    species_count: 1,
-    reserve_max: 100.0,
-
-    // LE SEUL changement par rapport à selection.ron : un réflexe qui se sert de la
-    // vue. Vision, coûts et nourriture sont identiques, pour que la comparaison ne
-    // porte que sur le cerveau (un A/B propre — au headless, la réserve moyenne du
-    // chasseur ressort au-dessus de celle de l'errant sur la même économie).
-    brain: Hunter,
-
-    // Coûts énergétiques (par seconde) : identiques à selection.ron.
-    base_metabolism: 4.0,
-    move_cost: 2.0,
-
-    // Le robinet d'énergie : nourriture (espèce 1) maintenue à effectif constant.
-    food_count: 70,
-    food_radius: 8.0,
-    food_energy: 60.0,
-    food_species: 1,
-
-    // L'unique verbe : l'espèce 0 mange l'espèce 1. C'est cette relation qui fait
-    // de la nourriture une « cible » dans le canal de perception du chasseur.
-    relations: [
-        (actor: 0, target: 1, transfer: true, rate: 200.0, range: 26.0),
+    archetypes: [
+        (
+            name: "Chasseur",
+            color: (0.3, 0.7, 1.0),
+            count: 40,
+            radius: 8.0,
+            reserve_max: 100.0,
+            kind: Agent(
+                genotype: (
+                    max_speed: 140.0,
+                    agility: 0.12,
+                    vision_range: 160.0,
+                    vision_fov_deg: 120.0,
+                    reproduction_threshold: 0.0,
+                    offspring_energy: 30.0,
+                    mutation_rate: 0.0,
+                    base_metabolism: 4.0,
+                    move_cost: 2.0,
+                    vision_rays: 7.0,
+                ),
+                brain: Hunter,
+                mutable: (
+                    max_speed: true,
+                    agility: true,
+                    vision_range: true,
+                    vision_fov: true,
+                    reproduction_threshold: true,
+                    offspring_energy: true,
+                    mutation_rate: false,
+                    base_metabolism: false,
+                    move_cost: false,
+                    vision_rays: true,
+                ),
+            ),
+        ),
+        (
+            name: "Nourriture",
+            color: (1.0, 0.45, 0.35),
+            count: 70,
+            radius: 8.0,
+            reserve_max: 60.0,
+            kind: Food(
+                regen: 0.0,
+            ),
+        ),
     ],
+    relations: [
+        (
+            actor: 0,
+            target: 1,
+            transfer: true,
+            rate: 200.0,
+            range: 26.0,
+        ),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 260.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 40.0,
+        max: 300.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    seed: 12648430,
 )

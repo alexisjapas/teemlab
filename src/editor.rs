@@ -17,32 +17,18 @@ use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::{BrainKind, MlpBrain};
 use teemlab::components::{Agent, Food, Reserve, Species};
-use teemlab::config::Relation;
+use teemlab::config::{Archetype, ArchetypeKind, Relation};
 use teemlab::ecology::spawn_food;
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
 
-/// Ce qu'un archétype produit une fois déposé. L'archétype est le *modèle*
-/// éditable (item 5) ; le génome porté ici en est la valeur d'instance.
-#[derive(Clone)]
-pub enum ArchetypeKind {
-    Agent { species: u16, genotype: Genotype },
-    Food,
-}
-
-/// Une entrée « entité déjà définie » du panneau de droite.
-#[derive(Clone)]
-pub struct Archetype {
-    pub name: String,
-    pub kind: ArchetypeKind,
-    pub color: egui::Color32,
-}
-
-/// La palette d'archétypes + l'état de l'éditeur.
+/// La palette / l'état de l'éditeur. La **liste d'archétypes** vit désormais dans
+/// [`SimConfig::archetypes`] (la donnée centrale) ; la palette ne garde que l'état
+/// d'interaction. Éditer un archétype écrit donc *directement* dans le `SimConfig`,
+/// sans copie ni passe de synchro.
 #[derive(Resource, Default)]
 pub struct Palette {
-    pub items: Vec<Archetype>,
-    /// Index de l'archétype actuellement glissé, le cas échéant.
+    /// Index (dans `config.archetypes`) de l'archétype actuellement glissé.
     pub dragging: Option<usize>,
     /// Index de l'archétype sélectionné pour édition.
     pub selected: Option<usize>,
@@ -65,38 +51,16 @@ pub(crate) fn species_color32(species: u16) -> egui::Color32 {
     egui::Color32::from_rgb(q(c.red), q(c.green), q(c.blue))
 }
 
-/// Teinte d'alerte (ambre) — collision de numérotation d'espèce (agent/nourriture).
-const COLLISION_WARN: egui::Color32 = egui::Color32::from_rgb(230, 170, 60);
-
-/// Les archétypes déduits d'un scénario : une entrée par espèce d'agent (avec le
-/// génotype fondateur, l'« archétype ») + la nourriture. Reconstruit aussi après
-/// un chargement RON.
-pub fn make_items(config: &SimConfig) -> Vec<Archetype> {
-    let mut items = Vec::new();
-    let base = Genotype::base(config);
-    for species in 0..config.species_cardinality() {
-        items.push(Archetype {
-            name: format!("Agent · espèce {species}"),
-            kind: ArchetypeKind::Agent {
-                species,
-                genotype: base,
-            },
-            color: species_color32(species),
-        });
-    }
-    items.push(Archetype {
-        name: "Nourriture".to_string(),
-        kind: ArchetypeKind::Food,
-        color: species_color32(config.food_species),
-    });
-    items
+/// Couleur egui d'un archétype, depuis sa couleur stockée (`[r, g, b]` ∈ [0, 1]).
+fn archetype_color32(a: &Archetype) -> egui::Color32 {
+    let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+    egui::Color32::from_rgb(q(a.color[0]), q(a.color[1]), q(a.color[2]))
 }
 
 /// Construit la palette au `Startup`, après l'insertion de [`SimConfig`] par le
 /// plugin de sim.
 pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
     commands.insert_resource(Palette {
-        items: make_items(&config),
         dragging: None,
         selected: None,
         next_seed: config.seed ^ 0xED17,
@@ -141,20 +105,24 @@ pub fn resolve_drag(
     Ok(())
 }
 
-/// Section « sélecteur » : la liste des archétypes (glisser pour poser, cliquer
-/// pour éditer). Rendue dans le panneau de gauche (item dock).
-pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
+/// Section « sélecteur » : la liste des **archétypes du scénario** (glisser pour
+/// poser, cliquer pour éditer), plus la création (agent / nourriture) et la
+/// suppression. La liste *est* [`SimConfig::archetypes`] — créer ou supprimer ici
+/// modifie donc le scénario directement.
+pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
     ui.label("Glisse dans l'aire pour poser ; clique pour éditer ; Suppr (curseur sur une entité) pour retirer.");
     ui.separator();
     let mut started = None;
     let mut clicked = None;
-    for (i, arch) in palette.items.iter().enumerate() {
+    for (i, arch) in config.archetypes.iter().enumerate() {
         let mark = if palette.selected == Some(i) {
             "▶ "
         } else {
             "⬤ "
         };
-        let label = egui::RichText::new(format!("{mark}{}", arch.name)).color(arch.color);
+        let suffix = if arch.is_food() { " · nourriture" } else { "" };
+        let label = egui::RichText::new(format!("{mark}{}{suffix}", arch.name))
+            .color(archetype_color32(arch));
         let resp = ui.add_sized(
             [ui.available_width(), 28.0],
             egui::Button::new(label).sense(egui::Sense::click_and_drag()),
@@ -172,9 +140,55 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
     if clicked.is_some() {
         palette.selected = clicked;
     }
+
+    ui.separator();
+    ui.horizontal(|ui| {
+        if ui.button("＋ Agent").clicked() {
+            config
+                .archetypes
+                .push(Archetype::new_agent(config.archetypes.len()));
+            palette.selected = Some(config.archetypes.len() - 1);
+        }
+        if ui.button("＋ Nourriture").clicked() {
+            config
+                .archetypes
+                .push(Archetype::new_food(config.archetypes.len()));
+            palette.selected = Some(config.archetypes.len() - 1);
+        }
+    });
+    if let Some(i) = palette.selected
+        && config.archetypes.len() > 1
+        && ui
+            .button("🗑 Supprimer l'archétype sélectionné")
+            .on_hover_text("Retire l'archétype et remappe la table de relations.")
+            .clicked()
+    {
+        remove_archetype(config, i);
+        palette.selected = None;
+    }
+
     if palette.dragging.is_some() {
         ui.separator();
         ui.weak("Relâche au-dessus de l'aire pour déposer.");
+    }
+}
+
+/// Retire l'archétype `i` et **remappe la table de relations** : les relations qui le
+/// référencent (acteur ou cible) sont retirées, et tout index supérieur est décrémenté
+/// — sinon les indices d'archétype pointeraient vers la mauvaise espèce.
+fn remove_archetype(config: &mut SimConfig, i: usize) {
+    config.archetypes.remove(i);
+    let removed = i as u16;
+    config
+        .relations
+        .retain(|r| r.actor != removed && r.target != removed);
+    for r in &mut config.relations {
+        if r.actor > removed {
+            r.actor -= 1;
+        }
+        if r.target > removed {
+            r.target -= 1;
+        }
     }
 }
 
@@ -184,82 +198,9 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette) {
 /// ensuite seule).
 pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
     match palette.selected {
-        Some(i) => {
-            let is_agent = matches!(
-                palette.items.get(i).map(|a| &a.kind),
-                Some(ArchetypeKind::Agent { .. })
-            );
-            if is_agent {
-                ui.label(format!("Édition : {}", palette.items[i].name));
-                ui.small(
-                    "Ces gènes sont l'ARCHÉTYPE (le modèle). Chaque agent posé \
-                     en reçoit une COPIE — son génome — qui mute ensuite seule. \
-                     L'évolution ne touche jamais l'archétype.",
-                );
-                ui.separator();
-                if let Some(Archetype {
-                    kind: ArchetypeKind::Agent { genotype, .. },
-                    ..
-                }) = palette.items.get_mut(i)
-                {
-                    // Une seule boucle sur TRAITS : slider (valeur, bornes) + case
-                    // « mutable » par caractéristique. Ajouter un trait n'ajoute
-                    // pas une ligne ici — c'est la falsification de l'item 15
-                    // contre la pluralité de traits existante.
-                    for t in &TRAITS {
-                        let bounds = (t.bounds)(config);
-                        let mut value = (t.get)(genotype);
-                        if ui
-                            .add(
-                                egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name),
-                            )
-                            .changed()
-                        {
-                            (t.set)(genotype, value);
-                        }
-                        let mut mutable = (t.mutable)(&config.mutable);
-                        if ui
-                            .checkbox(&mut mutable, "mutable")
-                            .on_hover_text(
-                                "Coché : ce gène mute à la reproduction (il dérive et se \
-                                 transmet avec variation). Décoché : il est quand même \
-                                 transmis, mais figé sur la valeur du fondateur — rien à \
-                                 sélectionner.",
-                            )
-                            .changed()
-                        {
-                            (t.set_mutable)(&mut config.mutable, mutable);
-                        }
-                    }
-                }
-                if ui.button("↺ Réinitialiser au scénario").clicked() {
-                    let base = Genotype::base(config);
-                    if let Some(Archetype {
-                        kind: ArchetypeKind::Agent { genotype, .. },
-                        ..
-                    }) = palette.items.get_mut(i)
-                    {
-                        *genotype = base;
-                    }
-                }
-                // Cerveau de CETTE espèce uniquement : on lit l'espèce et la précision
-                // fondatrice de l'archétype sélectionné (le `get_mut` ci-dessus est
-                // refermé), puis on édite le cerveau correspondant.
-                if let Some(ArchetypeKind::Agent { species, genotype }) =
-                    palette.items.get(i).map(|a| &a.kind)
-                {
-                    let species = *species;
-                    let arch_rays = genotype.ray_count();
-                    species_radius_editor(ui, config, species);
-                    species_reserve_editor(ui, config, species);
-                    species_brain_editor(ui, config, species, arch_rays);
-                }
-            } else {
-                ui.label("La nourriture n'a pas de gènes éditables.");
-            }
-        }
-        None => {
-            ui.label("Clique un archétype dans la palette pour l'éditer.");
+        Some(i) if i < config.archetypes.len() => archetype_editor(ui, config, i),
+        _ => {
+            ui.label("Clique un archétype dans la palette pour l'éditer (ou crée-en un).");
         }
     }
 
@@ -268,7 +209,6 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
     ui.text_edit_singleline(&mut palette.save_path);
     ui.horizontal(|ui| {
         if ui.button("💾 Sauver").clicked() {
-            sync_config_from_palette(config, palette);
             let path = palette.save_path.clone();
             palette.status = match config.save_ron_file(&path) {
                 Ok(()) => format!("Sauvé → {path}"),
@@ -280,7 +220,6 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
             palette.status = match SimConfig::from_ron_file(&path) {
                 Ok(loaded) => {
                     *config = loaded;
-                    palette.items = make_items(config);
                     palette.selected = None;
                     palette.dragging = None;
                     format!("Chargé ← {path}")
@@ -294,93 +233,78 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
     }
 }
 
-/// Rayon du corps **de l'espèce sélectionnée**. Comme la réserve max, c'est une
-/// propriété de corps éditée directement sur le [`SimConfig`] (persistée par
-/// « Sauver ») : à une seule espèce on règle le [`SimConfig::agent_radius`] uniforme,
-/// sinon l'entrée `species` de [`SimConfig::agent_radius_per_species`], matérialisée à
-/// la demande depuis l'uniforme. Le corps prend cette taille au spawn (peuplement
-/// initial et reproduction) ; les agents déjà nés gardent la leur.
-fn species_radius_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16) {
-    ui.separator();
-    ui.strong("Taille du corps de cette espèce");
-    ui.small("Rayon du corps (et du collider). Adopté par les nouveaux agents au spawn.");
-    if config.species_cardinality() <= 1 {
-        ui.add(egui::Slider::new(&mut config.agent_radius, 2.0..=30.0).text("rayon"));
-    } else {
-        let fallback = config.agent_radius;
-        config
-            .agent_radius_per_species
-            .resize(config.species_cardinality() as usize, fallback);
-        ui.add(
-            egui::Slider::new(
-                &mut config.agent_radius_per_species[species as usize],
-                2.0..=30.0,
-            )
-            .text("rayon"),
-        );
-    }
-}
+/// Éditeur de **l'archétype `i`** : propriétés communes (nom, couleur, effectif,
+/// taille, réserve) puis ce qui dépend du type — gènes + mutabilité (par espèce) +
+/// cerveau pour un agent, repousse pour une nourriture. Écrit *directement* dans
+/// `config.archetypes[i]` (persisté par « Sauver »).
+fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
+    // Bornes (globales) capturées avant d'emprunter `config.archetypes` en mutable.
+    let trait_bounds: Vec<_> = TRAITS.iter().map(|t| (t.bounds)(config)).collect();
+    let arch = &mut config.archetypes[i];
 
-/// Réserve max **de l'espèce sélectionnée** (capacité du corps). Comme le cerveau,
-/// c'est une propriété d'espèce éditée directement sur le [`SimConfig`] (persistée par
-/// « Sauver ») : à une seule espèce on règle la [`SimConfig::reserve_max`] uniforme,
-/// sinon l'entrée `species` de [`SimConfig::reserve_max_per_species`], matérialisée à
-/// la demande depuis l'uniforme. Le **% de remplissage** reste normalisé `[0, 1]`
-/// (cf. [`teemlab::components::Reserve::fraction`]), donc comparable entre espèces.
-fn species_reserve_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16) {
-    ui.separator();
-    ui.strong("Réserve max de cette espèce");
-    ui.small(
-        "Capacité d'énergie/PV de l'espèce. Le % de remplissage reste normalisé \
-         (0–100 %) quelle que soit la capacité.",
+    ui.horizontal(|ui| {
+        ui.label("nom :");
+        ui.text_edit_singleline(&mut arch.name);
+    });
+    ui.horizontal(|ui| {
+        ui.label("couleur :");
+        ui.color_edit_button_rgb(&mut arch.color);
+    });
+    ui.add(
+        egui::DragValue::new(&mut arch.count)
+            .range(0..=5000)
+            .prefix("effectif au spawn (reset) : "),
     );
-    if config.species_cardinality() <= 1 {
-        ui.add(egui::Slider::new(&mut config.reserve_max, 10.0..=500.0).text("réserve max"));
-    } else {
-        let fallback = config.reserve_max;
-        config
-            .reserve_max_per_species
-            .resize(config.species_cardinality() as usize, fallback);
-        ui.add(
-            egui::Slider::new(
-                &mut config.reserve_max_per_species[species as usize],
-                10.0..=500.0,
-            )
-            .text("réserve max"),
-        );
-    }
-}
+    ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0).text("rayon du corps"));
+    ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0).text("réserve max"));
 
-/// Éditeur de cerveau (item 15) **ciblé sur l'espèce sélectionnée** : on ne voit ni
-/// n'édite que le cerveau de l'archétype choisi, jamais ceux des autres espèces. Le
-/// **type** de cerveau + ses paramètres **propres au variant** sont édités directement
-/// sur le [`SimConfig`], donc persistés par « Sauver » sans passe de synchro.
-///
-/// À une seule espèce, on édite le [`SimConfig::brain`] uniforme ; sinon l'entrée
-/// `species` de [`SimConfig::brains_per_species`] (item 18a, cohabitation
-/// témoin/appris §4), matérialisée à la demande en clonant l'uniforme pour les
-/// entrées manquantes. `arch_rays` = précision visuelle du fondateur, pour afficher
-/// la taille (au fondateur) de la couche d'entrée du MLP. Chaque variant affiche en
-/// plus sa **description fonctionnelle** (cf. [`BrainKind::description`]).
-fn species_brain_editor(ui: &mut egui::Ui, config: &mut SimConfig, species: u16, arch_rays: usize) {
-    ui.separator();
-    ui.strong("Cerveau de cette espèce (auteur de la décision)");
-    ui.small(
-        "Le cerveau de l'espèce sélectionnée uniquement. Chaque variant expose ses \
-         propres paramètres d'archétype.",
-    );
-    if config.species_cardinality() <= 1 {
-        brain_kind_editor(ui, &mut config.brain, arch_rays);
-    } else {
-        let fallback = config.brain.clone();
-        config
-            .brains_per_species
-            .resize(config.species_cardinality() as usize, fallback);
-        brain_kind_editor(
-            ui,
-            &mut config.brains_per_species[species as usize],
-            arch_rays,
-        );
+    match &mut arch.kind {
+        ArchetypeKind::Agent {
+            genotype,
+            brain,
+            mutable,
+        } => {
+            ui.separator();
+            ui.strong("Gènes (l'archétype)");
+            ui.small(
+                "Chaque agent posé reçoit une COPIE de ces gènes — son génome — qui mute \
+                 ensuite seule. La case « mutable » gouverne, PAR ESPÈCE, le droit de muter.",
+            );
+            // Une seule boucle sur TRAITS : slider (valeur, bornes) + case « mutable »
+            // par gène. Ajouter un trait n'ajoute pas une ligne ici (item 15).
+            for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
+                let mut value = (t.get)(genotype);
+                if ui
+                    .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
+                    .changed()
+                {
+                    (t.set)(genotype, value);
+                }
+                let mut m = (t.mutable)(mutable);
+                if ui
+                    .checkbox(&mut m, "mutable")
+                    .on_hover_text(
+                        "Coché : ce gène mute à la reproduction (il dérive et se transmet \
+                         avec variation). Décoché : il est quand même transmis, mais figé \
+                         sur la valeur du fondateur.",
+                    )
+                    .changed()
+                {
+                    (t.set_mutable)(mutable, m);
+                }
+            }
+            ui.separator();
+            ui.strong("Cerveau (auteur de la décision)");
+            brain_kind_editor(ui, brain, genotype.ray_count());
+        }
+        ArchetypeKind::Food { regen } => {
+            ui.separator();
+            ui.strong("Nourriture (source sessile)");
+            ui.add(egui::Slider::new(regen, 0.0..=50.0).text("repousse/s"))
+                .on_hover_text(
+                    "Sources repoussées par seconde (0 = maintien instantané à l'effectif).",
+                );
+        }
     }
 }
 
@@ -629,24 +553,14 @@ pub(crate) fn draw_mlp_graph(
 /// lus en continu par la sim et agissent **à chaud**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.small(
-        "Paramètres de scénario. Les champs notés (reset) ne s'appliquent qu'à la \
-         (ré)génération du monde (⟲ du bandeau) ; les autres agissent à chaud.",
+        "Paramètres globaux. (reset) = à la (ré)génération du monde (⟲ du bandeau) ; \
+         les relations agissent à chaud. Population, corps et cerveaux vivent dans les \
+         archétypes (panneau « Archétypes »).",
     );
 
     ui.separator();
-    ui.strong("Arène & population");
+    ui.strong("Monde");
     ui.add(egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("demi-arène"));
-    ui.add(
-        egui::DragValue::new(&mut config.species_count)
-            .range(1..=8)
-            .prefix("espèces (reset) : "),
-    );
-    // Effectif au spawn : uniforme à une espèce, un effectif par espèce au-delà
-    // (le levier d'une pyramide trophique) — cf. species_spawn_counts.
-    species_spawn_counts(ui, config);
-    // La réserve max (capacité du corps) et le nombre de rayons de vision sont
-    // désormais des propriétés d'archétype, éditées par espèce dans l'éditeur
-    // d'archétype : la réserve directement, les rayons via le gène « Rayons ».
     ui.add(
         egui::DragValue::new(&mut config.seed)
             .speed(1.0)
@@ -654,78 +568,37 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     );
 
     ui.separator();
-    ui.strong("Nourriture");
-    ui.add(
-        egui::DragValue::new(&mut config.food_count)
-            .range(0..=2000)
-            .prefix("effectif maintenu : "),
-    );
-    ui.add(egui::Slider::new(&mut config.food_radius, 2.0..=30.0).text("rayon"));
-    ui.add(egui::Slider::new(&mut config.food_energy, 5.0..=300.0).text("énergie"));
-    ui.add(egui::Slider::new(&mut config.food_regen, 0.0..=50.0).text("repousse/s"));
-    ui.add(
-        egui::DragValue::new(&mut config.food_species)
-            .range(0..=8)
-            .prefix("espèce nourriture : "),
-    );
-    if config.food_species < config.species_cardinality() {
-        ui.colored_label(
-            COLLISION_WARN,
-            "⚠ partage un numéro avec une espèce d'agent (cf. Relations).",
-        );
-    }
+    relations_section(ui, config);
+}
 
-    ui.separator();
+/// La table de relations, **adressée par archétype** : chaque acteur/cible se choisit
+/// dans un menu d'archétypes (nom + couleur). Plus de numéros nus ni de collision
+/// possible avec la nourriture — qui est un archétype à part entière, avec son index.
+fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.strong("Relations (qui agit sur qui)");
     ui.small(
-        "Une relation = un acteur réduit la réserve d'une cible à portée. C'est elle \
-         qui fait d'une espèce une CIBLE comestible — ce que poursuit Brain::Hunter. \
-         transfert = prédation (l'acteur gagne l'énergie) ; sinon simple destruction.",
+        "Un acteur réduit la réserve d'une cible à portée. C'est ce qui fait d'un \
+         archétype une CIBLE (ce que poursuit Brain::Hunter). transfert = prédation \
+         (l'acteur gagne l'énergie) ; sinon simple destruction.",
     );
-    // Les relations ne parlent qu'en NUMÉROS d'espèce, et agents et nourriture
-    // partagent le même espace de numéros (cf. interaction::interact) : on rappelle
-    // donc qui est qui, et on alerte sur une collision agent/nourriture.
-    let n_species = config.species_cardinality();
-    let food = config.food_species;
-    ui.small(format!(
-        "Numérotation : agents = espèces 0–{}, nourriture = espèce {food}. \
-         Une relation cible un NUMÉRO.",
-        n_species.saturating_sub(1),
-    ));
-    if food < n_species {
-        ui.colored_label(
-            COLLISION_WARN,
-            format!(
-                "⚠ Nourriture (espèce {food}) = agent espèce {food} : une relation \
-                 ciblant {food} touche les DEUX. Mets « espèce nourriture » ≥ {n_species} \
-                 pour les séparer.",
-            ),
-        );
+    // Instantané (nom, couleur) des archétypes pour les menus — capturé avant
+    // d'emprunter `config.relations` en mutable.
+    let archs: Vec<(String, egui::Color32)> = config
+        .archetypes
+        .iter()
+        .map(|a| (a.name.clone(), archetype_color32(a)))
+        .collect();
+    if archs.len() < 2 {
+        ui.weak("Crée au moins deux archétypes pour définir une relation.");
+        return;
     }
-    // Traduit un numéro d'espèce en (couleur, rôle) pour rendre la table lisible.
-    let describe = |num: u16| -> (egui::Color32, String) {
-        let role = match (num < n_species, num == food) {
-            (true, true) => "agent + nourriture ⚠",
-            (true, false) => "agent",
-            (false, true) => "nourriture",
-            (false, false) => "inutilisé",
-        };
-        (species_color32(num), format!("espèce {num} · {role}"))
-    };
     let mut to_remove = None;
     for (i, rel) in config.relations.iter_mut().enumerate() {
         ui.separator();
         ui.horizontal(|ui| {
-            ui.add(
-                egui::DragValue::new(&mut rel.actor)
-                    .range(0..=8)
-                    .prefix("acteur "),
-            );
-            ui.add(
-                egui::DragValue::new(&mut rel.target)
-                    .range(0..=8)
-                    .prefix("→ cible "),
-            );
+            archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
+            ui.label("→");
+            archetype_combo(ui, ("rel_target", i), &mut rel.target, &archs);
             if ui
                 .button("🗑")
                 .on_hover_text("Retirer cette relation")
@@ -733,14 +606,6 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             {
                 to_remove = Some(i);
             }
-        });
-        // En clair : acteur → cible, couleurs et rôles résolus dans le scénario.
-        let (actor_color, actor_label) = describe(rel.actor);
-        let (target_color, target_label) = describe(rel.target);
-        ui.horizontal(|ui| {
-            ui.colored_label(actor_color, actor_label);
-            ui.label("→");
-            ui.colored_label(target_color, target_label);
         });
         ui.checkbox(&mut rel.transfer, "transfert (prédation)");
         ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("débit/s"));
@@ -750,11 +615,20 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
         config.relations.remove(i);
     }
     if ui.button("＋ Ajouter une relation").clicked() {
-        // Défaut « l'espèce 0 mange la nourriture » : le cas le plus courant, et ce
-        // qu'il faut pour qu'un chasseur reconnaisse la nourriture comme cible.
+        // Défaut : le premier agent mange la première nourriture (le cas courant).
+        let actor = config
+            .archetypes
+            .iter()
+            .position(|a| a.is_agent())
+            .unwrap_or(0) as u16;
+        let target = config
+            .archetypes
+            .iter()
+            .position(|a| a.is_food())
+            .unwrap_or(0) as u16;
         config.relations.push(Relation {
-            actor: 0,
-            target: config.food_species,
+            actor,
+            target,
             transfer: true,
             rate: 100.0,
             range: 20.0,
@@ -762,44 +636,29 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     }
 }
 
-/// Effectif au spawn, **par espèce** (item 17, levier de la pyramide trophique). À
-/// une seule espèce : l'effectif uniforme [`SimConfig::agent_count`], et
-/// [`SimConfig::agents_per_species`] reste vide (partage round-robin historique). À
-/// plusieurs espèces : un effectif par espèce dans `agents_per_species` — qui
-/// **prime** alors sur `agent_count` —, calé sur le nombre d'espèces et initialisé
-/// depuis le partage uniforme courant. Comme `species_count`, c'est un paramètre
-/// *(reset)* : il ne prend effet qu'à la (ré)génération du monde.
-fn species_spawn_counts(ui: &mut egui::Ui, config: &mut SimConfig) {
-    let n = config.species_count.max(1) as usize;
-    if n <= 1 {
-        // Une espèce : effectif uniforme ; on garde `agents_per_species` vide pour
-        // rester sur le partage round-robin historique.
-        config.agents_per_species.clear();
-        ui.add(
-            egui::DragValue::new(&mut config.agent_count)
-                .range(0..=5000)
-                .prefix("agents au spawn (reset) : "),
-        );
-        return;
-    }
-    // Plusieurs espèces : on cale le vecteur sur le nombre d'espèces (tronque si on
-    // en retire, complète depuis le partage uniforme courant si on en ajoute) ; les
-    // valeurs déjà éditées sont conservées.
-    let fill = (config.agent_count / n).max(1);
-    config.agents_per_species.resize(n, fill);
-    ui.label("Agents au spawn, par espèce (reset) :");
-    for (s, count) in config.agents_per_species.iter_mut().enumerate() {
-        ui.horizontal(|ui| {
-            ui.colored_label(species_color32(s as u16), "⬤");
-            ui.add(
-                egui::DragValue::new(count)
-                    .range(0..=5000)
-                    .prefix(format!("espèce {s} : ")),
-            );
+/// Un menu déroulant qui choisit un **archétype** (par index `u16`) parmi `archs`,
+/// affichant son nom dans sa couleur. `id` désambiguïse les combos d'une même frame.
+fn archetype_combo(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash,
+    value: &mut u16,
+    archs: &[(String, egui::Color32)],
+) {
+    let cur = *value as usize;
+    let selected_text = archs
+        .get(cur)
+        .map(|(n, _)| n.clone())
+        .unwrap_or_else(|| format!("#{value}"));
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(selected_text)
+        .show_ui(ui, |ui| {
+            for (i, (name, color)) in archs.iter().enumerate() {
+                let label = egui::RichText::new(name).color(*color);
+                if ui.selectable_label(cur == i, label).clicked() {
+                    *value = i as u16;
+                }
+            }
         });
-    }
-    let total: usize = config.agents_per_species.iter().sum();
-    ui.weak(format!("total : {total} agents"));
 }
 
 /// Statistiques en direct, rendues **à droite de la barre du haut** (dock fixe) par
@@ -831,33 +690,9 @@ pub(crate) fn stats_section(
     });
 }
 
-/// Reporte les gènes de l'archétype d'agent (le premier) dans le génotype
-/// fondateur du scénario, pour que la sauvegarde reflète l'édition.
-///
-/// Limite v1 assumée : `SimConfig` ne porte qu'un génotype fondateur ; si
-/// plusieurs espèces d'agents ont été éditées séparément, seule la première est
-/// persistée. Les scénarios actuels n'ont qu'une espèce.
-fn sync_config_from_palette(config: &mut SimConfig, palette: &Palette) {
-    let agent = palette.items.iter().find_map(|a| match &a.kind {
-        ArchetypeKind::Agent { genotype, .. } => Some(genotype),
-        ArchetypeKind::Food => None,
-    });
-    if let Some(g) = agent {
-        config.max_speed = g.max_speed;
-        config.agility = g.agility;
-        config.vision_range = g.vision_range;
-        config.vision_fov_deg = g.vision_fov_deg;
-        config.reproduction_threshold = g.reproduction_threshold;
-        config.offspring_energy = g.offspring_energy;
-        config.mutation_rate = g.mutation_rate;
-        config.base_metabolism = g.base_metabolism;
-        config.move_cost = g.move_cost;
-        // La précision visuelle (gène f32) repasse au fondateur (usize) du scénario.
-        config.vision_rays = g.ray_count();
-    }
-}
-
-/// Compile l'archétype `i` vers une entité vivante, posée en `world`.
+/// Compile l'archétype `i` vers une entité vivante, posée en `world` : un agent
+/// (génotype/cerveau de l'archétype) ou une source de nourriture, selon son type. Son
+/// `Species` est son **index d'archétype** — l'identité que cible la table de relations.
 fn place(
     commands: &mut Commands,
     config: &SimConfig,
@@ -865,14 +700,18 @@ fn place(
     i: usize,
     world: Vec2,
 ) {
-    match palette.items[i].kind.clone() {
-        ArchetypeKind::Agent { species, genotype } => {
+    let Some(arch) = config.archetypes.get(i) else {
+        return;
+    };
+    let species = i as u16;
+    match arch.kind {
+        ArchetypeKind::Agent { .. } => {
             let seed = palette.next_seed;
             palette.next_seed = palette.next_seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
             spawn_agent(
                 commands,
                 config,
-                genotype,
+                config.genotype_of(species),
                 Species(species),
                 world,
                 0.0,
@@ -881,6 +720,6 @@ fn place(
                 0, // posé à la main : génération 0 (fondateur).
             );
         }
-        ArchetypeKind::Food => spawn_food(commands, config, world),
+        ArchetypeKind::Food { .. } => spawn_food(commands, config, species, world),
     }
 }

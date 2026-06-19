@@ -8,6 +8,7 @@
 //! et l'enregistrement (item 14, §7 : *re-render frais* d'une run).
 
 use crate::components::{Agent, Food, Perception, Radius, Reserve, Species};
+use crate::config::SimConfig;
 use bevy::prelude::*;
 
 /// Ajoute les systèmes de rendu de la sim (mesh des entités, teinte par réserve,
@@ -43,10 +44,19 @@ pub fn species_color(species: Species) -> Srgba {
     PALETTE[species.0 as usize % PALETTE.len()]
 }
 
-/// Rendu seul : donner un mesh visible aux agents fraîchement spawnés, teinté
-/// par espèce. Tourne dans `Update` car ça manipule des assets de rendu.
+/// Couleur d'affichage d'une entité : celle de **son archétype** (l'index porté par
+/// [`Species`]), avec repli sur la palette pour un index hors-liste. C'est ainsi que
+/// la couleur choisie dans l'éditeur d'archétype se voit à l'écran.
+fn entity_color(config: &SimConfig, species: Species) -> Srgba {
+    let [r, g, b] = config.color_of(species.0);
+    Srgba::new(r, g, b, 1.0)
+}
+
+/// Rendu seul : donner un mesh visible aux agents fraîchement spawnés, teinté par la
+/// couleur de leur archétype. Tourne dans `Update` car ça manipule des assets de rendu.
 fn attach_visuals(
     mut commands: Commands,
+    config: Res<SimConfig>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Mesh2d>)>,
@@ -54,16 +64,17 @@ fn attach_visuals(
     for (entity, radius, species) in &new_agents {
         commands.entity(entity).insert((
             Mesh2d(meshes.add(Circle::new(radius.0))),
-            MeshMaterial2d(materials.add(Color::from(species_color(*species)))),
+            MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
         ));
     }
 }
 
-/// Rendu seul : donner un mesh aux sources de nourriture fraîchement semées,
-/// teintées par leur espèce. Elles s'assombriront ensuite via `shade_by_reserve`
+/// Rendu seul : donner un mesh aux sources de nourriture fraîchement semées, teintées
+/// par la couleur de leur archétype. Elles s'assombriront ensuite via `shade_by_reserve`
 /// (elles portent `Species` + `Reserve`) à mesure qu'on les mange.
 fn attach_food_visuals(
     mut commands: Commands,
+    config: Res<SimConfig>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     new_food: Query<(Entity, &Radius, &Species), (Added<Food>, Without<Mesh2d>)>,
@@ -71,7 +82,7 @@ fn attach_food_visuals(
     for (entity, radius, species) in &new_food {
         commands.entity(entity).insert((
             Mesh2d(meshes.add(Circle::new(radius.0))),
-            MeshMaterial2d(materials.add(Color::from(species_color(*species)))),
+            MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
         ));
     }
 }
@@ -80,13 +91,14 @@ fn attach_food_visuals(
 /// la prédation vider ses proies. Chaque agent possède son propre matériau (créé
 /// dans `attach_visuals`), qu'on module ici par la fraction de réserve.
 fn shade_by_reserve(
+    config: Res<SimConfig>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     agents: Query<(&MeshMaterial2d<ColorMaterial>, &Species, &Reserve)>,
 ) {
     for (handle, species, reserve) in &agents {
         if let Some(material) = materials.get_mut(&handle.0) {
             let dim = 0.25 + 0.75 * reserve.fraction();
-            let base = species_color(*species);
+            let base = entity_color(&config, *species);
             material.color = Color::srgb(base.red * dim, base.green * dim, base.blue * dim);
         }
     }

@@ -339,6 +339,47 @@ plus la **généalogie** (génération, âge).
     (18a). Renommage `Heritability → Mutability` (la case gouverne la mutation, le gène est transmis dans
     tous les cas). Éditeur de cerveau désormais **ciblé sur l'espèce sélectionnée**. UX : « Recharger
     dans le monde » repart **en pause** (monde neuf figé, à placer/éditer avant lancement).
+18d. **Archétype-first** (Phase 1 de « tout est entité ») **(réalisé)** : la donnée centrale du
+    scénario devient `archetypes: Vec<Archetype>` — chaque entrée est une *espèce de premier ordre*
+    (`name`, `color`, `count`, `radius`, `reserve_max`, `kind`), et son **index** est son identité
+    (`Species`). `ArchetypeKind` est un `enum` `Agent { genotype, brain, mutable }` / `Food { regen }` :
+    la nourriture est un archétype comme un autre, avec son propre index → **fin de la collision** de
+    numéros agent/nourriture. La **mutabilité passe par espèce** (dans `Agent`), le **génotype fondateur
+    aussi** (corps distincts — résout le point ouvert « repli founder par espèce » du §9 pour les agents).
+    Les vecteurs parallèles (`agents_per_species`, `brains_per_species`, `reserve_max_per_species`,
+    `agent_radius_per_species`) et les champs `food_*` épars fusionnent dans les archétypes ; bornes,
+    `tick_hz`, arène et graine restent globaux. Les **relations s'adressent par archétype** (menus
+    déroulants dans l'éditeur, plus de numéros nus). L'éditeur crée/duplique/supprime des archétypes et
+    écrit *directement* dans le `SimConfig` (plus de copie+synchro). Schéma RON cassant : tous les
+    scénarios migrés, et triés (11 → 7). **Reste** (Phases 2-3) : finitions d'éditeur, puis la **flore
+    évolutive** — `Food` dissous en un archétype à génotype sessile (le verrou `Genotype` variable du §9).
+
+```mermaid
+flowchart TB
+  subgraph Scenario["Scénario · SimConfig (RON)"]
+    World["Monde : tick_hz · arène · seed"]
+    Bounds["Bornes globales (par gène)"]
+    Archs["archetypes : Vec&lt;Archetype&gt;"]
+    Rels["relations (acteur/cible = index d'archétype)"]
+  end
+  subgraph A["Archetype"]
+    Meta["name · color · count · radius · reserve_max"]
+    Kind{{"kind"}}
+    AgentK["Agent { genotype, brain, mutable }"]
+    FoodK["Food { regen }"]
+    Kind --> AgentK
+    Kind --> FoodK
+  end
+  Archs --> A
+  AgentK --> Geno["Genotype (gènes)"]
+  AgentK --> BrainK["BrainKind : Wander · Hunter · MLP"]
+  AgentK --> Mut["Mutability (par espèce)"]
+  A -- "compile ×count (génotype→phénotype)" --> Ent["Entité ECS<br/>Species(index) · Reserve · Radius · Brain · …"]
+  Bounds -. borne la mutation .-> Geno
+  Ent --> Loop["percevoir → décider → agir (FixedUpdate)"]
+  Rels --> Loop
+  Loop -- "reproduction (mutate selon Mutability)" --> Ent
+```
 
 ### P5 — Bataille (différée) + passage à l'échelle
 

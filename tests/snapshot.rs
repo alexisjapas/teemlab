@@ -42,12 +42,12 @@ fn capture_system(
         ),
         With<Agent>,
     >,
-    food: Query<(&Transform, &Reserve), With<Food>>,
+    food: Query<(&Transform, &Reserve, &Species), With<Food>>,
 ) {
     captured.0 = Some(Snapshot {
         config: config.clone(),
         sim_rng: sim_rng.0.clone(),
-        food_regen: regen.0,
+        food_regen: regen.0.clone(),
         agents: agents
             .iter()
             .map(|(t, g, r, s, b, generation, age)| AgentSnap {
@@ -62,9 +62,10 @@ fn capture_system(
             .collect(),
         food: food
             .iter()
-            .map(|(t, r)| FoodSnap {
+            .map(|(t, r, s)| FoodSnap {
                 pos: t.translation.truncate().to_array(),
                 reserve: r.current,
+                species: s.0,
             })
             .collect(),
     });
@@ -99,7 +100,13 @@ fn restore_system(
         );
     }
     for f in &snap.food {
-        spawn_food_with_energy(&mut commands, &snap.config, Vec2::from(f.pos), f.reserve);
+        spawn_food_with_energy(
+            &mut commands,
+            &snap.config,
+            f.species,
+            Vec2::from(f.pos),
+            f.reserve,
+        );
     }
 }
 

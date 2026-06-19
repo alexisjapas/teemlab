@@ -23,6 +23,7 @@ use bevy::prelude::*;
 /// enfants) **et** « génome » sérialisable d'une instance — la distinction
 /// archétype (config) / génome (instance) de l'item 5.
 #[derive(Component, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Genotype {
     /// Vitesse maximale.
     pub max_speed: f32,
@@ -61,25 +62,28 @@ pub struct Genotype {
     pub vision_rays: f32,
 }
 
-impl Genotype {
-    /// Génotype fondateur d'un scénario : les valeurs initiales déclarées dans la
-    /// config (l'« archétype »). Chaque gène dans son unité de stockage — le fov
-    /// reste en degrés, à l'identique de la config.
-    pub fn base(config: &SimConfig) -> Self {
+impl Default for Genotype {
+    /// Valeurs fondatrices par défaut (l'« archétype » de base) : reprises par
+    /// [`Archetype::new_agent`](crate::config::Archetype::new_agent) et par tout gène
+    /// omis d'un génotype partiel en RON (`#[serde(default)]`). Chaque gène dans son
+    /// unité de stockage — le fov en degrés.
+    fn default() -> Self {
         Self {
-            max_speed: config.max_speed,
-            agility: config.agility,
-            vision_range: config.vision_range,
-            vision_fov_deg: config.vision_fov_deg,
-            reproduction_threshold: config.reproduction_threshold,
-            offspring_energy: config.offspring_energy,
-            mutation_rate: config.mutation_rate,
-            base_metabolism: config.base_metabolism,
-            move_cost: config.move_cost,
-            vision_rays: config.vision_rays as f32,
+            max_speed: 140.0,
+            agility: 0.12,
+            vision_range: 160.0,
+            vision_fov_deg: 120.0,
+            reproduction_threshold: 0.0,
+            offspring_energy: 30.0,
+            mutation_rate: 0.0,
+            base_metabolism: 0.0,
+            move_cost: 0.0,
+            vision_rays: 7.0,
         }
     }
+}
 
+impl Genotype {
     /// Compile le gène de locomotion vers son phénotype.
     pub fn locomotion(&self) -> Locomotion {
         Locomotion {
@@ -117,13 +121,13 @@ impl Genotype {
     ///
     /// Le taux vient **du génotype** (`self.mutation_rate`), pas d'un réglage
     /// global : chaque lignée porte sa propre vitesse d'évolution.
-    pub fn mutate(&self, rng: &mut Rng, config: &SimConfig) -> Self {
+    pub fn mutate(&self, rng: &mut Rng, mutable: &Mutability, config: &SimConfig) -> Self {
         let rate = self.mutation_rate;
         let mut child = *self;
         for t in &TRAITS {
             // Trait non mutable : l'enfant garde la valeur du parent (déjà copiée
             // dans `child`) et ne consomme aucun tirage.
-            if !(t.mutable)(&config.mutable) {
+            if !(t.mutable)(mutable) {
                 continue;
             }
             let bounds = (t.bounds)(config);
@@ -258,21 +262,21 @@ pub const TRAITS: [TraitSpec; 10] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Mutability;
 
     fn config() -> SimConfig {
         SimConfig::default()
     }
 
-    /// Le génotype fondateur reflète les valeurs de la config, fov en radians.
+    /// Le génotype par défaut porte des valeurs fondatrices cohérentes (fov en degrés,
+    /// rayons entiers stockés en `f32`).
     #[test]
-    fn base_reads_config() {
-        let c = config();
-        let g = Genotype::base(&c);
-        assert_eq!(g.max_speed, c.max_speed);
-        assert_eq!(g.vision_fov_deg, c.vision_fov_deg);
-        assert_eq!(g.reproduction_threshold, c.reproduction_threshold);
-        assert_eq!(g.mutation_rate, c.mutation_rate);
-        assert_eq!(g.base_metabolism, c.base_metabolism);
+    fn default_has_founder_values() {
+        let g = Genotype::default();
+        assert_eq!(g.max_speed, 140.0);
+        assert_eq!(g.vision_fov_deg, 120.0);
+        assert_eq!(g.vision_rays, 7.0);
+        assert_eq!(g.ray_count(), 7);
     }
 
     /// Toute mutation laisse **chaque** gène de [`TRAITS`] dans ses bornes — même
@@ -280,12 +284,15 @@ mod tests {
     /// est couvert sans toucher ce test.
     #[test]
     fn mutation_stays_within_bounds() {
-        let mut c = config();
-        c.mutation_rate = 0.4; // forte, pour stresser le clamp
+        let c = config();
+        let mutable = Mutability::default();
         let mut rng = Rng::new(42);
-        let mut g = Genotype::base(&c);
+        let mut g = Genotype {
+            mutation_rate: 0.4, // forte, pour stresser le clamp
+            ..Genotype::default()
+        };
         for _ in 0..1000 {
-            g = g.mutate(&mut rng, &c);
+            g = g.mutate(&mut rng, &mutable, &c);
             for t in &TRAITS {
                 let b = (t.bounds)(&c);
                 let v = (t.get)(&g);
@@ -301,46 +308,54 @@ mod tests {
     /// Mutation nulle = clone fidèle (régime évolution éteinte).
     #[test]
     fn zero_mutation_is_identity() {
-        let c = config(); // mutation_rate = 0
+        let c = config();
+        let mutable = Mutability::default();
         let mut rng = Rng::new(1);
-        let g = Genotype::base(&c);
-        assert_eq!(g.mutate(&mut rng, &c), g);
+        let g = Genotype::default(); // mutation_rate = 0
+        assert_eq!(g.mutate(&mut rng, &mutable, &c), g);
     }
 
-    /// Le facet « mutable ? » : un trait marqué non mutable reste figé sur la
-    /// valeur du fondateur au fil des générations, alors que les mutables dérivent.
+    /// Le facet « mutable ? » (par espèce) : un trait marqué non mutable reste figé
+    /// sur la valeur du fondateur au fil des générations, alors que les mutables
+    /// dérivent.
     #[test]
     fn non_mutable_trait_stays_fixed() {
-        let mut c = config();
-        c.mutation_rate = 0.4; // forte mutation, pour que la dérive soit nette
-        c.mutable.max_speed = false; // figé
+        let c = config();
+        let mutable = Mutability {
+            max_speed: false, // figé
+            ..Mutability::default()
+        };
         let mut rng = Rng::new(7);
-        let base = Genotype::base(&c);
+        let base = Genotype {
+            mutation_rate: 0.4, // forte mutation, pour que la dérive soit nette
+            ..Genotype::default()
+        };
         let mut g = base;
         let mut drifted = false;
         for _ in 0..200 {
-            g = g.mutate(&mut rng, &c);
-            assert_eq!(g.max_speed, base.max_speed, "trait non héritable figé");
+            g = g.mutate(&mut rng, &mutable, &c);
+            assert_eq!(g.max_speed, base.max_speed, "trait non mutable figé");
             if (g.vision_range - base.vision_range).abs() > 1e-3 {
                 drifted = true;
             }
         }
-        assert!(drifted, "un trait héritable doit, lui, dériver");
+        assert!(drifted, "un trait mutable doit, lui, dériver");
     }
 
-    /// Le taux de mutation est désormais un gène **de l'entité** : la mutation lit
-    /// `self.mutation_rate`, pas un réglage global. Un génotype à taux nul ne
-    /// dérive donc pas, quoi que dise la config.
+    /// Le taux de mutation est un gène **de l'entité** : la mutation lit
+    /// `self.mutation_rate`. Un génotype à taux nul ne dérive donc pas.
     #[test]
     fn mutation_rate_is_per_genotype() {
-        let mut c = config();
-        c.mutation_rate = 0.5; // « global » élevé...
+        let c = config();
+        let mutable = Mutability::default();
         let mut rng = Rng::new(3);
-        let mut g = Genotype::base(&c);
-        g.mutation_rate = 0.0; // ...mais CE génotype ne mute pas.
+        let mut g = Genotype {
+            mutation_rate: 0.0, // ce génotype ne mute pas
+            ..Genotype::default()
+        };
         let before = g;
         for _ in 0..50 {
-            g = g.mutate(&mut rng, &c);
+            g = g.mutate(&mut rng, &mutable, &c);
         }
         assert_eq!(g, before, "un génotype à taux nul reste identique");
     }
