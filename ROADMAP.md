@@ -31,14 +31,17 @@ ouverts au §9.
   prédateur approche, un prédateur de sommet reste un pur chasseur (le pendant, côté fuite,
   de l'insight de l'item 17). Driver `tests/flight.rs` (miroir de `hunter.rs`) ;
   `proie_predateur` recalibré (arène élargie = refuges, la leçon spatiale de l'item 17).
+- **Phase 2 — finitions d'éditeur** (partiel) : l'éditeur d'archétypes sait désormais
+  **dupliquer** (clone en fin de liste, relations non copiées) et **réordonner** (▲/▼, avec
+  *transposition* des index dans la table de relations), en plus de créer/supprimer.
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg), drivers de test
   multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, …), `clippy`/`fmt` propres.
 
 **Reste à faire.**
 
-- **Phase 2 — finitions d'éditeur** : réordonner / dupliquer des archétypes, et la
-  **bibliothèque d'espèces** réutilisables hors scénario (§9, demande utilisateur — à
-  concevoir : périmètre d'une déf, fichiers `species/*.ron`, référencement, migration).
+- **Phase 2 — bibliothèque d'espèces** réutilisables hors scénario (§9, demande
+  utilisateur — à concevoir : périmètre d'une déf, fichiers `species/*.ron`,
+  référencement, migration). *(Réordonner / dupliquer des archétypes : **fait**, cf. « Fait ».)*
 - **Phase 3 — flore évolutive** (le vrai « tout est entité ») : dissoudre le type spécial
   `Food` en un archétype à **génotype sessile** (croissance, dissémination, semis local).
   Verrou : `Genotype` doit devenir variable par type d'entité (enum / superset /

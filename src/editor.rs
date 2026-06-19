@@ -156,6 +156,44 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
             palette.selected = Some(config.archetypes.len() - 1);
         }
     });
+
+    // Opérations sur l'archétype **sélectionné** : dupliquer et réordonner (comme la
+    // suppression plus bas, elles agissent sur la sélection).
+    if let Some(i) = palette.selected {
+        let count = config.archetypes.len();
+        ui.horizontal(|ui| {
+            if ui
+                .button("⧉ Dupliquer")
+                .on_hover_text(
+                    "Clone l'archétype sélectionné en fin de liste (relations non copiées).",
+                )
+                .clicked()
+            {
+                palette.selected = duplicate_archetype(config, i);
+            }
+            // Réordonner = échanger avec le voisin + transposer les index de relations.
+            // Comme la suppression, le changement de structure prend pleinement effet à
+            // la (ré)génération du monde (⟲ du bandeau) ; les relations, elles, sont
+            // corrigées tout de suite (le scénario sauvé reste juste).
+            if ui
+                .add_enabled(i > 0, egui::Button::new("▲ Monter"))
+                .on_hover_text("Échange avec l'archétype précédent (remappe les relations).")
+                .clicked()
+            {
+                swap_archetypes(config, i, i - 1);
+                palette.selected = Some(i - 1);
+            }
+            if ui
+                .add_enabled(i + 1 < count, egui::Button::new("▼ Descendre"))
+                .on_hover_text("Échange avec l'archétype suivant (remappe les relations).")
+                .clicked()
+            {
+                swap_archetypes(config, i, i + 1);
+                palette.selected = Some(i + 1);
+            }
+        });
+    }
+
     if let Some(i) = palette.selected
         && config.archetypes.len() > 1
         && ui
@@ -189,6 +227,39 @@ fn remove_archetype(config: &mut SimConfig, i: usize) {
         if r.target > removed {
             r.target -= 1;
         }
+    }
+}
+
+/// Duplique l'archétype `i` : un clone **indépendant** ajouté **en fin** de liste —
+/// donc sans décaler les index existants, et la table de relations reste intacte
+/// (cf. [`swap_archetypes`] qui, lui, doit remapper). Le clone ne reprend **pas** les
+/// relations de l'original (à recâbler à la main) ; son nom gagne « (copie) ».
+/// Renvoie l'index du clone pour le sélectionner. `None` si `i` est hors-liste.
+fn duplicate_archetype(config: &mut SimConfig, i: usize) -> Option<usize> {
+    let mut clone = config.archetypes.get(i)?.clone();
+    clone.name = format!("{} (copie)", clone.name);
+    config.archetypes.push(clone);
+    Some(config.archetypes.len() - 1)
+}
+
+/// Échange les archétypes `i` et `j` (réordonnancement) et **transpose** leurs index
+/// dans la table de relations : l'index d'un archétype *est* son identité d'espèce
+/// ([`Species`]), donc échanger deux archétypes sans toucher aux relations les ferait
+/// pointer vers la mauvaise espèce. Pendant exact, pour le réordonnancement, du remap
+/// que [`remove_archetype`] fait pour la suppression.
+fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
+    config.archetypes.swap(i, j);
+    let (i, j) = (i as u16, j as u16);
+    let transpose = |x: &mut u16| {
+        if *x == i {
+            *x = j;
+        } else if *x == j {
+            *x = i;
+        }
+    };
+    for r in &mut config.relations {
+        transpose(&mut r.actor);
+        transpose(&mut r.target);
     }
 }
 
@@ -721,5 +792,83 @@ fn place(
             );
         }
         ArchetypeKind::Food { .. } => spawn_food(commands, config, species, world),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper : une relation `actor → target` (débit/portée triviaux, sans intérêt ici).
+    fn rel(actor: u16, target: u16) -> Relation {
+        Relation {
+            actor,
+            target,
+            transfer: true,
+            rate: 1.0,
+            range: 1.0,
+        }
+    }
+
+    /// Réordonner échange deux archétypes ET **transpose** leurs index dans les
+    /// relations (l'index EST l'identité d'espèce). En échangeant les archétypes 0 et 1 :
+    /// une relation `0→2` devient `1→2`, et `1→0` devient `0→1` ; un index tiers (2) ne
+    /// bouge pas.
+    #[test]
+    fn swap_transposes_relation_indices() {
+        let mut config = SimConfig {
+            archetypes: vec![
+                Archetype::new_agent(0),
+                Archetype::new_agent(1),
+                Archetype::new_food(2),
+            ],
+            relations: vec![rel(0, 2), rel(1, 0)],
+            ..SimConfig::default()
+        };
+        swap_archetypes(&mut config, 0, 1);
+        // L'archétype jadis en 0 (« Espèce 0 ») est maintenant en 1, et inversement.
+        assert_eq!(config.archetypes[0].name, "Espèce 1");
+        assert_eq!(config.archetypes[1].name, "Espèce 0");
+        // 0→2 ⇒ 1→2 (la cible tierce 2 est intacte) ; 1→0 ⇒ 0→1.
+        assert_eq!(
+            (config.relations[0].actor, config.relations[0].target),
+            (1, 2)
+        );
+        assert_eq!(
+            (config.relations[1].actor, config.relations[1].target),
+            (0, 1)
+        );
+    }
+
+    /// Dupliquer ajoute un clone **en fin** (sans décaler les index existants → relations
+    /// intactes), de même corps que l'original, nommé « … (copie) ».
+    #[test]
+    fn duplicate_appends_a_clone_without_touching_relations() {
+        let mut config = SimConfig {
+            archetypes: vec![Archetype::new_agent(0), Archetype::new_food(1)],
+            relations: vec![rel(0, 1)],
+            ..SimConfig::default()
+        };
+        let new = duplicate_archetype(&mut config, 0).expect("clone d'un index valide");
+        assert_eq!(new, 2, "le clone est ajouté en fin");
+        assert_eq!(config.archetypes.len(), 3);
+        assert_eq!(config.archetypes[2].name, "Espèce 0 (copie)");
+        // Même corps que l'original (tout sauf le nom).
+        assert_eq!(config.archetypes[2].kind, config.archetypes[0].kind);
+        // Relations inchangées : le clone est en fin, aucun index n'a glissé.
+        assert_eq!(config.relations.len(), 1);
+        assert_eq!(
+            (config.relations[0].actor, config.relations[0].target),
+            (0, 1)
+        );
+    }
+
+    /// Un index hors-liste ne duplique rien.
+    #[test]
+    fn duplicate_out_of_range_is_none() {
+        let mut config = SimConfig::default();
+        let n = config.archetypes.len();
+        assert_eq!(duplicate_archetype(&mut config, 99), None);
+        assert_eq!(config.archetypes.len(), n, "rien ajouté");
     }
 }
