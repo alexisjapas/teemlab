@@ -5,6 +5,45 @@
 
 ---
 
+## 0. État du projet (où l'on en est)
+
+Résumé vivant ; le détail par item vit au §8 (ordre d'implémentation) et les chantiers
+ouverts au §9.
+
+**Fait.**
+
+- **P0–P3** (fondations, boucle jouable, interface, capture vidéo) : réalisés.
+- **P4 — sélection naturelle approfondie + intelligence évoluée** (régime continu),
+  items 15–18 : réalisés. Éditeur générique de gènes (valeur/bornes/**mutable**),
+  `Brain::Hunter`, proie-prédateur co-évolutif, cerveau **par espèce** + héritage, **MLP
+  fait maison + neuroévolution** (+ graphe), précision visuelle évolutive, généalogie.
+- **Item 18d — archétype-first** (Phase 1 de « tout est entité ») : `archetypes:
+  Vec<Archetype>` est la donnée centrale ; l'espèce est une unité de premier ordre
+  (corps + décideur + couleur + effectif), son index est son identité, la nourriture en
+  est un archétype (plus de collision de numéros). Mutabilité **et** génotype fondateur
+  **par espèce** ; relations adressées par archétype ; éditeur de création/suppression.
+  Scénarios migrés et triés (11 → 7).
+- Outillage : enregistrement vidéo (re-render headless via ffmpeg), drivers de test
+  multi-graines (`predator_prey`, `mlp`, `cohabitation`, …), `clippy`/`fmt` propres.
+
+**Reste à faire.**
+
+- **Phase 2 — finitions d'éditeur** : réordonner / dupliquer des archétypes, et la
+  **bibliothèque d'espèces** réutilisables hors scénario (§9, demande utilisateur — à
+  concevoir : périmètre d'une déf, fichiers `species/*.ron`, référencement, migration).
+- **Phase 3 — flore évolutive** (le vrai « tout est entité ») : dissoudre le type spécial
+  `Food` en un archétype à **génotype sessile** (croissance, dissémination, semis local).
+  Verrou : `Genotype` doit devenir variable par type d'entité (enum / superset /
+  composants-traits, §9) — à piloter par un scénario réel, pas spéculativement.
+- **Migrer en gènes** `base_metabolism` et `move_cost` (aujourd'hui par espèce, non
+  évolvables) ; **fuite active** d'une proie (canal « menace » symétrique du canal cible).
+- **P5 — bataille (différée) + passage à l'échelle** : régime générationnel (run → score
+  → breed), headless parallélisé inter-matchs, puis crossover de poids / NEAT (§9).
+- **Paramètres encore hors UI** : `tick_hz`, et les 10 bornes de gènes (`*_bounds`,
+  éditables seulement dans le RON).
+
+---
+
 ## 1. Principe directeur
 
 Un seul **moteur** interprète de la donnée. La boucle est invariante — **percevoir → décider →
