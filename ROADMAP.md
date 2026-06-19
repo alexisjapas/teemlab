@@ -23,8 +23,16 @@ ouverts au §9.
   est un archétype (plus de collision de numéros). Mutabilité **et** génotype fondateur
   **par espèce** ; relations adressées par archétype ; éditeur de création/suppression.
   Scénarios migrés et triés (11 → 7).
+- **Item 18e — fuite active** (canal « menace ») : un canal de perception `threat`,
+  *symétrique inverse* du canal « cible » (il s'allume quand le hit le plus proche est une
+  espèce qui peut agir **sur nous**, relation inverse). `Brain::Hunter` gagne un **réflexe
+  de fuite par subsomption** (§4) : au-delà d'un seuil de proximité, la survie
+  court-circuite le fourrage. *Même* cerveau partagé → une proie **détale** quand son
+  prédateur approche, un prédateur de sommet reste un pur chasseur (le pendant, côté fuite,
+  de l'insight de l'item 17). Driver `tests/flight.rs` (miroir de `hunter.rs`) ;
+  `proie_predateur` recalibré (arène élargie = refuges, la leçon spatiale de l'item 17).
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg), drivers de test
-  multi-graines (`predator_prey`, `mlp`, `cohabitation`, …), `clippy`/`fmt` propres.
+  multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, …), `clippy`/`fmt` propres.
 
 **Reste à faire.**
 
@@ -35,8 +43,10 @@ ouverts au §9.
   `Food` en un archétype à **génotype sessile** (croissance, dissémination, semis local).
   Verrou : `Genotype` doit devenir variable par type d'entité (enum / superset /
   composants-traits, §9) — à piloter par un scénario réel, pas spéculativement.
-- **Migrer en gènes** `base_metabolism` et `move_cost` (aujourd'hui par espèce, non
-  évolvables) ; **fuite active** d'une proie (canal « menace » symétrique du canal cible).
+- **Câbler le canal « menace » dans l'entrée du MLP** : aujourd'hui seul le chasseur
+  déterministe le consomme (item 18e) ; le brancher fait passer l'entrée du MLP à
+  `3 × vision_rays` (couture de redimensionnement `vision|cible` → `vision|cible|menace`) —
+  le pas suivant après que le témoin a validé la fuite, comme `target` (chasseur puis MLP).
 - **P5 — bataille (différée) + passage à l'échelle** : régime générationnel (run → score
   → breed), headless parallélisé inter-matchs, puis crossover de poids / NEAT (§9).
 - **Paramètres encore hors UI** : `tick_hz`, et les 10 bornes de gènes (`*_bounds`,
@@ -309,11 +319,12 @@ plus la **généalogie** (génération, âge).
     `tests/predator_prey` — multi-graines (5 mondes indépendants), il encode le critère de
     falsification : (a) *bande de population* — aucune lignée éteinte ni explosive sur la 2ᵉ moitié,
     pour toutes les graines ; (b) *dérive attendue* — la vision **se maintient** (le chasseur s'en
-    sert : ~130-280 selon la graine, fondateur 170), au lieu de fondre vers la borne basse comme sous
+    sert : ~110-290 selon la graine, fondateur 170), au lieu de fondre vers la borne basse comme sous
     l'errance (contraste falsifiable avec `evolution.ron`). **Reste** : substitution de cerveau *par
     espèce* (cohabitation témoin/appris, §4) et l'**archétype complet par espèce** (gènes fondateurs +
     cerveau distincts ; couture du founder de §9), différés jusqu'à un scénario exigeant des *corps*
-    distincts — et la **fuite active** d'une proie (un canal « menace » symétrique du canal « cible »).
+    distincts. La **fuite active** d'une proie, elle, est **faite** (item 18e, canal « menace ») — et
+    a motivé la recalibration spatiale du scénario (arène 480 → 560) qui synergise avec elle.
 18a. Couture « cerveau par espèce » + héritage du cerveau **(réalisé)** : le prérequis que les items
     16 et 17 réservaient en « Reste » (substitution *par espèce* — cohabitation témoin/appris, §4).
     Deux coutures, falsifiées avec les cerveaux **déterministes existants** avant que le MLP n'arrive
@@ -420,6 +431,33 @@ flowchart TB
   Loop -- "reproduction (mutate selon Mutability)" --> Ent
 ```
 
+18e. **Fuite active** (canal « menace ») **(réalisé)** : une extension de la perception, sans
+    système cœur nouveau, qui donne à une proie le réflexe de **fuir** son prédateur. (1) **Schéma** :
+    un canal `threat` rejoint `vision`/`target` dans [`Perception`], *symétrique inverse* du canal
+    « cible » de l'item 16 — il s'allume quand le hit le plus proche d'un rayon porte une espèce qui
+    peut agir **sur nous** (`acts_on(autre, nous)`), là où `target` répondait à `acts_on(nous, autre)`.
+    `perceive` lit l'espèce du hit **une seule fois** et la table dirigée tranche les deux sens. (2)
+    **Comportement** : `Brain::Hunter` gagne un **réflexe de fuite par subsomption** (§4 — un réflexe
+    de survie court-circuite la couche fourrage), et non une simple répulsion *ajoutée* au champ.
+    *Pourquoi la subsomption* : avec N rayons, l'éventail des rayons dégagés somme vers l'avant ; une
+    répulsion linéaire ne renverse jamais cette poussée pour une menace lointaine (un rayon contre tout
+    le champ) sans constante absurde. Au-delà d'un **seuil de proximité** (`FLEE_THRESHOLD`), la proie
+    bascule en fuite (s'éloigne des menaces ET des obstacles, sans attraction) ; en deçà, le mode
+    fourrage de l'item 16 reste **strictement intact** — un prédateur lointain n'affame pas la proie,
+    et les scénarios sans menace (chasse, cohabitation, MLP) sont *bit-à-bit inchangés*. Comme à
+    l'item 17, le **même** cerveau partagé suffit : la relation inverse fait d'une proie un fourrageur
+    qui détale, d'un prédateur de sommet un pur chasseur. (3) **Driver** `tests/flight.rs` — le miroir
+    de `tests/hunter.rs` : une proie chasseur à l'origine, un prédateur **immobile** (épouvantail à
+    débit nul) droit devant ; on vérifie (a) que le prédateur s'inscrit dans le canal « menace » de la
+    proie, (b) qu'elle s'en **éloigne** franchement. **Recalibration** : la fuite déplace l'équilibre
+    proie-prédateur (les proies échappent mieux) ; `proie_predateur` retrouve une coexistence robuste
+    sur les 5 graines via le stabilisateur **spatial** de l'item 17 — arène `480 → 560` (refuges pour
+    proies qui fuient), repousse de nourriture relevée, prédation un peu plus douce ; aucun système
+    moteur touché. **Méthode** (« stub le comportement, jamais le schéma » ; valider sur le témoin
+    avant l'appris) : seul le chasseur déterministe consomme le canal pour l'instant — le brancher dans
+    l'entrée du MLP est l'étape suivante, exactement comme `target` (introduit sur le chasseur à
+    l'item 16, consommé par le MLP à l'item 18b). **Reste** : ce câblage MLP (entrée → `3 × rayons`).
+
 ### P5 — Bataille (différée) + passage à l'échelle
 
 Le régime générationnel teste l'axe A : il doit entrer comme recomposition le long de la couture A/B
@@ -445,7 +483,11 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
 - **MLP** (item 18b, **fait** pour le cœur) : variant `Brain::Mlp` (enum déjà `serde`) sur le contrat
   `Perception → Action`, en régime continu, substitution **par espèce** (couture 18a). Poids mutés dans
   `Brain::reproduce` (neuroévolution mutation-seule). Visualisation graphe **faite** (18b-viz : éditeur
-  structurel + inspecteur avec activations). **Reste**, plus loin : crossover sur poids + NEAT (P5).
+  structurel + inspecteur avec activations). **Reste** : (a) **câbler le canal « menace »** (item 18e)
+  dans l'entrée — aujourd'hui `vision|cible` (`2 × rayons`), à porter à `vision|cible|menace`
+  (`3 × rayons`), en étendant la couture de redimensionnement par bloc de `MlpBrain::reproduced` (déjà
+  2 blocs) à 3 ; pas suivant naturel, le chasseur ayant validé la fuite (méthode `target` : chasseur
+  puis MLP) ; (b) plus loin, crossover sur poids + NEAT (P5).
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
@@ -475,8 +517,10 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
 - **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
   vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
   pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des
-  gènes per-espèce et évolvables (extension de la machinerie de l'item 15) ; **restent à migrer** le
-  métabolisme (`base_metabolism`) et `move_cost`. La suite logique est de **supprimer le type
+  gènes per-espèce et évolvables (extension de la machinerie de l'item 15) ; `base_metabolism` et
+  `move_cost` **le sont aussi** (gènes per-espèce de la table `TRAITS`, consommés par
+  `metabolize` ; **non mutables par défaut** car ils *sont* la pression de sélection — §2 — mais le
+  facet existe, un scénario peut les laisser dériver). La suite logique est de **supprimer le type
   spécial `Food`** : une source de nourriture devient un *archétype comestible* d'une entité
   **flore**, avec son propre génotype (énergie, croissance, dissémination) et un cerveau trivial
   (sessile), se reproduisant par **semis local** plutôt que par un `food_regen` global. La « source

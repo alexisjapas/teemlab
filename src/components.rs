@@ -139,9 +139,18 @@ pub struct Perception {
     /// proche de ce rayon n'est pas une espèce que la nôtre peut viser (table de
     /// relations, cf. [`crate::config::SimConfig::acts_on`]), sinon sa proximité.
     /// L'occlusion est incluse — une proie derrière un mur ne s'y lit pas, c'est
-    /// le mur (hit le plus proche) qui occupe le rayon. Le canal que suit
+    /// le mur (hit le plus proche) qui occupe le rayon. Le canal qui *attire*
     /// `Brain::Hunter`.
     pub target: Box<[f32]>,
+    /// Proximité de **menace** par rayon, dans `[0, 1]` : le **symétrique inverse**
+    /// du canal `target`. Il vaut `0` sauf si le hit le plus proche de ce rayon
+    /// porte une espèce qui peut agir **sur nous** (relation *inverse*,
+    /// `acts_on(autre, nous)`, cf. [`crate::config::SimConfig::acts_on`]), auquel
+    /// cas il vaut sa proximité. Une proie y lit son prédateur ; un prédateur au
+    /// sommet de la chaîne n'y lit rien (canal nul → comportement inchangé).
+    /// Occlusion incluse, comme `target`. Le canal qui fait **fuir** `Brain::Hunter`
+    /// (répulsion) — le pendant exact du canal `target` qui l'attire.
+    pub threat: Box<[f32]>,
     /// Direction **monde** (unitaire) de chaque rayon, situant les canaux
     /// ci-dessus. `perceive` la dérive déjà pour lancer le raycast ; l'exposer
     /// évite au cerveau de connaître la géométrie de [`Vision`] (fov, nombre de

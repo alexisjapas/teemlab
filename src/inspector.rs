@@ -219,20 +219,29 @@ pub(crate) fn inspector_section(
 
         ui.separator();
         ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
-        ui.weak("obstacle (gris) · cible comestible (orange) — 0 = rien, 1 = au contact");
+        ui.weak(
+            "obstacle (gris) · cible comestible (orange) · menace (rouge) — 0 = rien, 1 = au contact",
+        );
         for (i, &proximity) in perception.vision.iter().enumerate() {
             let target = perception.target.get(i).copied().unwrap_or(0.0);
+            let threat = perception.threat.get(i).copied().unwrap_or(0.0);
             ui.horizontal(|ui| {
                 ui.add(
                     egui::ProgressBar::new(proximity)
-                        .desired_width(110.0)
+                        .desired_width(95.0)
                         .text(format!("r{i} · {proximity:.2}")),
                 );
                 ui.add(
                     egui::ProgressBar::new(target)
-                        .desired_width(110.0)
+                        .desired_width(85.0)
                         .fill(egui::Color32::from_rgb(220, 130, 40))
                         .text(format!("{target:.2}")),
+                );
+                ui.add(
+                    egui::ProgressBar::new(threat)
+                        .desired_width(85.0)
+                        .fill(egui::Color32::from_rgb(210, 60, 60))
+                        .text(format!("{threat:.2}")),
                 );
             });
         }

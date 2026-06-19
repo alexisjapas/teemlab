@@ -159,6 +159,7 @@ pub fn spawn_agent_with_brain(
         Perception {
             vision: vec![0.0; vision.ray_count].into_boxed_slice(),
             target: vec![0.0; vision.ray_count].into_boxed_slice(),
+            threat: vec![0.0; vision.ray_count].into_boxed_slice(),
             ray_dirs: vec![Vec2::ZERO; vision.ray_count].into_boxed_slice(),
             ..default()
         },

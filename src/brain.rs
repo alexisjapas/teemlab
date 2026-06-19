@@ -157,10 +157,10 @@ impl BrainKind {
                  fourrage au hasard. Le groupe témoin naïf."
             }
             BrainKind::Hunter => {
-                "Champ de pilotage : attiré vers la cible visible la plus proche \
-                 (table de relations), contourne murs et autres entités sans les \
-                 fuir. Sans mémoire : hors de portée, il explore. Le groupe témoin \
-                 compétent."
+                "Champ de pilotage : attiré vers la cible visible la plus proche, \
+                 ET repoussé par toute menace (une espèce qui peut l'attaquer) — \
+                 table de relations. Contourne murs et congénères sans les fuir ; \
+                 sans mémoire, hors de portée il explore. Le groupe témoin compétent."
             }
             BrainKind::Mlp { .. } => {
                 "Perceptron multicouche évolué : décide en lisant ses canaux de \
@@ -205,27 +205,36 @@ impl WanderBrain {
     }
 }
 
-/// Chasseur **déterministe** (item 16) : pas d'état, pas de RNG — une même
-/// perception donne toujours la même action.
+/// Chasseur **déterministe** (item 16, étendu par la *fuite active*) : pas d'état,
+/// pas de RNG — une même perception donne toujours la même action.
 ///
-/// Un **seul champ de pilotage**, où chaque rayon « pousse » vers sa direction
-/// d'un poids `ATTRACTION · cible + dégagement(1 − obstacle)` :
+/// **Deux modes** dans un même champ de pilotage par rayons, sélectionnés par
+/// *subsomption* (§4 — un réflexe de survie court-circuite la couche fourrage) :
 ///
-/// - un rayon dont le hit le plus proche est une **cible** (`vision == target`)
-///   pèse `ATTRACTION · t + (1 − t)` ≈ **attire** (avec `ATTRACTION > 1`, plus que
-///   l'espace dégagé) → il *s'en approche* ;
-/// - un rayon bouché par un **non-cible** (mur, autre entité : `target = 0`) pèse
-///   `1 − occlusion` ≈ 0 → il ne pousse pas vers lui → il s'en *détourne*, sans le
-///   fuir activement ;
-/// - un rayon **dégagé** pèse 1 → en terrain vide, les poussées symétriques se
-///   résolvent vers l'avant (il balaie le terrain en ligne quasi droite).
+/// 1. **Fourrage** (item 16, inchangé), tant qu'aucune menace n'est *proche* : chaque
+///    rayon pousse vers sa direction d'un poids `ATTRACTION · cible + (1 − obstacle)`.
+///    Une cible attire (`ATTRACTION > 1`, plus que l'espace dégagé) ; un obstacle
+///    neutre (mur, congénère) ne pousse pas vers lui (poids ≈ 0) → on le contourne ;
+///    en terrain vide, l'éventail symétrique se résout vers l'avant (balayage droit).
+/// 2. **Fuite**, dès qu'une menace dépasse [`FLEE_THRESHOLD`] en proximité : la survie
+///    prime, le fourrage est *suspendu*. Chaque rayon pousse à l'**opposé** d'un poids
+///    `RÉPULSION · menace + obstacle` → on s'éloigne des menaces (pondérées fort) ET
+///    des obstacles (murs), sans plus se laisser attirer par une cible. Le seuil évite
+///    deux écueils : une répulsion simplement *ajoutée* au fourrage ne renverse jamais
+///    l'éventail-avant pour une menace lointaine (elle ne pèse qu'un rayon contre tout
+///    le champ dégagé), et fuir *toute* menace visible ferait mourir de faim une proie
+///    qu'un prédateur survole de loin. On ne fuit donc que ce qui est assez **proche**
+///    pour être dangereux.
 ///
-/// D'où le correctif : il n'évite plus la nourriture comme un obstacle — la cible
-/// attire, le reste se contourne. C'est le **groupe témoin compétent** (§4) : même
-/// dépense d'énergie qu'un errant, mais il *trouve* sa nourriture. Il ne sait
-/// toutefois pas mémoriser : hors de portée, il ne fait qu'explorer (un MLP, lui,
-/// pourra apprendre mieux — c'est l'enjeu). « Cible » se définit par la table de
-/// relations (§3) : sans relation, rien n'attire et tout n'est qu'obstacle.
+/// Ainsi le **même** cerveau partagé, selon la table de relations (§3) lue *par
+/// l'espèce qui perçoit*, fait d'une proie un fourrageur **qui détale** quand son
+/// prédateur approche (canal `target` vers les plantes, canal `threat` depuis le
+/// prédateur) et d'un prédateur de sommet un pur chasseur (aucune menace → mode
+/// fourrage seul → le comportement de l'item 16, inchangé) — le pendant exact, côté
+/// fuite, de l'insight de l'item 17. C'est le **groupe témoin compétent** (§4) : même
+/// dépense d'énergie qu'un errant, mais il *trouve* sa nourriture et *évite* ses
+/// prédateurs. Il ne sait toutefois pas mémoriser : hors de portée, il ne fait
+/// qu'explorer (un MLP, lui, pourra apprendre mieux — c'est l'enjeu).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HunterBrain;
 
@@ -233,12 +242,31 @@ impl HunterBrain {
     /// Sur-pondération d'une cible face à l'espace dégagé (`> 1` pour qu'un rayon
     /// pointant une cible l'emporte sur un rayon simplement libre).
     const ATTRACTION: f32 = 2.5;
+    /// Sur-pondération d'une menace en **fuite** (répulsion). `> ATTRACTION` : une fois
+    /// la fuite déclenchée, l'éloignement domine nettement l'évitement d'obstacle.
+    const REPULSION: f32 = 3.0;
+    /// Proximité de menace (dans `[0, 1]`) au-delà de laquelle la fuite court-circuite
+    /// le fourrage (subsomption). En deçà — prédateur encore lointain — le fourrage
+    /// continue ; au-delà — prédateur assez proche pour être dangereux — la proie
+    /// détale. `0.35` ≈ « le prédateur est entré dans le tiers proche de ma vision ».
+    const FLEE_THRESHOLD: f32 = 0.35;
 
     fn think(&self, perception: &Perception) -> Action {
+        // Subsomption (§4) : une menace assez PROCHE bascule en fuite, qui *suspend* le
+        // fourrage. Un prédateur lointain (sous le seuil) n'interrompt rien → le mode
+        // fourrage de l'item 16 reste strictement intact pour les scénarios sans menace.
+        let fleeing = perception.threat.iter().any(|&t| t > Self::FLEE_THRESHOLD);
         let mut steer = Vec2::ZERO;
         for i in 0..perception.ray_dirs.len() {
-            let openness = 1.0 - perception.vision[i];
-            let weight = Self::ATTRACTION * perception.target[i] + openness;
+            let weight = if fleeing {
+                // S'éloigner de tout : menaces (× RÉPULSION) ET obstacles (murs,
+                // congénères) — poids négatif, sans attraction (on ne fourrage pas en
+                // fuyant).
+                -(Self::REPULSION * perception.threat[i] + perception.vision[i])
+            } else {
+                // Champ de fourrage (item 16) : attraction des cibles + espace dégagé.
+                Self::ATTRACTION * perception.target[i] + (1.0 - perception.vision[i])
+            };
             steer += perception.ray_dirs[i] * weight;
         }
         let dir = steer.normalize_or_zero();
@@ -320,7 +348,12 @@ impl Layer {
 /// visent le gros réseau GPU, l'inverse du besoin (§5).
 ///
 /// **Entrée** : les canaux normalisés `vision` puis `target` concaténés (il ignore la
-/// géométrie `ray_dirs`, cf. `components.rs`). **Sortie** : 2 neurones lus comme un
+/// géométrie `ray_dirs`, cf. `components.rs`). Le canal `threat` (fuite active) existe
+/// dans [`Perception`] mais n'est **pas encore** câblé ici : seul le chasseur
+/// déterministe le consomme pour l'instant — on valide la fuite sur le témoin avant de
+/// la confier à l'appris, exactement comme `target` (introduit sur le chasseur à
+/// l'item 16, puis consommé par le MLP à l'item 18b). Le brancher (entrée passant à
+/// `3 × vision_rays`) est l'étape suivante. **Sortie** : 2 neurones lus comme un
 /// vecteur de pilotage *en repère du corps*, tourné vers le monde par le cap →
 /// orientation-équivariant (le réseau n'a pas à apprendre l'orientation absolue,
 /// comme le chasseur lit « rayon i » relativement au cap).
@@ -524,12 +557,14 @@ mod tests {
     use super::*;
 
     /// Trois rayons : gauche (+Y), avant (+X), droite (-Y) — un éventail symétrique
-    /// autour du cap +X, comme `perceive` les produirait.
-    fn perception(vision: [f32; 3], target: [f32; 3]) -> Perception {
+    /// autour du cap +X, comme `perceive` les produirait. Les trois canaux (obstacle,
+    /// cible, menace) sont fournis explicitement.
+    fn perception(vision: [f32; 3], target: [f32; 3], threat: [f32; 3]) -> Perception {
         Perception {
             heading: Vec2::X,
             vision: vision.into(),
             target: target.into(),
+            threat: threat.into(),
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -539,7 +574,7 @@ mod tests {
     /// proximité.
     #[test]
     fn hunter_favors_the_nearer_target() {
-        let p = perception([0.3, 0.0, 0.9], [0.3, 0.0, 0.9]);
+        let p = perception([0.3, 0.0, 0.9], [0.3, 0.0, 0.9], [0.0, 0.0, 0.0]);
         let action = HunterBrain.think(&p);
         assert!(
             action.dir.y < 0.0,
@@ -555,7 +590,7 @@ mod tests {
     #[test]
     fn hunter_approaches_target_not_plain_obstacle() {
         // +Y : nourriture (vision == target) ; -Y : mur (vision sans target).
-        let action = HunterBrain.think(&perception([0.6, 0.0, 0.6], [0.6, 0.0, 0.0]));
+        let action = HunterBrain.think(&perception([0.6, 0.0, 0.6], [0.6, 0.0, 0.0], [0.0; 3]));
         assert!(
             action.dir.y > 0.0,
             "doit aller vers la cible (+Y), pas vers le mur (-Y), dir={:?}",
@@ -567,7 +602,7 @@ mod tests {
     /// l'opposé (vers -Y) : le chasseur s'écarte du mur.
     #[test]
     fn hunter_steers_toward_open_space_when_no_target() {
-        let action = HunterBrain.think(&perception([0.9, 0.0, 0.0], [0.0, 0.0, 0.0]));
+        let action = HunterBrain.think(&perception([0.9, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0; 3]));
         assert!(
             action.dir.y < 0.0,
             "doit s'écarter de l'obstacle en +Y, dir={:?}",
@@ -578,7 +613,7 @@ mod tests {
     /// Terrain entièrement dégagé : poussées symétriques → cap maintenu vers l'avant.
     #[test]
     fn hunter_cruises_forward_in_the_open() {
-        let action = HunterBrain.think(&perception([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]));
+        let action = HunterBrain.think(&perception([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0; 3]));
         assert!(
             action.dir.x > 0.9,
             "doit filer droit devant, dir={:?}",
@@ -591,7 +626,7 @@ mod tests {
     /// une cible va dessus (le réflexe de chasse court-circuite l'exploration).
     #[test]
     fn target_takes_priority_over_avoidance() {
-        let action = HunterBrain.think(&perception([0.8, 0.8, 0.8], [0.0, 0.8, 0.0]));
+        let action = HunterBrain.think(&perception([0.8, 0.8, 0.8], [0.0, 0.8, 0.0], [0.0; 3]));
         assert_eq!(action.dir, Vec2::X, "la cible au centre l'emporte");
     }
 
@@ -599,8 +634,67 @@ mod tests {
     /// (pas d'état, pas de RNG — c'est ce qui en fait un groupe témoin reproductible).
     #[test]
     fn hunter_is_deterministic() {
-        let p = perception([0.1, 0.4, 0.2], [0.0, 0.4, 0.0]);
+        let p = perception([0.1, 0.4, 0.2], [0.0, 0.4, 0.0], [0.0; 3]);
         assert_eq!(HunterBrain.think(&p).dir, HunterBrain.think(&p).dir);
+    }
+
+    /// FUITE ACTIVE — une **menace** droit devant (+X), côtés dégagés : le rayon
+    /// avant prend un poids négatif (répulsion) → le pilotage **rebrousse chemin**
+    /// (dir.x < 0). Le miroir exact de `hunter_cruises_forward_in_the_open`, mais où
+    /// l'obstacle avant est une menace au lieu d'un vide.
+    #[test]
+    fn hunter_flees_a_threat_ahead() {
+        // +X : une menace proche (donc aussi un hit, vision 0.6) ; côtés dégagés.
+        let action = HunterBrain.think(&perception([0.0, 0.6, 0.0], [0.0; 3], [0.0, 0.6, 0.0]));
+        assert!(
+            action.dir.x < 0.0,
+            "doit rebrousser chemin face à la menace, dir={:?}",
+            action.dir
+        );
+    }
+
+    /// FUITE par subsomption — une **menace proche** sur le flanc gauche (+Y, 0.8 >
+    /// seuil) ET une **cible** droit devant (+X) : la fuite *suspend* le fourrage. La
+    /// proie s'écarte nettement de la menace (dir.y < 0) et **n'avance plus** vers sa
+    /// cible (dir.x < 0) — la survie court-circuite le fourrage tant que le danger dure.
+    #[test]
+    fn flight_suspends_foraging() {
+        // +Y : menace proche (0.8 > FLEE_THRESHOLD) ; +X : cible comestible (0.6) ;
+        // -Y : dégagé.
+        let action = HunterBrain.think(&perception(
+            [0.8, 0.6, 0.0],
+            [0.0, 0.6, 0.0],
+            [0.8, 0.0, 0.0],
+        ));
+        assert!(
+            action.dir.y < 0.0,
+            "doit s'écarter de la menace en +Y (filer vers -Y), dir={:?}",
+            action.dir
+        );
+        assert!(
+            action.dir.x < 0.0,
+            "fuite : ne fourrage plus vers la cible en +X, dir={:?}",
+            action.dir
+        );
+    }
+
+    /// Une menace **lointaine** (proximité 0.2 < seuil) ne déclenche pas la fuite : le
+    /// fourrage continue. Cible droit devant (+X, 0.6), menace faible sur le flanc
+    /// (+Y, 0.2) → la proie poursuit sa cible (dir.x > 0). C'est ce seuil qui évite la
+    /// famine d'une proie qu'un prédateur ne fait que survoler de loin.
+    #[test]
+    fn distant_threat_does_not_interrupt_foraging() {
+        // +X : cible (0.6) ; +Y : menace LOINTAINE (0.2 < FLEE_THRESHOLD) ; -Y : dégagé.
+        let action = HunterBrain.think(&perception(
+            [0.2, 0.6, 0.0],
+            [0.0, 0.6, 0.0],
+            [0.2, 0.0, 0.0],
+        ));
+        assert!(
+            action.dir.x > 0.0,
+            "menace lointaine : doit continuer à fourrager vers +X, dir={:?}",
+            action.dir
+        );
     }
 
     /// Le paramètre propre au variant `Wander` (turn_rate) est bien transmis au
@@ -660,6 +754,8 @@ mod tests {
             heading,
             vision: vision.into(),
             target: target.into(),
+            // Le MLP ne lit pas (encore) le canal menace : il l'ignore quoi qu'il vaille.
+            threat: [0.0; 3].into(),
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -794,6 +890,7 @@ mod tests {
             heading: Vec2::X,
             vision: [0.1, 0.2].into(),
             target: [0.0, 0.0].into(),
+            threat: [0.0, 0.0].into(),
             ray_dirs: vec![Vec2::X, Vec2::Y].into_boxed_slice(),
         };
         let acts = brain.forward_activations(&p);

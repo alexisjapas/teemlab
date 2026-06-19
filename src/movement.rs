@@ -54,6 +54,7 @@ pub fn perceive(
         if perception.vision.len() != vision.ray_count {
             perception.vision = vec![0.0; vision.ray_count].into_boxed_slice();
             perception.target = vec![0.0; vision.ray_count].into_boxed_slice();
+            perception.threat = vec![0.0; vision.ray_count].into_boxed_slice();
             perception.ray_dirs = vec![Vec2::ZERO; vision.ray_count].into_boxed_slice();
         }
 
@@ -67,23 +68,35 @@ pub fn perceive(
             let Ok(direction) = Dir2::new(dir) else {
                 perception.vision[i] = 0.0;
                 perception.target[i] = 0.0;
+                perception.threat[i] = 0.0;
                 continue;
             };
             match spatial.cast_ray(origin, direction, vision.range, true, &filter) {
                 Some(hit) => {
                     let proximity = 1.0 - (hit.distance / vision.range).clamp(0.0, 1.0);
                     perception.vision[i] = proximity;
-                    // Canal « cible » : la proximité ne compte que si le hit le plus
-                    // proche porte une espèce que la nôtre peut viser (relations).
-                    // Un mur (sans [`Species`]) ou une espèce non visée → 0.
-                    let is_target = species_of
-                        .get(hit.entity)
-                        .is_ok_and(|hit_species| config.acts_on(species.0, hit_species.0));
+                    // Canaux « cible » et « menace », symétriques inverses : on lit
+                    // l'espèce du hit le plus proche **une seule fois**, et la table de
+                    // relations (dirigée) tranche les deux sens — nous agissons sur elle
+                    // (cible, elle nous attire) ou elle agit sur nous (menace, elle nous
+                    // fait fuir). Un mur (sans [`Species`]) ou une espèce sans relation
+                    // dans aucun sens → les deux à 0.
+                    let (is_target, is_threat) =
+                        species_of
+                            .get(hit.entity)
+                            .map_or((false, false), |hit_species| {
+                                (
+                                    config.acts_on(species.0, hit_species.0),
+                                    config.acts_on(hit_species.0, species.0),
+                                )
+                            });
                     perception.target[i] = if is_target { proximity } else { 0.0 };
+                    perception.threat[i] = if is_threat { proximity } else { 0.0 };
                 }
                 None => {
                     perception.vision[i] = 0.0;
                     perception.target[i] = 0.0;
+                    perception.threat[i] = 0.0;
                 }
             }
         }
