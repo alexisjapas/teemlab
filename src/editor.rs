@@ -633,13 +633,61 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.strong("Monde");
     ui.add(egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("demi-arène"));
     ui.add(
+        egui::DragValue::new(&mut config.tick_hz)
+            .range(8.0..=240.0)
+            .speed(1.0)
+            .prefix("cadence sim (Hz, reset) : "),
+    )
+    .on_hover_text("Pas fixe de la simulation. Prend effet à la (ré)génération du monde (⟲).");
+    ui.add(
         egui::DragValue::new(&mut config.seed)
             .speed(1.0)
             .prefix("graine (reset) : "),
     );
 
     ui.separator();
+    gene_bounds_section(ui, config);
+
+    ui.separator();
     relations_section(ui, config);
+}
+
+/// Les **bornes des gènes** (`*_bounds` du scénario), éditées globalement : min/max de
+/// chaque caractéristique. Elles bornent la **mutation** (cf. [`Genotype::mutate`]) ET
+/// les curseurs de l'éditeur d'archétype. Boucle sur [`TRAITS`] via `bounds_mut`, donc
+/// ajouter un gène l'expose ici sans toucher cette section (item 15/3). Repliée par
+/// défaut (réglage avancé, rarement touché — d'où « hors UI » jusqu'ici).
+fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+    egui::CollapsingHeader::new("Bornes des gènes")
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.small(
+                "Min/max de chaque gène : bornent la mutation et les curseurs de \
+                 l'éditeur d'archétype. Globales (partagées par tous les archétypes).",
+            );
+            egui::Grid::new("gene_bounds_grid")
+                .num_columns(3)
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.strong("gène");
+                    ui.strong("min");
+                    ui.strong("max");
+                    ui.end_row();
+                    for t in &TRAITS {
+                        // Pas de glissé adapté à l'échelle du gène (fin pour l'agilité,
+                        // grossier pour la vitesse), via ses décimales d'affichage.
+                        let speed = 10f64.powi(-(t.decimals as i32));
+                        let b = (t.bounds_mut)(config);
+                        ui.label(t.name);
+                        ui.add(egui::DragValue::new(&mut b.min).speed(speed));
+                        ui.add(egui::DragValue::new(&mut b.max).speed(speed));
+                        // Garde min ≤ max : un span négatif ferait paniquer le clamp de
+                        // la mutation (`f32::clamp` exige min ≤ max).
+                        b.max = b.max.max(b.min);
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 /// La table de relations, **adressée par archétype** : chaque acteur/cible se choisit

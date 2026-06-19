@@ -131,6 +131,13 @@ pub fn drive_steps(
 /// des ressources de sim (RNG, reliquat de repousse) et du HUD. En `PreUpdate` :
 /// les commandes s'appliquent avant la boucle fixe, donc la frame repart déjà sur
 /// le monde neuf.
+///
+/// C'est aussi **le point de passage unique** où l'on ré-applique la cadence de sim
+/// `tick_hz` (cf. [`SimPlugin`](teemlab::SimPlugin), qui ne la pose qu'au build) :
+/// le reset étant déclenché aussi par le rechargement de scénario
+/// ([`crate::runs::apply_scenario_load`]), un changement de cadence (éditeur ou autre
+/// `.ron`) prend effet ici, comme l'arène et la graine — un paramètre « (reset) ».
+#[allow(clippy::too_many_arguments)]
 pub fn apply_reset(
     mut controls: ResMut<SimControls>,
     mut commands: Commands,
@@ -138,6 +145,7 @@ pub fn apply_reset(
     mut sim_rng: ResMut<SimRng>,
     mut regen: ResMut<FoodRegen>,
     mut history: ResMut<History>,
+    mut fixed: ResMut<Time<Fixed>>,
     simulated: Query<Entity, Or<(With<Agent>, With<Food>, With<Wall>)>>,
 ) {
     if !controls.reset_requested {
@@ -149,6 +157,9 @@ pub fn apply_reset(
         commands.entity(entity).despawn();
     }
     spawn::populate(&mut commands, &config);
+    // Ré-applique la cadence fixe depuis la config (le build du plugin l'a posée une
+    // fois ; un monde neuf peut vouloir une autre cadence).
+    fixed.set_timestep_hz(config.tick_hz);
 
     *sim_rng = SimRng::from_config(&config);
     regen.0.clear();

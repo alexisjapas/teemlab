@@ -153,6 +153,12 @@ pub struct TraitSpec {
     pub set: fn(&mut Genotype, f32),
     /// Bornes du gène, lues dans le scénario.
     pub bounds: fn(&SimConfig) -> Bounds,
+    /// Bornes du gène en **écriture** : même champ `*_bounds` que [`bounds`](Self::bounds),
+    /// côté mutable. L'éditeur de monde boucle dessus pour exposer min/max sans champ
+    /// codé en dur (item 3) — la contrepartie « écriture » du couple lecture/écriture
+    /// déjà offert pour la valeur ([`get`](Self::get)/[`set`](Self::set)) et la
+    /// mutabilité ([`mutable`](Self::mutable)/[`set_mutable`](Self::set_mutable)).
+    pub bounds_mut: fn(&mut SimConfig) -> &mut Bounds,
     /// Le facet « mutable ? » de ce trait dans le scénario (lecture).
     pub mutable: fn(&Mutability) -> bool,
     /// Le facet « mutable ? » de ce trait (écriture, pour l'éditeur).
@@ -172,6 +178,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.max_speed,
         set: |g, v| g.max_speed = v,
         bounds: |c| c.speed_bounds,
+        bounds_mut: |c| &mut c.speed_bounds,
         mutable: |m| m.max_speed,
         set_mutable: |m, b| m.max_speed = b,
         decimals: 1,
@@ -181,6 +188,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.agility,
         set: |g, v| g.agility = v,
         bounds: |c| c.agility_bounds,
+        bounds_mut: |c| &mut c.agility_bounds,
         mutable: |m| m.agility,
         set_mutable: |m, b| m.agility = b,
         decimals: 3,
@@ -190,6 +198,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.vision_range,
         set: |g, v| g.vision_range = v,
         bounds: |c| c.vision_range_bounds,
+        bounds_mut: |c| &mut c.vision_range_bounds,
         mutable: |m| m.vision_range,
         set_mutable: |m, b| m.vision_range = b,
         decimals: 1,
@@ -199,6 +208,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.vision_fov_deg,
         set: |g, v| g.vision_fov_deg = v,
         bounds: |c| c.vision_fov_bounds,
+        bounds_mut: |c| &mut c.vision_fov_bounds,
         mutable: |m| m.vision_fov,
         set_mutable: |m, b| m.vision_fov = b,
         decimals: 0,
@@ -208,6 +218,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.reproduction_threshold,
         set: |g, v| g.reproduction_threshold = v,
         bounds: |c| c.reproduction_threshold_bounds,
+        bounds_mut: |c| &mut c.reproduction_threshold_bounds,
         mutable: |m| m.reproduction_threshold,
         set_mutable: |m, b| m.reproduction_threshold = b,
         decimals: 0,
@@ -217,6 +228,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.offspring_energy,
         set: |g, v| g.offspring_energy = v,
         bounds: |c| c.offspring_energy_bounds,
+        bounds_mut: |c| &mut c.offspring_energy_bounds,
         mutable: |m| m.offspring_energy,
         set_mutable: |m, b| m.offspring_energy = b,
         decimals: 0,
@@ -226,6 +238,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.mutation_rate,
         set: |g, v| g.mutation_rate = v,
         bounds: |c| c.mutation_rate_bounds,
+        bounds_mut: |c| &mut c.mutation_rate_bounds,
         mutable: |m| m.mutation_rate,
         set_mutable: |m, b| m.mutation_rate = b,
         decimals: 3,
@@ -235,6 +248,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.base_metabolism,
         set: |g, v| g.base_metabolism = v,
         bounds: |c| c.base_metabolism_bounds,
+        bounds_mut: |c| &mut c.base_metabolism_bounds,
         mutable: |m| m.base_metabolism,
         set_mutable: |m, b| m.base_metabolism = b,
         decimals: 1,
@@ -244,6 +258,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.move_cost,
         set: |g, v| g.move_cost = v,
         bounds: |c| c.move_cost_bounds,
+        bounds_mut: |c| &mut c.move_cost_bounds,
         mutable: |m| m.move_cost,
         set_mutable: |m, b| m.move_cost = b,
         decimals: 1,
@@ -253,6 +268,7 @@ pub const TRAITS: [TraitSpec; 10] = [
         get: |g| g.vision_rays,
         set: |g, v| g.vision_rays = v,
         bounds: |c| c.vision_rays_bounds,
+        bounds_mut: |c| &mut c.vision_rays_bounds,
         mutable: |m| m.vision_rays,
         set_mutable: |m, b| m.vision_rays = b,
         decimals: 0,
@@ -277,6 +293,20 @@ mod tests {
         assert_eq!(g.vision_fov_deg, 120.0);
         assert_eq!(g.vision_rays, 7.0);
         assert_eq!(g.ray_count(), 7);
+    }
+
+    /// Les deux accesseurs de bornes d'un trait visent le **même** champ : la lecture
+    /// (`bounds`) et l'écriture (`bounds_mut`) ne peuvent pas diverger — garde contre
+    /// une faute de copier-coller dans la table [`TRAITS`] (l'éditeur de monde s'appuie
+    /// sur `bounds_mut`, item 3).
+    #[test]
+    fn bounds_and_bounds_mut_target_the_same_field() {
+        let mut c = config();
+        for t in &TRAITS {
+            let read = (t.bounds)(&c);
+            let write = *(t.bounds_mut)(&mut c);
+            assert_eq!(read, write, "bornes incohérentes pour « {} »", t.name);
+        }
     }
 
     /// Toute mutation laisse **chaque** gène de [`TRAITS`] dans ses bornes — même

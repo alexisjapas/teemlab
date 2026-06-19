@@ -34,8 +34,14 @@ ouverts au §9.
 - **Phase 2 — finitions d'éditeur** (partiel) : l'éditeur d'archétypes sait désormais
   **dupliquer** (clone en fin de liste, relations non copiées) et **réordonner** (▲/▼, avec
   *transposition* des index dans la table de relations), en plus de créer/supprimer.
-- Outillage : enregistrement vidéo (re-render headless via ffmpeg), drivers de test
-  multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, …), `clippy`/`fmt` propres.
+- **Paramètres de monde dans l'UI** : `tick_hz` (cadence de sim, « (reset) » — ré-appliquée
+  au reset, le point de passage unique que le rechargement de scénario déclenche aussi) et
+  les **10 bornes de gènes** (`*_bounds`, section « Bornes des gènes ») rejoignent l'éditeur,
+  via un accesseur `TraitSpec::bounds_mut` (boucle sur `TRAITS` → DRY). Plus aucun paramètre
+  de scénario réservé au RON.
+- Outillage : enregistrement vidéo (re-render headless via ffmpeg, défauts 30 fps / 61 s),
+  drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, …),
+  `clippy`/`fmt` propres.
 
 **Reste à faire.**
 
@@ -52,8 +58,6 @@ ouverts au §9.
   le pas suivant après que le témoin a validé la fuite, comme `target` (chasseur puis MLP).
 - **P5 — bataille (différée) + passage à l'échelle** : régime générationnel (run → score
   → breed), headless parallélisé inter-matchs, puis crossover de poids / NEAT (§9).
-- **Paramètres encore hors UI** : `tick_hz`, et les 10 bornes de gènes (`*_bounds`,
-  éditables seulement dans le RON).
 
 ---
 
