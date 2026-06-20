@@ -21,21 +21,32 @@ Conception et ordre d'implémentation : [`ROADMAP.md`](ROADMAP.md).
 - **Capture vidéo** : rendu headless `record` → `ffmpeg` (re-render frais), menu
   d'enregistrement intégré.
 
-**En cours (P4).** Sélection naturelle approfondie + intelligence évoluée en régime
-continu. *Réalisé* : caractéristiques d'entité génériques (table `TRAITS` + facet
-*héritable*, gènes de reproduction / métabolisme / locomotion) ; `Brain::Hunter`, le
-réflexe déterministe **groupe témoin** qui fonce vers la cible perçue la plus proche —
-2ᵉ variant de `Brain`, sélectionnable par scénario (`BrainKind`), nourri par un nouveau
-**canal « cible »** de la perception ; **sélecteur de cerveau dans l'éditeur** (combo de
-type + paramètres propres au variant, p. ex. `turn_rate` de l'errance) ; **scénario
-proie-prédateur co-évolutif** (`proie_predateur.ron`) — chaîne trophique à trois niveaux
-(plantes → proies → prédateurs) en *pure donnée*, robuste sur 5 graines via le driver
-`tests/predator_prey`, avec pour seule croissance de schéma un **effectif par espèce**
-(`agents_per_species`, la pyramide trophique). *Reste* : substitution de cerveau par
-espèce, archétype complet par espèce, MLP + neuroévolution.
+**P4 — sélection naturelle approfondie + intelligence évoluée (réalisé).** Régime continu.
 
-**Planifié (P5).** La bataille (régime générationnel) comme test final de l'abstraction,
-le long d'une *couture A/B* propre.
+- **Gènes génériques** : table `TRAITS` (valeur, bornes, facet *mutable ?* **par espèce**),
+  exposée sans code dédié par l'éditeur / le HUD / l'inspecteur. Reproduction, métabolisme,
+  locomotion, **précision visuelle** (`vision_rays`) et **photosynthèse / dissémination**
+  (flore) sont des gènes ; généalogie (génération, âge) à l'inspecteur.
+- **Cerveaux** (`Brain`, enum à dispatch statique), **par espèce** et **hérités** à la
+  reproduction : `Wander` (témoin naïf), `Hunter` (témoin compétent — foncer vers la cible
+  perçue **et fuir les menaces** : canaux *cible* / *menace* de la perception), `Sessile`
+  (flore), **`Mlp`** (perceptron fait maison **appris par neuroévolution**, avec graphe
+  d'activations à l'inspecteur). Sélecteur de cerveau dans l'éditeur.
+- **Scénarios pilotes**, tous robustes sur multi-graines via leurs drivers :
+  `proie_predateur` (chaîne trophique à 3 niveaux, effectif par espèce, proies qui fuient),
+  `cohabitation` & `cerveau_mlp` (témoin vs appris → exclusion compétitive).
+
+**« Tout est entité » (réalisé).** L'espèce (`Archetype`) est la donnée **centrale** du
+scénario : corps + cerveau + gènes + effectif, et son index est son identité. Éditeur
+complet — créer / dupliquer / réordonner / supprimer, **bibliothèque d'espèces**
+réutilisables (`species/*.ron`, import par copie + resynchronisation), et tous les
+paramètres de monde dans l'UI (dont `tick_hz` et les bornes de gènes). **Flore évolutive** :
+une plante sessile vit de photosynthèse, se sème localement et s'auto-limite par compétition
+intraspécifique — la primitive d'interaction réutilisée, sans mécanisme nouveau.
+
+**Reste.** Dissoudre le type spécial `Food` (devenu le cas dégénéré d'une flore) ; câbler le
+canal « menace » dans l'entrée du MLP ; **P5 — bataille** (régime générationnel, test final
+de l'abstraction le long d'une *couture A/B* propre).
 
 > **Invariant cardinal** : aucune logique de simulation dans `Update`. L'agentivité vit
 > dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate` ; `Update` est réservé au
@@ -46,21 +57,21 @@ le long d'une *couture A/B* propre.
 ```
 src/
   lib.rs          SimPlugin : le cœur render-agnostic partagé.
-  config.rs       SimConfig : le scénario (RON) + son chargement.
-  components.rs   Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception/Action = contrat du cerveau.
-  brain.rs        Brain (enum, dispatch statique) : WanderBrain (errance) + HunterBrain (réflexe) ; BrainKind = choix de scénario.
-  genotype.rs     Genotype héritable + mutation ; compilation génotype→phénotype (§2).
+  config.rs       SimConfig : le scénario (RON) + chargement ; Archetype (espèce de 1er ordre : corps + cerveau + gènes), import/export d'espèces ; table de relations ; bornes de gènes.
+  components.rs   Corps de l'agent ; Vision (raycast) ; Species/Reserve ; Perception (canaux vision/cible/menace) / Action = contrat du cerveau ; généalogie (Generation/Age).
+  brain.rs        Brain (enum, dispatch statique) : Wander (errance) · Hunter (chasse + fuite) · Sessile (flore) · Mlp (appris, neuroévolution) ; BrainKind = choix de scénario.
+  genotype.rs     Genotype héritable (table TRAITS générique) + mutation ; compilation génotype→phénotype (§2).
   snapshot.rs     Snapshot d'une run (état vivant sérialisable) : config + RNG + agents + nourriture.
   movement.rs     Systèmes percevoir / décider / agir (FixedUpdate, chaînés).
-  interaction.rs  Primitive d'interaction unique (prédation/combat) + table de relations.
-  ecology.rs      Économie : métaboliser, mourir, se reproduire, réensemencer la nourriture.
+  interaction.rs  Primitive d'interaction unique (prédation / combat / compétition) + table de relations.
+  ecology.rs      Économie : métaboliser (dépenses + photosynthèse), mourir, vieillir, se reproduire (semis local), réensemencer la nourriture.
   rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
-  spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype).
+  spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype en phénotype vivant).
   main.rs         Binaire fenêtré  → `teemlab`.
-  editor.rs       UI egui (fenêtré seul) : palette + placement drag-and-drop (Suppr retire) ; sélecteur de cerveau ; éditeur du monde (arène, nourriture, relations).
+  editor.rs       UI egui (fenêtré seul) : palette (créer / dupliquer / réordonner / supprimer, placement glisser-déposer, Suppr retire), bibliothèque d'espèces (species/*.ron), éditeur du Monde (arène, tick_hz, bornes de gènes, relations).
   hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
-  controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps).
-  inspector.rs    Inspecteur egui (fenêtré seul) : clic → génotype / énergie / perception / action (lecture seule).
+  controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps, ré-applique tick_hz).
+  inspector.rs    Inspecteur egui (fenêtré seul) : clic → génotype / énergie / perception / action / graphe MLP / généalogie (lecture seule).
   runs.rs         Gestion egui (fenêtré seul) : sélecteur de scénario, recharge à chaud, save/load de run.
   recorder.rs     Menu egui (fenêtré seul) : configure et lance le binaire `record` en sous-processus.
   visuals.rs      VisualsPlugin : rendu de la sim (mesh, arène, vision) partagé fenêtré ⇄ enregistreur.
@@ -69,13 +80,15 @@ src/
 scenarios/
   default.ron     Scénario par défaut, tous champs documentés.
   empty.ron       Arène vide : la toile de l'éditeur (repli sans-argument du fenêtré).
-  crowded.ron     Variante (petite arène saturée) : override partiel.
-  predation.ron   Deux espèces + une relation de prédation : démo de la primitive.
-  selection.ron   Scénario nº1 : sélection naturelle (énergie, manger, mourir) — cerveaux d'errance.
-  chasse.ron      Même économie que selection.ron mais cerveaux Hunter : le groupe témoin compétent (item 16).
-  evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes.
-  proie_predateur.ron  Chaîne trophique à 3 niveaux co-évolutive (item 17) : pyramide
-                  par effectifs (agents_per_species), cerveaux Hunter, 2 relations.
+  evolution.ron   Boucle évolutive continue : reproduction + mutation des gènes (cerveaux d'errance).
+  chasse.ron      Cerveaux Hunter sur une nourriture : le groupe témoin compétent (item 16).
+  cohabitation.ron     Témoin compétent (Hunter) vs naïf (errance), même corps : exclusion compétitive (item 18a).
+  cerveau_mlp.ron      Cerveau APPRIS (MLP) vs errance : domine en partant de poids aléatoires (item 18b).
+  proie_predateur.ron  Chaîne trophique à 3 niveaux (plantes → proies → prédateurs) : pyramide
+                  par effectifs, cerveaux Hunter, proies qui fuient (items 17, 18e).
+  flore.ron       Flore sessile auto-limitée : photosynthèse + semis local + compétition (item 5, Phase 3a).
+species/
+  chasseur.ron    Espèce réutilisable (bibliothèque) : un chasseur générique, importable dans un scénario.
 outputs/          Sorties des simulations (vidéos, images…) ; contenu ignoré par git.
 ```
 
@@ -90,16 +103,17 @@ nix develop            # ou : direnv allow  (puis automatique)
 play                                  # debug, arène vide (toile de l'éditeur)
 play scenarios/evolution.ron          # debug, scénario explicite
 play --release                        # release (teemlab ET record en release)
-play --release scenarios/crowded.ron  # profil + scénario explicite
+play --release scenarios/flore.ron    # profil + scénario explicite
 
 cargo run --bin headless                          # headless, scénario par défaut
 cargo run --bin headless scenarios/default.ron    # scénario explicite (1ᵉʳ arg = RON)
 
 # Enregistrer une run en vidéo (rendu headless → ffmpeg) ; sortie dans outputs/ :
-cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4 --fps 60 --seconds 10
-#   options : --out F  --fps N  --seconds S  --width W  --height H  (défaut 1080×1080, arène carrée)
+cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4
+#   options : --out F  --fps N  --seconds S  --width W  --height H
+#   (défauts : 30 fps, 61 s, 1080×1080 — l'arène est carrée)
 
-cargo test                            # tests unitaires + intégration (confinement, snapshot)
+cargo test                            # tests unitaires + drivers multi-graines + snapshot/confinement
 cargo fmt                             # formatage — rustfmt par défaut fait foi
 cargo clippy --all-targets            # lint — l'arbre est tenu à zéro warning
 ```
