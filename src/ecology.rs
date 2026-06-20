@@ -64,7 +64,7 @@ pub fn metabolize(
         // celle, peut-être mutée, de l'agent) — sinon un mutant deux fois plus rapide
         // paierait pareil et le gène de vitesse n'aurait aucun coût. Ainsi « vitesse →
         // énergie » (§2) tient, et le coût reste rapporté à une référence par espèce.
-        let reference_speed = config.genotype_of(species.0).max_speed.max(1e-3);
+        let reference_speed = config.founder_max_speed_of(species.0).max(1e-3);
         let speed_ratio = velocity.0.length() / reference_speed;
         let drain =
             genotype.base_metabolism + genotype.move_cost * speed_ratio + vision.metabolic_cost();

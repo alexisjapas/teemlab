@@ -425,6 +425,18 @@ impl SimConfig {
             .unwrap_or_default()
     }
 
+    /// La **vitesse max fondatrice** de l'archétype `species` — la vitesse de
+    /// *référence* du coût de locomotion ([`crate::ecology::metabolize`]). Lit le
+    /// seul champ utile plutôt que de copier le [`Genotype`] entier
+    /// ([`genotype_of`](Self::genotype_of)) à chaque agent et chaque tick. Même repli
+    /// que `genotype_of` (la valeur fondatrice par défaut) → résultat identique.
+    pub fn founder_max_speed_of(&self, species: u16) -> f32 {
+        self.archetypes
+            .get(species as usize)
+            .map(|a| a.genotype.max_speed)
+            .unwrap_or_else(|| Genotype::default().max_speed)
+    }
+
     /// Le **type de cerveau** fondateur de l'archétype `species` (l'auteur de la
     /// décision, §1). Repli sur l'errance pour un index hors-liste. Au-delà du
     /// fondateur, le cerveau se transmet par héritage à la reproduction
@@ -729,9 +741,13 @@ mod tests {
         assert_eq!(cfg.reserve_max_of(0), 120.0);
         assert_eq!(cfg.agent_radius_of(0), 10.0);
         assert!(cfg.archetypes[1].is_sessile());
+        // `founder_max_speed_of` lit le même champ que `genotype_of`, sans copier le
+        // génotype entier — équivalence stricte (cas présent et repli).
+        assert_eq!(cfg.founder_max_speed_of(0), cfg.genotype_of(0).max_speed);
         // Index hors-liste → replis.
         assert_eq!(cfg.brain_of(9), BrainKind::default());
         assert_eq!(cfg.reserve_max_of(9), 100.0);
+        assert_eq!(cfg.founder_max_speed_of(9), cfg.genotype_of(9).max_speed);
     }
 
     /// Le scénario de chasse : un agent chasseur **et** une relation qui désigne la
