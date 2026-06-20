@@ -14,8 +14,8 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 use teemlab::SimConfig;
-use teemlab::components::{Agent, Food, Wall};
-use teemlab::ecology::{FoodRegen, SimRng};
+use teemlab::components::{Agent, Wall};
+use teemlab::ecology::SimRng;
 use teemlab::spawn;
 
 use crate::hud::History;
@@ -143,10 +143,9 @@ pub fn apply_reset(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut sim_rng: ResMut<SimRng>,
-    mut regen: ResMut<FoodRegen>,
     mut history: ResMut<History>,
     mut fixed: ResMut<Time<Fixed>>,
-    simulated: Query<Entity, Or<(With<Agent>, With<Food>, With<Wall>)>>,
+    simulated: Query<Entity, Or<(With<Agent>, With<Wall>)>>,
 ) {
     if !controls.reset_requested {
         return;
@@ -162,6 +161,5 @@ pub fn apply_reset(
     fixed.set_timestep_hz(config.tick_hz);
 
     *sim_rng = SimRng::from_config(&config);
-    regen.0.clear();
     history.clear();
 }

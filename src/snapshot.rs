@@ -2,8 +2,10 @@
 //!
 //! À distinguer du *scénario* ([`crate::config::SimConfig`]) : le scénario décrit
 //! les *règles* d'une expérience, le snapshot fige une *partie en cours* — chaque
-//! agent (position, génotype, énergie, cerveau) et chaque source de nourriture, de
-//! quoi reprendre exactement là où on s'était arrêté.
+//! agent (position, génotype, énergie, cerveau), de quoi reprendre exactement là où
+//! on s'était arrêté. Depuis la Phase 3b, les sources de nourriture sont des agents
+//! sessiles comme les autres : elles sont capturées dans la même liste, sans champ
+//! `food` séparé.
 //!
 //! v1 : sérialisé en **RON** (comme tout le reste — lisible, zéro dépendance
 //! nouvelle). Le §5 prévoit du binaire pour les snapshots à terme (volume, perf) ;
@@ -36,27 +38,17 @@ pub struct AgentSnap {
     pub brain: Brain,
 }
 
-/// Une source de nourriture figée. `species` est son **index d'archétype** (une
-/// même run peut désormais porter plusieurs archétypes-nourriture distincts).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct FoodSnap {
-    pub pos: [f32; 2],
-    pub reserve: f32,
-    pub species: u16,
-}
-
 /// L'état complet d'une run à un instant donné.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// Les règles sous lesquelles la run tournait : restaurées avec elle pour que
     /// bornes, relations et coûts collent aux agents sauvegardés.
     pub config: SimConfig,
-    /// État du flux aléatoire de sim (repousse de nourriture, mutations).
+    /// État du flux aléatoire de sim (semis, mutations).
     pub sim_rng: Rng,
-    /// Reliquat fractionnaire de repousse de nourriture, **par archétype**.
-    pub food_regen: Vec<f32>,
+    /// Tous les agents vivants, **sources de nourriture sessiles comprises** (Phase 3b :
+    /// plus de liste `food` séparée).
     pub agents: Vec<AgentSnap>,
-    pub food: Vec<FoodSnap>,
 }
 
 impl Snapshot {
@@ -98,7 +90,6 @@ mod tests {
         let snap = Snapshot {
             config: config.clone(),
             sim_rng: Rng::new(0xABCD),
-            food_regen: vec![0.42],
             agents: vec![AgentSnap {
                 pos: [12.5, -7.0],
                 genotype: Genotype::default(),
@@ -107,11 +98,6 @@ mod tests {
                 generation: 3,
                 age: 4.5,
                 brain: Brain::Wander(WanderBrain::new(99, 1.2, 0.25)),
-            }],
-            food: vec![FoodSnap {
-                pos: [-3.0, 4.0],
-                reserve: 21.0,
-                species: 1,
             }],
         };
         let text = snap.to_ron_string().expect("sérialisation RON");

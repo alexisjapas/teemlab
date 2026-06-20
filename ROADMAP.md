@@ -52,7 +52,19 @@ ouverts au §9.
   charge émerge** d'une compétition intraspécifique exprimée par la **primitive d'interaction**
   (relation Plante→Plante sans transfert, §3) — aucun mécanisme nouveau. Driver `tests/flora.rs`
   (`scenarios/flore.ron`, 4 graines) : la flore croît ~20×, reste **bornée loin de la saturation**
-  et **persiste**. `Food` reste le cas dégénéré (Phase 3b : sa dissolution complète).
+  et **persiste**.
+- **Phase 3b — dissolution de `Food`** (item 18h) : le type spécial `Food` n'existe plus.
+  `ArchetypeKind` est **aplati** — *tout archétype est un agent* (`Archetype` porte directement
+  `genotype`/`brain`/`mutable`) ; une *source de nourriture* est un patch **sessile
+  photosynthétique** (`Brain::Sessile`, `photosynthesis > 0`, reproduction coupée), renouvelé sur
+  place, effectif fixe. Supprimés : `replenish_food`/`regen`/`FoodRegen`/`spawn_food*`/`FoodSnap`/
+  le composant `Food` ; snapshot, éditeur et visuels unifiés sur l'agent. La dissolution a **révélé
+  un défaut de conservation** dans la primitive d'interaction (§3) : N fourrageurs agglutinés sur un
+  même patch en recevaient chacun la pleine valeur → énergie créée. `interact` met désormais les
+  prélèvements **à l'échelle de la réserve disponible** de la cible (deux passes, indépendant de
+  l'ordre) — conservation stricte. RON cassant (schéma plat) : 6 scénarios + la bibliothèque migrés ;
+  `cohabitation`/`cerveau_mlp` **recalibrés** (nourriture sparse-et-lente : un fourrageur efficace
+  garde les patchs épuisés → l'exclusion compétitive tient). Tous les drivers reverdis.
 - **Menace câblée dans l'appris** (item 18g) : le canal `threat` (item 18e), jusqu'ici consommé par
   le seul chasseur déterministe, rejoint l'**entrée du MLP** — `vision|cible` (`2 × rayons`) →
   `vision|cible|menace` (`3 × rayons`, constante `MlpBrain::CHANNELS`). La couture de
@@ -68,11 +80,6 @@ ouverts au §9.
 
 **Reste à faire.**
 
-- **Phase 3b — dissoudre `Food`** : maintenant qu'une flore réelle existe (Phase 3a, item 5),
-  le type spécial `Food`/`replenish_food`/`regen` peut fondre dans un archétype sessile —
-  « la source pure n'est plus que le cas dégénéré » (cerveau no-op, reproduction coupée). Gros
-  chantier (snapshot `FoodSnap`, `spawn_food`, éditeur, visuels) ; à faire quand un scénario
-  l'exige, pas spéculativement. Le verrou `Genotype` variable est levé (superset, §9).
 - **P5 — bataille (différée) + passage à l'échelle** : régime générationnel (run → score
   → breed), headless parallélisé inter-matchs, puis crossover de poids / NEAT (§9).
 
@@ -521,6 +528,32 @@ flowchart TB
     de la sélection, comme le fourrage). **Reste** : un scénario *écologique* où une proie MLP doit
     apprendre la fuite (calibration Lotka-Volterra, §7) — différé, comme le bénéfice se mesure mieux en
     lots générationnels (P5, le finding de variance de l'item 18b).
+18h. **Phase 3b — dissolution de `Food`** (le bout de « tout est entité ») **(réalisé)** : le type
+    spécial `Food` est supprimé. (1) **Schéma aplati** : `ArchetypeKind` (l'`enum` `Agent`/`Food`)
+    disparaît — `Archetype` porte *directement* `genotype`/`brain`/`mutable`, *tout archétype est un
+    agent*. Une *source de nourriture* est un **patch sessile photosynthétique** (`Brain::Sessile`,
+    `photosynthesis > 0`, `reproduction_threshold: 0` → effectif fixe), renouvelé **sur place** au lieu
+    de réapparaître ailleurs. Supprimés : `replenish_food`/`regen`/`FoodRegen`, `spawn_food*`, `FoodSnap`,
+    le composant `Food` ; spawn (peuple *tous* les archétypes), snapshot, runs, éditeur, visuels et HUD
+    unifiés sur l'agent (une « source » = un agent au cerveau `Sessile`). L'**immortalité** d'un patch
+    photosynthétique émerge gratuitement de l'ordre `interact → metabolize → reap` (broutée à zéro, elle
+    regagne `photosynthesis·dt` avant le ramassage) → offre d'énergie renouvelable sans robinet. (2)
+    **Défaut de conservation révélé** : la primitive d'interaction (§3) **dupliquait l'énergie** quand
+    plusieurs acteurs vidaient la **même** cible dans un tick (le clamp bornait la *perte* de la cible,
+    pas le *gain* cumulé des acteurs) — invisible tant que les fourrageurs étaient dispersés (ancienne
+    nourriture *sensor* réapparaissant au hasard), **explosif** dès que des patchs solides à position
+    fixe les agglutinaient. `interact` passe en **deux passes** : on accumule la *demande* par cible, puis
+    on **met chaque prélèvement à l'échelle** de la réserve disponible (`min(1, réserve/demande)`) →
+    conservation stricte, indépendante de l'ordre. (3) **Choix de corps** : une entité sessile reste un
+    corps **solide** (et non *sensor*) — l'exclusion physique borne la densité d'une flore (capacité de
+    charge spatiale) ; un fourrageur la mange *à portée* (la portée d'interaction dépasse la somme des
+    rayons), sans la chevaucher. (4) **Migration + recalibration** : schéma RON cassant → 6 scénarios + la
+    bibliothèque migrés (schéma plat) ; `cohabitation`/`cerveau_mlp` **recalibrés** — nourriture
+    *sparse-et-lente* (peu de patchs, repousse faible) pour que le fourrageur efficace garde les patchs
+    épuisés et **exclue** le naïf (sans la disparition-réapparition de l'ancien modèle, la nourriture fixe
+    aiderait trop l'errance). **Drivers** : tous reverdis (`cohabitation` ~4×, `cerveau_mlp` ≥2× sur les 5
+    graines, `predator_prey` coexiste, `flora` inchangée, `snapshot` unifié). **Reste** : rien sur cet
+    axe — « tout est entité » est complet (§9).
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -577,7 +610,13 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   quand absent) ouvrant une **resynchronisation** qui **préserve l'effectif local** (`count`, propre au
   scénario). L'effectif reste donc per-scénario ; à la resynchro, tout le reste (corps, cerveau, couleur,
   nom, mutabilité) vient de la définition. Espèce de démonstration versionnée : `species/chasseur.ron`.
-- **Modèle « tout est entité » et flore évolutive** — **Phase 3a faite (item 5)**. Les
+- **Conservation de la primitive d'interaction sous contention** (item 18h) : `interact` (§3)
+  duplique l'énergie si plusieurs acteurs vident la **même** cible dans un tick — le clamp final
+  borne la *perte* de la cible mais pas le *gain* cumulé. Latent tant que les fourrageurs étaient
+  dispersés ; **exposé** par la nourriture sessile à position fixe (les fourrageurs s'y agglutinent).
+  Corrigé en **deux passes** (demande par cible → mise à l'échelle par réserve disponible),
+  indépendant de l'ordre. C'est la **seule** retouche d'un système cœur qu'a exigée la Phase 3b.
+- **Modèle « tout est entité » et flore évolutive** — **Phases 3a (item 5) et 3b (item 18h) faites**. Les
   caractéristiques propres à une entité vivent dans son génotype, pas dans des règles globales
   (§1, *le corps via les gènes*) : *fait* pour la reproduction (`reproduction_threshold`,
   `offspring_energy`, `mutation_rate`) et les coûts (`base_metabolism`, `move_cost` — gènes de
@@ -598,6 +637,12 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   - **Subtilité résolue** : le semis spatial *aurait* recalibré toute l'économie (Lotka-Volterra,
     §7) ; l'auto-compétition (rétroaction négative **stable**) évite le knife-edge — bande robuste
     sans calibrage fin, contrairement au couplage proie-prédateur.
-  - **Reste (Phase 3b)** : **dissoudre le type spécial `Food`** (`replenish_food`/`regen`/`FoodSnap`/
-    `spawn_food`) — il n'est plus que le cas dégénéré d'une flore (cerveau no-op, reproduction
-    coupée). Gros chantier (snapshot, éditeur, visuels), à piloter par un scénario qui l'exige.
+  - **Phase 3b faite (item 18h)** : le type spécial `Food` est **dissous**. `ArchetypeKind` aplati
+    (tout archétype = un agent), une *source* étant un patch sessile photosynthétique sans
+    reproduction (renouvelé sur place) ; `replenish_food`/`regen`/`FoodSnap`/`spawn_food*`/composant
+    `Food` supprimés. Subtilité tranchée : une entité sessile reste un **corps solide** (l'exclusion
+    physique borne la densité d'une flore ; un patch photosynthétique est par ailleurs *immortel* sous
+    l'ordre interact→metabolize→reap). La dissolution a exigé l'**unique** correctif d'un système cœur
+    de la phase — la conservation de `interact` sous contention (point ci-dessus) — et la recalibration
+    de `cohabitation`/`cerveau_mlp` (nourriture sparse-et-lente → l'exclusion compétitive tient sans la
+    disparition-réapparition de l'ancien modèle).

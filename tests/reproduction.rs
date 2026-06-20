@@ -21,7 +21,7 @@ use teemlab::{SimConfig, SimPlugin};
 /// de reproduction sont paramétrés (gènes de l'unique archétype).
 fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
     use teemlab::brain::BrainKind;
-    use teemlab::config::{Archetype, ArchetypeKind, Mutability};
+    use teemlab::config::{Archetype, Mutability};
     use teemlab::genotype::Genotype;
     let genotype = Genotype {
         reproduction_threshold: threshold,
@@ -38,11 +38,9 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
             count: 1,
             radius: 8.0,
             reserve_max,
-            kind: ArchetypeKind::Agent {
-                genotype,
-                brain: BrainKind::default(),
-                mutable: Mutability::default(),
-            },
+            genotype,
+            brain: BrainKind::default(),
+            mutable: Mutability::default(),
             source: None,
         }],
         relations: Vec::new(),

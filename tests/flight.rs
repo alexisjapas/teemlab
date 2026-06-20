@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
-use teemlab::config::{Archetype, ArchetypeKind, Mutability, Relation};
+use teemlab::config::{Archetype, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
@@ -38,15 +38,13 @@ fn prey_sees_and_flees_its_predator() {
                 count: 0,
                 radius: 8.0,
                 reserve_max: 100.0,
-                kind: ArchetypeKind::Agent {
-                    genotype: Genotype {
-                        vision_fov_deg: 120.0,
-                        vision_range: 260.0,
-                        ..Genotype::default()
-                    },
-                    brain: BrainKind::Hunter,
-                    mutable: Mutability::default(),
+                genotype: Genotype {
+                    vision_fov_deg: 120.0,
+                    vision_range: 260.0,
+                    ..Genotype::default()
                 },
+                brain: BrainKind::Hunter,
+                mutable: Mutability::default(),
                 source: None,
             },
             // Espèce 1 : le prédateur, immobile (max_speed 0) — l'épouvantail.
@@ -56,14 +54,12 @@ fn prey_sees_and_flees_its_predator() {
                 count: 0,
                 radius: 8.0,
                 reserve_max: 100.0,
-                kind: ArchetypeKind::Agent {
-                    genotype: Genotype {
-                        max_speed: 0.0,
-                        ..Genotype::default()
-                    },
-                    brain: BrainKind::Hunter,
-                    mutable: Mutability::default(),
+                genotype: Genotype {
+                    max_speed: 0.0,
+                    ..Genotype::default()
                 },
+                brain: BrainKind::Hunter,
+                mutable: Mutability::default(),
                 source: None,
             },
         ],

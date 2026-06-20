@@ -57,14 +57,16 @@ impl Plugin for SimPlugin {
             .insert_resource(Gravity(Vec2::ZERO))
             // Cadence de sim constante (64 Hz par défaut), indépendante du rendu.
             .insert_resource(Time::<Fixed>::from_hz(self.config.tick_hz))
-            // Flux aléatoire de la sim (réapparition de nourriture, …), seedé à
-            // part du peuplement pour ne pas corréler les deux.
+            // Flux aléatoire de la sim (semis, mutations, …), seedé à part du
+            // peuplement pour ne pas corréler les deux.
             .insert_resource(ecology::SimRng::from_config(&self.config))
-            .init_resource::<ecology::FoodRegen>()
             .add_systems(Startup, spawn::setup_world)
             // percevoir → décider → agir, strictement dans FixedUpdate.
             // `interact` prolonge l'« agir » (manger/attaquer) ; puis l'économie
-            // d'énergie : métaboliser, mourir, réensemencer la nourriture.
+            // d'énergie : métaboliser (photosynthèse comprise), mourir, vieillir, se
+            // reproduire. L'ordre interact → metabolize → reap fait qu'une source
+            // photosynthétique broutée à zéro regagne `photosynthesis·dt` avant le
+            // ramassage : un patch renouvelable ne meurt donc pas (Phase 3b).
             .add_systems(
                 FixedUpdate,
                 (
@@ -76,7 +78,6 @@ impl Plugin for SimPlugin {
                     ecology::reap,
                     ecology::age_agents,
                     ecology::reproduce,
-                    ecology::replenish_food,
                 )
                     .chain(),
             );

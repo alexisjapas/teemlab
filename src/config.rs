@@ -9,8 +9,10 @@
 //! La donnée **centrale** est la liste d'[`Archetype`]s : chaque entrée est une
 //! *espèce* de premier ordre (corps + décideur), et son **index** dans la liste est
 //! son identité ([`crate::components::Species`]) — ce que cible la table de
-//! [`Relation`]s. La nourriture est un archétype comme un autre
-//! ([`ArchetypeKind::Food`]) : plus de numéro spécial, donc plus de collision.
+//! [`Relation`]s. Depuis la Phase 3b, **tout est un agent** : il n'y a plus de type
+//! spécial `Food`. Une « source de nourriture » est simplement un agent au cerveau
+//! [`BrainKind::Sessile`] qui vit de photosynthèse (gène) et ne se reproduit pas — le
+//! cas dégénéré d'une flore. Plus de numéro spécial, donc plus de collision.
 
 use crate::brain::BrainKind;
 use crate::genotype::Genotype;
@@ -33,9 +35,9 @@ pub struct SimConfig {
     /// Les **archétypes** : la donnée centrale du scénario. Chaque entrée est une
     /// *espèce* (nom, couleur, effectif, corps + décideur), et son **index** est son
     /// identité ([`crate::components::Species`]) — ce que cible la table de
-    /// [`relations`](Self::relations). La nourriture y est un archétype
-    /// ([`ArchetypeKind::Food`]), sans collision de numéros avec les agents. Vide →
-    /// monde inerte (rien au spawn).
+    /// [`relations`](Self::relations). Une *source de nourriture* est un archétype
+    /// comme un autre, au cerveau [`BrainKind::Sessile`] (Phase 3b), sans collision de
+    /// numéros. Vide → monde inerte (rien au spawn).
     pub archetypes: Vec<Archetype>,
     /// Table d'interactions : qui peut agir sur qui (cf. §3, §4). `actor`/`target`
     /// sont des **index d'archétype**. Vide par défaut → aucune interaction (monde
@@ -72,8 +74,13 @@ pub struct SimConfig {
 
 /// Un **archétype** : une espèce de premier ordre. Son index dans
 /// [`SimConfig::archetypes`] est son identité ([`crate::components::Species`]).
-/// Les propriétés communes (corps, effectif) vivent ici ; ce qui distingue un
-/// décideur mobile d'une source sessile est dans [`kind`](Self::kind).
+///
+/// Depuis la Phase 3b, **tout archétype est un agent** : il porte toujours un génotype
+/// fondateur (corps évolvable), un cerveau (auteur de la décision, §1) et une
+/// **mutabilité par espèce**. Ce qui était jadis une *source de nourriture* (`Food`)
+/// n'est plus qu'un archétype au cerveau [`BrainKind::Sessile`] vivant de photosynthèse
+/// et sans reproduction — le cas dégénéré d'une flore. Plus d'`enum` de type, donc plus
+/// de branche spéciale ni de schéma à deux formes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Archetype {
@@ -81,14 +88,25 @@ pub struct Archetype {
     pub name: String,
     /// Identité visuelle (sRGB linéaire, `[r, g, b]` dans `[0, 1]`).
     pub color: [f32; 3],
-    /// Effectif au spawn (le levier d'une pyramide trophique).
+    /// Effectif au spawn (le levier d'une pyramide trophique). Pour une source de
+    /// nourriture sessile : le nombre fixe de buissons (la repousse vit dans le gène
+    /// `photosynthesis`, plus dans un `regen` séparé).
     pub count: usize,
     /// Rayon du corps (et du collider).
     pub radius: f32,
-    /// Capacité de réserve (énergie/PV). Pour la nourriture : son énergie pleine.
+    /// Capacité de réserve (énergie/PV). Pour une source : son énergie pleine.
     pub reserve_max: f32,
-    /// Ce qui distingue un agent (décideur mobile) d'une nourriture (source sessile).
-    pub kind: ArchetypeKind,
+    /// Génotype fondateur (corps évolvable) : le génome que chaque individu reçoit en
+    /// copie au spawn, puis qui mute seul (§2). `#[serde(default)]` → un scénario peut
+    /// n'en mentionner que les gènes utiles.
+    #[serde(default)]
+    pub genotype: Genotype,
+    /// Cerveau fondateur (auteur de la décision, §1). `Sessile` pour une plante/source.
+    #[serde(default)]
+    pub brain: BrainKind,
+    /// **Mutabilité par espèce** : quels gènes ont le droit de muter (§2).
+    #[serde(default)]
+    pub mutable: Mutability,
     /// Provenance : le fichier `species/*.ron` d'où cet archétype a été **importé**
     /// (bibliothèque d'espèces). L'import en fait une *copie* (le scénario reste
     /// autonome, §9), mais retient ce lien pour permettre la **resynchronisation** —
@@ -97,23 +115,6 @@ pub struct Archetype {
     /// quand absent (`skip_serializing_if`) : les scénarios sans import sont inchangés.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-}
-
-/// Ce qu'un archétype *est* : un décideur mobile, ou une source sessile. Point
-/// d'accroche pour la flore évolutive (Phase 3) — où `Food` gagnera un génotype.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum ArchetypeKind {
-    /// Décideur mobile : génotype fondateur (corps évolvable), cerveau (auteur de la
-    /// décision, §1) et **mutabilité par espèce** (quels gènes ont le droit de muter).
-    Agent {
-        genotype: Genotype,
-        brain: BrainKind,
-        mutable: Mutability,
-    },
-    /// Source de nourriture sessile : `regen` = sources repoussées **par seconde**
-    /// (`0` → maintien instantané à `count`). Énergie/rayon viennent des champs
-    /// communs de l'archétype (`reserve_max`/`radius`).
-    Food { regen: f32 },
 }
 
 impl Archetype {
@@ -140,16 +141,21 @@ impl Archetype {
             count: 48,
             radius: 8.0,
             reserve_max: 100.0,
-            kind: ArchetypeKind::Agent {
-                genotype: Genotype::default(),
-                brain: BrainKind::default(),
-                mutable: Mutability::default(),
-            },
+            genotype: Genotype::default(),
+            brain: BrainKind::default(),
+            mutable: Mutability::default(),
             source: None,
         }
     }
 
-    /// Archétype de **nourriture** neuf, à l'index `i` : sessile, sans repousse.
+    /// Archétype de **source de nourriture** neuf, à l'index `i` (Phase 3b) : un *patch
+    /// photosynthétique* — une plante sessile ([`BrainKind::Sessile`]) qui regagne son
+    /// énergie sur place (`photosynthesis`) après avoir été broutée, **immobile**
+    /// (`max_speed: 0`) et **sans reproduction** (`reproduction_threshold: 0`, repro
+    /// coupée → effectif fixe). Vision minimale (coût négligeable). Tous gènes figés
+    /// (`mutable: false`) : c'est du décor, pas un sujet d'évolution. Le préréglage du
+    /// bouton « ＋ Nourriture » de l'éditeur ; un scénario ajuste `photosynthesis` et
+    /// `count` pour régler le débit d'énergie de l'écosystème.
     pub fn new_food(i: usize) -> Self {
         Self {
             name: "Nourriture".to_string(),
@@ -157,19 +163,29 @@ impl Archetype {
             count: 0,
             radius: 6.0,
             reserve_max: 50.0,
-            kind: ArchetypeKind::Food { regen: 0.0 },
+            genotype: Genotype {
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 0.0,
+                base_metabolism: 0.0,
+                move_cost: 0.0,
+                photosynthesis: 6.0,
+                seed_dispersal: 0.0,
+                ..Genotype::default()
+            },
+            brain: BrainKind::Sessile,
+            mutable: Mutability::all_fixed(),
             source: None,
         }
     }
 
-    /// `true` si c'est un agent (décideur mobile).
-    pub fn is_agent(&self) -> bool {
-        matches!(self.kind, ArchetypeKind::Agent { .. })
-    }
-
-    /// `true` si c'est une source de nourriture.
-    pub fn is_food(&self) -> bool {
-        matches!(self.kind, ArchetypeKind::Food { .. })
+    /// `true` si c'est une entité **sessile** (cerveau [`BrainKind::Sessile`]) : une
+    /// plante / source de nourriture, par opposition à un décideur mobile. Remplace
+    /// l'ancien `is_food` (le type spécial `Food` ayant été dissous, Phase 3b) : ce qui
+    /// fait d'un archétype une « source », c'est son cerveau, pas un variant de schéma.
+    pub fn is_sessile(&self) -> bool {
+        matches!(self.brain, BrainKind::Sessile)
     }
 
     /// Sérialise l'archétype en RON lisible — l'**export** d'une espèce réutilisable
@@ -228,9 +244,9 @@ impl Bounds {
 ///
 /// À noter (et c'est volontairement le mot *mutable*, pas *héritable*) : un gène
 /// non mutable est **quand même transmis** à l'enfant (copie du parent) ; ce que
-/// cette case gouverne, c'est uniquement la **mutation**. Vit dans
-/// [`ArchetypeKind::Agent`], donc une espèce peut figer un gène qu'une autre laisse
-/// dériver. `Default` = tout mutable sauf les coûts et le taux de mutation.
+/// cette case gouverne, c'est uniquement la **mutation**. Vit dans chaque
+/// [`Archetype`], donc une espèce peut figer un gène qu'une autre laisse dériver.
+/// `Default` = tout mutable sauf les coûts et le taux de mutation.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Mutability {
@@ -246,6 +262,27 @@ pub struct Mutability {
     pub vision_rays: bool,
     pub photosynthesis: bool,
     pub seed_dispersal: bool,
+}
+
+impl Mutability {
+    /// Tous les gènes **figés** (aucune mutation) : la mutabilité d'une source de
+    /// nourriture / d'un décor, qui n'évolue pas (cf. [`Archetype::new_food`]).
+    pub fn all_fixed() -> Self {
+        Self {
+            max_speed: false,
+            agility: false,
+            vision_range: false,
+            vision_fov: false,
+            reproduction_threshold: false,
+            offspring_energy: false,
+            mutation_rate: false,
+            base_metabolism: false,
+            move_cost: false,
+            vision_rays: false,
+            photosynthesis: false,
+            seed_dispersal: false,
+        }
+    }
 }
 
 impl Default for Mutability {
@@ -380,33 +417,32 @@ impl SimConfig {
     }
 
     /// Le **génotype fondateur** de l'archétype `species` (l'« archétype » au sens
-    /// génétique). Repli sur le génotype par défaut pour un index hors-liste ou une
-    /// nourriture (sans génotype en v1).
+    /// génétique). Repli sur le génotype par défaut pour un index hors-liste.
     pub fn genotype_of(&self, species: u16) -> Genotype {
-        match self.archetypes.get(species as usize).map(|a| &a.kind) {
-            Some(ArchetypeKind::Agent { genotype, .. }) => *genotype,
-            _ => Genotype::default(),
-        }
+        self.archetypes
+            .get(species as usize)
+            .map(|a| a.genotype)
+            .unwrap_or_default()
     }
 
     /// Le **type de cerveau** fondateur de l'archétype `species` (l'auteur de la
-    /// décision, §1). Repli sur l'errance pour un index hors-liste / une nourriture.
-    /// Au-delà du fondateur, le cerveau se transmet par héritage à la reproduction
+    /// décision, §1). Repli sur l'errance pour un index hors-liste. Au-delà du
+    /// fondateur, le cerveau se transmet par héritage à la reproduction
     /// ([`crate::brain::Brain::reproduce`]), sans relire ce champ.
     pub fn brain_of(&self, species: u16) -> BrainKind {
-        match self.archetypes.get(species as usize).map(|a| &a.kind) {
-            Some(ArchetypeKind::Agent { brain, .. }) => brain.clone(),
-            _ => BrainKind::default(),
-        }
+        self.archetypes
+            .get(species as usize)
+            .map(|a| a.brain.clone())
+            .unwrap_or_default()
     }
 
     /// La **mutabilité** (facet « mutable ? » par gène) de l'archétype `species`.
-    /// Repli sur le défaut pour un index hors-liste / une nourriture.
+    /// Repli sur le défaut pour un index hors-liste.
     pub fn mutable_of(&self, species: u16) -> Mutability {
-        match self.archetypes.get(species as usize).map(|a| &a.kind) {
-            Some(ArchetypeKind::Agent { mutable, .. }) => *mutable,
-            _ => Mutability::default(),
-        }
+        self.archetypes
+            .get(species as usize)
+            .map(|a| a.mutable)
+            .unwrap_or_default()
     }
 
     /// La **réserve max** (capacité de corps) de l'archétype `species`. Le **% de
@@ -541,12 +577,12 @@ mod tests {
     use super::*;
     use crate::brain::BrainKind;
 
-    /// Index du premier archétype d'agent (helper de test).
-    fn first_agent(cfg: &SimConfig) -> &Archetype {
+    /// Premier archétype **mobile** (non sessile) — helper de test.
+    fn first_mobile(cfg: &SimConfig) -> &Archetype {
         cfg.archetypes
             .iter()
-            .find(|a| a.is_agent())
-            .expect("un agent")
+            .find(|a| !a.is_sessile())
+            .expect("un agent mobile")
     }
 
     /// Un scénario partiel parse, et les champs omis retombent sur le défaut.
@@ -611,11 +647,8 @@ mod tests {
     fn bundled_species_parses_as_a_hunter_agent() {
         let text = include_str!("../species/chasseur.ron");
         let a = Archetype::from_ron_str(text).expect("espèce chasseur valide");
-        assert!(a.is_agent());
-        let ArchetypeKind::Agent { brain, .. } = &a.kind else {
-            unreachable!()
-        };
-        assert_eq!(*brain, BrainKind::Hunter);
+        assert!(!a.is_sessile());
+        assert_eq!(a.brain, BrainKind::Hunter);
         assert_eq!(a.source, None, "un fichier d'espèce n'a pas de source");
     }
 
@@ -687,17 +720,15 @@ mod tests {
     #[test]
     fn resolvers_read_archetype_by_index() {
         let mut cfg = SimConfig::default();
-        // Espèce 0 : agent. Espèce 1 : nourriture (énergie 50, repousse 0 par défaut).
+        // Espèce 0 : agent mobile. Espèce 1 : source sessile (patch photosynthétique).
         cfg.archetypes.push(Archetype::new_food(1));
-        if let ArchetypeKind::Agent { brain, .. } = &mut cfg.archetypes[0].kind {
-            *brain = BrainKind::Hunter;
-        }
+        cfg.archetypes[0].brain = BrainKind::Hunter;
         cfg.archetypes[0].reserve_max = 120.0;
         cfg.archetypes[0].radius = 10.0;
         assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
         assert_eq!(cfg.reserve_max_of(0), 120.0);
         assert_eq!(cfg.agent_radius_of(0), 10.0);
-        assert!(cfg.archetypes[1].is_food());
+        assert!(cfg.archetypes[1].is_sessile());
         // Index hors-liste → replis.
         assert_eq!(cfg.brain_of(9), BrainKind::default());
         assert_eq!(cfg.reserve_max_of(9), 100.0);
@@ -713,8 +744,8 @@ mod tests {
         let food = cfg
             .archetypes
             .iter()
-            .position(|a| a.is_food())
-            .expect("une nourriture") as u16;
+            .position(|a| a.is_sessile())
+            .expect("une source sessile") as u16;
         assert!(
             cfg.relations.iter().any(|r| r.target == food),
             "le chasseur a besoin d'une cible désignée (la nourriture)"
@@ -744,7 +775,7 @@ mod tests {
             .archetypes
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.is_food())
+            .filter(|(_, a)| a.is_sessile())
             .map(|(i, _)| i as u16)
             .collect();
         assert!(
@@ -761,10 +792,8 @@ mod tests {
     fn bundled_evolution_scenario_closes_the_loop() {
         let text = include_str!("../scenarios/evolution.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario évolution valide");
-        let agent = first_agent(&cfg);
-        let ArchetypeKind::Agent { genotype, .. } = &agent.kind else {
-            unreachable!()
-        };
+        let agent = first_mobile(&cfg);
+        let genotype = &agent.genotype;
         assert!(
             genotype.reproduction_threshold > 0.0,
             "la reproduction doit être active"
@@ -773,8 +802,8 @@ mod tests {
         assert!(
             cfg.archetypes
                 .iter()
-                .any(|a| matches!(a.kind, ArchetypeKind::Food { regen } if regen > 0.0)),
-            "repousse finie → capacité de charge"
+                .any(|a| a.is_sessile() && a.genotype.photosynthesis > 0.0),
+            "une source photosynthétique alimente l'économie (capacité de charge)"
         );
         assert!(
             genotype.reproduction_threshold <= agent.reserve_max,
@@ -801,8 +830,8 @@ mod tests {
         let food = cfg
             .archetypes
             .iter()
-            .position(|a| a.is_food())
-            .expect("une nourriture") as u16;
+            .position(|a| a.is_sessile())
+            .expect("une source sessile") as u16;
         for s in [0u16, 1] {
             assert!(
                 cfg.relations
@@ -837,11 +866,8 @@ mod tests {
         let text = include_str!("../scenarios/flore.ron");
         let cfg = SimConfig::from_ron_str(text).expect("scénario flore valide");
         assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
-        let ArchetypeKind::Agent { genotype, .. } = &cfg.archetypes[0].kind else {
-            unreachable!()
-        };
         assert!(
-            genotype.photosynthesis > 0.0,
+            cfg.archetypes[0].genotype.photosynthesis > 0.0,
             "la flore vit de photosynthèse"
         );
         assert!(

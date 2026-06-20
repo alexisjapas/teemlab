@@ -7,7 +7,7 @@
 //! l'inclut pas. Centraliser ici évite de dupliquer le rendu entre l'aperçu live
 //! et l'enregistrement (item 14, §7 : *re-render frais* d'une run).
 
-use crate::components::{Agent, Food, Perception, Radius, Reserve, Species};
+use crate::components::{Agent, Perception, Radius, Reserve, Species};
 use crate::config::SimConfig;
 use bevy::prelude::*;
 
@@ -21,13 +21,7 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                attach_visuals,
-                attach_food_visuals,
-                shade_by_reserve,
-                draw_arena,
-                draw_heading,
-            ),
+            (attach_visuals, shade_by_reserve, draw_arena, draw_heading),
         );
     }
 }
@@ -62,24 +56,6 @@ fn attach_visuals(
     new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Mesh2d>)>,
 ) {
     for (entity, radius, species) in &new_agents {
-        commands.entity(entity).insert((
-            Mesh2d(meshes.add(Circle::new(radius.0))),
-            MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
-        ));
-    }
-}
-
-/// Rendu seul : donner un mesh aux sources de nourriture fraîchement semées, teintées
-/// par la couleur de leur archétype. Elles s'assombriront ensuite via `shade_by_reserve`
-/// (elles portent `Species` + `Reserve`) à mesure qu'on les mange.
-fn attach_food_visuals(
-    mut commands: Commands,
-    config: Res<SimConfig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    new_food: Query<(Entity, &Radius, &Species), (Added<Food>, Without<Mesh2d>)>,
-) {
-    for (entity, radius, species) in &new_food {
         commands.entity(entity).insert((
             Mesh2d(meshes.add(Circle::new(radius.0))),
             MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),

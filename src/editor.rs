@@ -15,10 +15,9 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
-use teemlab::brain::{BrainKind, MlpBrain};
-use teemlab::components::{Agent, Food, Reserve, Species};
-use teemlab::config::{Archetype, ArchetypeKind, Relation};
-use teemlab::ecology::spawn_food;
+use teemlab::brain::{Brain, BrainKind, MlpBrain};
+use teemlab::components::{Agent, Reserve, Species};
+use teemlab::config::{Archetype, Relation};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
 
@@ -144,7 +143,7 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
         } else {
             "⬤ "
         };
-        let suffix = if arch.is_food() { " · nourriture" } else { "" };
+        let suffix = if arch.is_sessile() { " · sessile" } else { "" };
         let label = egui::RichText::new(format!("{mark}{}{suffix}", arch.name))
             .color(archetype_color32(arch));
         let resp = ui.add_sized(
@@ -493,8 +492,9 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
 }
 
 /// Éditeur de **l'archétype `i`** : propriétés communes (nom, couleur, effectif,
-/// taille, réserve) puis ce qui dépend du type — gènes + mutabilité (par espèce) +
-/// cerveau pour un agent, repousse pour une nourriture. Écrit *directement* dans
+/// taille, réserve) puis gènes + mutabilité (par espèce) + cerveau. Depuis la Phase 3b
+/// il n'y a plus de branche de type : une source de nourriture est un archétype au
+/// cerveau `Sessile`, éditable comme les autres. Écrit *directement* dans
 /// `config.archetypes[i]` (persisté par « Sauver »).
 fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     // Bornes (globales) capturées avant d'emprunter `config.archetypes` en mutable.
@@ -517,54 +517,47 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0).text("rayon du corps"));
     ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0).text("réserve max"));
 
-    match &mut arch.kind {
-        ArchetypeKind::Agent {
-            genotype,
-            brain,
-            mutable,
-        } => {
-            ui.separator();
-            ui.strong("Gènes (l'archétype)");
-            ui.small(
-                "Chaque agent posé reçoit une COPIE de ces gènes — son génome — qui mute \
-                 ensuite seule. La case « mutable » gouverne, PAR ESPÈCE, le droit de muter.",
-            );
-            // Une seule boucle sur TRAITS : slider (valeur, bornes) + case « mutable »
-            // par gène. Ajouter un trait n'ajoute pas une ligne ici (item 15).
-            for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
-                let mut value = (t.get)(genotype);
-                if ui
-                    .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
-                    .changed()
-                {
-                    (t.set)(genotype, value);
-                }
-                let mut m = (t.mutable)(mutable);
-                if ui
-                    .checkbox(&mut m, "mutable")
-                    .on_hover_text(
-                        "Coché : ce gène mute à la reproduction (il dérive et se transmet \
-                         avec variation). Décoché : il est quand même transmis, mais figé \
-                         sur la valeur du fondateur.",
-                    )
-                    .changed()
-                {
-                    (t.set_mutable)(mutable, m);
-                }
-            }
-            ui.separator();
-            ui.strong("Cerveau (auteur de la décision)");
-            brain_kind_editor(ui, brain, genotype.ray_count());
+    // Tout archétype est un agent (Phase 3b) : gènes + cerveau, sans branche de type.
+    // Une *source de nourriture* n'est qu'un archétype au cerveau Sessile, vivant de
+    // photosynthèse — éditable comme n'importe quel autre via ces mêmes contrôles.
+    let Archetype {
+        genotype,
+        brain,
+        mutable,
+        ..
+    } = arch;
+    ui.separator();
+    ui.strong("Gènes (l'archétype)");
+    ui.small(
+        "Chaque agent posé reçoit une COPIE de ces gènes — son génome — qui mute \
+         ensuite seule. La case « mutable » gouverne, PAR ESPÈCE, le droit de muter.",
+    );
+    // Une seule boucle sur TRAITS : slider (valeur, bornes) + case « mutable »
+    // par gène. Ajouter un trait n'ajoute pas une ligne ici (item 15).
+    for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
+        let mut value = (t.get)(genotype);
+        if ui
+            .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
+            .changed()
+        {
+            (t.set)(genotype, value);
         }
-        ArchetypeKind::Food { regen } => {
-            ui.separator();
-            ui.strong("Nourriture (source sessile)");
-            ui.add(egui::Slider::new(regen, 0.0..=50.0).text("repousse/s"))
-                .on_hover_text(
-                    "Sources repoussées par seconde (0 = maintien instantané à l'effectif).",
-                );
+        let mut m = (t.mutable)(mutable);
+        if ui
+            .checkbox(&mut m, "mutable")
+            .on_hover_text(
+                "Coché : ce gène mute à la reproduction (il dérive et se transmet \
+                 avec variation). Décoché : il est quand même transmis, mais figé \
+                 sur la valeur du fondateur.",
+            )
+            .changed()
+        {
+            (t.set_mutable)(mutable, m);
         }
     }
+    ui.separator();
+    ui.strong("Cerveau (auteur de la décision)");
+    brain_kind_editor(ui, brain, genotype.ray_count());
 }
 
 /// Édite **un** [`BrainKind`] : combo de type (sélection par *kind*, pour ne pas
@@ -925,16 +918,16 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
         config.relations.remove(i);
     }
     if ui.button("＋ Ajouter une relation").clicked() {
-        // Défaut : le premier agent mange la première nourriture (le cas courant).
+        // Défaut : le premier agent mobile mange la première source sessile (cas courant).
         let actor = config
             .archetypes
             .iter()
-            .position(|a| a.is_agent())
+            .position(|a| !a.is_sessile())
             .unwrap_or(0) as u16;
         let target = config
             .archetypes
             .iter()
-            .position(|a| a.is_food())
+            .position(|a| a.is_sessile())
             .unwrap_or(0) as u16;
         config.relations.push(Relation {
             actor,
@@ -977,13 +970,21 @@ fn archetype_combo(
 /// ligne plutôt que déborder quand la fenêtre est étroite.
 pub(crate) fn stats_section(
     ui: &mut egui::Ui,
-    agents: &Query<(&Reserve, &Genotype), With<Agent>>,
-    food: &Query<(), With<Food>>,
+    agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
 ) {
-    let population = agents.iter().count();
+    // On sépare les agents **mobiles** des sources **sessiles** (Phase 3b : la
+    // nourriture est un agent au cerveau Sessile). Population et moyennes de gènes ne
+    // portent que sur les mobiles — sinon les centaines de sources, aux gènes figés,
+    // écraseraient les statistiques de la faune.
+    let mobile = || {
+        agents
+            .iter()
+            .filter(|(_, _, b)| !matches!(b, Brain::Sessile(_)))
+    };
+    let population = mobile().count();
+    let food_count = agents.iter().count() - population;
     let n = population.max(1) as f32;
-    let mean_reserve = agents.iter().map(|(r, _)| r.current).sum::<f32>() / n;
-    let food_count = food.iter().count();
+    let mean_reserve = mobile().map(|(r, _, _)| r.current).sum::<f32>() / n;
     ui.horizontal_wrapped(|ui| {
         ui.label(format!("Population : {population}"));
         ui.separator();
@@ -994,15 +995,17 @@ pub(crate) fn stats_section(
         ui.label("Gènes moy. —");
         // Une moyenne par caractéristique de TRAITS, sans champ codé en dur.
         for t in &TRAITS {
-            let mean = agents.iter().map(|(_, g)| (t.get)(g)).sum::<f32>() / n;
+            let mean = mobile().map(|(_, g, _)| (t.get)(g)).sum::<f32>() / n;
             ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
         }
     });
 }
 
-/// Compile l'archétype `i` vers une entité vivante, posée en `world` : un agent
-/// (génotype/cerveau de l'archétype) ou une source de nourriture, selon son type. Son
-/// `Species` est son **index d'archétype** — l'identité que cible la table de relations.
+/// Compile l'archétype `i` vers une entité vivante, posée en `world` (génotype/cerveau
+/// de l'archétype). Son `Species` est son **index d'archétype** — l'identité que cible
+/// la table de relations. Depuis la Phase 3b, plus de branche de type : une source de
+/// nourriture est un agent au cerveau `Sessile`, compilé par le même `spawn_agent` (qui
+/// lui donne un corps pass-through immobile).
 fn place(
     commands: &mut Commands,
     config: &SimConfig,
@@ -1010,28 +1013,23 @@ fn place(
     i: usize,
     world: Vec2,
 ) {
-    let Some(arch) = config.archetypes.get(i) else {
+    if config.archetypes.get(i).is_none() {
         return;
-    };
-    let species = i as u16;
-    match arch.kind {
-        ArchetypeKind::Agent { .. } => {
-            let seed = palette.next_seed;
-            palette.next_seed = palette.next_seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            spawn_agent(
-                commands,
-                config,
-                config.genotype_of(species),
-                Species(species),
-                world,
-                0.0,
-                seed,
-                config.reserve_max_of(species),
-                0, // posé à la main : génération 0 (fondateur).
-            );
-        }
-        ArchetypeKind::Food { .. } => spawn_food(commands, config, species, world),
     }
+    let species = i as u16;
+    let seed = palette.next_seed;
+    palette.next_seed = palette.next_seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    spawn_agent(
+        commands,
+        config,
+        config.genotype_of(species),
+        Species(species),
+        world,
+        0.0,
+        seed,
+        config.reserve_max_of(species),
+        0, // posé à la main : génération 0 (fondateur).
+    );
 }
 
 #[cfg(test)]
@@ -1093,7 +1091,8 @@ mod tests {
         assert_eq!(config.archetypes.len(), 3);
         assert_eq!(config.archetypes[2].name, "Espèce 0 (copie)");
         // Même corps que l'original (tout sauf le nom).
-        assert_eq!(config.archetypes[2].kind, config.archetypes[0].kind);
+        assert_eq!(config.archetypes[2].genotype, config.archetypes[0].genotype);
+        assert_eq!(config.archetypes[2].brain, config.archetypes[0].brain);
         // Relations inchangées : le clone est en fin, aucun index n'a glissé.
         assert_eq!(config.relations.len(), 1);
         assert_eq!(
@@ -1130,7 +1129,7 @@ mod tests {
             target.name, "depuis le fichier",
             "le reste vient de la définition"
         );
-        assert!(target.is_food(), "le corps vient de la définition");
+        assert!(target.is_sessile(), "le corps vient de la définition");
         assert_eq!(
             target.source.as_deref(),
             Some("species/x.ron"),

@@ -55,20 +55,22 @@ pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     }
 }
 
-/// Population fondatrice : pour chaque archétype d'**agent**, son effectif (`count`)
-/// d'agents dispersés au hasard, chacun compilé depuis le génotype et le cerveau de
-/// son archétype, graîné de façon déterministe. La nourriture est peuplée par
-/// [`crate::ecology::replenish_food`]. L'ordre — espèces **contiguës** dans l'ordre
-/// des archétypes — fixe le flux de tirages RNG.
+/// Population fondatrice : pour **chaque** archétype, son effectif (`count`) d'agents
+/// dispersés au hasard, chacun compilé depuis le génotype et le cerveau de son
+/// archétype, graîné de façon déterministe. Depuis la Phase 3b, les sources de
+/// nourriture sont des agents sessiles comme les autres : elles sont donc peuplées ici
+/// aussi (effectif fixe, pas de robinet `replenish_food`). L'ordre — espèces
+/// **contiguës** dans l'ordre des archétypes — fixe le flux de tirages RNG ; les
+/// archétypes mobiles venant en général avant les sources, leurs tirages restent
+/// inchangés par l'ajout des sources en fin.
 fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     let mut rng = Rng::new(config.seed);
-    // La suite des espèces à peupler : `count` agents par archétype d'agent, dans
-    // l'ordre des archétypes.
+    // La suite des espèces à peupler : `count` agents par archétype, dans l'ordre des
+    // archétypes (sources de nourriture sessiles comprises).
     let species_seq: Vec<u16> = config
         .archetypes
         .iter()
         .enumerate()
-        .filter(|(_, a)| a.is_agent())
         .flat_map(|(i, a)| std::iter::repeat_n(i as u16, a.count))
         .collect();
 
@@ -165,6 +167,13 @@ pub fn spawn_agent_with_brain(
         },
         Action::default(),
         brain,
+        // Corps **solide** (et non *sensor*) y compris pour une entité sessile (flore,
+        // source de nourriture — Phase 3b) : l'exclusion physique entre corps est le
+        // mécanisme qui borne la densité d'une flore (capacité de charge spatiale), une
+        // source photosynthétique étant par ailleurs *immortelle* sous l'ordre
+        // interact→metabolize→reap. Un fourrageur la mange **à portée** (la portée
+        // d'interaction dépasse la somme des rayons), sans avoir à la chevaucher. Le
+        // génotype d'une sessile fixe `max_speed: 0` (+ cerveau no-op) → elle ne bouge pas.
         RigidBody::Dynamic,
         Collider::circle(r),
         LinearVelocity::default(),

@@ -18,10 +18,10 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{Age, Agent, Food, Generation, Reserve, Species, Wall};
-use teemlab::ecology::{FoodRegen, SimRng};
+use teemlab::components::{Age, Agent, Generation, Reserve, Species, Wall};
+use teemlab::ecology::SimRng;
 use teemlab::genotype::Genotype;
-use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
+use teemlab::snapshot::{AgentSnap, Snapshot};
 use teemlab::spawn;
 
 use crate::controls::SimControls;
@@ -196,7 +196,6 @@ pub fn save_snapshot(
     mut panel: ResMut<RunsPanel>,
     config: Res<SimConfig>,
     sim_rng: Res<SimRng>,
-    regen: Res<FoodRegen>,
     agents: Query<
         (
             &Transform,
@@ -209,7 +208,6 @@ pub fn save_snapshot(
         ),
         With<Agent>,
     >,
-    food: Query<(&Transform, &Reserve, &Species), With<Food>>,
 ) {
     if !matches!(panel.pending, Some(RunAction::SaveSnapshot(_))) {
         return;
@@ -221,7 +219,7 @@ pub fn save_snapshot(
     let snapshot = Snapshot {
         config: config.clone(),
         sim_rng: sim_rng.0.clone(),
-        food_regen: regen.0.clone(),
+        // Tous les agents, sources sessiles comprises (Phase 3b).
         agents: agents
             .iter()
             .map(
@@ -236,14 +234,6 @@ pub fn save_snapshot(
                 },
             )
             .collect(),
-        food: food
-            .iter()
-            .map(|(transform, reserve, species)| FoodSnap {
-                pos: transform.translation.truncate().to_array(),
-                reserve: reserve.current,
-                species: species.0,
-            })
-            .collect(),
     };
 
     panel.status = match snapshot.save_ron_file(&path) {
@@ -253,19 +243,18 @@ pub fn save_snapshot(
 }
 
 /// Restaure une run depuis un snapshot : despawn de tout le simulé, puis arène +
-/// agents (cerveaux exacts) + nourriture rejoués depuis le fichier, et ressources
-/// de sim/HUD remises dans l'état sauvegardé. En `PreUpdate` : le monde neuf est
-/// en place avant la boucle fixe de la frame.
+/// agents (cerveaux exacts, sources sessiles comprises) rejoués depuis le fichier, et
+/// ressources de sim/HUD remises dans l'état sauvegardé. En `PreUpdate` : le monde neuf
+/// est en place avant la boucle fixe de la frame.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_snapshot_load(
     mut panel: ResMut<RunsPanel>,
     mut commands: Commands,
     mut config: ResMut<SimConfig>,
     mut sim_rng: ResMut<SimRng>,
-    mut regen: ResMut<FoodRegen>,
     mut history: ResMut<History>,
     mut palette: ResMut<Palette>,
-    simulated: Query<Entity, Or<(With<Agent>, With<Food>, With<Wall>)>>,
+    simulated: Query<Entity, Or<(With<Agent>, With<Wall>)>>,
 ) {
     if !matches!(panel.pending, Some(RunAction::LoadSnapshot(_))) {
         return;
@@ -300,18 +289,8 @@ pub fn apply_snapshot_load(
             agent.age,
         );
     }
-    for source in &snapshot.food {
-        teemlab::ecology::spawn_food_with_energy(
-            &mut commands,
-            &config,
-            source.species,
-            Vec2::from(source.pos),
-            source.reserve,
-        );
-    }
 
     *sim_rng = SimRng(snapshot.sim_rng.clone());
-    regen.0 = snapshot.food_regen.clone();
     palette.selected = None;
     palette.dragging = None;
     history.clear();

@@ -17,9 +17,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{
-    Action, Age, Agent, Food, Generation, Perception, Reserve, Species, Vision,
-};
+use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use teemlab::genotype::Genotype;
 
 use crate::controls::{self, SimControls};
@@ -35,15 +33,14 @@ pub fn top_bar(
     mut contexts: EguiContexts,
     mut sim_controls: ResMut<SimControls>,
     mut vtime: ResMut<Time<Virtual>>,
-    agents: Query<(&Reserve, &Genotype), With<Agent>>,
-    food: Query<(), With<Food>>,
+    agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
         ui.horizontal(|ui| {
             controls::controls_section(ui, &mut sim_controls, &mut vtime);
             ui.separator();
-            editor::stats_section(ui, &agents, &food);
+            editor::stats_section(ui, &agents);
         });
     });
     Ok(())

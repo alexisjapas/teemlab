@@ -7,7 +7,8 @@
 // Plante→Plante sans transfert (la primitive d'interaction §3 : lumière/espace disputés)
 // qui draine l'énergie des voisines proches. Densité haute → drain > photosynthèse →
 // l'énergie chute, le semis s'arrête (et les plus serrées meurent) → équilibre logistique
-// stable. `Food` reste pour le cas dégénéré ; ici la « source » est une vraie entité.
+// stable. Depuis la Phase 3b, une *source de nourriture* est le cas dégénéré de cette
+// flore (cerveau sessile, mais reproduction coupée) — plus de type `Food` spécial.
 (
     tick_hz: 64.0,
     arena_half_extent: 360.0,
@@ -18,38 +19,36 @@
             count: 20,
             radius: 6.0,
             reserve_max: 80.0,
-            kind: Agent(
-                genotype: (
-                    max_speed: 0.0,
-                    agility: 0.1,
-                    vision_range: 30.0,
-                    vision_fov_deg: 120.0,
-                    reproduction_threshold: 60.0,
-                    offspring_energy: 30.0,
-                    mutation_rate: 0.04,
-                    base_metabolism: 1.0,
-                    move_cost: 0.0,
-                    vision_rays: 1.0,
-                    photosynthesis: 8.0,
-                    seed_dispersal: 50.0,
-                ),
-                brain: Sessile,
-                mutable: (
-                    max_speed: false,
-                    agility: false,
-                    vision_range: false,
-                    vision_fov: false,
-                    // La stratégie de reproduction et la dissémination, elles, ÉVOLUENT
-                    // sous la pression de la compétition (la part « flore évolutive »).
-                    reproduction_threshold: true,
-                    offspring_energy: false,
-                    mutation_rate: false,
-                    base_metabolism: false,
-                    move_cost: false,
-                    vision_rays: false,
-                    photosynthesis: false,
-                    seed_dispersal: true,
-                ),
+            genotype: (
+                max_speed: 0.0,
+                agility: 0.1,
+                vision_range: 30.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 60.0,
+                offspring_energy: 30.0,
+                mutation_rate: 0.04,
+                base_metabolism: 1.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
+                photosynthesis: 8.0,
+                seed_dispersal: 50.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                // La stratégie de reproduction et la dissémination, elles, ÉVOLUENT
+                // sous la pression de la compétition (la part « flore évolutive »).
+                reproduction_threshold: true,
+                offspring_energy: false,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: true,
             ),
         ),
     ],

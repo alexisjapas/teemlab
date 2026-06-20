@@ -8,45 +8,58 @@
             count: 40,
             radius: 8.0,
             reserve_max: 120.0,
-            kind: Agent(
-                genotype: (
-                    max_speed: 140.0,
-                    agility: 0.12,
-                    vision_range: 160.0,
-                    vision_fov_deg: 120.0,
-                    reproduction_threshold: 95.0,
-                    offspring_energy: 45.0,
-                    mutation_rate: 0.06,
-                    base_metabolism: 4.0,
-                    move_cost: 2.0,
-                    vision_rays: 7.0,
-                ),
-                brain: Wander(
-                    turn_rate: 0.25,
-                ),
-                mutable: (
-                    max_speed: true,
-                    agility: true,
-                    vision_range: true,
-                    vision_fov: true,
-                    reproduction_threshold: true,
-                    offspring_energy: true,
-                    mutation_rate: false,
-                    base_metabolism: false,
-                    move_cost: false,
-                    vision_rays: true,
-                ),
+            genotype: (
+                max_speed: 140.0,
+                agility: 0.12,
+                vision_range: 160.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 95.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                base_metabolism: 4.0,
+                move_cost: 2.0,
+                vision_rays: 7.0,
+            ),
+            brain: Wander(
+                turn_rate: 0.25,
+            ),
+            mutable: (
+                max_speed: true,
+                agility: true,
+                vision_range: true,
+                vision_fov: true,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: true,
             ),
         ),
+        // Source de nourriture (Phase 3b) : un patch SESSILE photosynthétique. Il
+        // regagne son énergie sur place (`photosynthesis`) après broutage, ne se
+        // reproduit pas (`reproduction_threshold: 0` → effectif fixe = `count`) et est
+        // immobile (`max_speed: 0`). Le débit d'énergie de l'écosystème ≈ count ×
+        // photosynthesis (ici 70 × 7 ≈ l'ancien regen 8/s × énergie 60).
         (
             name: "Nourriture",
             color: (1.0, 0.45, 0.35),
             count: 70,
             radius: 8.0,
             reserve_max: 60.0,
-            kind: Food(
-                regen: 8.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 0.0,
+                base_metabolism: 0.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
+                photosynthesis: 7.0,
+                seed_dispersal: 0.0,
             ),
+            brain: Sessile,
+            mutable: (),
         ),
     ],
     relations: [

@@ -12,8 +12,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
-use teemlab::config::{Archetype, ArchetypeKind, Mutability, Relation};
-use teemlab::ecology::spawn_food;
+use teemlab::config::{Archetype, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
@@ -34,24 +33,29 @@ fn hunter_sees_and_chases_its_target() {
                 count: 0,
                 radius: 8.0,
                 reserve_max: 100.0,
-                kind: ArchetypeKind::Agent {
-                    genotype: Genotype {
-                        vision_fov_deg: 120.0,
-                        vision_range: 260.0,
-                        ..Genotype::default()
-                    },
-                    brain: BrainKind::Hunter,
-                    mutable: Mutability::default(),
+                genotype: Genotype {
+                    vision_fov_deg: 120.0,
+                    vision_range: 260.0,
+                    ..Genotype::default()
                 },
+                brain: BrainKind::Hunter,
+                mutable: Mutability::default(),
                 source: None,
             },
+            // L'appât : une source sessile (Phase 3b) — immobile, jamais consommée
+            // (relation à débit nul) ; le chasseur doit la voir comme « cible ».
             Archetype {
                 name: "Nourriture".into(),
                 color: Archetype::default_color(1),
                 count: 0,
                 radius: 6.0,
                 reserve_max: 50.0,
-                kind: ArchetypeKind::Food { regen: 0.0 },
+                genotype: Genotype {
+                    max_speed: 0.0,
+                    ..Genotype::default()
+                },
+                brain: BrainKind::Sessile,
+                mutable: Mutability::all_fixed(),
                 source: None,
             },
         ],
@@ -84,7 +88,18 @@ fn hunter_sees_and_chases_its_target() {
                 config.reserve_max_of(0),
                 0, // fondateur : génération 0.
             );
-            spawn_food(&mut commands, &config, 1, Vec2::new(food_x, 0.0));
+            // L'appât sessile, posé via le même `spawn_agent` (corps pass-through).
+            spawn_agent(
+                &mut commands,
+                &config,
+                config.genotype_of(1),
+                Species(1),
+                Vec2::new(food_x, 0.0),
+                0.0,
+                1,
+                config.reserve_max_of(1),
+                0,
+            );
         })
         .expect("spawn ponctuel");
 

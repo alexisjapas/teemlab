@@ -2,8 +2,10 @@
 //! dans un autre monde — et retrouver la même population (item 13).
 //!
 //! Le test rejoue ce que fait le binaire (`runs.rs`) en réutilisant les briques
-//! du cœur (`Snapshot`, `spawn_agent_with_brain`, `spawn_food_with_energy`,
-//! `spawn_arena`). Il couvre surtout le chemin **restauration**, le plus risqué.
+//! du cœur (`Snapshot`, `spawn_agent_with_brain`, `spawn_arena`). Il couvre surtout le
+//! chemin **restauration**, le plus risqué. Depuis la Phase 3b, les sources de
+//! nourriture sont des agents sessiles : elles sont capturées/restaurées dans la même
+//! liste, sans chemin `food` séparé.
 
 // Les requêtes Bevy (tuples + filtres) déclenchent `type_complexity` par nature.
 #![allow(clippy::type_complexity)]
@@ -12,10 +14,10 @@ use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::components::{Age, Agent, Food, Generation, Reserve, Species, Wall};
-use teemlab::ecology::{FoodRegen, SimRng, spawn_food_with_energy};
+use teemlab::components::{Age, Agent, Generation, Reserve, Species, Wall};
+use teemlab::ecology::SimRng;
 use teemlab::genotype::Genotype;
-use teemlab::snapshot::{AgentSnap, FoodSnap, Snapshot};
+use teemlab::snapshot::{AgentSnap, Snapshot};
 use teemlab::spawn::{spawn_agent_with_brain, spawn_arena};
 
 mod common;
@@ -29,7 +31,6 @@ fn capture_system(
     mut captured: ResMut<Captured>,
     config: Res<SimConfig>,
     sim_rng: Res<SimRng>,
-    regen: Res<FoodRegen>,
     agents: Query<
         (
             &Transform,
@@ -42,12 +43,10 @@ fn capture_system(
         ),
         With<Agent>,
     >,
-    food: Query<(&Transform, &Reserve, &Species), With<Food>>,
 ) {
     captured.0 = Some(Snapshot {
         config: config.clone(),
         sim_rng: sim_rng.0.clone(),
-        food_regen: regen.0.clone(),
         agents: agents
             .iter()
             .map(|(t, g, r, s, b, generation, age)| AgentSnap {
@@ -58,14 +57,6 @@ fn capture_system(
                 generation: generation.0,
                 age: age.0,
                 brain: b.clone(),
-            })
-            .collect(),
-        food: food
-            .iter()
-            .map(|(t, r, s)| FoodSnap {
-                pos: t.translation.truncate().to_array(),
-                reserve: r.current,
-                species: s.0,
             })
             .collect(),
     });
@@ -79,7 +70,7 @@ struct ToRestore(Snapshot);
 fn restore_system(
     mut commands: Commands,
     to: Res<ToRestore>,
-    existing: Query<Entity, Or<(With<Agent>, With<Food>, With<Wall>)>>,
+    existing: Query<Entity, Or<(With<Agent>, With<Wall>)>>,
 ) {
     let snap = &to.0;
     for entity in &existing {
@@ -97,15 +88,6 @@ fn restore_system(
             a.reserve,
             a.generation,
             a.age,
-        );
-    }
-    for f in &snap.food {
-        spawn_food_with_energy(
-            &mut commands,
-            &snap.config,
-            f.species,
-            Vec2::from(f.pos),
-            f.reserve,
         );
     }
 }
@@ -136,8 +118,8 @@ fn run_survives_snapshot_roundtrip() {
     // — Passage par le disque (RON) : ce que le binaire écrit/relit. —
     let text = snapshot.to_ron_string().expect("sérialisation");
     let snapshot = Snapshot::from_ron_str(&text).expect("relecture");
+    // Les agents incluent les sources sessiles (Phase 3b) : un seul compte à vérifier.
     let expected_agents = snapshot.agents.len();
-    let expected_food = snapshot.food.len();
 
     // — Cible : un monde neuf, peuplé par le Startup, qu'on écrase par la run
     //   restaurée. —
@@ -149,19 +131,14 @@ fn run_survives_snapshot_roundtrip() {
         .run_system_once(restore_system)
         .expect("restauration");
 
-    // La population restaurée remplace exactement celle du snapshot.
+    // La population restaurée (sources sessiles comprises) remplace exactement celle du
+    // snapshot.
     let agents = target
         .world_mut()
         .query_filtered::<(), With<Agent>>()
         .iter(target.world())
         .count();
-    let food = target
-        .world_mut()
-        .query_filtered::<(), With<Food>>()
-        .iter(target.world())
-        .count();
     assert_eq!(agents, expected_agents, "population restaurée incorrecte");
-    assert_eq!(food, expected_food, "nourriture restaurée incorrecte");
 
     // Et la run restaurée continue de tourner sainement (pas de panique, pop > 0).
     for _ in 0..100 {

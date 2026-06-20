@@ -4,18 +4,22 @@
 //! C'est ici que se joue, selon §7, tout l'équilibre de la sélection naturelle —
 //! du **réglage**, pas de l'algo. Trois systèmes :
 //!
-//! - [`metabolize`] draine l'énergie (base + locomotion + **coût de la vision**,
-//!   le couplage quantifié à l'item 6 trouvant enfin son consommateur) ;
+//! - [`metabolize`] fait le bilan d'énergie : **dépenses** (base + locomotion +
+//!   **coût de la vision**, le couplage quantifié à l'item 6 trouvant enfin son
+//!   consommateur) moins le **gain** de photosynthèse (gène de flore) ;
 //! - [`reap`] retire les agents à court d'énergie ;
-//! - [`replenish_food`] entretient les sources de nourriture pour garder
-//!   l'économie soutenable.
+//! - [`reproduce`] ferme la boucle évolutive.
 //!
-//! Manger, lui, n'est pas ici : c'est la primitive d'interaction (item 7) qui
-//! transfère l'énergie de la nourriture vers l'agent. Le moteur n'a qu'un verbe.
+//! Depuis la Phase 3b, il n'y a plus de système `replenish_food` ni de type `Food` :
+//! une *source de nourriture* est un agent **sessile** (Phase 3a) qui regagne son
+//! énergie sur place par photosynthèse — l'offre d'énergie de l'écosystème émerge donc
+//! de [`metabolize`], sans robinet séparé. Manger, lui, n'est pas ici non plus : c'est
+//! la primitive d'interaction (item 7) qui transfère l'énergie d'une cible vers
+//! l'acteur. Le moteur n'a qu'un verbe.
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Age, Agent, Food, Generation, Radius, Reserve, Species, Vision};
-use crate::config::{ArchetypeKind, SimConfig};
+use crate::components::{Age, Agent, Generation, Reserve, Species, Vision};
+use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::rng::Rng;
 use crate::spawn::spawn_agent_with_brain;
@@ -23,8 +27,8 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 
 /// Flux aléatoire de la simulation pour les événements stochastiques (ici, les
-/// positions de réapparition de la nourriture). Vit dans le monde de sim, seedé
-/// depuis la config — on rejoue une *expérience*, pas le bit-à-bit (§5).
+/// décalages de semis et les mutations à la reproduction). Vit dans le monde de sim,
+/// seedé depuis la config — on rejoue une *expérience*, pas le bit-à-bit (§5).
 #[derive(Resource)]
 pub struct SimRng(pub Rng);
 
@@ -36,13 +40,6 @@ impl SimRng {
         Self(Rng::new(config.seed ^ 0xF00D))
     }
 }
-
-/// Reliquat fractionnaire de repousse de nourriture, **par archétype** (indexé par
-/// l'index d'archétype), accumulé entre les ticks pour qu'un débit `regen` non
-/// entier par tick produise quand même le bon nombre de sources au fil du temps.
-/// Redimensionné à la demande sur le nombre d'archétypes.
-#[derive(Resource, Default)]
-pub struct FoodRegen(pub Vec<f32>);
 
 /// MÉTABOLISME : le bilan d'énergie par seconde de chaque agent. **Dépenses** — base +
 /// surcoût de vitesse + coût du capteur de vision ; **gain** — la photosynthèse (gène de
@@ -190,98 +187,4 @@ pub fn reproduce(
             0.0, // un nouveau-né naît à l'âge 0.
         );
     }
-}
-
-/// Entretenir la nourriture : retirer les sources épuisées et réensemencer pour
-/// maintenir `food_count` constant. C'est le robinet d'énergie qui entre dans
-/// l'écosystème ; son débit (vs le métabolisme cumulé) fixe le point d'équilibre.
-pub fn replenish_food(
-    mut commands: Commands,
-    time: Res<Time>,
-    config: Res<SimConfig>,
-    mut rng: ResMut<SimRng>,
-    mut regen: ResMut<FoodRegen>,
-    food: Query<(Entity, &Reserve, &Species), With<Food>>,
-) {
-    // Un reliquat de repousse par archétype (indexé comme `config.archetypes`).
-    regen.0.resize(config.archetypes.len(), 0.0);
-    // Compter les sources vivantes par espèce ; retirer les épuisées.
-    let mut alive = vec![0usize; config.archetypes.len()];
-    for (entity, reserve, species) in &food {
-        if reserve.current <= 0.0 {
-            commands.entity(entity).despawn();
-        } else if let Some(slot) = alive.get_mut(species.0 as usize) {
-            *slot += 1;
-        }
-    }
-    let dt = time.delta_secs();
-    // Chaque archétype-nourriture maintient son propre effectif `count` à son débit
-    // `regen` : un robinet d'énergie par type de flore.
-    for (i, arch) in config.archetypes.iter().enumerate() {
-        let ArchetypeKind::Food { regen: rate } = arch.kind else {
-            continue;
-        };
-        let deficit = arch.count.saturating_sub(alive[i]);
-        if deficit == 0 {
-            regen.0[i] = 0.0; // à pleine capacité : pas de repousse en réserve.
-            continue;
-        }
-        let to_spawn = if rate <= 0.0 {
-            deficit // maintien instantané (item 8).
-        } else {
-            // Repousse à débit limité : on accumule le reliquat fractionnaire.
-            regen.0[i] += rate * dt;
-            let n = (regen.0[i] as usize).min(deficit);
-            regen.0[i] -= n as f32;
-            n
-        };
-        let span = config.arena_half_extent - arch.radius - 5.0;
-        for _ in 0..to_spawn {
-            let x = rng.0.next_signed() * span;
-            let y = rng.0.next_signed() * span;
-            spawn_food(&mut commands, &config, i as u16, Vec2::new(x, y));
-        }
-    }
-}
-
-/// Poser une source de nourriture : une réserve d'énergie statique et *sensor*
-/// (les agents la traversent sans la heurter), mangée via la primitive
-/// d'interaction comme n'importe quelle cible. Public pour que le placement
-/// manuel de l'éditeur (item 4) puisse en déposer.
-pub fn spawn_food(commands: &mut Commands, config: &SimConfig, species: u16, pos: Vec2) {
-    spawn_food_with_energy(
-        commands,
-        config,
-        species,
-        pos,
-        config.reserve_max_of(species),
-    );
-}
-
-/// Variante posant une source de l'archétype `species` avec une réserve **partielle**
-/// donnée (au lieu de pleine) : chemin de la restauration d'un snapshot (item 13), qui
-/// réinjecte une nourriture à demi mangée à l'identique. [`spawn_food`] en est le cas
-/// « pleine ». L'énergie pleine et le rayon viennent de l'archétype (`reserve_max`,
-/// `radius`).
-pub fn spawn_food_with_energy(
-    commands: &mut Commands,
-    config: &SimConfig,
-    species: u16,
-    pos: Vec2,
-    current: f32,
-) {
-    let radius = config.agent_radius_of(species);
-    commands.spawn((
-        Food,
-        Species(species),
-        Reserve {
-            current,
-            max: config.reserve_max_of(species),
-        },
-        Radius(radius),
-        RigidBody::Static,
-        Collider::circle(radius),
-        Sensor,
-        Transform::from_translation(pos.extend(0.0)),
-    ));
 }

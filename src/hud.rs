@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use teemlab::SimConfig;
-use teemlab::components::{Agent, Food, Species};
+use teemlab::components::{Agent, Species};
 use teemlab::config::Bounds;
 use teemlab::genotype::{Genotype, TRAITS};
 
@@ -30,7 +30,7 @@ struct Sample {
     t: f32,
     /// Population vivante par espèce (indexée comme `Species`).
     population: Vec<u32>,
-    /// Sources de nourriture présentes.
+    /// Sources de nourriture présentes (somme des espèces **sessiles**, Phase 3b).
     food: u32,
     // Gènes moyens, un par caractéristique de [`TRAITS`] (même ordre), chacun
     // **normalisé dans ses bornes** (`[0, 1]`) pour que des traits d'échelles
@@ -89,7 +89,6 @@ pub fn sample_history(
     config: Res<SimConfig>,
     mut history: ResMut<History>,
     agents: Query<(&Species, &Genotype), With<Agent>>,
-    food: Query<(), With<Food>>,
 ) {
     let now = time.elapsed_secs();
     if now < history.next_at {
@@ -123,10 +122,19 @@ pub fn sample_history(
         vec![0.0; TRAITS.len()]
     };
 
+    // « Nourriture » = somme des espèces sessiles (sources/flore), dérivée de la
+    // population par espèce (Phase 3b : plus de marqueur `Food` à compter).
+    let food = population
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| config.archetypes.get(*i).is_some_and(|a| a.is_sessile()))
+        .map(|(_, &p)| p)
+        .sum();
+
     history.samples.push_back(Sample {
         t: now,
         population,
-        food: food.iter().count() as u32,
+        food,
         traits,
     });
     while history.samples.len() > history.max_samples {
