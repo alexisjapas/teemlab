@@ -102,7 +102,17 @@ impl Vision {
 
     /// Direction monde du rayon `i` pour un agent regardant vers `facing`.
     pub fn ray_dir(&self, i: usize, facing: Vec2) -> Vec2 {
-        Vec2::from_angle(facing.to_angle() + self.ray_offset(i))
+        self.ray_dir_from_angle(i, facing.to_angle())
+    }
+
+    /// Comme [`ray_dir`](Self::ray_dir), mais depuis le **cap déjà converti en angle**
+    /// (`facing.to_angle()`). `perceive` éventaille `ray_count` rayons depuis un même
+    /// cap : on calcule alors l'`atan2` **une seule fois** par agent (puis un
+    /// `from_angle` par rayon) au lieu de le refaire à chaque rayon. Résultat
+    /// **bit-à-bit identique** — même expression `from_angle(base + offset)`, juste
+    /// l'atan2 redondant en moins.
+    pub fn ray_dir_from_angle(&self, i: usize, base_angle: f32) -> Vec2 {
+        Vec2::from_angle(base_angle + self.ray_offset(i))
     }
 
     /// Coût métabolique du capteur, par tick (cf. §2 « valeur, bornes, couplage

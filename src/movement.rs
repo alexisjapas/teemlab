@@ -37,6 +37,9 @@ pub fn perceive(
         With<Agent>,
     >,
     species_of: Query<&Species>,
+    // Filtre de raycast réutilisé d'un agent à l'autre (cf. boucle) : on évite de
+    // réallouer un `EntityHashSet` à chaque agent et chaque tick.
+    mut filter: Local<SpatialQueryFilter>,
 ) {
     for (entity, transform, velocity, species, vision, mut perception) in &mut agents {
         // Cap = direction de déplacement, repli sur +X à l'arrêt (1er tick).
@@ -59,11 +62,17 @@ pub fn perceive(
         }
 
         let origin = transform.translation.truncate();
-        // On ne se voit pas soi-même ; tout le reste (murs ET agents) occlut.
-        let filter = SpatialQueryFilter::from_excluded_entities([entity]);
+        // On ne se voit pas soi-même ; tout le reste (murs ET agents) occlut. Le filtre
+        // est un `Local` réutilisé : on remet juste l'entité exclue (l'agent courant),
+        // au lieu d'en reconstruire un par agent et par tick.
+        filter.excluded_entities.clear();
+        filter.excluded_entities.insert(entity);
 
+        // Cap converti en angle **une fois** par agent ; `ray_dir_from_angle` ajoute
+        // l'offset de chaque rayon sans refaire l'atan2 (cf. `Vision::ray_dir`).
+        let base_angle = facing.to_angle();
         for i in 0..vision.ray_count {
-            let dir = vision.ray_dir(i, facing);
+            let dir = vision.ray_dir_from_angle(i, base_angle);
             perception.ray_dirs[i] = dir;
             let Ok(direction) = Dir2::new(dir) else {
                 perception.vision[i] = 0.0;

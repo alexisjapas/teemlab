@@ -47,6 +47,9 @@ pub fn interact(
     actors: Query<(Entity, &Transform, &Species), With<Agent>>,
     species_of: Query<&Species>,
     mut reserves: Query<&mut Reserve>,
+    // Filtre de portée réutilisé d'un acteur à l'autre (cf. boucle) : on évite de
+    // réallouer un `EntityHashSet` à chaque acteur et chaque tick.
+    mut filter: Local<SpatialQueryFilter>,
 ) {
     if config.relations.is_empty() {
         return;
@@ -68,9 +71,11 @@ pub fn interact(
     let mut demand: HashMap<Entity, f32> = HashMap::default();
     for (actor, transform, species) in &actors {
         let origin = transform.translation.truncate();
-        // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur. Construit une
-        // fois par acteur (il ne dépend pas de la relation).
-        let filter = SpatialQueryFilter::from_excluded_entities([actor]);
+        // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur (il ne dépend pas
+        // de la relation). `Local` réutilisé : on remet juste l'entité exclue, au lieu
+        // d'en reconstruire un par acteur et par tick.
+        filter.excluded_entities.clear();
+        filter.excluded_entities.insert(actor);
         for (relation, reach) in config.relations.iter().zip(&reaches) {
             if relation.actor != species.0 {
                 continue;
