@@ -17,12 +17,9 @@ use teemlab::components::{
     Action, Age, Agent, Generation, Perception, Radius, Reserve, Species, Vision,
 };
 use teemlab::genotype::{Genotype, TRAITS};
+use teemlab::selection::Selection;
 
 use crate::editor::{Palette, draw_mlp_graph};
-
-/// L'agent actuellement inspecté, le cas échéant. Vit dans le binaire fenêtré.
-#[derive(Resource, Default)]
-pub struct Selection(pub Option<Entity>);
 
 /// Position **monde** du curseur dans l'aire de jeu (caméra et fenêtre uniques),
 /// si elle existe. Partagée par le picking de l'inspecteur et la suppression : le
@@ -163,6 +160,11 @@ pub(crate) fn inspector_section(
         return;
     };
 
+    // Une entité immobile (flore / source sessile) ne se meut ni n'exploite de vision :
+    // on masque alors les gènes inertes (locomotion, vision) et la section perception —
+    // des caractéristiques sans effet, qui n'auraient rien à montrer.
+    let immobile = genotype.locomotion().is_immobile();
+
     // Un défilement évite de rogner la liste des rayons de vision quand le panneau
     // est réduit.
     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -180,17 +182,27 @@ pub(crate) fn inspector_section(
 
         ui.separator();
         ui.strong("Génotype (gènes hérités)");
+        if immobile {
+            ui.weak("Immobile : gènes de locomotion et de vision masqués (sans effet).");
+        }
         egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
             // Une ligne par caractéristique de TRAITS : ajouter un trait l'affiche
-            // ici sans toucher l'inspecteur.
+            // ici sans toucher l'inspecteur. Sur une entité immobile, on saute les
+            // gènes inertes (locomotion, vision).
             for t in &TRAITS {
+                if immobile && t.inert_when_immobile {
+                    continue;
+                }
                 ui.label(t.name);
                 ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
                 ui.end_row();
             }
-            ui.label("coût vision/s");
-            ui.label(format!("{:.3}", vision.metabolic_cost()));
-            ui.end_row();
+            // Le coût de vision n'a de sens que pour une entité qui voit (rayons > 0).
+            if !immobile {
+                ui.label("coût vision/s");
+                ui.label(format!("{:.3}", vision.metabolic_cost()));
+                ui.end_row();
+            }
         });
 
         ui.separator();
@@ -217,78 +229,37 @@ pub(crate) fn inspector_section(
             draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
         }
 
-        ui.separator();
-        ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
-        ui.weak(
-            "obstacle (gris) · cible comestible (orange) · menace (rouge) — 0 = rien, 1 = au contact",
-        );
-        for (i, &proximity) in perception.vision.iter().enumerate() {
-            let target = perception.target.get(i).copied().unwrap_or(0.0);
-            let threat = perception.threat.get(i).copied().unwrap_or(0.0);
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::ProgressBar::new(proximity)
-                        .desired_width(95.0)
-                        .text(format!("r{i} · {proximity:.2}")),
-                );
-                ui.add(
-                    egui::ProgressBar::new(target)
-                        .desired_width(85.0)
-                        .fill(egui::Color32::from_rgb(220, 130, 40))
-                        .text(format!("{target:.2}")),
-                );
-                ui.add(
-                    egui::ProgressBar::new(threat)
-                        .desired_width(85.0)
-                        .fill(egui::Color32::from_rgb(210, 60, 60))
-                        .text(format!("{threat:.2}")),
-                );
-            });
+        // Section perception réservée aux entités qui voient : une flore (immobile, sans
+        // rayon) n'a aucun canal à montrer.
+        if !immobile {
+            ui.separator();
+            ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
+            ui.weak(
+                "obstacle (gris) · cible comestible (orange) · menace (rouge) — 0 = rien, 1 = au contact",
+            );
+            for (i, &proximity) in perception.vision.iter().enumerate() {
+                let target = perception.target.get(i).copied().unwrap_or(0.0);
+                let threat = perception.threat.get(i).copied().unwrap_or(0.0);
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::ProgressBar::new(proximity)
+                            .desired_width(95.0)
+                            .text(format!("r{i} · {proximity:.2}")),
+                    );
+                    ui.add(
+                        egui::ProgressBar::new(target)
+                            .desired_width(85.0)
+                            .fill(egui::Color32::from_rgb(220, 130, 40))
+                            .text(format!("{target:.2}")),
+                    );
+                    ui.add(
+                        egui::ProgressBar::new(threat)
+                            .desired_width(85.0)
+                            .fill(egui::Color32::from_rgb(210, 60, 60))
+                            .text(format!("{threat:.2}")),
+                    );
+                });
+            }
         }
     });
-}
-
-/// Rendu seul : entourer l'agent sélectionné d'un anneau, pour le retrouver dans
-/// l'aire. Tourne dans `Update` (gizmos = rendu).
-pub fn highlight_selection(
-    mut gizmos: Gizmos,
-    selection: Res<Selection>,
-    agents: Query<(&Transform, &Radius), With<Agent>>,
-) {
-    if let Some(entity) = selection.0
-        && let Ok((transform, radius)) = agents.get(entity)
-    {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            radius.0 + 5.0,
-            Color::srgb(1.0, 1.0, 1.0),
-        );
-    }
-}
-
-/// Rendu seul : l'éventail de rayons de vision de l'agent **sélectionné**
-/// uniquement — pour *voir* l'occlusion à l'œuvre sans saturer l'écran en le
-/// traçant pour tous les agents (le cap de chacun reste lisible via l'indicateur
-/// de `visuals::draw_heading`). On relit l'état sensoriel déjà calculé par la sim
-/// (`Perception`) — aucun raycast recalculé ici. Rayon clair = rien vu ; il rougit
-/// et raccourcit à mesure qu'un obstacle se rapproche.
-pub fn draw_selected_vision(
-    mut gizmos: Gizmos,
-    selection: Res<Selection>,
-    agents: Query<(&Transform, &Vision, &Perception), With<Agent>>,
-) {
-    let Some(entity) = selection.0 else {
-        return;
-    };
-    let Ok((transform, vision, perception)) = agents.get(entity) else {
-        return;
-    };
-    let origin = transform.translation.truncate();
-    let facing = perception.heading;
-    for (i, &proximity) in perception.vision.iter().enumerate() {
-        let dir = vision.ray_dir(i, facing);
-        let length = vision.range * (1.0 - proximity);
-        let color = Color::srgb(0.25 + 0.75 * proximity, 0.55 * (1.0 - proximity), 0.15);
-        gizmos.line_2d(origin, origin + dir * length, color);
-    }
 }

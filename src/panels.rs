@@ -19,11 +19,12 @@ use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use teemlab::genotype::Genotype;
+use teemlab::selection::Selection;
 
 use crate::controls::{self, SimControls};
 use crate::editor::{self, Palette};
 use crate::hud::{self, History};
-use crate::inspector::{self, Selection};
+use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 
@@ -101,6 +102,7 @@ pub fn bottom_panel(
     mut contexts: EguiContexts,
     mut history: ResMut<History>,
     selection: Res<Selection>,
+    config: Res<SimConfig>,
     agents: Query<
         (
             &Species,
@@ -136,7 +138,7 @@ pub fn bottom_panel(
                     .id_salt("courbes")
                     .show(ui, |ui| {
                         ui.strong("Évolution — courbes");
-                        hud::hud_section(ui, &mut history);
+                        hud::hud_section(ui, &mut history, &config);
                     });
             };
             // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`.

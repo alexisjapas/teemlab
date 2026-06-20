@@ -17,6 +17,7 @@ mod runs;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use teemlab::selection::SelectionRenderPlugin;
 use teemlab::visuals::VisualsPlugin;
 use teemlab::{SimConfig, SimPlugin};
 
@@ -34,16 +35,17 @@ fn main() {
         // l'éditeur) ; un scénario explicite l'emporte. Le headless, lui, garde le
         // défaut peuplé (`from_cli`).
         .add_plugins(SimPlugin::new(SimConfig::from_cli_or(SimConfig::empty())))
-        // Rendu de la sim partagé avec l'enregistreur vidéo (item 14).
+        // Rendu de la sim partagé avec l'enregistreur vidéo (item 14) — y compris les
+        // **fonds** (aire de jeu + hors-jeu) : `VisualsPlugin::draw_play_area` lit leurs
+        // couleurs dans le scénario et pilote `ClearColor`, donc l'aperçu live et la vidéo
+        // rendent les mêmes teintes (cf. cette fonction).
         .add_plugins(VisualsPlugin)
-        // Fond « hors-jeu » : avec le cadrage « tout voir », la zone derrière les
-        // murs est visible ; on la grise (`ClearColor`) pour qu'elle ne paraisse
-        // pas vide, et `draw_play_area` peint l'aire de jeu par-dessus. Côté
-        // fenêtré seulement — l'enregistreur (`VisualsPlugin`) garde son rendu.
-        .insert_resource(ClearColor(OFF_GAME_COLOR))
+        // Surbrillance + rayons de l'agent sélectionné — rendu **partagé** avec
+        // l'enregistreur (qui, lui, pilote la sélection automatiquement). Ici la cible
+        // vient du picking souris (cf. `inspector`). Fournit aussi la ressource `Selection`.
+        .add_plugins(SelectionRenderPlugin)
         .init_resource::<hud::History>()
         .init_resource::<controls::SimControls>()
-        .init_resource::<inspector::Selection>()
         .init_resource::<recorder::RecorderPanel>()
         // La sim démarre **en pause** (on prépare la run avant de la lancer).
         .add_systems(
@@ -75,16 +77,7 @@ fn main() {
         // Le rendu de la sim (mesh, arène, vision) vit dans `VisualsPlugin` ;
         // ici, l'observation propre au build fenêtré : `hud::sample_history` ne
         // fait que *lire* l'état pour les courbes, l'inspecteur surligne la sélection.
-        .add_systems(
-            Update,
-            (
-                hud::sample_history,
-                inspector::highlight_selection,
-                inspector::draw_selected_vision,
-                recorder::drive_recorder,
-                draw_play_area,
-            ),
-        )
+        .add_systems(Update, (hud::sample_history, recorder::drive_recorder))
         // UI egui — **panneaux dockés fixes** autour de la zone de simulation
         // centrale (cf. `panels`). L'ordre est **chaîné** et compte : les panneaux
         // d'abord (ils réservent les bords), puis les interactions APRÈS — sinon
@@ -164,38 +157,4 @@ fn set_sim_camera(
     transform.translation.x = (window.width() * 0.5 - c.x) * s;
     transform.translation.y = (c.y - window.height() * 0.5) * s;
     Ok(())
-}
-
-/// Marqueur du quad de fond matérialisant l'aire de jeu (intérieur de l'arène).
-#[derive(Component)]
-struct PlayAreaBg;
-
-/// Couleur du hors-jeu (fond, derrière les murs) : un gris mat qui délimite l'arène
-/// sans paraître vide.
-const OFF_GAME_COLOR: Color = Color::Srgba(Srgba::new(0.17, 0.17, 0.19, 1.0));
-/// Couleur de l'aire de jeu (intérieur de l'arène), plus sombre que le hors-jeu.
-const PLAY_AREA_COLOR: Color = Color::Srgba(Srgba::new(0.07, 0.07, 0.09, 1.0));
-
-/// Rendu seul (fenêtré) : un quad sombre matérialisant l'aire de jeu, peint **sous**
-/// les agents (z négatif) pour que le hors-jeu grisé (`ClearColor`) ne couvre que
-/// l'extérieur des murs. Le quad suit la taille de l'arène (`arena_half_extent`),
-/// qui peut changer au rechargement d'un scénario.
-fn draw_play_area(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    config: Res<SimConfig>,
-    mut existing: Query<&mut Transform, With<PlayAreaBg>>,
-) {
-    let side = 2.0 * config.arena_half_extent;
-    if let Ok(mut tf) = existing.single_mut() {
-        tf.scale = Vec3::new(side, side, 1.0);
-    } else {
-        commands.spawn((
-            PlayAreaBg,
-            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
-            MeshMaterial2d(materials.add(PLAY_AREA_COLOR)),
-            Transform::from_xyz(0.0, 0.0, -10.0).with_scale(Vec3::new(side, side, 1.0)),
-        ));
-    }
 }

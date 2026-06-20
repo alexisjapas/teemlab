@@ -68,6 +68,13 @@ pub struct SimConfig {
     pub photosynthesis_bounds: Bounds,
     /// Bornes du gène de dissémination (distance de semis de la flore, Phase 3).
     pub seed_dispersal_bounds: Bounds,
+    /// Couleur de fond de l'**aire de jeu** (intérieur de l'arène), sRGB `[r, g, b]` dans
+    /// `[0, 1]`. Réglage de **présentation** (rendu fenêtré seul, cf.
+    /// `main::draw_play_area`) ; vit dans le scénario pour être sauvé/chargé avec lui.
+    pub play_area_color: [f32; 3],
+    /// Couleur du **hors-jeu** (derrière les murs, au-delà de l'arène), sRGB `[r, g, b]`.
+    /// Réglage de présentation (rendu fenêtré seul, `ClearColor`), sauvé avec le scénario.
+    pub off_game_color: [f32; 3],
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -391,6 +398,11 @@ impl Default for SimConfig {
                 min: 0.0,
                 max: 200.0,
             },
+            // Fonds par défaut : aire de jeu sombre, hors-jeu un cran plus clair — de
+            // quoi délimiter l'arène sans qu'aucune zone ne paraisse vide. (Reprend les
+            // teintes auparavant codées en dur dans `main`.)
+            play_area_color: [0.07, 0.07, 0.09],
+            off_game_color: [0.17, 0.17, 0.19],
             seed: 0x00C0_FFEE,
         }
     }

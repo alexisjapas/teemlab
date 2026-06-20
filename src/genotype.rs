@@ -117,6 +117,13 @@ impl Genotype {
     /// rayons) vient désormais du gène `vision_rays` ([`Genotype::ray_count`]), donc
     /// varie par individu. **Seul point** où le fov passe des degrés (gène) aux
     /// radians (phénotype, attendus par le raycast).
+    ///
+    /// Note — une entité **immobile** (flore, [`Locomotion::is_immobile`]) ne *lance* aucun
+    /// rayon (`perceive` la saute) et n'en affiche aucun (inspecteur, gizmos) : sans cap ni
+    /// locomotion, sa vision est inexploitable. On garde néanmoins ses dimensions ici
+    /// (donc son coût métabolique inchangé) pour ne pas altérer l'économie d'énergie des
+    /// scénarios existants — la suppression des rayons est **observable** (rien à percevoir
+    /// ni à dessiner), pas un re-calibrage de la sim.
     pub fn vision(&self) -> Vision {
         Vision {
             ray_count: self.ray_count(),
@@ -179,6 +186,13 @@ pub struct TraitSpec {
     pub set_mutable: fn(&mut Mutability, bool),
     /// Décimales d'affichage (inspecteur).
     pub decimals: u8,
+    /// `true` si ce gène est **inerte sur une entité immobile** (flore) : les gènes de
+    /// locomotion (agilité, coût de locomotion) et de vision (portée, fov, rayons) n'ont
+    /// aucun effet sans mouvement ni rayon à exploiter (cf.
+    /// [`Genotype::vision`]). `max_speed`, lui, reste pertinent — c'est l'interrupteur de
+    /// mobilité. Les pilotes d'UI (éditeur, inspecteur) masquent ces gènes quand l'entité
+    /// ne peut pas se mouvoir, pour ne pas exposer des caractéristiques sans effet.
+    pub inert_when_immobile: bool,
 }
 
 /// Les caractéristiques mutables, **dans l'ordre des champs de [`Genotype`]**
@@ -196,6 +210,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.max_speed,
         set_mutable: |m, b| m.max_speed = b,
         decimals: 1,
+        // L'interrupteur de mobilité : toujours pertinent (le mettre à 0 fait une flore).
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Agilité",
@@ -206,6 +222,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.agility,
         set_mutable: |m, b| m.agility = b,
         decimals: 3,
+        // Locomotion : braquer une vitesse qu'on n'a pas n'a aucun effet.
+        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Portée vision",
@@ -216,6 +234,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_range,
         set_mutable: |m, b| m.vision_range = b,
         decimals: 1,
+        // Vision : une entité immobile n'a aucun rayon (cf. `Genotype::vision`).
+        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Champ vision (°)",
@@ -226,6 +246,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_fov,
         set_mutable: |m, b| m.vision_fov = b,
         decimals: 0,
+        // Vision : sans rayon, l'angle du cône n'a rien à couvrir.
+        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Seuil de repro",
@@ -236,6 +258,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.reproduction_threshold,
         set_mutable: |m, b| m.reproduction_threshold = b,
         decimals: 0,
+        // La reproduction vaut pour la flore aussi (semis local) : pertinent.
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Énergie/enfant",
@@ -246,6 +270,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.offspring_energy,
         set_mutable: |m, b| m.offspring_energy = b,
         decimals: 0,
+        // Dotation d'un nouveau-né : pertinent pour le semis de la flore aussi.
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Taux mutation",
@@ -256,6 +282,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.mutation_rate,
         set_mutable: |m, b| m.mutation_rate = b,
         decimals: 3,
+        // Pilote la vitesse d'évolution de la lignée : pertinent quelle que soit la mobilité.
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Métabolisme/s",
@@ -266,6 +294,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.base_metabolism,
         set_mutable: |m, b| m.base_metabolism = b,
         decimals: 1,
+        // Coût de survie de base : draine la flore comme la faune.
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Coût locomotion",
@@ -276,6 +306,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.move_cost,
         set_mutable: |m, b| m.move_cost = b,
         decimals: 1,
+        // Surcoût d'énergie au mouvement : nul effet sur une entité qui ne bouge pas.
+        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Rayons (précision)",
@@ -286,6 +318,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_rays,
         set_mutable: |m, b| m.vision_rays = b,
         decimals: 0,
+        // Précision visuelle : une entité immobile est compilée sans aucun rayon.
+        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Photosynthèse/s",
@@ -296,6 +330,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.photosynthesis,
         set_mutable: |m, b| m.photosynthesis = b,
         decimals: 1,
+        // Gain passif : c'est précisément la source d'énergie de la flore immobile.
+        inert_when_immobile: false,
     },
     TraitSpec {
         name: "Dissémination",
@@ -306,6 +342,8 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.seed_dispersal,
         set_mutable: |m, b| m.seed_dispersal = b,
         decimals: 0,
+        // Distance de semis : c'est la dispersion d'une flore (sessile) — pertinent.
+        inert_when_immobile: false,
     },
 ];
 
@@ -327,6 +365,50 @@ mod tests {
         assert_eq!(g.vision_fov_deg, 120.0);
         assert_eq!(g.vision_rays, 7.0);
         assert_eq!(g.ray_count(), 7);
+    }
+
+    /// L'immobilité se lit sur le phénotype de locomotion (vitesse max nulle) : c'est ce
+    /// signal qui prive la flore de cap affiché et de rayons (cf. `visuals`, `movement`,
+    /// `inspector`). Le génotype garde ses gènes de vision (donc son coût métabolique
+    /// inchangé) — la suppression des rayons est observable, pas un re-calibrage de la sim.
+    #[test]
+    fn immobility_is_read_from_zero_max_speed() {
+        let plante = Genotype {
+            max_speed: 0.0,
+            ..Genotype::default()
+        };
+        assert!(
+            plante.locomotion().is_immobile(),
+            "vitesse max nulle = flore"
+        );
+
+        let faune = Genotype {
+            max_speed: 140.0,
+            ..Genotype::default()
+        };
+        assert!(
+            !faune.locomotion().is_immobile(),
+            "un agent mobile peut bouger"
+        );
+
+        // Garde-fou de cohérence : seuls les gènes de locomotion et de vision sont
+        // marqués inertes sur une entité immobile (et `max_speed`, l'interrupteur, ne
+        // l'est pas). Ce sont ceux que l'éditeur et l'inspecteur masquent alors.
+        let inert: Vec<&str> = TRAITS
+            .iter()
+            .filter(|t| t.inert_when_immobile)
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(
+            inert,
+            vec![
+                "Agilité",
+                "Portée vision",
+                "Champ vision (°)",
+                "Coût locomotion",
+                "Rayons (précision)",
+            ]
+        );
     }
 
     /// Les deux accesseurs de bornes d'un trait visent le **même** champ : la lecture

@@ -22,7 +22,14 @@ use teemlab::components::{Agent, Species};
 use teemlab::config::Bounds;
 use teemlab::genotype::{Genotype, TRAITS};
 
-use crate::editor::species_color32;
+/// Couleur de la courbe d'une espèce : sa **vraie couleur d'archétype** (celle des
+/// entités à l'écran), pour que la légende corresponde au monde. Repli sur la palette
+/// par index pour un archétype hors-liste.
+fn species_line_color(config: &SimConfig, sp: u16) -> egui::Color32 {
+    let [r, g, b] = config.color_of(sp);
+    let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+    egui::Color32::from_rgb(q(r), q(g), q(b))
+}
 
 /// Un instantané de métriques, daté en temps simulé.
 struct Sample {
@@ -104,6 +111,12 @@ pub fn sample_history(
     for (species, g) in &agents {
         let idx = (species.0 as usize).min(species_count - 1);
         population[idx] += 1;
+        // Moyennes de gènes sur la **faune** seule : les sources sessiles (gènes figés,
+        // souvent en grand nombre) écraseraient la dérive de la faune (même choix que
+        // `editor::stats_section`). Elles comptent dans la population/nourriture, pas ici.
+        if cfg.archetypes.get(idx).is_some_and(|a| a.is_sessile()) {
+            continue;
+        }
         for (sum, t) in sums.iter_mut().zip(&TRAITS) {
             *sum += norm((t.get)(g), (t.bounds)(cfg));
         }
@@ -144,8 +157,8 @@ pub fn sample_history(
 
 /// Les courbes d'évolution — population par espèce puis dérive des gènes normalisée.
 /// Rendue dans le panneau du bas (à gauche, item dock). Lecture seule de
-/// l'historique.
-pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History) {
+/// l'historique (et du `config` pour nommer/colorer/filtrer les espèces).
+pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &SimConfig) {
     ui.horizontal(|ui| {
         ui.weak(format!("{} échantillons", history.samples.len()));
         if ui.button("↻ Effacer").clicked() {
@@ -155,7 +168,7 @@ pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History) {
     ui.separator();
     let history: &History = history;
     ui.strong("Population par espèce");
-    draw_population(ui, history);
+    draw_population(ui, history, config);
     ui.add_space(10.0);
     ui.strong("Dérive des gènes (normalisée 0–1)");
     draw_traits(ui, history);
@@ -168,14 +181,35 @@ struct Line {
     pts: Vec<[f32; 2]>,
 }
 
-fn draw_population(ui: &mut egui::Ui, history: &History) {
+fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
     let Some(last) = history.samples.back() else {
         ui.weak("(en attente de données…)");
         return;
     };
+    let n_species = last.population.len();
+    // Pic de population par espèce sur la fenêtre : on ne trace QUE les espèces qui
+    // existent (ou ont existé). Sans ce filtre, un archétype défini mais d'effectif nul
+    // (p. ex. des prédateurs jamais peuplés) afficherait une courbe à zéro → le graphe
+    // montrerait « plus d'espèces qu'il n'en existe dans le monde ».
+    let mut peak = vec![0u32; n_species];
+    for s in &history.samples {
+        for (i, &p) in s.population.iter().enumerate() {
+            if let Some(pk) = peak.get_mut(i) {
+                *pk = (*pk).max(p);
+            }
+        }
+    }
+
     let mut lines = Vec::new();
     let mut y_max = 1.0_f32;
-    for sp in 0..last.population.len() {
+    for (sp, &pk) in peak.iter().enumerate() {
+        // Les espèces **sessiles** (flore / sources) sont agrégées dans la courbe
+        // « nourriture » : pas de courbe individuelle, sinon elles compteraient double.
+        // Et on saute toute espèce absente de la fenêtre.
+        let sessile = config.archetypes.get(sp).is_some_and(|a| a.is_sessile());
+        if sessile || pk == 0 {
+            continue;
+        }
         let pts: Vec<[f32; 2]> = history
             .samples
             .iter()
@@ -184,26 +218,40 @@ fn draw_population(ui: &mut egui::Ui, history: &History) {
         for q in &pts {
             y_max = y_max.max(q[1]);
         }
+        let name = config
+            .archetypes
+            .get(sp)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| format!("espèce {sp}"));
         lines.push(Line {
-            name: format!("espèce {sp}"),
-            color: species_color32(sp as u16),
+            name,
+            color: species_line_color(config, sp as u16),
             pts,
         });
     }
-    let food: Vec<[f32; 2]> = history
-        .samples
-        .iter()
-        .map(|s| [s.t, s.food as f32])
-        .collect();
-    for q in &food {
-        y_max = y_max.max(q[1]);
-    }
-    lines.push(Line {
-        name: "nourriture".to_string(),
-        color: egui::Color32::from_gray(150),
-        pts: food,
-    });
 
+    // « Nourriture » = somme des espèces sessiles, tracée seulement si au moins une
+    // source a existé dans la fenêtre (même filtre « ce qui existe » que ci-dessus).
+    if history.samples.iter().any(|s| s.food > 0) {
+        let food: Vec<[f32; 2]> = history
+            .samples
+            .iter()
+            .map(|s| [s.t, s.food as f32])
+            .collect();
+        for q in &food {
+            y_max = y_max.max(q[1]);
+        }
+        lines.push(Line {
+            name: "nourriture".to_string(),
+            color: egui::Color32::from_gray(150),
+            pts: food,
+        });
+    }
+
+    if lines.is_empty() {
+        ui.weak("(aucune espèce vivante)");
+        return;
+    }
     plot(ui, 110.0, &lines, 0.0, y_max * 1.1);
     legend(ui, &lines);
 }

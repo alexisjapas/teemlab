@@ -21,7 +21,13 @@
 //! sim hors `FixedUpdate` (invariant cardinal) : on ne fait qu'*observer*.
 //!
 //! Usage : `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
-//! [--width W] [--height H]`.
+//! [--width W] [--height H] [--select MODE] [--select-interval S]`.
+//!
+//! `--select` garde un agent mobile **mis en avant** pendant la vidéo (anneau + rayons de
+//! vision), pour montrer les raycasts aux spectateurs. MODE ∈ `off`, `sticky` (fixe),
+//! `cycle` (rotation), `active` (le plus « en action »), `species` (tour des espèces),
+//! `eldest` (doyen). `cycle`/`active`/`species` changent toutes les `--select-interval` s
+//! (défaut 4) ; `sticky`/`eldest` ne changent qu'à la mort de la cible.
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::asset::RenderAssetUsages;
@@ -36,7 +42,8 @@ use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
-use teemlab::visuals::VisualsPlugin;
+use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
+use teemlab::visuals::{VisualsPlugin, srgb3};
 use teemlab::{SimConfig, SimPlugin};
 
 /// Paramètres d'enregistrement, lus depuis la ligne de commande.
@@ -47,6 +54,10 @@ struct Settings {
     seconds: f64,
     width: u32,
     height: u32,
+    /// Mode de roulement de la sélection automatique (rayons visibles dans la vidéo).
+    select: SelectionRoll,
+    /// Intervalle (s) entre deux changements de sélection (modes « à timer »).
+    select_interval: f32,
 }
 
 impl Settings {
@@ -60,6 +71,10 @@ impl Settings {
             // bandes de hors-jeu (cf. menu d'enregistrement du fenêtré).
             width: 1080,
             height: 1080,
+            // Doyen par défaut : on met en avant le survivant (rayons visibles dans la
+            // vidéo) ; `--select off` désactive.
+            select: SelectionRoll::Eldest,
+            select_interval: 4.0,
         };
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
@@ -77,6 +92,24 @@ impl Settings {
                 }
                 "--width" | "-w" => s.width = next().parse().expect("--width : entier attendu"),
                 "--height" | "-h" => s.height = next().parse().expect("--height : entier attendu"),
+                // Sélection automatique d'un agent pendant la vidéo (pour montrer ses
+                // rayons) ; modes : cf. l'en-tête du module et `SelectionRoll`.
+                "--select" => {
+                    let v = next();
+                    s.select = SelectionRoll::from_cli(&v).unwrap_or_else(|| {
+                        let modes: Vec<&str> = SelectionRoll::ALL.iter().map(|m| m.cli()).collect();
+                        eprintln!(
+                            "record : mode de sélection inconnu « {v} » ({})",
+                            modes.join("|")
+                        );
+                        std::process::exit(2);
+                    });
+                }
+                "--select-interval" => {
+                    s.select_interval = next()
+                        .parse()
+                        .expect("--select-interval : nombre (secondes) attendu");
+                }
                 other if other.starts_with('-') => {
                     eprintln!("record : option inconnue « {other} »");
                     std::process::exit(2);
@@ -208,6 +241,17 @@ fn main() -> AppExit {
     .add_systems(Startup, setup_recorder)
     .add_systems(Update, capture_frame);
 
+    // Sélection automatique (option `--select`) : garde un agent mobile mis en avant
+    // pendant toute la vidéo, pour en montrer les rayons. Le rendu (anneau + rayons) est
+    // partagé avec le fenêtré ; ici la cible roule toute seule selon le mode choisi.
+    if settings.select != SelectionRoll::Off {
+        app.add_plugins(SelectionRenderPlugin)
+            .add_plugins(AutoSelectPlugin {
+                roll: settings.select,
+                interval: settings.select_interval,
+            });
+    }
+
     eprintln!(
         "record : {} frames à {} fps ({:.1}s), {}×{} → {}",
         frames, settings.fps, settings.seconds, settings.width, settings.height, settings.out
@@ -255,7 +299,10 @@ fn setup_recorder(
     commands.spawn((
         Camera2d,
         Camera {
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.02, 0.02, 0.05)),
+            // Hors-jeu (au-delà de l'arène) = couleur extérieure du scénario, comme le
+            // fenêtré ; l'aire de jeu (intérieur) est peinte par `VisualsPlugin`. La
+            // caméra-image ignore la ressource `ClearColor`, on fixe donc la couleur ici.
+            clear_color: ClearColorConfig::Custom(srgb3(config.off_game_color)),
             ..default()
         },
         // En 0.18 la cible de rendu est un composant à part, requis par `Camera`.

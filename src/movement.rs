@@ -32,6 +32,7 @@ pub fn perceive(
             &LinearVelocity,
             &Species,
             &Vision,
+            &Locomotion,
             &mut Perception,
         ),
         With<Agent>,
@@ -41,7 +42,16 @@ pub fn perceive(
     // réallouer un `EntityHashSet` à chaque agent et chaque tick.
     mut filter: Local<SpatialQueryFilter>,
 ) {
-    for (entity, transform, velocity, species, vision, mut perception) in &mut agents {
+    for (entity, transform, velocity, species, vision, loco, mut perception) in &mut agents {
+        // Une entité **immobile** (flore / source sessile) ne lance aucun rayon : sans
+        // cap ni locomotion, sa vision est inexploitable (son cerveau l'ignore). On la
+        // saute donc — on n'écrit pas sa perception (rien ne la lit numériquement : son
+        // action reste nulle, son énergie ne dépend que de la photosynthèse et de la
+        // prédation), ce qui épargne `ray_count` raycasts par tick et par plante. La sim
+        // reste donc rigoureusement inchangée, seuls disparaissent des rayons inutiles.
+        if loco.is_immobile() {
+            continue;
+        }
         // Cap = direction de déplacement, repli sur +X à l'arrêt (1er tick).
         let facing = velocity.0.normalize_or_zero();
         let facing = if facing == Vec2::ZERO {

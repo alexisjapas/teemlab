@@ -74,6 +74,19 @@ pub struct Locomotion {
     pub agility: f32,
 }
 
+impl Locomotion {
+    /// `true` si l'entité **ne peut pas se mouvoir** (vitesse max nulle) — une flore /
+    /// source sessile. Un tel corps n'a pas de cap à montrer (son « cap » est un repli
+    /// fixe `+X`, pas une direction de regard) ni de vision à exploiter : le rendu et la
+    /// compilation du phénotype s'en servent pour ne lui donner ni indicateur de cap
+    /// ([`crate::visuals`]) ni rayon ([`crate::genotype::Genotype::vision`]). C'est la
+    /// convention du moteur : une entité sessile a toujours `max_speed: 0` (cf. le
+    /// préréglage de nourriture et `spawn`).
+    pub fn is_immobile(&self) -> bool {
+        self.max_speed <= 0.0
+    }
+}
+
 /// Capteur visuel par raycast. La *forme* — le nombre de rayons — est
 /// verrouillée par espèce (v1) ; les gènes feront varier les *magnitudes*
 /// (`fov`, `range`), jamais le nombre de canaux. C'est cette forme fixe qui

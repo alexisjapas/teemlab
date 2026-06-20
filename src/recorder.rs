@@ -16,6 +16,7 @@ use bevy_egui::egui;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use teemlab::SimConfig;
+use teemlab::selection::SelectionRoll;
 
 /// État du panneau « Enregistrement » + process `record` en cours, le cas échéant.
 #[derive(Resource)]
@@ -25,6 +26,11 @@ pub struct RecorderPanel {
     seconds: f64,
     width: u32,
     height: u32,
+    /// Mode de **sélection automatique** d'un agent pendant la vidéo (pour montrer ses
+    /// rayons aux spectateurs). `Off` = vidéo inchangée.
+    select: SelectionRoll,
+    /// Intervalle (s) entre deux changements de sélection (modes « à timer »).
+    select_interval: f32,
     status: String,
     /// Le sous-process `record` tant qu'il tourne (sinon `None`).
     child: Option<Child>,
@@ -42,6 +48,10 @@ impl Default for RecorderPanel {
             // voir »), donc une cible carrée évite les bandes de hors-jeu.
             width: 1080,
             height: 1080,
+            // Doyen par défaut : on suit le survivant (calme, change peu) → les rayons
+            // sont visibles dans la vidéo sans réglage. « Aucune » désactive.
+            select: SelectionRoll::Eldest,
+            select_interval: 4.0,
             status: String::new(),
             child: None,
             launch_requested: false,
@@ -91,6 +101,30 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
         ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
             .on_hover_text("Hauteur (px)");
     });
+
+    ui.separator();
+    // Sélection automatique : montrer en continu les rayons d'un agent dans la vidéo,
+    // sans intervention. Le « mode de roulement » choisit comment l'agent mis en avant
+    // change au fil du temps.
+    ui.horizontal(|ui| {
+        ui.label("Sélection auto :");
+        egui::ComboBox::from_id_salt("rec_select")
+            .selected_text(panel.select.label())
+            .show_ui(ui, |ui| {
+                for m in SelectionRoll::ALL {
+                    ui.selectable_value(&mut panel.select, m, m.label());
+                }
+            });
+    })
+    .response
+    .on_hover_text(
+        "Garde un agent mobile mis en avant pendant la vidéo (anneau + rayons de vision), \
+         pour que les spectateurs voient les raycasts. « Aucune » = vidéo inchangée.",
+    );
+    if panel.select.rolls() {
+        ui.add(egui::Slider::new(&mut panel.select_interval, 0.5..=30.0).text("intervalle (s)"))
+            .on_hover_text("Temps entre deux changements d'agent mis en avant.");
+    }
 
     ui.separator();
     if recording {
@@ -154,6 +188,9 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
         panel.width,
         panel.height,
     );
+    // Sélection automatique passée en arguments (réglage de rendu, pas du scénario) →
+    // `record` la pilote sans toucher au RON temporaire.
+    let (select, select_interval) = (panel.select.cli(), panel.select_interval.to_string());
     match Command::new(record_binary())
         .arg(&scenario)
         .args([
@@ -167,6 +204,10 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
             &width.to_string(),
             "--height",
             &height.to_string(),
+            "--select",
+            select,
+            "--select-interval",
+            &select_interval,
         ])
         .spawn()
     {

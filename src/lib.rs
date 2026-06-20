@@ -21,6 +21,7 @@ pub mod genotype;
 pub mod interaction;
 pub mod movement;
 pub mod rng;
+pub mod selection;
 pub mod snapshot;
 pub mod spawn;
 pub mod visuals;

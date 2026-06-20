@@ -44,16 +44,6 @@ pub struct Palette {
     pub species_selected: Option<usize>,
 }
 
-/// Couleur d'une espèce, en `egui::Color32`, **dérivée** de l'unique palette du
-/// rendu ([`teemlab::visuals::species_color`]) plutôt que recopiée : courbes du HUD,
-/// pastilles de la palette et entités à l'écran ne peuvent plus diverger. Partagée
-/// avec le HUD (item 10).
-pub(crate) fn species_color32(species: u16) -> egui::Color32 {
-    let c = teemlab::visuals::species_color(Species(species));
-    let q = |channel: f32| (channel * 255.0).round() as u8;
-    egui::Color32::from_rgb(q(c.red), q(c.green), q(c.blue))
-}
-
 /// Couleur egui d'un archétype, depuis sa couleur stockée (`[r, g, b]` ∈ [0, 1]).
 fn archetype_color32(a: &Archetype) -> egui::Color32 {
     let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -532,9 +522,20 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
         "Chaque agent posé reçoit une COPIE de ces gènes — son génome — qui mute \
          ensuite seule. La case « mutable » gouverne, PAR ESPÈCE, le droit de muter.",
     );
+    // Une entité immobile (vitesse max nulle, p. ex. une flore / source sessile) ne se
+    // meut ni n'exploite de vision : ses gènes de locomotion et de vision sont inertes,
+    // on ne les expose donc pas (cf. `TraitSpec::inert_when_immobile`). `max_speed`, lui,
+    // reste affiché — c'est l'interrupteur de mobilité.
+    let immobile = genotype.locomotion().is_immobile();
+    if immobile {
+        ui.weak("Immobile : gènes de locomotion et de vision masqués (sans effet).");
+    }
     // Une seule boucle sur TRAITS : slider (valeur, bornes) + case « mutable »
     // par gène. Ajouter un trait n'ajoute pas une ligne ici (item 15).
     for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
+        if immobile && t.inert_when_immobile {
+            continue;
+        }
         let mut value = (t.get)(genotype);
         if ui
             .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
@@ -828,6 +829,18 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .speed(1.0)
             .prefix("graine (reset) : "),
     );
+
+    // Fonds du rendu fenêtré : la couleur de l'aire de jeu (intérieur de l'arène) et
+    // celle du hors-jeu (au-delà des murs). Réglages de présentation, relus en continu
+    // par `main::draw_play_area` → aperçu immédiat, et sauvés avec le scénario.
+    ui.horizontal(|ui| {
+        ui.color_edit_button_rgb(&mut config.play_area_color);
+        ui.label("fond intérieur (aire de jeu)");
+    });
+    ui.horizontal(|ui| {
+        ui.color_edit_button_rgb(&mut config.off_game_color);
+        ui.label("fond extérieur (hors-jeu)");
+    });
 
     ui.separator();
     gene_bounds_section(ui, config);

@@ -7,23 +7,46 @@
 //! l'inclut pas. Centraliser ici évite de dupliquer le rendu entre l'aperçu live
 //! et l'enregistrement (item 14, §7 : *re-render frais* d'une run).
 
-use crate::components::{Agent, Perception, Radius, Reserve, Species};
+use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
 use crate::config::SimConfig;
 use bevy::prelude::*;
 
 /// Ajoute les systèmes de rendu de la sim (mesh des entités, teinte par réserve,
-/// arène, indicateur de cap). À combiner avec une caméra fournie par le binaire
-/// (fenêtre pour `main`, cible image pour `record`). L'éventail détaillé des rayons
-/// de vision n'en fait pas partie : il est réservé à l'agent inspecté, côté fenêtré.
+/// arène, indicateur de cap, **fonds** intérieur/extérieur). À combiner avec une caméra
+/// fournie par le binaire (fenêtre pour `main`, cible image pour `record`). L'éventail
+/// détaillé des rayons de vision n'en fait pas partie : il est réservé à l'agent inspecté,
+/// côté fenêtré.
+///
+/// Les fonds ([`draw_play_area`]) vivent ici — donc **partagés** par l'aperçu live et
+/// l'enregistrement vidéo — pour qu'une vidéo rende exactement les couleurs réglées dans
+/// l'éditeur (item couleurs de fond), et pas un fond figé.
 pub struct VisualsPlugin;
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        // `ClearColor` pilote le hors-jeu côté fenêtré (la caméra de `main` l'utilise) ;
+        // on garantit sa présence pour que `draw_play_area` puisse l'écrire dans les deux
+        // binaires (l'enregistreur, lui, fixe le hors-jeu sur sa caméra-image).
+        app.init_resource::<ClearColor>().add_systems(
             Update,
-            (attach_visuals, shade_by_reserve, draw_arena, draw_heading),
+            (
+                attach_visuals,
+                shade_by_reserve,
+                draw_arena,
+                draw_heading,
+                draw_play_area,
+            ),
         );
     }
+}
+
+/// Marqueur du quad de fond matérialisant l'aire de jeu (intérieur de l'arène).
+#[derive(Component)]
+pub struct PlayAreaBg;
+
+/// `Color` opaque depuis un triplet sRGB `[r, g, b]` du scénario (réglages de fond).
+pub fn srgb3([r, g, b]: [f32; 3]) -> Color {
+    Color::srgb(r, g, b)
 }
 
 /// Couleur de base d'une espèce (palette cyclique). Le rendu seul donne un sens
@@ -80,20 +103,27 @@ fn shade_by_reserve(
     }
 }
 
-/// Rendu seul : un court **indicateur de cap** pour *tous* les agents — un trait du
-/// centre au bord du corps, le long du cap, pour lire d'un coup d'œil l'orientation
+/// Rendu seul : un court **indicateur de cap** pour les agents **mobiles** — un trait
+/// du centre au bord du corps, le long du cap, pour lire d'un coup d'œil l'orientation
 /// d'une entité mouvante. Il s'arrête au rayon (`Radius`) : il ne déborde jamais du
 /// corps. On relit le cap déjà calculé par la sim (`Perception::heading`), sans rien
 /// recalculer.
+///
+/// Une entité **immobile** (flore / source sessile, [`Locomotion::is_immobile`]) n'en
+/// reçoit **pas** : son « cap » n'est qu'un repli fixe (`+X`), pas une direction de
+/// regard — l'afficher tracerait un trait trompeur sur un buisson.
 ///
 /// Le **détail** de la vision (l'éventail complet des rayons, l'occlusion à l'œuvre)
 /// n'est PAS dessiné ici : à tous les agents il saturerait l'écran. C'est le binaire
 /// fenêtré qui le trace, pour le seul agent **inspecté** (cf. `inspector`).
 fn draw_heading(
     mut gizmos: Gizmos,
-    agents: Query<(&Transform, &Radius, &Perception), With<Agent>>,
+    agents: Query<(&Transform, &Radius, &Perception, &Locomotion), With<Agent>>,
 ) {
-    for (transform, radius, perception) in &agents {
+    for (transform, radius, perception, loco) in &agents {
+        if loco.is_immobile() {
+            continue; // flore : aucun cap utile à montrer.
+        }
         let facing = perception.heading;
         if facing == Vec2::ZERO {
             continue; // pas encore de cap (1er tick) : rien à montrer.
@@ -121,4 +151,43 @@ fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
         ],
         color,
     );
+}
+
+/// Rendu seul : matérialise les **deux fonds** réglés par le scénario
+/// ([`SimConfig::play_area_color`] / [`SimConfig::off_game_color`]).
+///
+/// - L'**aire de jeu** (intérieur de l'arène) est un quad peint **sous** les agents
+///   (z négatif), suivant la taille de l'arène (`arena_half_extent`, qui peut changer au
+///   rechargement d'un scénario) et la couleur intérieure.
+/// - Le **hors-jeu** (au-delà des murs) est piloté par `ClearColor`, écrit ici depuis la
+///   couleur extérieure. La caméra fenêtrée (`main`) l'utilise telle quelle ; l'enregistreur
+///   (`record`) fixe la même couleur sur sa caméra-image (qui ignore `ClearColor`).
+///
+/// Partagé par l'aperçu live et l'enregistrement vidéo : une vidéo rend donc exactement
+/// les couleurs choisies. Les deux teintes sont relues **en continu** → un changement dans
+/// l'éditeur (ou au chargement d'un scénario) se voit immédiatement, sans reset.
+fn draw_play_area(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut clear_color: ResMut<ClearColor>,
+    config: Res<SimConfig>,
+    mut existing: Query<(&mut Transform, &MeshMaterial2d<ColorMaterial>), With<PlayAreaBg>>,
+) {
+    let side = 2.0 * config.arena_half_extent;
+    clear_color.0 = srgb3(config.off_game_color);
+    let play_color = srgb3(config.play_area_color);
+    if let Ok((mut tf, material)) = existing.single_mut() {
+        tf.scale = Vec3::new(side, side, 1.0);
+        if let Some(mat) = materials.get_mut(&material.0) {
+            mat.color = play_color;
+        }
+    } else {
+        commands.spawn((
+            PlayAreaBg,
+            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
+            MeshMaterial2d(materials.add(play_color)),
+            Transform::from_xyz(0.0, 0.0, -10.0).with_scale(Vec3::new(side, side, 1.0)),
+        ));
+    }
 }
