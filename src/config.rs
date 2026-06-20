@@ -62,6 +62,10 @@ pub struct SimConfig {
     /// Bornes du gène de nombre de rayons de vision (la précision visuelle). Bornes
     /// entières en pratique (le gène est arrondi à la compilation du phénotype).
     pub vision_rays_bounds: Bounds,
+    /// Bornes du gène de photosynthèse (gain d'énergie passif de la flore, Phase 3).
+    pub photosynthesis_bounds: Bounds,
+    /// Bornes du gène de dissémination (distance de semis de la flore, Phase 3).
+    pub seed_dispersal_bounds: Bounds,
     /// Graine RNG : rejouer une *config d'expérience*, pas le bit-à-bit.
     pub seed: u64,
 }
@@ -240,6 +244,8 @@ pub struct Mutability {
     pub base_metabolism: bool,
     pub move_cost: bool,
     pub vision_rays: bool,
+    pub photosynthesis: bool,
+    pub seed_dispersal: bool,
 }
 
 impl Default for Mutability {
@@ -261,6 +267,12 @@ impl Default for Mutability {
             mutation_rate: false,
             base_metabolism: false,
             move_cost: false,
+            // Gènes de flore (Phase 3), non mutables par défaut : faute de couplage de
+            // coût, la photosynthèse dériverait vers le maximum (§2) ; et ce défaut
+            // **préserve le flux RNG** des scénarios existants (un gène non mutable ne
+            // tire pas dans [`Genotype::mutate`]). Un scénario de flore les active.
+            photosynthesis: false,
+            seed_dispersal: false,
         }
     }
 }
@@ -333,6 +345,14 @@ impl Default for SimConfig {
             vision_rays_bounds: Bounds {
                 min: 1.0,
                 max: 21.0,
+            },
+            photosynthesis_bounds: Bounds {
+                min: 0.0,
+                max: 30.0,
+            },
+            seed_dispersal_bounds: Bounds {
+                min: 0.0,
+                max: 200.0,
             },
             seed: 0x00C0_FFEE,
         }
@@ -806,6 +826,29 @@ mod tests {
         assert!(
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "espèce 1 = témoin d'errance"
+        );
+    }
+
+    /// Le scénario de flore (Phase 3) : une plante **sessile** qui vit de photosynthèse
+    /// et s'**auto-limite** par compétition intraspécifique (une relation sur elle-même,
+    /// sans transfert — la primitive d'interaction §3).
+    #[test]
+    fn bundled_flore_is_a_self_competing_sessile_plant() {
+        let text = include_str!("../scenarios/flore.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("scénario flore valide");
+        assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
+        let ArchetypeKind::Agent { genotype, .. } = &cfg.archetypes[0].kind else {
+            unreachable!()
+        };
+        assert!(
+            genotype.photosynthesis > 0.0,
+            "la flore vit de photosynthèse"
+        );
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.actor == 0 && r.target == 0 && !r.transfer),
+            "auto-compétition attendue (Plante→Plante, sans transfert)"
         );
     }
 }

@@ -60,6 +60,16 @@ pub struct Genotype {
     /// [`Genotype::ray_count`]). Plus de rayons = vision plus fine *mais* plus
     /// chère ([`Vision::metabolic_cost`]) — le couplage de coût qui borne sa dérive.
     pub vision_rays: f32,
+    /// **Gène de flore** (Phase 3) : énergie **gagnée** par seconde, passivement — la
+    /// *photosynthèse*. C'est la source d'énergie d'une entité sessile, le pendant de
+    /// « manger » pour la faune. `0` pour la faune (inerte). Ajouté en **fin** (comme
+    /// `vision_rays`) pour préserver le flux de tirages de [`mutate`](Genotype::mutate).
+    pub photosynthesis: f32,
+    /// **Gène de flore** (Phase 3) : distance à laquelle un descendant est semé du parent
+    /// (la *dissémination*). `0` → repli sur le décalage rapproché par défaut (rayon ×
+    /// 2.5, le comportement de la faune, inchangé). Une flore l'augmente pour disperser
+    /// ses graines au lieu de s'agglutiner.
+    pub seed_dispersal: f32,
 }
 
 impl Default for Genotype {
@@ -79,6 +89,10 @@ impl Default for Genotype {
             base_metabolism: 0.0,
             move_cost: 0.0,
             vision_rays: 7.0,
+            // Gènes de flore inactifs par défaut (faune) : pas de gain passif, semis
+            // rapproché par défaut.
+            photosynthesis: 0.0,
+            seed_dispersal: 0.0,
         }
     }
 }
@@ -172,7 +186,7 @@ pub struct TraitSpec {
 /// reproductibilité d'une config seedée — d'où l'ajout en **fin** de table, qui
 /// laisse intact le flux des traits préexistants). Table constante partagée par
 /// tous les agents.
-pub const TRAITS: [TraitSpec; 10] = [
+pub const TRAITS: [TraitSpec; 12] = [
     TraitSpec {
         name: "Vitesse max",
         get: |g| g.max_speed,
@@ -271,6 +285,26 @@ pub const TRAITS: [TraitSpec; 10] = [
         bounds_mut: |c| &mut c.vision_rays_bounds,
         mutable: |m| m.vision_rays,
         set_mutable: |m, b| m.vision_rays = b,
+        decimals: 0,
+    },
+    TraitSpec {
+        name: "Photosynthèse/s",
+        get: |g| g.photosynthesis,
+        set: |g, v| g.photosynthesis = v,
+        bounds: |c| c.photosynthesis_bounds,
+        bounds_mut: |c| &mut c.photosynthesis_bounds,
+        mutable: |m| m.photosynthesis,
+        set_mutable: |m, b| m.photosynthesis = b,
+        decimals: 1,
+    },
+    TraitSpec {
+        name: "Dissémination",
+        get: |g| g.seed_dispersal,
+        set: |g, v| g.seed_dispersal = v,
+        bounds: |c| c.seed_dispersal_bounds,
+        bounds_mut: |c| &mut c.seed_dispersal_bounds,
+        mutable: |m| m.seed_dispersal,
+        set_mutable: |m, b| m.seed_dispersal = b,
         decimals: 0,
     },
 ];

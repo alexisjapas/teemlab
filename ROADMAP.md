@@ -43,16 +43,27 @@ ouverts au §9.
   les **10 bornes de gènes** (`*_bounds`, section « Bornes des gènes ») rejoignent l'éditeur,
   via un accesseur `TraitSpec::bounds_mut` (boucle sur `TRAITS` → DRY). Plus aucun paramètre
   de scénario réservé au RON.
+- **Phase 3a — flore évolutive réelle** (item 5) : une *flore* devient une entité de plein
+  droit, **sans nouveau système cœur**. Génotype variable par **superset** (choix tranché,
+  §9) : `Genotype` gagne `photosynthesis` (gain d'énergie passif) et `seed_dispersal`
+  (distance de semis) — gènes **non mutables par défaut** (RNG-safe ; les drivers existants
+  restent bit-à-bit identiques). `metabolize` intègre la photosynthèse au bilan ; `reproduce`
+  sème à `seed_dispersal` ; `Brain::Sessile` est le cerveau trivial (no-op). La **capacité de
+  charge émerge** d'une compétition intraspécifique exprimée par la **primitive d'interaction**
+  (relation Plante→Plante sans transfert, §3) — aucun mécanisme nouveau. Driver `tests/flora.rs`
+  (`scenarios/flore.ron`, 4 graines) : la flore croît ~20×, reste **bornée loin de la saturation**
+  et **persiste**. `Food` reste le cas dégénéré (Phase 3b : sa dissolution complète).
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg, défauts 30 fps / 61 s),
-  drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, …),
+  drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`, …),
   `clippy`/`fmt` propres.
 
 **Reste à faire.**
 
-- **Phase 3 — flore évolutive** (le vrai « tout est entité ») : dissoudre le type spécial
-  `Food` en un archétype à **génotype sessile** (croissance, dissémination, semis local).
-  Verrou : `Genotype` doit devenir variable par type d'entité (enum / superset /
-  composants-traits, §9) — à piloter par un scénario réel, pas spéculativement.
+- **Phase 3b — dissoudre `Food`** : maintenant qu'une flore réelle existe (Phase 3a, item 5),
+  le type spécial `Food`/`replenish_food`/`regen` peut fondre dans un archétype sessile —
+  « la source pure n'est plus que le cas dégénéré » (cerveau no-op, reproduction coupée). Gros
+  chantier (snapshot `FoodSnap`, `spawn_food`, éditeur, visuels) ; à faire quand un scénario
+  l'exige, pas spéculativement. Le verrou `Genotype` variable est levé (superset, §9).
 - **Câbler le canal « menace » dans l'entrée du MLP** : aujourd'hui seul le chasseur
   déterministe le consomme (item 18e) ; le brancher fait passer l'entrée du MLP à
   `3 × vision_rays` (couture de redimensionnement `vision|cible` → `vision|cible|menace`) —
@@ -465,6 +476,27 @@ flowchart TB
     avant l'appris) : seul le chasseur déterministe consomme le canal pour l'instant — le brancher dans
     l'entrée du MLP est l'étape suivante, exactement comme `target` (introduit sur le chasseur à
     l'item 16, consommé par le MLP à l'item 18b). **Reste** : ce câblage MLP (entrée → `3 × rayons`).
+18f. **Flore évolutive** (Phase 3a) **(réalisé)** : une *flore* devient une entité de plein droit,
+    **sans système cœur nouveau** — trois extensions de la machinerie existante. **Verrou levé** par
+    **superset** (les trois sorties du §9 tranchées : une seule struct `Genotype` gagne les gènes de
+    flore, la faune les laisse inertes — le chemin le plus sûr pour faire naître une flore *réelle*
+    avant de réifier le split faune/flore, « falsifier contre ≥2 instances »). (1) **Gènes** :
+    `photosynthesis` (énergie gagnée/s, passive) et `seed_dispersal` (distance de semis), ajoutés en
+    **fin** de `TRAITS` et **non mutables par défaut** → `mutate` ne les tire pas pour les scénarios
+    existants : flux RNG **intact**, `predator_prey`/`mlp`/`cohabitation` bit-à-bit inchangés. (2)
+    **Mécanique** : `metabolize` intègre la photosynthèse au bilan net (gain − dépenses, clamp `[0,max]`
+    — no-op pour la faune, manger plafonnant déjà à `max`) ; `reproduce` sème à `seed_dispersal` (repli
+    rayon × 2.5 quand nul → faune inchangée, mêmes 2 tirages) ; `Brain::Sessile` est le cerveau trivial
+    (no-op, accélérateur nul — « stub le comportement, jamais le schéma », §8). (3) **Auto-limitation
+    sans nouveau mécanisme** : la capacité de charge **émerge** d'une compétition intraspécifique
+    exprimée par la **primitive d'interaction** (§3) — une relation Plante→Plante *sans transfert*
+    (lumière/espace disputés) qui draine les voisines proches ; densité haute → drain > photosynthèse →
+    semis stoppé / mortalité → rétroaction négative **stable**. **Driver** `tests/flora.rs`
+    (`scenarios/flore.ron`, 4 graines) : la flore croît ~20× depuis ses fondateurs, reste **bornée loin
+    de la saturation physique** de l'arène (la compétition la freine en onde spatiale), et **persiste** à
+    un effectif soutenu. Espèce *évolutive* : `reproduction_threshold` et `seed_dispersal` mutent sous la
+    pression de la compétition. **Reste** (Phase 3b) : dissoudre le type spécial `Food` (`replenish_food`,
+    `FoodSnap`, `spawn_food`) — il n'est plus que le cas dégénéré d'une flore (cerveau no-op, repro coupée).
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -522,24 +554,27 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   quand absent) ouvrant une **resynchronisation** qui **préserve l'effectif local** (`count`, propre au
   scénario). L'effectif reste donc per-scénario ; à la resynchro, tout le reste (corps, cerveau, couleur,
   nom, mutabilité) vient de la définition. Espèce de démonstration versionnée : `species/chasseur.ron`.
-- **Modèle « tout est entité » et flore évolutive (cap).** Les caractéristiques propres à une entité
-  vivent dans son génotype, pas dans des règles globales (§1, *le corps via les gènes*) : *fait*
-  pour la reproduction — `reproduction_threshold`, `offspring_energy`, `mutation_rate` sont des
-  gènes per-espèce et évolvables (extension de la machinerie de l'item 15) ; `base_metabolism` et
-  `move_cost` **le sont aussi** (gènes per-espèce de la table `TRAITS`, consommés par
-  `metabolize` ; **non mutables par défaut** car ils *sont* la pression de sélection — §2 — mais le
-  facet existe, un scénario peut les laisser dériver). La suite logique est de **supprimer le type
-  spécial `Food`** : une source de nourriture devient un *archétype comestible* d'une entité
-  **flore**, avec son propre génotype (énergie, croissance, dissémination) et un cerveau trivial
-  (sessile), se reproduisant par **semis local** plutôt que par un `food_regen` global. La « source
-  pure » des tests n'est alors que le cas dégénéré (cerveau no-op, reproduction coupée) — *stub le
-  comportement, pas le schéma* (§8), et 2ᵉ exemplaire qui falsifie l'abstraction flore.
-  - **Verrou** : `Genotype` est aujourd'hui **une** structure pour toutes les entités (« forme
-    verrouillée par espèce » au sens d'*une* forme globale) ; flore et faune ont des jeux de traits
-    différents. Trois sorties à trancher : **enum `Genotype`** (dispatch statique, façon `Brain`,
-    §2), **composition de composants-traits ECS**, ou **superset** (une struct, traits inertes
-    hors-espèce). Même famille que la topologie variable repoussée à v2 (§2, item 21).
-  - **Driver** : à faire naître d'un scénario réel (une plante co-évolutive), pas spéculativement
-    (§8) ; l'item 17 (proie-prédateur) en est le candidat naturel.
-  - **Subtilités** : le semis spatial recalibre toute l'économie (cycles de Lotka-Volterra, §7) ;
-    `mutation_rate` mutable = méta-évolution instable, d'où son réglage non mutable par défaut.
+- **Modèle « tout est entité » et flore évolutive** — **Phase 3a faite (item 5)**. Les
+  caractéristiques propres à une entité vivent dans son génotype, pas dans des règles globales
+  (§1, *le corps via les gènes*) : *fait* pour la reproduction (`reproduction_threshold`,
+  `offspring_energy`, `mutation_rate`) et les coûts (`base_metabolism`, `move_cost` — gènes de
+  `TRAITS`, non mutables par défaut car ils *sont* la pression de sélection, §2). L'item 5 ajoute
+  le **gain** d'énergie (`photosynthesis`) et la **dissémination** (`seed_dispersal`) : une *flore*
+  sessile (`Brain::Sessile`) qui vit de photosynthèse et se reproduit par semis local est une
+  entité de plein droit, et s'**auto-limite** par compétition intraspécifique (relation
+  Plante→Plante *sans transfert* — la **primitive d'interaction** §3, aucun mécanisme neuf).
+  - **Verrou levé** — par **superset** (les trois sorties tranchées) : `Genotype` reste **une**
+    struct, augmentée des gènes de flore (inertes pour la faune, et inversement). Choisi contre
+    l'**enum `Genotype`** (façon `Brain`) et les **composants-traits ECS** parce que c'est le
+    chemin le plus sûr pour faire naître une flore *réelle* — réifier le split faune/flore ne se
+    justifiera que contre une **2ᵉ flore** (« généralité ≠ modularité », §8). Coût assumé : un
+    schéma un peu lâche (une plante porte un `max_speed` inerte). RNG-safe (gènes non mutables par
+    défaut → `mutate` ne les tire pas → drivers existants inchangés).
+  - **Driver** né d'un scénario réel (§8) : `scenarios/flore.ron` + `tests/flora.rs` (la flore croît
+    ~20×, reste bornée loin de la saturation, persiste, sur 4 graines).
+  - **Subtilité résolue** : le semis spatial *aurait* recalibré toute l'économie (Lotka-Volterra,
+    §7) ; l'auto-compétition (rétroaction négative **stable**) évite le knife-edge — bande robuste
+    sans calibrage fin, contrairement au couplage proie-prédateur.
+  - **Reste (Phase 3b)** : **dissoudre le type spécial `Food`** (`replenish_food`/`regen`/`FoodSnap`/
+    `spawn_food`) — il n'est plus que le cas dégénéré d'une flore (cerveau no-op, reproduction
+    coupée). Gros chantier (snapshot, éditeur, visuels), à piloter par un scénario qui l'exige.

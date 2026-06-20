@@ -587,6 +587,10 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
             if ui.selectable_label(is_hunter, "Chasseur").clicked() && !is_hunter {
                 *kind = BrainKind::Hunter;
             }
+            let is_sessile = matches!(kind, BrainKind::Sessile);
+            if ui.selectable_label(is_sessile, "Sessile").clicked() && !is_sessile {
+                *kind = BrainKind::Sessile;
+            }
             let is_mlp = matches!(kind, BrainKind::Mlp { .. });
             if ui.selectable_label(is_mlp, "Réseau (MLP)").clicked() && !is_mlp {
                 *kind = BrainKind::Mlp { hidden: vec![8] };
@@ -597,7 +601,7 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
             ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("vivacité du virage"))
                 .on_hover_text("Amplitude max de la dérive de cap à chaque tick (rad).");
         }
-        BrainKind::Hunter => {}
+        BrainKind::Hunter | BrainKind::Sessile => {}
         BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
     }
     ui.weak(kind.description());

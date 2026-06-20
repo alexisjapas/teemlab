@@ -44,8 +44,9 @@ impl SimRng {
 #[derive(Resource, Default)]
 pub struct FoodRegen(pub Vec<f32>);
 
-/// MÉTABOLISME : drainer l'énergie de chaque agent — base + surcoût de vitesse +
-/// coût du capteur de vision. Plancher à zéro ; la mort est laissée à [`reap`].
+/// MÉTABOLISME : le bilan d'énergie par seconde de chaque agent. **Dépenses** — base +
+/// surcoût de vitesse + coût du capteur de vision ; **gain** — la photosynthèse (gène de
+/// flore, gain passif). Borné à `[0, max]` ; la mort à zéro est laissée à [`reap`].
 pub fn metabolize(
     time: Res<Time>,
     config: Res<SimConfig>,
@@ -53,10 +54,13 @@ pub fn metabolize(
 ) {
     let dt = time.delta_secs();
     for (mut reserve, genotype, species, vision, velocity) in &mut agents {
-        // Métabolisme et coût de locomotion sont des gènes (per-espèce). Un agent
-        // sans coût de survie (les deux à zéro) est dans un monde inerte (scénarios
-        // pré-item-8) : aucun drain, pas même le coût de vision.
-        if genotype.base_metabolism == 0.0 && genotype.move_cost == 0.0 {
+        // Métabolisme, coût de locomotion et photosynthèse sont des gènes (per-espèce).
+        // Un agent sans aucun poste d'énergie (les trois à zéro) est dans un monde
+        // inerte (scénarios pré-item-8) : ni drain ni gain, pas même le coût de vision.
+        if genotype.base_metabolism == 0.0
+            && genotype.move_cost == 0.0
+            && genotype.photosynthesis == 0.0
+        {
             continue;
         }
         // Vitesse de *référence* : la vitesse max **fondatrice de l'archétype** (pas
@@ -67,7 +71,11 @@ pub fn metabolize(
         let speed_ratio = velocity.0.length() / reference_speed;
         let drain =
             genotype.base_metabolism + genotype.move_cost * speed_ratio + vision.metabolic_cost();
-        reserve.current = (reserve.current - drain * dt).max(0.0);
+        // Bilan net = gain passif − dépenses. Pour la faune (photosynthèse 0) c'est
+        // l'ancien drain pur, et le plafond à `max` est alors un no-op (manger plafonne
+        // déjà à `max`, cf. `interaction`) → comportement inchangé.
+        let net = genotype.photosynthesis - drain;
+        reserve.current = (reserve.current + net * dt).clamp(0.0, reserve.max);
     }
 }
 
@@ -141,10 +149,17 @@ pub fn reproduce(
         }
         reserve.current -= genotype.offspring_energy;
         let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
-        // L'enfant naît légèrement décalé pour ne pas chevaucher exactement.
-        let offset = Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero()
-            * config.agent_radius_of(species.0)
-            * 2.5;
+        // L'enfant naît décalé. La distance est le gène de **dissémination** (flore)
+        // s'il est non nul, sinon le décalage rapproché par défaut (rayon × 2.5) — le
+        // comportement de la faune, inchangé. Mêmes 2 tirages (la direction) dans les
+        // deux cas → flux RNG préservé pour les scénarios sans dissémination.
+        let spread = if genotype.seed_dispersal > 0.0 {
+            genotype.seed_dispersal
+        } else {
+            config.agent_radius_of(species.0) * 2.5
+        };
+        let offset =
+            Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero() * spread;
         let pos = transform.translation.truncate() + offset;
         // Mêmes tirages (heading puis seed) qu'avant l'héritage : le cerveau enfant
         // les consomme via `reproduce` au lieu de `config.brain.build` → flux RNG

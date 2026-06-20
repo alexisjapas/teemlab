@@ -27,6 +27,11 @@ pub enum Brain {
     /// rien appris (§4) — et le 2ᵉ variant qui rend le sélecteur de cerveau
     /// falsifiable.
     Hunter(HunterBrain),
+    /// **Sessile** (Phase 3) : ne décide pas, ne bouge pas — le cerveau trivial de la
+    /// *flore*. « Stub le comportement, jamais le schéma » (§8) : une coquille de
+    /// comportement légitime, pour une entité qui vit de photosynthèse et se reproduit
+    /// par semis, sans se mouvoir.
+    Sessile(SessileBrain),
     /// Perceptron multicouche fait maison (item 18b), le **cerveau appris** : ses
     /// poids muent à la reproduction (neuroévolution). C'est ce que le chasseur et
     /// l'errance servaient à jauger (§4) — le seul variant dont la décision n'est
@@ -41,6 +46,7 @@ impl Brain {
         match self {
             Brain::Wander(b) => b.think(perception),
             Brain::Hunter(b) => b.think(perception),
+            Brain::Sessile(b) => b.think(perception),
             Brain::Mlp(b) => b.think(perception),
         }
     }
@@ -50,6 +56,7 @@ impl Brain {
         match self {
             Brain::Wander(_) => "Errance",
             Brain::Hunter(_) => "Chasseur",
+            Brain::Sessile(_) => "Sessile",
             Brain::Mlp(_) => "MLP",
         }
     }
@@ -82,6 +89,7 @@ impl Brain {
         match self {
             Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
             Brain::Hunter(_) => Brain::Hunter(HunterBrain),
+            Brain::Sessile(_) => Brain::Sessile(SessileBrain),
             Brain::Mlp(m) => Brain::Mlp(m.reproduced(rng, rate, n_inputs)),
         }
     }
@@ -105,6 +113,8 @@ pub enum BrainKind {
     Wander { turn_rate: f32 },
     /// [`Brain::Hunter`] — réflexe déterministe, sans paramètre.
     Hunter,
+    /// [`Brain::Sessile`] — flore immobile (Phase 3), sans paramètre.
+    Sessile,
     /// [`Brain::Mlp`] — perceptron multicouche évolué (item 18b). `hidden` : la
     /// largeur de chaque **couche cachée** (donnée de designer, éditable). L'entrée
     /// (canaux de perception) et la sortie (2) sont fixées par le contrat → seule la
@@ -133,6 +143,7 @@ impl BrainKind {
                 Brain::Wander(WanderBrain::new(seed, heading, *turn_rate))
             }
             BrainKind::Hunter => Brain::Hunter(HunterBrain),
+            BrainKind::Sessile => Brain::Sessile(SessileBrain),
             BrainKind::Mlp { hidden } => Brain::Mlp(MlpBrain::random(seed, n_inputs, hidden)),
         }
     }
@@ -142,6 +153,7 @@ impl BrainKind {
         match self {
             BrainKind::Wander { .. } => "Errance",
             BrainKind::Hunter => "Chasseur",
+            BrainKind::Sessile => "Sessile",
             BrainKind::Mlp { .. } => "Réseau (MLP)",
         }
     }
@@ -161,6 +173,12 @@ impl BrainKind {
                  ET repoussé par toute menace (une espèce qui peut l'attaquer) — \
                  table de relations. Contourne murs et congénères sans les fuir ; \
                  sans mémoire, hors de portée il explore. Le groupe témoin compétent."
+            }
+            BrainKind::Sessile => {
+                "Ne décide pas, ne bouge pas : le cerveau de la flore. Vit de \
+                 photosynthèse (gène) et se reproduit par semis local — le reste de \
+                 l'écologie (croissance, dissémination, compétition) émerge des gènes \
+                 et de la table de relations."
             }
             BrainKind::Mlp { .. } => {
                 "Perceptron multicouche évolué : décide en lisant ses canaux de \
@@ -277,6 +295,25 @@ impl HunterBrain {
             dir
         };
         Action { dir, throttle: 1.0 }
+    }
+}
+
+/// Cerveau **sessile** (Phase 3) : le no-op de la flore. Pas d'état, pas de RNG, ne lit
+/// pas la perception — il renvoie toujours un accélérateur **nul** (l'entité ne se meut
+/// pas). C'est une coquille de comportement (« stub le comportement, jamais le schéma »,
+/// §8) : la plante existe comme entité de plein droit (génotype, énergie, reproduction),
+/// seule sa *décision* est triviale.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SessileBrain;
+
+impl SessileBrain {
+    fn think(&self, perception: &Perception) -> Action {
+        // Immobile : on conserve le cap (sans effet, l'accélérateur étant nul) plutôt
+        // qu'un vecteur arbitraire.
+        Action {
+            dir: perception.heading,
+            throttle: 0.0,
+        }
     }
 }
 
@@ -695,6 +732,26 @@ mod tests {
             "menace lointaine : doit continuer à fourrager vers +X, dir={:?}",
             action.dir
         );
+    }
+
+    /// Le cerveau **sessile** (flore) ne produit aucun mouvement — accélérateur nul,
+    /// quelle que soit la perception — et l'héritage reconduit le type sans toucher au
+    /// flux RNG (comme les autres cerveaux déterministes).
+    #[test]
+    fn sessile_brain_never_moves_and_is_inherited() {
+        let action = SessileBrain.think(&perception(
+            [0.9, 0.2, 0.5],
+            [0.0, 0.2, 0.0],
+            [0.5, 0.0, 0.0],
+        ));
+        assert_eq!(action.throttle, 0.0, "une plante ne se meut pas");
+
+        let mut rng = Rng::new(0);
+        assert!(matches!(
+            Brain::Sessile(SessileBrain).reproduce(1, 0.0, &mut rng, 0.1, 6),
+            Brain::Sessile(_)
+        ));
+        assert_eq!(rng, Rng::new(0), "le sessile ne tire pas dans le RNG");
     }
 
     /// Le paramètre propre au variant `Wander` (turn_rate) est bien transmis au
