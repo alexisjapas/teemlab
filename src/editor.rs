@@ -608,14 +608,13 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
 }
 
 /// Édition **numérique** de l'architecture d'un MLP (item 18b, cœur) : le nombre de
-/// couches cachées et la largeur de chacune. L'entrée (`2 × rayons`) et la sortie (2)
-/// sont *contraintes* par le contrat et seulement affichées. La visualisation en
-/// graphe arrive à la tranche suivante.
+/// couches cachées et la largeur de chacune. L'entrée (`3 × rayons` : vision, cible,
+/// menace) et la sortie (2) sont *contraintes* par le contrat et seulement affichées.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
     ui.small(format!(
-        "Entrée {} au fondateur (= 2 × {vision_rays} rayons) → sortie {} (contrat). La \
-         couche d'entrée s'adapte ensuite à la précision visuelle de chaque individu \
-         (gène « Rayons »).",
+        "Entrée {} au fondateur (= 3 × {vision_rays} rayons : vision, cible, menace) → \
+         sortie {} (contrat). La couche d'entrée s'adapte ensuite à la précision \
+         visuelle de chaque individu (gène « Rayons »).",
         MlpBrain::input_size(vision_rays),
         MlpBrain::OUTPUTS,
     ));
@@ -762,20 +761,20 @@ pub(crate) fn draw_mlp_graph(
     }
 
     // Étiquettes des canaux d'entrée / sortie — « ce à quoi ça correspond », déduit
-    // du contrat d'E/S du MLP : l'entrée concatène les canaux *vision* (obstacle)
-    // puis *cible* (cf. `MlpBrain::input_vector`) ; la sortie est le pilotage en
-    // repère du corps (avant, côté). Dessinées dans les marges réservées de part et
+    // du contrat d'E/S du MLP : l'entrée concatène les canaux *vision* (obstacle),
+    // *cible* puis *menace* (cf. `MlpBrain::input_vector`) ; la sortie est le pilotage
+    // en repère du corps (avant, côté). Dessinées dans les marges réservées de part et
     // d'autre, à hauteur de chaque nœud concerné.
     let font = egui::FontId::monospace(8.0);
     let ink = egui::Color32::from_gray(165);
     let n_in = sizes[0];
-    let rays = n_in / 2; // entrée = 2 × rayons (vision ++ cible)
+    let rays = n_in / 3; // entrée = 3 × rayons (vision ++ cible ++ menace)
     for node in 0..n_in {
-        let text = if n_in.is_multiple_of(2) {
-            if node < rays {
-                format!("vis {node}")
-            } else {
-                format!("cib {}", node - rays)
+        let text = if n_in.is_multiple_of(3) {
+            match node / rays {
+                0 => format!("vis {node}"),
+                1 => format!("cib {}", node - rays),
+                _ => format!("men {}", node - 2 * rays),
             }
         } else {
             format!("in {node}")

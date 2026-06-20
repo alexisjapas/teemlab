@@ -73,8 +73,8 @@ impl Brain {
     ///   parent, gène `vision_rays`) et **mute ses poids** par perturbation gaussienne
     ///   d'écart `rate · WEIGHT_STEP` (cf. [`MlpBrain::reproduced`]).
     ///
-    /// `n_inputs` (= `2 × rayons` de l'enfant) ne sert qu'au MLP ; Wander et Hunter
-    /// l'ignorent. `seed`/`heading` n'alimentent que les cerveaux à état (l'errance) ;
+    /// `n_inputs` (= `CHANNELS × rayons` de l'enfant) ne sert qu'au MLP ; Wander et
+    /// Hunter l'ignorent. `seed`/`heading` n'alimentent que les cerveaux à état (errance) ;
     /// `rng`/`rate` la mutation/adaptation du MLP. Wander et Hunter **ne tirent pas**
     /// dans `rng` → le flux RNG reste **identique** aux scénarios non-MLP, `rate`
     /// venant du génotype (`mutation_rate`, le gène par lignée, §2).
@@ -135,7 +135,7 @@ impl Default for BrainKind {
 impl BrainKind {
     /// Compile le choix en un cerveau frais. `seed` graine les cerveaux à état
     /// (l'errance ; les poids initiaux *aléatoires* du MLP) ; `heading` l'errance ;
-    /// `n_inputs` (= nombre de canaux de perception, `2 × vision_rays`) dimensionne la
+    /// `n_inputs` (= nombre de canaux de perception, `3 × vision_rays`) dimensionne la
     /// couche d'entrée du MLP. Le chasseur ignore tout, l'errance ignore `n_inputs`.
     pub fn build(&self, seed: u64, heading: f32, n_inputs: usize) -> Brain {
         match self {
@@ -182,9 +182,9 @@ impl BrainKind {
             }
             BrainKind::Mlp { .. } => {
                 "Perceptron multicouche évolué : décide en lisant ses canaux de \
-                 vision/cible, et APPREND par neuroévolution (mutation gaussienne des \
-                 poids à la reproduction). Couches cachées éditables ; entrée et sortie \
-                 fixées par le contrat."
+                 vision/cible/menace, et APPREND par neuroévolution (mutation gaussienne \
+                 des poids à la reproduction) — y compris à fuir. Couches cachées \
+                 éditables ; entrée et sortie fixées par le contrat."
             }
         }
     }
@@ -384,14 +384,14 @@ impl Layer {
 /// la reproduction ([`MlpBrain::mutated`]). Fait maison à dessein : les libs ML
 /// visent le gros réseau GPU, l'inverse du besoin (§5).
 ///
-/// **Entrée** : les canaux normalisés `vision` puis `target` concaténés (il ignore la
-/// géométrie `ray_dirs`, cf. `components.rs`). Le canal `threat` (fuite active) existe
-/// dans [`Perception`] mais n'est **pas encore** câblé ici : seul le chasseur
-/// déterministe le consomme pour l'instant — on valide la fuite sur le témoin avant de
-/// la confier à l'appris, exactement comme `target` (introduit sur le chasseur à
-/// l'item 16, puis consommé par le MLP à l'item 18b). Le brancher (entrée passant à
-/// `3 × vision_rays`) est l'étape suivante. **Sortie** : 2 neurones lus comme un
-/// vecteur de pilotage *en repère du corps*, tourné vers le monde par le cap →
+/// **Entrée** : les trois canaux normalisés `vision`, `target` puis `threat`
+/// concaténés (`CHANNELS × vision_rays` ; il ignore la géométrie `ray_dirs`, cf.
+/// `components.rs`). Le canal `threat` (fuite active, item 18e) a d'abord été validé
+/// **sur le chasseur déterministe** avant d'être confié à l'appris — exactement comme
+/// `target` (introduit sur le chasseur à l'item 16, puis consommé par le MLP à
+/// l'item 18b) : l'appris reçoit donc désormais de quoi *apprendre* à fuir, là où le
+/// chasseur applique un réflexe câblé. **Sortie** : 2 neurones lus comme un vecteur de
+/// pilotage *en repère du corps*, tourné vers le monde par le cap →
 /// orientation-équivariant (le réseau n'a pas à apprendre l'orientation absolue,
 /// comme le chasseur lit « rayon i » relativement au cap).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -410,11 +410,16 @@ impl MlpBrain {
     pub const OUTPUTS: usize = 2;
     /// Échelle d'un pas de mutation de poids (multiplié par `mutation_rate`).
     const WEIGHT_STEP: f32 = 0.6;
+    /// Nombre de **canaux de perception** par rayon câblés en entrée : `vision`
+    /// (obstacle), `target` (cible attirante) et `threat` (menace fuyante). La couche
+    /// d'entrée vaut donc `CHANNELS × vision_rays` — et son redimensionnement à la
+    /// reproduction respecte ces `CHANNELS` blocs (cf. [`MlpBrain::resize_input_fan`]).
+    const CHANNELS: usize = 3;
 
-    /// Taille de la couche d'entrée pour `vision_rays` rayons : les canaux `vision`
-    /// ET `target`, d'où `2 × vision_rays`.
+    /// Taille de la couche d'entrée pour `vision_rays` rayons : les canaux `vision`,
+    /// `target` ET `threat` concaténés, d'où `CHANNELS × vision_rays`.
     pub fn input_size(vision_rays: usize) -> usize {
-        2 * vision_rays
+        Self::CHANNELS * vision_rays
     }
 
     /// Réseau aux poids **aléatoires** : dims = `[n_inputs] ++ hidden ++ [OUTPUTS]`.
@@ -471,22 +476,24 @@ impl MlpBrain {
     }
 
     /// Redimensionne le fan-in de la couche d'entrée à `n_inputs`, **en respectant
-    /// les deux blocs** du vecteur de perception (`vision` puis `target`, chacun de
-    /// `rayons` canaux — cf. [`MlpBrain::input_vector`]). Chaque bloc est tronqué (si
-    /// l'enfant voit moins fin) ou complété de poids neufs façon Xavier (s'il voit
-    /// plus fin), de sorte que les poids conservés restent **alignés sur le bon
-    /// canal**. Les biais (par neurone de sortie) sont inchangés.
+    /// les [`CHANNELS`](Self::CHANNELS) blocs** du vecteur de perception (`vision`,
+    /// `target` puis `threat`, chacun de `rayons` canaux — cf.
+    /// [`MlpBrain::input_vector`]). Chaque bloc est tronqué (si l'enfant voit moins
+    /// fin) ou complété de poids neufs façon Xavier (s'il voit plus fin), de sorte que
+    /// les poids conservés restent **alignés sur le bon canal**. Les biais (par neurone
+    /// de sortie) sont inchangés.
     fn resize_input_fan(layer: &Layer, rng: &mut Rng, n_inputs: usize) -> Layer {
         let outputs = layer.outputs();
         let old_in = layer.inputs;
-        let old_rays = old_in / 2; // entrée = 2 × rayons (vision ++ cible)
-        let new_rays = n_inputs / 2;
+        let old_rays = old_in / Self::CHANNELS; // entrée = CHANNELS × rayons
+        let new_rays = n_inputs / Self::CHANNELS;
         let scale = 1.0 / (n_inputs.max(1) as f32).sqrt();
         let mut weights = Vec::with_capacity(n_inputs * outputs);
         for o in 0..outputs {
             let row = &layer.weights[o * old_in..(o + 1) * old_in];
-            // Bloc vision (offset 0) puis bloc cible (offset `old_rays`).
-            for block_start in [0usize, old_rays] {
+            // Un bloc par canal (vision, cible, menace), chacun de `old_rays` poids.
+            for block in 0..Self::CHANNELS {
+                let block_start = block * old_rays;
                 for r in 0..new_rays {
                     weights.push(if r < old_rays {
                         row[block_start + r]
@@ -503,13 +510,14 @@ impl MlpBrain {
         }
     }
 
-    /// Vecteur d'entrée : `vision` puis `target` (les mêmes canaux que l'inspecteur
-    /// affiche, dans le même ordre).
+    /// Vecteur d'entrée : `vision`, `target` puis `threat` (les mêmes canaux que
+    /// l'inspecteur affiche, dans le même ordre — `CHANNELS` blocs de `rayons`).
     fn input_vector(perception: &Perception) -> Vec<f32> {
         perception
             .vision
             .iter()
             .chain(perception.target.iter())
+            .chain(perception.threat.iter())
             .copied()
             .collect()
     }
@@ -805,37 +813,60 @@ mod tests {
         );
     }
 
-    /// Perception à 3 rayons pour les tests MLP : 6 entrées (vision ++ cible).
+    /// Perception à 3 rayons pour les tests MLP : 9 entrées (vision ++ cible ++ menace),
+    /// menace laissée à zéro ici (cf. `mlp_reads_threat_channel` pour un cas non nul).
     fn mlp_perception(heading: Vec2, vision: [f32; 3], target: [f32; 3]) -> Perception {
         Perception {
             heading,
             vision: vision.into(),
             target: target.into(),
-            // Le MLP ne lit pas (encore) le canal menace : il l'ignore quoi qu'il vaille.
             threat: [0.0; 3].into(),
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
 
+    /// Le canal **menace** est désormais câblé en entrée du MLP (item 18e → appris) :
+    /// deux perceptions identiques sauf le canal `threat` produisent des actions
+    /// **différentes**. C'est l'analogue, côté appris, de ce que le chasseur fait avec
+    /// `target` à l'item 16 : la preuve falsifiable que le canal n'est pas ignoré. (On
+    /// ne prescrit pas *comment* le réseau aléatoire y répond — seulement qu'il y
+    /// répond ; apprendre à *bien* fuir relève de la sélection, comme pour le fourrage.)
+    #[test]
+    fn mlp_reads_threat_channel() {
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
+
+        let calm = brain.think(&mlp_perception(Vec2::X, vision, target));
+        let mut threatened = mlp_perception(Vec2::X, vision, target);
+        threatened.threat = [0.6, 0.0, 0.0].into(); // un prédateur sur le flanc gauche
+        let scared = brain.think(&threatened);
+
+        assert_ne!(
+            calm.dir, scared.dir,
+            "le canal menace doit influencer la décision du MLP"
+        );
+    }
+
     /// Le MLP construit par `BrainKind` respecte le contrat d'E/S : entrée =
-    /// `2 × vision_rays`, sortie = `OUTPUTS`, couches cachées telles que demandées.
+    /// `3 × vision_rays` (vision ++ cible ++ menace), sortie = `OUTPUTS`, couches
+    /// cachées telles que demandées.
     #[test]
     fn brainkind_mlp_builds_with_contract_io() {
-        let n_inputs = MlpBrain::input_size(3); // 6
+        let n_inputs = MlpBrain::input_size(3); // 9 = 3 canaux × 3 rayons
         let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![5] }).build(42, 0.0, n_inputs) else {
             panic!("attendu un MLP");
         };
         assert_eq!(m.layers.len(), 2, "1 cachée + 1 sortie");
-        assert_eq!(m.layers[0].inputs, 6, "entrée = 2 × rayons");
+        assert_eq!(m.layers[0].inputs, 9, "entrée = 3 × rayons");
         assert_eq!(m.layers[0].outputs(), 5, "couche cachée demandée");
         assert_eq!(m.layers[1].inputs, 5);
         assert_eq!(m.layers[1].outputs(), MlpBrain::OUTPUTS);
         // L'API de visualisation (item 18b-viz) reflète la même topologie.
-        assert_eq!(m.layer_sizes(), vec![6, 5, MlpBrain::OUTPUTS]);
+        assert_eq!(m.layer_sizes(), vec![9, 5, MlpBrain::OUTPUTS]);
         assert_eq!(m.weight_layers(), 2);
         let (w, fan_in, fan_out) = m.layer_weights(0);
-        assert_eq!((fan_in, fan_out), (6, 5));
-        assert_eq!(w.len(), 6 * 5);
+        assert_eq!((fan_in, fan_out), (9, 5));
+        assert_eq!(w.len(), 9 * 5);
     }
 
     /// Le MLP est déterministe (mêmes poids + même perception → même action) et
@@ -890,19 +921,19 @@ mod tests {
     #[test]
     fn mlp_reproduce_resizes_input_layer_to_child_rays() {
         let mut rng = Rng::new(5);
-        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 6 entrées
+        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 9 entrées
 
         // Précision inchangée + taux nul = clone fidèle.
         let same = parent.reproduced(&mut rng, 0.0, MlpBrain::input_size(3));
         assert_eq!(same, parent, "précision constante, taux nul → identité");
 
-        // Enfant qui voit plus fin : 5 rayons → 10 entrées (couche d'entrée agrandie).
+        // Enfant qui voit plus fin : 5 rayons → 15 entrées (couche d'entrée agrandie).
         let grown = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(5));
-        assert_eq!(grown.layer_sizes(), vec![10, 8, 4, MlpBrain::OUTPUTS]);
+        assert_eq!(grown.layer_sizes(), vec![15, 8, 4, MlpBrain::OUTPUTS]);
 
-        // Enfant qui voit plus grossier : 2 rayons → 4 entrées (couche d'entrée rétrécie).
+        // Enfant qui voit plus grossier : 2 rayons → 6 entrées (couche d'entrée rétrécie).
         let shrunk = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(2));
-        assert_eq!(shrunk.layer_sizes(), vec![4, 8, 4, MlpBrain::OUTPUTS]);
+        assert_eq!(shrunk.layer_sizes(), vec![6, 8, 4, MlpBrain::OUTPUTS]);
     }
 
     /// La visualisation des activations est calculée **à la demande**, hors du cœur
@@ -922,8 +953,9 @@ mod tests {
         for (layer, &size) in acts.iter().zip(&brain.layer_sizes()) {
             assert_eq!(layer.len(), size);
         }
-        // L'entrée exposée = vision ++ cible (le vecteur d'entrée du réseau).
-        assert_eq!(acts[0], vec![0.2, 0.7, 0.1, 0.0, 0.7, 0.0]);
+        // L'entrée exposée = vision ++ cible ++ menace (le vecteur d'entrée du réseau ;
+        // `mlp_perception` met la menace à zéro).
+        assert_eq!(acts[0], vec![0.2, 0.7, 0.1, 0.0, 0.7, 0.0, 0.0, 0.0, 0.0]);
 
         // La sortie brute (dernière couche) est cohérente avec l'action de `think` :
         // `throttle = min(|sortie|, 1)`, et la direction est cette sortie tournée par
@@ -941,8 +973,8 @@ mod tests {
     /// colorant les nœuds manquants en neutre.
     #[test]
     fn forward_activations_is_robust_to_wrong_input_size() {
-        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // attend 6 entrées
-        // Perception à 2 rayons → 4 entrées (≠ 6) : le premier produit ne colle pas.
+        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // attend 9 entrées
+        // Perception à 2 rayons → 6 entrées (≠ 9) : le premier produit ne colle pas.
         let p = Perception {
             heading: Vec2::X,
             vision: [0.1, 0.2].into(),
@@ -952,6 +984,6 @@ mod tests {
         };
         let acts = brain.forward_activations(&p);
         assert_eq!(acts.len(), 1, "seule l'entrée est exposée, sans panique");
-        assert_eq!(acts[0].len(), 4);
+        assert_eq!(acts[0].len(), 6);
     }
 }

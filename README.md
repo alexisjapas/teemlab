@@ -30,8 +30,9 @@ Conception et ordre d'implémentation : [`ROADMAP.md`](ROADMAP.md).
 - **Cerveaux** (`Brain`, enum à dispatch statique), **par espèce** et **hérités** à la
   reproduction : `Wander` (témoin naïf), `Hunter` (témoin compétent — foncer vers la cible
   perçue **et fuir les menaces** : canaux *cible* / *menace* de la perception), `Sessile`
-  (flore), **`Mlp`** (perceptron fait maison **appris par neuroévolution**, avec graphe
-  d'activations à l'inspecteur). Sélecteur de cerveau dans l'éditeur.
+  (flore), **`Mlp`** (perceptron fait maison **appris par neuroévolution**, lisant les mêmes
+  canaux *vision/cible/menace* — il peut donc *apprendre* à fuir —, avec graphe d'activations à
+  l'inspecteur). Sélecteur de cerveau dans l'éditeur.
 - **Scénarios pilotes**, tous robustes sur multi-graines via leurs drivers :
   `proie_predateur` (chaîne trophique à 3 niveaux, effectif par espèce, proies qui fuient),
   `cohabitation` & `cerveau_mlp` (témoin vs appris → exclusion compétitive).
@@ -44,9 +45,9 @@ paramètres de monde dans l'UI (dont `tick_hz` et les bornes de gènes). **Flore
 une plante sessile vit de photosynthèse, se sème localement et s'auto-limite par compétition
 intraspécifique — la primitive d'interaction réutilisée, sans mécanisme nouveau.
 
-**Reste.** Dissoudre le type spécial `Food` (devenu le cas dégénéré d'une flore) ; câbler le
-canal « menace » dans l'entrée du MLP ; **P5 — bataille** (régime générationnel, test final
-de l'abstraction le long d'une *couture A/B* propre).
+**Reste.** Dissoudre le type spécial `Food` (devenu le cas dégénéré d'une flore) ; **P5 —
+bataille** (régime générationnel, test final de l'abstraction le long d'une *couture A/B*
+propre).
 
 > **Invariant cardinal** : aucune logique de simulation dans `Update`. L'agentivité vit
 > dans `FixedUpdate`, la physique Avian dans `FixedPostUpdate` ; `Update` est réservé au

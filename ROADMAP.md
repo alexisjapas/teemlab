@@ -53,6 +53,15 @@ ouverts au §9.
   (relation Plante→Plante sans transfert, §3) — aucun mécanisme nouveau. Driver `tests/flora.rs`
   (`scenarios/flore.ron`, 4 graines) : la flore croît ~20×, reste **bornée loin de la saturation**
   et **persiste**. `Food` reste le cas dégénéré (Phase 3b : sa dissolution complète).
+- **Menace câblée dans l'appris** (item 18g) : le canal `threat` (item 18e), jusqu'ici consommé par
+  le seul chasseur déterministe, rejoint l'**entrée du MLP** — `vision|cible` (`2 × rayons`) →
+  `vision|cible|menace` (`3 × rayons`, constante `MlpBrain::CHANNELS`). La couture de
+  redimensionnement par bloc de `reproduced` passe de 2 à 3 blocs (DRY sur `CHANNELS`) ; l'appris
+  reçoit donc de quoi *apprendre* à fuir, là où le chasseur applique un réflexe câblé — exactement
+  comme `target` (chasseur item 16 → MLP item 18b). Flux RNG des scénarios **non-MLP intact** (aucun
+  MLP construit) ; les scénarios MLP ont un réseau plus large — `tests/mlp` revalidé (domination sur
+  les 5 graines préservée). Unité `mlp_reads_threat_channel` : preuve falsifiable que le canal n'est
+  plus ignoré (deux perceptions ≠ par la seule menace → actions ≠).
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg, défauts 30 fps / 61 s),
   drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`, …),
   `clippy`/`fmt` propres.
@@ -64,10 +73,6 @@ ouverts au §9.
   « la source pure n'est plus que le cas dégénéré » (cerveau no-op, reproduction coupée). Gros
   chantier (snapshot `FoodSnap`, `spawn_food`, éditeur, visuels) ; à faire quand un scénario
   l'exige, pas spéculativement. Le verrou `Genotype` variable est levé (superset, §9).
-- **Câbler le canal « menace » dans l'entrée du MLP** : aujourd'hui seul le chasseur
-  déterministe le consomme (item 18e) ; le brancher fait passer l'entrée du MLP à
-  `3 × vision_rays` (couture de redimensionnement `vision|cible` → `vision|cible|menace`) —
-  le pas suivant après que le témoin a validé la fuite, comme `target` (chasseur puis MLP).
 - **P5 — bataille (différée) + passage à l'échelle** : régime générationnel (run → score
   → breed), headless parallélisé inter-matchs, puis crossover de poids / NEAT (§9).
 
@@ -473,9 +478,9 @@ flowchart TB
     sur les 5 graines via le stabilisateur **spatial** de l'item 17 — arène `480 → 560` (refuges pour
     proies qui fuient), repousse de nourriture relevée, prédation un peu plus douce ; aucun système
     moteur touché. **Méthode** (« stub le comportement, jamais le schéma » ; valider sur le témoin
-    avant l'appris) : seul le chasseur déterministe consomme le canal pour l'instant — le brancher dans
-    l'entrée du MLP est l'étape suivante, exactement comme `target` (introduit sur le chasseur à
-    l'item 16, consommé par le MLP à l'item 18b). **Reste** : ce câblage MLP (entrée → `3 × rayons`).
+    avant l'appris) : le chasseur déterministe a consommé le canal d'abord, puis l'appris l'a reçu —
+    exactement comme `target` (introduit sur le chasseur à l'item 16, consommé par le MLP à
+    l'item 18b). Ce câblage MLP est **fait** (item 18g).
 18f. **Flore évolutive** (Phase 3a) **(réalisé)** : une *flore* devient une entité de plein droit,
     **sans système cœur nouveau** — trois extensions de la machinerie existante. **Verrou levé** par
     **superset** (les trois sorties du §9 tranchées : une seule struct `Genotype` gagne les gènes de
@@ -497,6 +502,25 @@ flowchart TB
     un effectif soutenu. Espèce *évolutive* : `reproduction_threshold` et `seed_dispersal` mutent sous la
     pression de la compétition. **Reste** (Phase 3b) : dissoudre le type spécial `Food` (`replenish_food`,
     `FoodSnap`, `spawn_food`) — il n'est plus que le cas dégénéré d'une flore (cerveau no-op, repro coupée).
+18g. **Menace câblée dans l'appris** (canal `threat` → entrée du MLP) **(réalisé)** : le pas suivant
+    naturel après que le chasseur déterministe a validé la fuite (item 18e), exactement comme `target`
+    (introduit sur le chasseur à l'item 16, consommé par le MLP à l'item 18b — méthode « valider sur le
+    témoin avant l'appris », §8). **Schéma** : la couche d'entrée du MLP passe de `vision|cible`
+    (`2 × rayons`) à `vision|cible|menace` (`3 × rayons`), réifié en une constante `MlpBrain::CHANNELS`
+    (= 3) — `input_size`, `input_vector` et la **couture de redimensionnement par bloc** de
+    `MlpBrain::reproduced` (gène `vision_rays`, item 18c) y lisent un seul point de vérité (2 blocs → 3,
+    DRY). L'appris reçoit ainsi de quoi **apprendre** à fuir, là où le chasseur applique un réflexe câblé
+    par subsomption. **RNG-safe** : aucun cerveau non-MLP n'est touché (Wander/Hunter/Sessile ne lisent
+    pas l'entrée) → `predator_prey`/`cohabitation`/`snapshot` **bit-à-bit inchangés** ; seuls les
+    scénarios MLP ont un réseau plus large (plus de tirages Xavier à la construction) — `tests/mlp`
+    **revalidé**, la domination MLP > errance tient sur les **5 graines** malgré l'entrée élargie (le
+    canal menace est nul dans `cerveau_mlp`, sans prédateur ; il n'ajoute pas de signal mais ne nuit pas).
+    **Driver** unité `mlp_reads_threat_channel` : deux perceptions identiques *sauf le canal menace* →
+    actions **différentes** — la preuve falsifiable, côté appris, que le canal n'est plus ignoré (on ne
+    prescrit pas *comment* un réseau aléatoire y répond, seulement qu'il y répond ; **bien** fuir relève
+    de la sélection, comme le fourrage). **Reste** : un scénario *écologique* où une proie MLP doit
+    apprendre la fuite (calibration Lotka-Volterra, §7) — différé, comme le bénéfice se mesure mieux en
+    lots générationnels (P5, le finding de variance de l'item 18b).
 
 ### P5 — Bataille (différée) + passage à l'échelle
 
@@ -523,11 +547,10 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
 - **MLP** (item 18b, **fait** pour le cœur) : variant `Brain::Mlp` (enum déjà `serde`) sur le contrat
   `Perception → Action`, en régime continu, substitution **par espèce** (couture 18a). Poids mutés dans
   `Brain::reproduce` (neuroévolution mutation-seule). Visualisation graphe **faite** (18b-viz : éditeur
-  structurel + inspecteur avec activations). **Reste** : (a) **câbler le canal « menace »** (item 18e)
-  dans l'entrée — aujourd'hui `vision|cible` (`2 × rayons`), à porter à `vision|cible|menace`
-  (`3 × rayons`), en étendant la couture de redimensionnement par bloc de `MlpBrain::reproduced` (déjà
-  2 blocs) à 3 ; pas suivant naturel, le chasseur ayant validé la fuite (méthode `target` : chasseur
-  puis MLP) ; (b) plus loin, crossover sur poids + NEAT (P5).
+  structurel + inspecteur avec activations). Le canal **« menace »** est désormais **câblé** dans
+  l'entrée (item 18g) : `vision|cible|menace` (`3 × rayons`, constante `MlpBrain::CHANNELS`), la couture
+  de redimensionnement par bloc de `MlpBrain::reproduced` étendue de 2 à 3 blocs. **Reste** : plus loin,
+  crossover sur poids + NEAT (P5).
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
