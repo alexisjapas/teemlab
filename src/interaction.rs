@@ -40,6 +40,11 @@ use bevy::prelude::*;
 /// peut être n'importe quelle entité portant [`Species`] + [`Reserve`] — un
 /// autre agent (prédation) **ou** une source de nourriture (manger passe ainsi
 /// par la même primitive). Les colliders sans `Species` (murs) sont ignorés.
+///
+/// `too_many_arguments` : système ECS — 6 paramètres réels, plus les **tampons
+/// `Local`** réutilisés d'un tick à l'autre (filtre de raycast, `hits`, `demand`,
+/// `deltas`). L'idiome Bevy, comme sur les fonctions de spawn.
+#[allow(clippy::too_many_arguments)]
 pub fn interact(
     spatial: SpatialQuery,
     time: Res<Time>,
@@ -50,11 +55,21 @@ pub fn interact(
     // Filtre de portée réutilisé d'un acteur à l'autre (cf. boucle) : on évite de
     // réallouer un `EntityHashSet` à chaque acteur et chaque tick.
     mut filter: Local<SpatialQueryFilter>,
+    // Tampons des deux passes, réutilisés d'un tick à l'autre (cf. plus bas) : vidés en
+    // tête, ils gardent leur capacité au lieu de réallouer un `Vec` + deux `HashMap` à
+    // chaque tick. `hits`/`demand` portent la passe 1, `deltas` la passe 2.
+    mut hits: Local<Vec<(Entity, Entity, f32, bool)>>,
+    mut demand: Local<HashMap<Entity, f32>>,
+    mut deltas: Local<HashMap<Entity, f32>>,
 ) {
     if config.relations.is_empty() {
         return;
     }
     let dt = time.delta_secs();
+    // On repart de tampons vides (capacité conservée du tick précédent).
+    hits.clear();
+    demand.clear();
+    deltas.clear();
 
     // Un collider de portée par relation, construit **une seule fois** : la forme
     // ne dépend que de la relation, pas de l'acteur. Construire un collider parry
@@ -67,8 +82,6 @@ pub fn interact(
 
     // Passe 1 : recenser les prélèvements (acteur, cible, montant, transfert) et la
     // **demande** totale par cible. On ne touche pas encore aux réserves.
-    let mut hits: Vec<(Entity, Entity, f32, bool)> = Vec::new();
-    let mut demand: HashMap<Entity, f32> = HashMap::default();
     for (actor, transform, species) in &actors {
         let origin = transform.translation.truncate();
         // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur (il ne dépend pas
@@ -94,8 +107,7 @@ pub fn interact(
     // Passe 2 : mettre à l'échelle par disponibilité de la cible (conservation), puis
     // accumuler les deltas. `avail` est la réserve au début du tick — borne ce qu'on
     // peut, en tout, prélever sur la cible.
-    let mut deltas: HashMap<Entity, f32> = HashMap::default();
-    for (actor, target, amount, transfer) in hits {
+    for &(actor, target, amount, transfer) in hits.iter() {
         let total = demand.get(&target).copied().unwrap_or(0.0);
         if total <= 0.0 {
             continue;
@@ -112,7 +124,7 @@ pub fn interact(
         }
     }
 
-    for (entity, delta) in deltas {
+    for (&entity, &delta) in deltas.iter() {
         if let Ok(mut reserve) = reserves.get_mut(entity) {
             reserve.current = (reserve.current + delta).clamp(0.0, reserve.max);
         }
