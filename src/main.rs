@@ -113,11 +113,12 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// Cadre la simulation dans la zone sous le bandeau de contrôles : l'arène
-/// **entière** est visible et centrée (cadrage « tout voir », petite marge), quelle
-/// que soit la fenêtre. Les fenêtres d'outils flottent par-dessus sans réduire
-/// cette zone. Le hors-jeu autour de l'arène (sur le côté le plus long) est grisé
-/// par `ClearColor` + `draw_play_area`, donc ne paraît pas vide.
+/// Cadre la simulation dans la zone centrale laissée libre par les **panneaux
+/// dockés** (cf. `panels`) : l'arène **entière** est visible et centrée (cadrage
+/// « tout voir », petite marge), quelle que soit la fenêtre. Les panneaux réservent
+/// les bords, donc `available_rect` se réduit à ce centre et la sim s'y ajuste. Le
+/// hors-jeu autour de l'arène (sur le côté le plus long) est grisé par `ClearColor`
+/// + `draw_play_area`, donc ne paraît pas vide.
 ///
 /// On **zoome et déplace la caméra** plutôt que de redimensionner son viewport :
 /// sous bevy_egui la surface egui est calée sur le viewport de la caméra, donc le

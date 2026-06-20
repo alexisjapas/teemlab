@@ -118,7 +118,7 @@ impl Vision {
 
 /// Instantané sensoriel. Écrit par `perceive`, lu par `decide` — conceptuellement
 /// le vecteur d'entrée du cerveau. Il réunit les **canaux normalisés** (`vision`,
-/// `target`, dans `[0, 1]`) et la **géométrie** qui les situe (`heading`,
+/// `target`, `threat`, dans `[0, 1]`) et la **géométrie** qui les situe (`heading`,
 /// `ray_dirs`), pour qu'un cerveau décide sans rien savoir du corps ([`Vision`]).
 #[derive(Component, Default)]
 pub struct Perception {

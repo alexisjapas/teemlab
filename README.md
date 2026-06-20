@@ -72,7 +72,8 @@ src/
   ecology.rs      Économie : métaboliser (dépenses + photosynthèse), mourir, vieillir, se reproduire (semis local).
   rng.rs          PRNG déterministe minimal (SplitMix64) + tirage gaussien.
   spawn.rs        Peuplement : arène + agents ; spawn_agent (compile un génotype en phénotype vivant).
-  main.rs         Binaire fenêtré  → `teemlab`.
+  main.rs         Binaire fenêtré  → `teemlab` : câble les panneaux dockés + cadre la sim dans la zone centrale (set_sim_camera).
+  panels.rs       Disposition DOCKÉE du fenêtré : 4 panneaux egui fixes (haut : contrôles + stats · gauche : runs/monde/archétypes/éditeur · droite : enregistrement · bas : courbes + inspecteur), chacun appelant la *_section de son module d'outil.
   editor.rs       UI egui (fenêtré seul) : palette (créer / dupliquer / réordonner / supprimer, placement glisser-déposer, Suppr retire), bibliothèque d'espèces (species/*.ron), éditeur du Monde (arène, tick_hz, bornes de gènes, relations).
   hud.rs          HUD egui (fenêtré seul) : courbes population + dérive des gènes (lecture seule).
   controls.rs     Contrôles egui (fenêtré seul) : pause / vitesse / pas-à-pas / reset (pilotage du temps, ré-applique tick_hz).
@@ -137,9 +138,12 @@ cargo clippy --all-targets            # lint — l'arbre est tenu à zéro warni
 > d'abord un `cargo build` (qui construit *tous* les binaires) dans le profil choisi, puis
 > lance le fenêtré — `record` suit donc toujours `teemlab`, debug comme release.
 
-Le build fenêtré ajoute, par-dessus la sim, l'outillage egui : bandeau de contrôles
-(haut), éditeur d'archétypes + palette (glisser-déposer pour poser, **Suppr** pour
-retirer l'entité sous le curseur), éditeur du **Monde** (arène, cadence, bornes de gènes,
-table de relations), et fenêtres flottantes HUD courbes / inspecteur / runs & scénarios /
-enregistrement. Tout cet outillage vit hors `FixedUpdate` (rendu / UI) ; le headless
-n'embarque rien de tout ça.
+Le build fenêtré ajoute, par-dessus la sim, l'outillage egui en **panneaux dockés** qui
+encadrent la zone de simulation centrale (cf. `panels.rs`) : bandeau de **contrôles** +
+stats en haut ; colonne **gauche** avec runs & scénarios, éditeur du **Monde** (arène,
+cadence, bornes de gènes, table de relations) et éditeur d'**archétypes** + palette
+(glisser-déposer pour poser, **Suppr** pour retirer l'entité sous le curseur) ; colonne
+**droite** d'**enregistrement** ; bandeau **bas** avec courbes HUD et inspecteur d'agent.
+Les panneaux *réservent* les bords, donc la sim est toujours cadrée et entièrement visible
+au centre. Tout cet outillage vit hors `FixedUpdate` (rendu / UI) ; le headless n'embarque
+rien de tout ça.

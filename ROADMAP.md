@@ -40,7 +40,8 @@ ouverts au §9.
   **resynchronisation** qui préserve l'effectif local.
 - **Paramètres de monde dans l'UI** : `tick_hz` (cadence de sim, « (reset) » — ré-appliquée
   au reset, le point de passage unique que le rechargement de scénario déclenche aussi) et
-  les **10 bornes de gènes** (`*_bounds`, section « Bornes des gènes ») rejoignent l'éditeur,
+  les **bornes de gènes** (`*_bounds`, section « Bornes des gènes » — une par entrée de
+  `TRAITS`, soit 10 à l'époque, **12** depuis les deux gènes de flore) rejoignent l'éditeur,
   via un accesseur `TraitSpec::bounds_mut` (boucle sur `TRAITS` → DRY). Plus aucun paramètre
   de scénario réservé au RON.
 - **Phase 3a — flore évolutive réelle** (item 5) : une *flore* devient une entité de plein
