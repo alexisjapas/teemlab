@@ -585,6 +585,18 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   l'entrée (item 18g) : `vision|cible|menace` (`3 × rayons`, constante `MlpBrain::CHANNELS`), la couture
   de redimensionnement par bloc de `MlpBrain::reproduced` étendue de 2 à 3 blocs. **Reste** : plus loin,
   crossover sur poids + NEAT (P5).
+- **Allocations par-`think` du MLP** (perf, **différée après P5**) : `MlpBrain::think` alloue un
+  `Vec<f32>` par couche (`Layer::forward`) plus le vecteur d'entrée (`input_vector`) — soit
+  `couches + 1` allocations par agent MLP et par tick. Négligeable en régime continu (peu d'agents
+  MLP), mais significatif sous le **batch générationnel massif** de P5 (item 20, `World`
+  parallélisés). **Reportée faute de chemin propre** : un champ *scratch* sur `MlpBrain` briserait
+  l'invariant « état = topologie + poids » (`brain.rs` — l'égalité et la sérialisation ne portent
+  que ça) ; et passer un tampon à `think(&mut self, &Perception) -> Action` **brouillerait le
+  contrat** `Perception → Action` (§2), en forçant `decide` à connaître le variant. À traiter
+  **profil en main**, une fois P5 en place : un scratch réutilisé dans `decide` (chemin rapide propre
+  au MLP, sans fuir dans le contrat public) ou un `thread_local`, validé par mesure — pas avant
+  (optimisation prématurée sinon). Les optimisations *sûres* du chemin chaud sont, elles, **faites** :
+  `atan2` mémoïsé dans `perceive`, filtre de raycast et tampons d'`interact` réutilisés via `Local`.
 - **Crossover** : paramétrique (gènes) trivial et sûr ; sur poids de NN, problème de permutation
   (conventions concurrentes) → repoussé avec NEAT, neuroévolution mutation-seule d'abord.
 - **Capture multi-runs et re-render du meilleur génome** : pertinents une fois la sélection
