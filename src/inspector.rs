@@ -222,7 +222,9 @@ pub(crate) fn inspector_section(
         if let Brain::Mlp(mlp) = brain {
             ui.separator();
             ui.strong("Cerveau MLP (activations)");
-            ui.weak("entrée (vision/cible) → couches cachées → pilotage · froid<0<chaud");
+            ui.weak(
+                "entrée (vision/cible) → couches cachées → pilotage · couleur = activation (froid<0<chaud) · taille = |biais|",
+            );
             // Les activations sont recalculées ici, à la demande, pour le seul agent
             // inspecté (le `think` du cœur de sim ne les mémorise plus).
             let activations = mlp.forward_activations(perception);

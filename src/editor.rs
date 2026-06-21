@@ -665,7 +665,9 @@ fn activation_color(v: Option<f32>) -> egui::Color32 {
 /// (entrée à gauche, sortie à droite), arêtes entre couches consécutives.
 ///
 /// - `brain = Some(mlp)` (inspecteur) : arêtes teintées par le **signe/intensité du
-///   poids** (bleu négatif, orange positif) — le réseau réel. Avec `activations`
+///   poids** (bleu négatif, orange positif) — le réseau réel. Les nœuds sont
+///   **dimensionnés par leur |biais|** (normalisé au plus grand biais du réseau ;
+///   l'entrée, sans biais, reste à la taille de référence). Avec `activations`
 ///   (calculées à la demande par [`MlpBrain::forward_activations`]), les nœuds se
 ///   colorent par leur **activation courante** : le réseau « en action ».
 /// - `brain = None` (éditeur) : aperçu structurel, nœuds neutres et arêtes ténues.
@@ -736,14 +738,39 @@ pub(crate) fn draw_mlp_graph(
         }
     }
 
-    // Nœuds par-dessus, colorés par activation (live) ou neutres (aperçu).
-    let radius = (rect.height() / (widest as f32 * 2.2)).clamp(2.5, 8.0);
+    // Nœuds par-dessus, colorés par activation (live) ou neutres (aperçu). Leur
+    // **taille** encode le |biais| du neurone (le seul « poids » propre à un nœud) :
+    // on normalise par le plus grand |biais| du réseau, le neurone le plus biaisé
+    // prenant le rayon de référence et les autres rétrécissant. La colonne d'entrée
+    // (sans biais) garde le rayon de référence. En aperçu (`brain = None`) ou tant
+    // que tous les biais sont nuls (réseau fondateur, biais initialisés à 0), tous
+    // les nœuds restent à cette référence.
+    let base_radius = (rect.height() / (widest as f32 * 2.2)).clamp(2.5, 8.0);
+    let max_bias = brain
+        .map(|m| {
+            (0..m.weight_layers())
+                .flat_map(|l| m.layer_biases(l).iter().copied())
+                .fold(0.0_f32, |acc, b| acc.max(b.abs()))
+        })
+        .filter(|&m| m > 1e-6);
     for (col, &n) in sizes.iter().enumerate() {
+        // Biais de cette colonne : la colonne `col` est alimentée par la couche
+        // `col-1` (la colonne 0, entrée, n'en a pas).
+        let biases = brain.and_then(|m| {
+            (col >= 1 && col - 1 < m.weight_layers()).then(|| m.layer_biases(col - 1))
+        });
         for node in 0..n {
             let act = activations
                 .and_then(|a| a.get(col))
                 .and_then(|layer| layer.get(node))
                 .copied();
+            let radius = match (biases, max_bias) {
+                (Some(b), Some(mx)) => {
+                    let t = (b.get(node).copied().unwrap_or(0.0).abs() / mx).clamp(0.0, 1.0);
+                    base_radius * (0.35 + 0.65 * t)
+                }
+                _ => base_radius,
+            };
             let center = pos(col, node, n);
             painter.circle_filled(center, radius, activation_color(act));
             painter.circle_stroke(

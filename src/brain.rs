@@ -595,6 +595,14 @@ impl MlpBrain {
         let layer = &self.layers[l];
         (&layer.weights, layer.inputs, layer.outputs())
     }
+
+    /// Biais de la couche `l` (un par neurone de sortie), pour **dimensionner les
+    /// nœuds** du graphe par leur biais (item 18b-viz). `l < weight_layers()`. La
+    /// couche `l` alimente la **colonne `l+1`** du graphe ; la colonne d'entrée (0)
+    /// n'a pas de biais.
+    pub fn layer_biases(&self, l: usize) -> &[f32] {
+        &self.layers[l].biases
+    }
 }
 
 #[cfg(test)]
@@ -867,6 +875,11 @@ mod tests {
         let (w, fan_in, fan_out) = m.layer_weights(0);
         assert_eq!((fan_in, fan_out), (9, 5));
         assert_eq!(w.len(), 9 * 5);
+        // Les biais (qui dimensionnent les nœuds du graphe) : un par neurone de
+        // sortie de chaque couche, nuls à la construction (init Xavier).
+        assert_eq!(m.layer_biases(0).len(), 5, "un biais par neurone caché");
+        assert_eq!(m.layer_biases(1).len(), MlpBrain::OUTPUTS);
+        assert!(m.layer_biases(0).iter().all(|&b| b == 0.0));
     }
 
     /// Le MLP est déterministe (mêmes poids + même perception → même action) et
