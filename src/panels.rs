@@ -1,10 +1,14 @@
-//! Disposition **dockée** du build fenêtré : quatre panneaux egui fixes autour de
-//! la zone de simulation centrale.
+//! Disposition **dockée** du build fenêtré : des panneaux egui fixes autour de la
+//! zone de simulation centrale.
 //!
 //! Module du *binaire* fenêtré uniquement. On n'invente rien : chaque panneau
 //! appelle la `*_section(ui, …)` réutilisable déjà exposée par son module d'outil
 //! (`controls`, `editor`, `runs`, `hud`, `recorder`, `inspector`). Le rôle de ces
 //! systèmes est purement la **mise en page** — réserver les bords de l'écran egui.
+//!
+//! Découpage **sémantique** : *monde* à gauche, *entités* à droite, *scénario +
+//! enregistrement* en bande du haut, *contrôles + stats* puis *courbes + inspecteur*
+//! en bas.
 //!
 //! C'est ce qui rend la zone centrale auto-ajustée : les `SidePanel`/`TopBottomPanel`
 //! *réservent* leur espace, donc `ctx.available_rect()` se réduit au centre, et
@@ -20,55 +24,71 @@ use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use teemlab::config::Archetype;
 use teemlab::genotype::Genotype;
+use teemlab::metrics::History;
 use teemlab::selection::Selection;
 
 use crate::controls::{self, SimControls};
 use crate::editor::{self, Palette};
-use crate::hud::{self, History};
+use crate::hud;
 use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 
-/// Barre du haut, pleine largeur : **contrôles** (pause/pas/vitesse/réinit.) à
-/// gauche, **stats** à droite, même ligne.
+/// Bande du haut, pleine largeur : **scénario** (choisir / recharger / sauver-charger)
+/// à gauche, **enregistrement** vidéo à droite — tout l'IO « entrée/sortie » d'une run.
 pub fn top_bar(
     mut contexts: EguiContexts,
-    mut sim_controls: ResMut<SimControls>,
-    mut vtime: ResMut<Time<Virtual>>,
-    agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
+    mut runs_panel: ResMut<RunsPanel>,
+    mut config: ResMut<SimConfig>,
+    mut recorder_panel: ResMut<RecorderPanel>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            controls::controls_section(ui, &mut sim_controls, &mut vtime);
+        // Deux groupes verticaux côte à côte : chacun empile ses propres lignes sans
+        // que l'`horizontal` extérieur ne les mette bout à bout.
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.heading("Scénario");
+                runs::scenario_section(ui, &mut runs_panel, &mut config);
+            });
             ui.separator();
-            editor::stats_section(ui, &agents);
+            ui.vertical(|ui| {
+                ui.heading("Enregistrement");
+                recorder::recorder_section(ui, &mut recorder_panel);
+            });
         });
     });
     Ok(())
 }
 
-/// Colonne de gauche, redimensionnable : les quatre outils d'édition empilés de
-/// haut en bas, chacun dans un en-tête repliable (une seule `ScrollArea` car la
-/// colonne est haute).
-pub fn left_tools(
+/// Colonne de gauche, redimensionnable : le **monde** — paramètres globaux de
+/// scénario (arène, cadence, graine, fonds), bornes des gènes et table de relations.
+pub fn left_tools(mut contexts: EguiContexts, mut config: ResMut<SimConfig>) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    egui::SidePanel::left("left_tools")
+        .resizable(true)
+        .default_width(280.0)
+        .show(ctx, |ui| {
+            ui.heading("Monde");
+            egui::ScrollArea::vertical().show(ui, |ui| editor::world_section(ui, &mut config));
+        });
+    Ok(())
+}
+
+/// Colonne de droite, redimensionnable : les **entités** — palette d'archétypes
+/// (sélecteur + bibliothèque d'espèces) et éditeur de l'archétype sélectionné.
+pub fn right_panel(
     mut contexts: EguiContexts,
-    mut runs_panel: ResMut<RunsPanel>,
     mut palette: ResMut<Palette>,
     mut config: ResMut<SimConfig>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::left("left_tools")
+    egui::SidePanel::right("right_panel")
         .resizable(true)
-        .default_width(300.0)
+        .default_width(320.0)
         .show(ctx, |ui| {
+            ui.heading("Entités");
             egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::CollapsingHeader::new("Runs & scénarios")
-                    .default_open(true)
-                    .show(ui, |ui| runs::runs_section(ui, &mut runs_panel));
-                egui::CollapsingHeader::new("Monde")
-                    .default_open(true)
-                    .show(ui, |ui| editor::world_section(ui, &mut config));
                 egui::CollapsingHeader::new("Archétypes")
                     .default_open(true)
                     .show(ui, |ui| {
@@ -84,20 +104,26 @@ pub fn left_tools(
     Ok(())
 }
 
-/// Colonne de droite, redimensionnable : l'enregistrement vidéo.
-pub fn right_panel(mut contexts: EguiContexts, mut panel: ResMut<RecorderPanel>) -> Result {
+/// Bandeau du bas (juste sous la sim) : **contrôles** (pause/pas/vitesse/réinit.) à
+/// gauche, **stats globales** à droite, même ligne.
+pub fn bottom_bar(
+    mut contexts: EguiContexts,
+    mut sim_controls: ResMut<SimControls>,
+    mut vtime: ResMut<Time<Virtual>>,
+    agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
+) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::right("right_panel")
-        .resizable(true)
-        .default_width(240.0)
-        .show(ctx, |ui| {
-            ui.heading("Enregistrement");
-            recorder::recorder_section(ui, &mut panel);
+    egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            controls::controls_section(ui, &mut sim_controls, &mut vtime);
+            ui.separator();
+            editor::stats_section(ui, &agents);
         });
+    });
     Ok(())
 }
 
-/// Bandeau du bas, redimensionnable : courbes d'évolution (gauche) et inspecteur
+/// Panneau du bas, redimensionnable : courbes d'évolution (gauche) et inspecteur
 /// d'agent (droite), en deux colonnes.
 pub fn bottom_panel(
     mut contexts: EguiContexts,

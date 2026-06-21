@@ -19,6 +19,7 @@ use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
 use teemlab::config::{Archetype, Relation};
 use teemlab::genotype::{Genotype, TRAITS};
+use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 
 /// La palette / l'état de l'éditeur. La **liste d'archétypes** vit désormais dans
@@ -34,9 +35,7 @@ pub struct Palette {
     /// Graine roulante pour donner un flux distinct au cerveau de chaque agent
     /// posé à la main.
     pub next_seed: u64,
-    /// Chemin de sauvegarde/chargement RON.
-    pub save_path: String,
-    /// Dernier message d'état (sauvegarde/chargement).
+    /// Dernier message d'état (capture d'archétype, import/export d'espèce).
     pub status: String,
     /// Bibliothèque d'espèces : fichiers `species/*.ron` trouvés au dernier scan.
     pub species_files: Vec<String>,
@@ -57,7 +56,6 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         dragging: None,
         selected: None,
         next_seed: config.seed ^ 0xED17,
-        save_path: "scenarios/edited.ron".to_string(),
         status: String::new(),
         species_files: scan_species(),
         species_selected: None,
@@ -449,10 +447,9 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
-/// Section « éditeur » : édition des gènes de l'archétype sélectionné + save/load
-/// RON. Rendue sous le sélecteur. Rend explicite la distinction **archétype** (le
-/// modèle édité ici) / **génome** (la copie héritée par chaque instance, qui mute
-/// ensuite seule).
+/// Section « éditeur » : édition des gènes de l'archétype sélectionné. Rendue sous le
+/// sélecteur. Rend explicite la distinction **archétype** (le modèle édité ici) /
+/// **génome** (la copie héritée par chaque instance, qui mute ensuite seule).
 pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
     match palette.selected {
         Some(i) if i < config.archetypes.len() => archetype_editor(ui, config, i),
@@ -461,31 +458,11 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
         }
     }
 
-    ui.separator();
-    ui.label("Scénario (RON)");
-    ui.text_edit_singleline(&mut palette.save_path);
-    ui.horizontal(|ui| {
-        if ui.button("💾 Sauver").clicked() {
-            let path = palette.save_path.clone();
-            palette.status = match config.save_ron_file(&path) {
-                Ok(()) => format!("Sauvé → {path}"),
-                Err(e) => format!("Échec : {e}"),
-            };
-        }
-        if ui.button("📂 Charger").clicked() {
-            let path = palette.save_path.clone();
-            palette.status = match SimConfig::from_ron_file(&path) {
-                Ok(loaded) => {
-                    *config = loaded;
-                    palette.selected = None;
-                    palette.dragging = None;
-                    format!("Chargé ← {path}")
-                }
-                Err(e) => format!("Échec : {e}"),
-            };
-        }
-    });
+    // Messages de l'éditeur (capture d'archétype, import/export d'espèce) ; l'IO de
+    // scénario (sauver/charger un .ron) vit désormais dans la bande « Scénario »
+    // ([`crate::runs`]), pas ici.
     if !palette.status.is_empty() {
+        ui.separator();
         ui.weak(&palette.status);
     }
 }
@@ -1047,30 +1024,21 @@ pub(crate) fn stats_section(
     ui: &mut egui::Ui,
     agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
 ) {
-    // On sépare les agents **mobiles** des sources **sessiles** (Phase 3b : la
-    // nourriture est un agent au cerveau Sessile). Population et moyennes de gènes ne
-    // portent que sur les mobiles — sinon les centaines de sources, aux gènes figés,
-    // écraseraient les statistiques de la faune.
-    let mobile = || {
-        agents
-            .iter()
-            .filter(|(_, _, b)| !matches!(b, Brain::Sessile(_)))
-    };
-    let population = mobile().count();
-    let food_count = agents.iter().count() - population;
-    let n = population.max(1) as f32;
-    let mean_reserve = mobile().map(|(r, _, _)| r.current).sum::<f32>() / n;
+    // Calcul partagé avec le visualiseur natif Bevy ([`teemlab::metrics::live_stats`])
+    // → mêmes nombres dans la barre egui et dans la vidéo. Population et moyennes de
+    // gènes ne portent que sur la faune mobile ; les sources sessiles ne comptent que
+    // dans `food` (sinon leurs gènes figés écraseraient la dérive de la faune).
+    let stats = metrics::live_stats(agents);
     ui.horizontal_wrapped(|ui| {
-        ui.label(format!("Population : {population}"));
+        ui.label(format!("Population : {}", stats.population));
         ui.separator();
-        ui.label(format!("Nourriture : {food_count}"));
+        ui.label(format!("Nourriture : {}", stats.food));
         ui.separator();
-        ui.label(format!("Réserve moy. : {mean_reserve:.0}"));
+        ui.label(format!("Réserve moy. : {:.0}", stats.mean_reserve));
         ui.separator();
         ui.label("Gènes moy. —");
         // Une moyenne par caractéristique de TRAITS, sans champ codé en dur.
-        for t in &TRAITS {
-            let mean = mobile().map(|(_, g, _)| (t.get)(g)).sum::<f32>() / n;
+        for (t, mean) in TRAITS.iter().zip(&stats.mean_traits) {
             ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
         }
     });

@@ -16,9 +16,8 @@ use bevy_egui::egui;
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Wall};
 use teemlab::ecology::SimRng;
+use teemlab::metrics::History;
 use teemlab::spawn;
-
-use crate::hud::History;
 
 /// État des contrôles : vitesse choisie, pas en attente, reset demandé. Les
 /// boutons (en `EguiPrimaryContextPass`, trop tard pour la boucle fixe de la

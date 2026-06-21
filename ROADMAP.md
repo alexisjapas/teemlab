@@ -75,6 +75,22 @@ ouverts au §9.
   MLP construit) ; les scénarios MLP ont un réseau plus large — `tests/mlp` revalidé (domination sur
   les 5 graines préservée). Unité `mlp_reads_threat_channel` : preuve falsifiable que le canal n'est
   plus ignoré (deux perceptions ≠ par la seule menace → actions ≠).
+- **Visualiseur natif Bevy + réagencement du HUD** : un second backend de rendu des panneaux
+  d'observation (stats, courbes, inspecteur) **en Bevy** (Text2d + Sprite + gizmos), pour qu'ils
+  soient **filmables** — l'overlay egui, lui, ne l'est jamais (§7). La *donnée* est partagée via une
+  couche commune montée dans la lib (`metrics` : `History` + `sample_history`, `live_stats`,
+  `population_curves`/`trait_curves`) → **exactement** les mêmes nombres/courbes qu'egui, deux tracés.
+  Composition **fixe 9:16** : arène carrée en haut, visualiseur en bas (viewports + caméras
+  d'encadrement créées **en lazy** à l'activation — sinon >1 `Camera2d` casse le contexte primaire
+  egui), avec **rotation** des sections (courbes ↔ inspecteur) à intervalle configurable quand la
+  place manque. *Un seul chemin de rendu* (`dataviz::DataVizPlugin`) : le mode **présentation** du
+  fenêtré (touche **F1**, masque egui) est strictement identique à la vidéo. `record` l'active **par
+  défaut** (cible 1080×1920 ; `--no-hud` → ancienne sortie carrée 1080×1080 ; `--hud-interval`).
+  Police **DejaVu Sans** embarquée (`assets/fonts/`, 1er asset du dépôt) car la police Bevy par défaut
+  est ASCII-only (accents, noms de gènes inclus). Panneaux egui ré-agencés **sémantiquement** :
+  *monde* à gauche, *entités* à droite, *scénario + enregistrement* en bande du haut, *contrôles +
+  stats* puis *courbes + inspecteur* en bas. **Snapshots de run supprimés** (item 13, inutilisés) :
+  UI, systèmes, `src/snapshot.rs` et `tests/snapshot.rs` retirés intégralement.
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg, défauts 30 fps / 61 s),
   drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`, …),
   `clippy`/`fmt` propres.
@@ -292,17 +308,21 @@ déjà prédation, compétition et co-évolution (cf. Avida, Tierra, Polyworld).
 
 Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (`Update` / egui).
 
-10. HUD / courbes : population par espèce, dérive des traits normalisés (lecture seule).
+10. HUD / courbes : population par espèce, dérive des traits normalisés (lecture seule). Donnée
+    factorisée dans `metrics` et tracée par deux backends (egui + natif Bevy, cf. §0).
 11. Contrôles : pause, vitesse 0.5×–8×, pas-à-pas, reset (pilotage de `Time<Virtual>` ; le reset
     reconstruit le monde depuis `SimConfig`).
 12. Inspecteur d'agent : génotype, réserve, perception, action courante (lecture seule).
-13. Runs/scénarios à chaud : sélecteur RON, recharge sans relancer le binaire, snapshot de run sérialisé.
+13. Runs/scénarios à chaud : sélecteur RON + sauver/charger par chemin, recharge sans relancer le
+    binaire. *(Les snapshots de run, jadis sérialisés ici, ont été retirés — cf. §0.)*
 
 ### P3 — Capture vidéo (réalisé)
 
 14. Rendu headless → `ffmpeg` (pipe direct des frames, sans PNG intermédiaire ; re-render frais).
     Menu d'enregistrement intégré au build fenêtré (lance `record` en sous-process). Rendu de la sim
-    factorisé (`VisualsPlugin`) partagé fenêtré ⇄ enregistreur.
+    factorisé (`VisualsPlugin`) partagé fenêtré ⇄ enregistreur. **HUD natif incrustable** (stats /
+    courbes / inspecteur en Bevy, composition 9:16 ; `--hud` par défaut, `--no-hud`), partagé avec le
+    mode présentation du fenêtré via `DataVizPlugin` + `MetricsPlugin` (cf. §0).
 
 ### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu, en cours)
 
@@ -577,7 +597,7 @@ Le régime générationnel teste l'axe A : il doit entrer comme recomposition le
   hors-sim sans que le système continu en dépende. Pas d'`enum Regime` fermé.
 - **Stepping manuel headless** : `app.update()` en boucle serrée exige `app.finish()` puis
   `app.cleanup()` au préalable (Avian insère des ressources dans `Plugin::finish()`). Éprouvé dans
-  `tests/containment.rs` et `tests/snapshot.rs`.
+  `tests/containment.rs`.
 - **MLP** (item 18b, **fait** pour le cœur) : variant `Brain::Mlp` (enum déjà `serde`) sur le contrat
   `Perception → Action`, en régime continu, substitution **par espèce** (couture 18a). Poids mutés dans
   `Brain::reproduce` (neuroévolution mutation-seule). Visualisation graphe **faite** (18b-viz : éditeur

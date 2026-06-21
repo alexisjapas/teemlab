@@ -17,6 +17,8 @@ mod runs;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use teemlab::dataviz::{DataViz, DataVizPlugin};
+use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::SelectionRenderPlugin;
 use teemlab::visuals::VisualsPlugin;
 use teemlab::{SimConfig, SimPlugin};
@@ -44,7 +46,16 @@ fn main() {
         // l'enregistreur (qui, lui, pilote la sélection automatiquement). Ici la cible
         // vient du picking souris (cf. `inspector`). Fournit aussi la ressource `Selection`.
         .add_plugins(SelectionRenderPlugin)
-        .init_resource::<hud::History>()
+        // Échantillonnage des courbes (ressource `History` + `sample_history`), partagé
+        // avec l'enregistreur vidéo : l'aperçu live et la vidéo tracent la même donnée.
+        .add_plugins(MetricsPlugin)
+        // Visualiseur natif Bevy — **désactivé** par défaut, basculé par F1 (mode
+        // présentation : recompose la vue en 9:16, masque egui, strictement identique à la
+        // vidéo). Partagé avec `record` (qui l'active par défaut).
+        .add_plugins(DataVizPlugin {
+            enabled: false,
+            interval: 6.0,
+        })
         .init_resource::<controls::SimControls>()
         .init_resource::<recorder::RecorderPanel>()
         // La sim démarre **en pause** (on prépare la run avant de la lancer).
@@ -68,16 +79,14 @@ fn main() {
                 controls::drive_steps,
                 runs::apply_scenario_load,
                 controls::apply_reset,
-                runs::save_snapshot,
-                runs::apply_snapshot_load,
             )
                 .chain(),
         )
         // RENDU / OBSERVATION UNIQUEMENT — jamais de logique de sim ici.
         // Le rendu de la sim (mesh, arène, vision) vit dans `VisualsPlugin` ;
-        // ici, l'observation propre au build fenêtré : `hud::sample_history` ne
-        // fait que *lire* l'état pour les courbes, l'inspecteur surligne la sélection.
-        .add_systems(Update, (hud::sample_history, recorder::drive_recorder))
+        // l'échantillonnage des courbes dans `MetricsPlugin` (lib, partagé) ; ici, le
+        // pilote d'enregistrement vidéo et la bascule du mode présentation (F1).
+        .add_systems(Update, (recorder::drive_recorder, toggle_dataviz))
         // UI egui — **panneaux dockés fixes** autour de la zone de simulation
         // centrale (cf. `panels`). L'ordre est **chaîné** et compte : les panneaux
         // d'abord (ils réservent les bords), puis les interactions APRÈS — sinon
@@ -88,14 +97,22 @@ fn main() {
         .add_systems(
             EguiPrimaryContextPass,
             (
-                panels::top_bar,
-                panels::left_tools,
-                panels::right_panel,
-                panels::bottom_panel,
+                // Les panneaux egui (et le cadrage central `set_sim_camera`) ne tournent
+                // qu'en mode normal : en présentation (F1), `dataviz` recompose la vue en
+                // 9:16 et egui s'efface. Le picking/édition souris reste actif (egui masqué
+                // ⇒ `is_pointer_over_area` faux ⇒ clics dans l'arène pris en compte).
+                panels::top_bar.run_if(viz_inactive),
+                panels::left_tools.run_if(viz_inactive),
+                panels::right_panel.run_if(viz_inactive),
+                // `bottom_panel` (courbes/inspecteur) avant `bottom_bar` : le premier
+                // panneau bas réserve le bord inférieur, donc les courbes/inspecteur
+                // occupent le bas et le bandeau contrôles/stats se cale juste sous la sim.
+                panels::bottom_panel.run_if(viz_inactive),
+                panels::bottom_bar.run_if(viz_inactive),
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,
-                set_sim_camera,
+                set_sim_camera.run_if(viz_inactive),
             )
                 .chain(),
         )
@@ -104,6 +121,20 @@ fn main() {
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
+
+/// Bascule le **mode présentation** (visualiseur natif Bevy) avec F1 : la vue se
+/// recompose en 9:16 (arène + visualiseur), egui s'efface — un aperçu fidèle de la vidéo.
+fn toggle_dataviz(keys: Res<ButtonInput<KeyCode>>, mut viz: ResMut<DataViz>) {
+    if keys.just_pressed(KeyCode::F1) {
+        viz.active = !viz.active;
+    }
+}
+
+/// Condition : vrai quand le visualiseur natif est **inactif** (mode egui normal). Garde
+/// les panneaux dockés et `set_sim_camera` du mode présentation.
+fn viz_inactive(viz: Res<DataViz>) -> bool {
+    !viz.active
 }
 
 /// Cadre la simulation dans la zone centrale laissée libre par les **panneaux

@@ -31,6 +31,10 @@ pub struct RecorderPanel {
     select: SelectionRoll,
     /// Intervalle (s) entre deux changements de sélection (modes « à timer »).
     select_interval: f32,
+    /// Incruster le **visualiseur natif** (stats / courbes / inspecteur) en composition 9:16.
+    hud: bool,
+    /// Intervalle (s) de rotation des sections du visualiseur (courbes ↔ inspecteur).
+    hud_interval: f32,
     status: String,
     /// Le sous-process `record` tant qu'il tourne (sinon `None`).
     child: Option<Child>,
@@ -44,14 +48,18 @@ impl Default for RecorderPanel {
             out: "outputs/run.mp4".into(),
             fps: 30.0,
             seconds: 61.0,
-            // Carré 1080×1080 par défaut : l'arène est carrée (cadrage « tout
-            // voir »), donc une cible carrée évite les bandes de hors-jeu.
+            // Portrait 9:16 par défaut : le visualiseur est incrusté (arène carrée en
+            // haut, stats/courbes/inspecteur en bas). Décocher « HUD » et choisir
+            // 1080×1080 pour l'ancienne vidéo carrée de la seule arène.
             width: 1080,
-            height: 1080,
+            height: 1920,
             // Doyen par défaut : on suit le survivant (calme, change peu) → les rayons
             // sont visibles dans la vidéo sans réglage. « Aucune » désactive.
             select: SelectionRoll::Eldest,
             select_interval: 4.0,
+            // Visualiseur incrusté par défaut (cf. `record --hud`).
+            hud: true,
+            hud_interval: 6.0,
             status: String::new(),
             child: None,
             launch_requested: false,
@@ -127,6 +135,25 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     }
 
     ui.separator();
+    // Visualiseur natif incrusté : compose la vidéo en 9:16 (arène + stats/courbes/
+    // inspecteur), identique au mode présentation (F1) du fenêtré.
+    ui.checkbox(
+        &mut panel.hud,
+        "HUD incrusté (stats / courbes / inspecteur)",
+    )
+    .on_hover_text(
+        "Compose la vidéo en 9:16 : arène en haut, visualiseur natif en bas (identique \
+             au mode présentation F1). Décoché : vidéo de la seule arène (choisir alors \
+             1080×1080).",
+    );
+    if panel.hud {
+        ui.add(
+            egui::Slider::new(&mut panel.hud_interval, 1.0..=30.0).text("rotation sections (s)"),
+        )
+        .on_hover_text("Temps entre deux sections affichées (courbes ↔ inspecteur).");
+    }
+
+    ui.separator();
     if recording {
         ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
         ui.spinner();
@@ -188,29 +215,34 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
         panel.width,
         panel.height,
     );
-    // Sélection automatique passée en arguments (réglage de rendu, pas du scénario) →
-    // `record` la pilote sans toucher au RON temporaire.
+    // Sélection automatique + HUD passés en arguments (réglages de rendu, pas du scénario)
+    // → `record` les pilote sans toucher au RON temporaire.
     let (select, select_interval) = (panel.select.cli(), panel.select_interval.to_string());
-    match Command::new(record_binary())
-        .arg(&scenario)
-        .args([
-            "--out",
-            &out,
-            "--fps",
-            &fps.to_string(),
-            "--seconds",
-            &seconds.to_string(),
-            "--width",
-            &width.to_string(),
-            "--height",
-            &height.to_string(),
-            "--select",
-            select,
-            "--select-interval",
-            &select_interval,
-        ])
-        .spawn()
-    {
+    let hud_interval = panel.hud_interval.to_string();
+    let mut cmd = Command::new(record_binary());
+    cmd.arg(&scenario).args([
+        "--out",
+        &out,
+        "--fps",
+        &fps.to_string(),
+        "--seconds",
+        &seconds.to_string(),
+        "--width",
+        &width.to_string(),
+        "--height",
+        &height.to_string(),
+        "--select",
+        select,
+        "--select-interval",
+        &select_interval,
+        "--hud-interval",
+        &hud_interval,
+    ]);
+    // HUD activé par défaut côté `record` : on ne passe `--no-hud` que s'il est décoché.
+    if !panel.hud {
+        cmd.arg("--no-hud");
+    }
+    match cmd.spawn() {
         Ok(child) => {
             panel.child = Some(child);
             panel.status = format!("Enregistrement en cours → {out}");

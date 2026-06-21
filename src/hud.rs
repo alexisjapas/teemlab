@@ -1,166 +1,33 @@
-//! HUD du build fenêtré : **courbes d'évolution en temps réel** (item 10).
+//! HUD egui du build fenêtré : **tracé des courbes** d'évolution.
 //!
-//! Module du *binaire* fenêtré uniquement (jamais compilé dans le headless) :
-//! comme [`crate::editor`], tout ce qui touche egui vit ici, à l'écart du cœur
-//! render-agnostic.
+//! Module du *binaire* fenêtré uniquement. Depuis le déménagement de l'échantillonnage
+//! dans la lib ([`teemlab::metrics`]), ce module ne fait plus que **tracer** (au
+//! `Painter` d'egui) la donnée déjà calculée — les mêmes [`Curve`] que le visualiseur
+//! natif Bevy ([`teemlab::dataviz`]), d'où des courbes identiques entre l'aperçu egui et
+//! la vidéo.
 //!
-//! On respecte l'invariant cardinal : aucune logique de simulation ici. Le HUD
-//! ne fait que **lire** l'état du monde pour l'afficher — il n'écrit jamais dans
-//! la sim. L'échantillonnage tourne dans `Update` et se cale sur `Time<Virtual>`
-//! (donc il se fige avec la pause et suit l'accéléré, comme la sim — cf. §6).
+//! On respecte l'invariant cardinal : aucune logique de simulation ici — ce module ne
+//! fait que **lire** l'historique pour l'afficher.
 //!
-//! Pas de dépendance de tracé externe (egui_plot) : on dessine les polylignes à
-//! la main avec le `Painter` d'egui — dans l'esprit « fait maison » du projet et
-//! sans version à accorder avec l'egui qu'embarque bevy_egui.
+//! Pas de dépendance de tracé externe (egui_plot) : on dessine les polylignes à la main
+//! avec le `Painter` d'egui — dans l'esprit « fait maison » du projet.
 
-use std::collections::VecDeque;
-
-use bevy::prelude::*;
 use bevy_egui::egui;
 use teemlab::SimConfig;
-use teemlab::components::{Agent, Species};
-use teemlab::config::Bounds;
-use teemlab::genotype::{Genotype, TRAITS};
+use teemlab::metrics::{Curve, History, population_curves, trait_curves};
 
-/// Couleur de la courbe d'une espèce : sa **vraie couleur d'archétype** (celle des
-/// entités à l'écran), pour que la légende corresponde au monde. Repli sur la palette
-/// par index pour un archétype hors-liste.
-fn species_line_color(config: &SimConfig, sp: u16) -> egui::Color32 {
-    let [r, g, b] = config.color_of(sp);
-    let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
-    egui::Color32::from_rgb(q(r), q(g), q(b))
-}
-
-/// Un instantané de métriques, daté en temps simulé.
-struct Sample {
-    /// Temps simulé (`Time<Virtual>`) de l'échantillon, en secondes.
-    t: f32,
-    /// Population vivante par espèce (indexée comme `Species`).
-    population: Vec<u32>,
-    /// Sources de nourriture présentes (somme des espèces **sessiles**, Phase 3b).
-    food: u32,
-    // Gènes moyens, un par caractéristique de [`TRAITS`] (même ordre), chacun
-    // **normalisé dans ses bornes** (`[0, 1]`) pour que des traits d'échelles
-    // différentes (vitesse vs angle) se comparent sur un seul graphe.
-    traits: Vec<f32>,
-}
-
-/// Historique glissant des métriques — l'état du HUD. Vit dans le binaire
-/// fenêtré seul (jamais dans la sim).
-#[derive(Resource)]
-pub struct History {
-    /// Intervalle entre deux échantillons, en secondes simulées.
-    interval: f32,
-    /// Nombre maximal d'échantillons conservés (fenêtre glissante).
-    max_samples: usize,
-    /// Prochain instant d'échantillonnage (temps simulé).
-    next_at: f32,
-    /// Les échantillons, du plus ancien au plus récent.
-    samples: VecDeque<Sample>,
-}
-
-impl Default for History {
-    fn default() -> Self {
-        Self {
-            interval: 0.5,
-            max_samples: 1200, // 0,5 s × 1200 = 10 min de temps simulé
-            next_at: 0.0,
-            samples: VecDeque::new(),
-        }
-    }
-}
-
-impl History {
-    /// Repart de zéro : vide les échantillons et réarme l'horloge. Appelé par le
-    /// bouton « Effacer » du HUD et par la réinitialisation à chaud (item 11).
-    pub fn clear(&mut self) {
-        self.samples.clear();
-        self.next_at = 0.0;
-    }
-}
-
-/// Normalise une valeur de gène dans ses bornes, vers `[0, 1]`.
-fn norm(v: f32, b: Bounds) -> f32 {
-    if b.span() > 0.0 {
-        ((v - b.min) / b.span()).clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
-/// Échantillonne les métriques du monde à cadence fixe en temps simulé. Lecture
-/// seule : c'est de l'observation pour affichage, pas de la logique de sim — d'où
-/// sa place légitime dans `Update`.
-pub fn sample_history(
-    time: Res<Time<Virtual>>,
-    config: Res<SimConfig>,
-    mut history: ResMut<History>,
-    agents: Query<(&Species, &Genotype), With<Agent>>,
-) {
-    let now = time.elapsed_secs();
-    if now < history.next_at {
-        return;
-    }
-    history.next_at = now + history.interval;
-
-    let species_count = config.species_cardinality() as usize;
-    let mut population = vec![0u32; species_count];
-    let mut sums = vec![0.0_f32; TRAITS.len()];
-    let cfg = &*config;
-    let mut n = 0u32;
-    for (species, g) in &agents {
-        let idx = (species.0 as usize).min(species_count - 1);
-        population[idx] += 1;
-        // Moyennes de gènes sur la **faune** seule : les sources sessiles (gènes figés,
-        // souvent en grand nombre) écraseraient la dérive de la faune (même choix que
-        // `editor::stats_section`). Elles comptent dans la population/nourriture, pas ici.
-        if cfg.archetypes.get(idx).is_some_and(|a| a.is_sessile()) {
-            continue;
-        }
-        for (sum, t) in sums.iter_mut().zip(&TRAITS) {
-            *sum += norm((t.get)(g), (t.bounds)(cfg));
-        }
-        n += 1;
-    }
-
-    // Population zéro → on garde les derniers gènes moyens connus (un graphe qui
-    // s'effondre à zéro laisserait croire que les gènes ont fondu, pas que la
-    // population s'est éteinte).
-    let traits = if n > 0 {
-        let inv = 1.0 / n as f32;
-        sums.iter().map(|s| s * inv).collect()
-    } else if let Some(last) = history.samples.back() {
-        last.traits.clone()
-    } else {
-        vec![0.0; TRAITS.len()]
-    };
-
-    // « Nourriture » = somme des espèces sessiles (sources/flore), dérivée de la
-    // population par espèce (Phase 3b : plus de marqueur `Food` à compter).
-    let food = population
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| config.archetypes.get(*i).is_some_and(|a| a.is_sessile()))
-        .map(|(_, &p)| p)
-        .sum();
-
-    history.samples.push_back(Sample {
-        t: now,
-        population,
-        food,
-        traits,
-    });
-    while history.samples.len() > history.max_samples {
-        history.samples.pop_front();
-    }
+/// Convertit une couleur sRGB `[r, g, b] ∈ [0, 1]` (agnostique au backend) en `Color32`.
+fn rgb(c: [f32; 3]) -> egui::Color32 {
+    let q = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+    egui::Color32::from_rgb(q(c[0]), q(c[1]), q(c[2]))
 }
 
 /// Les courbes d'évolution — population par espèce puis dérive des gènes normalisée.
-/// Rendue dans le panneau du bas (à gauche, item dock). Lecture seule de
-/// l'historique (et du `config` pour nommer/colorer/filtrer les espèces).
+/// Rendue dans le panneau du bas. Lecture seule de l'historique (et du `config` pour
+/// nommer/colorer/filtrer les espèces).
 pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &SimConfig) {
     ui.horizontal(|ui| {
-        ui.weak(format!("{} échantillons", history.samples.len()));
+        ui.weak(format!("{} échantillons", history.sample_count()));
         if ui.button("↻ Effacer").clicked() {
             history.clear();
         }
@@ -174,146 +41,44 @@ pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &Sim
     draw_traits(ui, history);
 }
 
-/// Une courbe à tracer : un nom, une couleur, et ses points `[temps, valeur]`.
-struct Line {
-    name: String,
-    color: egui::Color32,
-    pts: Vec<[f32; 2]>,
-}
-
 fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
-    let Some(last) = history.samples.back() else {
+    if history.is_empty() {
         ui.weak("(en attente de données…)");
         return;
-    };
-    let n_species = last.population.len();
-    // Pic de population par espèce sur la fenêtre : on ne trace QUE les espèces qui
-    // existent (ou ont existé). Sans ce filtre, un archétype défini mais d'effectif nul
-    // (p. ex. des prédateurs jamais peuplés) afficherait une courbe à zéro → le graphe
-    // montrerait « plus d'espèces qu'il n'en existe dans le monde ».
-    let mut peak = vec![0u32; n_species];
-    for s in &history.samples {
-        for (i, &p) in s.population.iter().enumerate() {
-            if let Some(pk) = peak.get_mut(i) {
-                *pk = (*pk).max(p);
-            }
-        }
     }
-
-    let mut lines = Vec::new();
-    let mut y_max = 1.0_f32;
-    for (sp, &pk) in peak.iter().enumerate() {
-        // Les espèces **sessiles** (flore / sources) sont agrégées dans la courbe
-        // « nourriture » : pas de courbe individuelle, sinon elles compteraient double.
-        // Et on saute toute espèce absente de la fenêtre.
-        let sessile = config.archetypes.get(sp).is_some_and(|a| a.is_sessile());
-        if sessile || pk == 0 {
-            continue;
-        }
-        let pts: Vec<[f32; 2]> = history
-            .samples
-            .iter()
-            .map(|s| [s.t, *s.population.get(sp).unwrap_or(&0) as f32])
-            .collect();
-        for q in &pts {
-            y_max = y_max.max(q[1]);
-        }
-        let name = config
-            .archetypes
-            .get(sp)
-            .map(|a| a.name.clone())
-            .unwrap_or_else(|| format!("espèce {sp}"));
-        lines.push(Line {
-            name,
-            color: species_line_color(config, sp as u16),
-            pts,
-        });
-    }
-
-    // « Nourriture » = somme des espèces sessiles, tracée seulement si au moins une
-    // source a existé dans la fenêtre (même filtre « ce qui existe » que ci-dessus).
-    if history.samples.iter().any(|s| s.food > 0) {
-        let food: Vec<[f32; 2]> = history
-            .samples
-            .iter()
-            .map(|s| [s.t, s.food as f32])
-            .collect();
-        for q in &food {
-            y_max = y_max.max(q[1]);
-        }
-        lines.push(Line {
-            name: "nourriture".to_string(),
-            color: egui::Color32::from_gray(150),
-            pts: food,
-        });
-    }
-
-    if lines.is_empty() {
+    let (curves, y_max) = population_curves(history, config);
+    if curves.is_empty() {
         ui.weak("(aucune espèce vivante)");
         return;
     }
-    plot(ui, 110.0, &lines, 0.0, y_max * 1.1);
-    legend(ui, &lines);
+    plot(ui, 110.0, &curves, 0.0, y_max * 1.1);
+    legend(ui, &curves);
 }
 
 fn draw_traits(ui: &mut egui::Ui, history: &History) {
-    if history.samples.is_empty() {
+    if history.is_empty() {
         ui.weak("(en attente de données…)");
         return;
     }
-    // Une courbe par caractéristique de TRAITS (même ordre que `Sample::traits`),
-    // sa couleur tirée d'une palette indexée. Ajouter un trait ajoute sa courbe
-    // sans toucher le HUD.
-    let lines: Vec<Line> = TRAITS
-        .iter()
-        .enumerate()
-        .map(|(i, t)| Line {
-            name: t.name.to_string(),
-            color: trait_color(i),
-            pts: history
-                .samples
-                .iter()
-                .map(|s| [s.t, *s.traits.get(i).unwrap_or(&0.0)])
-                .collect(),
-        })
-        .collect();
-
     // Bornes fixes [0, 1] : la dérive se lit contre l'étendue possible du gène.
-    plot(ui, 110.0, &lines, 0.0, 1.0);
-    legend(ui, &lines);
-}
-
-/// Couleur de la courbe du trait d'indice `i` (palette du HUD ; la couleur est
-/// une affaire d'affichage, donc elle vit ici et non dans [`TRAITS`]).
-fn trait_color(i: usize) -> egui::Color32 {
-    const PALETTE: [(u8, u8, u8); 9] = [
-        (120, 200, 255), // bleu
-        (255, 170, 90),  // orange
-        (150, 230, 120), // vert
-        (220, 140, 230), // mauve
-        (240, 220, 120), // jaune
-        (120, 230, 220), // cyan
-        (235, 130, 130), // rouge
-        (180, 180, 180), // gris clair
-        (200, 160, 110), // brun
-    ];
-    let (r, g, b) = PALETTE[i % PALETTE.len()];
-    egui::Color32::from_rgb(r, g, b)
+    let curves = trait_curves(history);
+    plot(ui, 110.0, &curves, 0.0, 1.0);
+    legend(ui, &curves);
 }
 
 /// Une légende : une pastille colorée + le nom de chaque courbe.
-fn legend(ui: &mut egui::Ui, lines: &[Line]) {
+fn legend(ui: &mut egui::Ui, curves: &[Curve]) {
     ui.horizontal_wrapped(|ui| {
-        for l in lines {
-            ui.colored_label(l.color, format!("● {}", l.name));
+        for c in curves {
+            ui.colored_label(rgb(c.color), format!("● {}", c.name));
         }
     });
 }
 
-/// Trace les courbes `lines` dans un cadre de hauteur `height`, l'axe Y borné à
-/// `[y_min, y_max]` et l'axe X couvrant l'étendue temporelle des données. Tracé
-/// maison au `Painter` : un fond, les polylignes, et les graduations Y.
-fn plot(ui: &mut egui::Ui, height: f32, lines: &[Line], y_min: f32, y_max: f32) {
+/// Trace les courbes dans un cadre de hauteur `height`, l'axe Y borné à `[y_min, y_max]`
+/// et l'axe X couvrant l'étendue temporelle des données. Tracé maison au `Painter` : un
+/// fond, les polylignes, et les graduations Y.
+fn plot(ui: &mut egui::Ui, height: f32, curves: &[Curve], y_min: f32, y_max: f32) {
     let width = ui.available_width().max(64.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -324,8 +89,8 @@ fn plot(ui: &mut egui::Ui, height: f32, lines: &[Line], y_min: f32, y_max: f32) 
     );
 
     let (mut x_min, mut x_max) = (f32::MAX, f32::MIN);
-    for l in lines {
-        for q in &l.pts {
+    for c in curves {
+        for q in &c.pts {
             x_min = x_min.min(q[0]);
             x_max = x_max.max(q[0]);
         }
@@ -351,9 +116,9 @@ fn plot(ui: &mut egui::Ui, height: f32, lines: &[Line], y_min: f32, y_max: f32) 
         )
     };
 
-    for l in lines {
-        let stroke = egui::Stroke::new(1.5, l.color);
-        for w in l.pts.windows(2) {
+    for c in curves {
+        let stroke = egui::Stroke::new(1.5, rgb(c.color));
+        for w in c.pts.windows(2) {
             painter.line_segment([map(w[0][0], w[0][1]), map(w[1][0], w[1][1])], stroke);
         }
     }

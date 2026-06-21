@@ -16,13 +16,14 @@
 pub mod brain;
 pub mod components;
 pub mod config;
+pub mod dataviz;
 pub mod ecology;
 pub mod genotype;
 pub mod interaction;
+pub mod metrics;
 pub mod movement;
 pub mod rng;
 pub mod selection;
-pub mod snapshot;
 pub mod spawn;
 pub mod visuals;
 

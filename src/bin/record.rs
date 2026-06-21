@@ -21,7 +21,13 @@
 //! sim hors `FixedUpdate` (invariant cardinal) : on ne fait qu'*observer*.
 //!
 //! Usage : `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
-//! [--width W] [--height H] [--select MODE] [--select-interval S]`.
+//! [--width W] [--height H] [--select MODE] [--select-interval S] [--no-hud]
+//! [--hud-interval S]`.
+//!
+//! `--hud` (défaut) incruste le visualiseur natif (stats / courbes / inspecteur) en
+//! composition **9:16** — arène carrée en haut, visualiseur en bas — strictement
+//! identique au mode « présentation » du fenêtré ; `--no-hud` rend la seule arène
+//! (carré, comportement historique). `--hud-interval` règle la rotation des sections.
 //!
 //! `--select` garde un agent mobile **mis en avant** pendant la vidéo (anneau + rayons de
 //! vision), pour montrer les raycasts aux spectateurs. MODE ∈ `off`, `sticky` (fixe),
@@ -42,6 +48,8 @@ use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
+use teemlab::dataviz::DataVizPlugin;
+use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
 use teemlab::visuals::{VisualsPlugin, srgb3};
 use teemlab::{SimConfig, SimPlugin};
@@ -52,12 +60,18 @@ struct Settings {
     out: String,
     fps: f64,
     seconds: f64,
-    width: u32,
-    height: u32,
+    /// Largeur/hauteur explicites, sinon résolues d'après `hud` (9:16 portrait avec HUD,
+    /// carré sans) — cf. [`main`].
+    width: Option<u32>,
+    height: Option<u32>,
     /// Mode de roulement de la sélection automatique (rayons visibles dans la vidéo).
     select: SelectionRoll,
     /// Intervalle (s) entre deux changements de sélection (modes « à timer »).
     select_interval: f32,
+    /// Incruster le visualiseur natif (stats / courbes / inspecteur), composition 9:16.
+    hud: bool,
+    /// Intervalle (s) de rotation des sections du visualiseur (courbes ↔ inspecteur).
+    hud_interval: f32,
 }
 
 impl Settings {
@@ -67,14 +81,16 @@ impl Settings {
             out: "outputs/out.mp4".into(),
             fps: 30.0,
             seconds: 61.0,
-            // Carré par défaut : l'arène est carrée, donc 1080×1080 la cadre sans
-            // bandes de hors-jeu (cf. menu d'enregistrement du fenêtré).
-            width: 1080,
-            height: 1080,
+            // Dimensions résolues d'après `hud` si non fournies (cf. `main`).
+            width: None,
+            height: None,
             // Doyen par défaut : on met en avant le survivant (rayons visibles dans la
             // vidéo) ; `--select off` désactive.
             select: SelectionRoll::Eldest,
             select_interval: 4.0,
+            // Visualiseur incrusté **par défaut** (§ vidéo) ; `--no-hud` le coupe.
+            hud: true,
+            hud_interval: 6.0,
         };
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
@@ -90,8 +106,20 @@ impl Settings {
                 "--seconds" | "-s" => {
                     s.seconds = next().parse().expect("--seconds : nombre attendu")
                 }
-                "--width" | "-w" => s.width = next().parse().expect("--width : entier attendu"),
-                "--height" | "-h" => s.height = next().parse().expect("--height : entier attendu"),
+                "--width" | "-w" => {
+                    s.width = Some(next().parse().expect("--width : entier attendu"))
+                }
+                "--height" | "-h" => {
+                    s.height = Some(next().parse().expect("--height : entier attendu"))
+                }
+                // Visualiseur incrusté (stats / courbes / inspecteur), composition 9:16.
+                "--hud" => s.hud = true,
+                "--no-hud" => s.hud = false,
+                "--hud-interval" => {
+                    s.hud_interval = next()
+                        .parse()
+                        .expect("--hud-interval : nombre (secondes) attendu");
+                }
                 // Sélection automatique d'un agent pendant la vidéo (pour montrer ses
                 // rayons) ; modes : cf. l'en-tête du module et `SelectionRoll`.
                 "--select" => {
@@ -162,6 +190,16 @@ fn main() -> AppExit {
     };
     let frames = (settings.fps * settings.seconds).round().max(1.0) as u32;
 
+    // Dimensions : 9:16 portrait quand le visualiseur est incrusté (arène carrée en haut,
+    // viz en bas), carré sinon. Une taille explicite l'emporte.
+    let (def_w, def_h) = if settings.hud {
+        (1080, 1920)
+    } else {
+        (1080, 1080)
+    };
+    let width = settings.width.unwrap_or(def_w);
+    let height = settings.height.unwrap_or(def_h);
+
     // On crée le dossier de sortie au besoin (par défaut `outputs/`, ignoré par
     // git) — ffmpeg n'écrit pas dans une arborescence manquante.
     if let Some(parent) = std::path::Path::new(&settings.out).parent()
@@ -185,7 +223,7 @@ fn main() -> AppExit {
             "-pixel_format",
             "rgba",
             "-video_size",
-            &format!("{}x{}", settings.width, settings.height),
+            &format!("{width}x{height}"),
             "-framerate",
             &format!("{}", settings.fps),
             "-i",
@@ -228,12 +266,19 @@ fn main() -> AppExit {
     .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
     .add_plugins(SimPlugin::new(config))
     .add_plugins(VisualsPlugin)
+    // Échantillonnage des courbes (partagé avec le fenêtré) + visualiseur natif incrusté.
+    // Avec HUD, `DataVizPlugin` recompose la cible en 9:16 (arène en haut, viz en bas).
+    .add_plugins(MetricsPlugin)
+    .add_plugins(DataVizPlugin {
+        enabled: settings.hud,
+        interval: settings.hud_interval,
+    })
     // Temps piloté : chaque update avance d'exactement 1/fps, donc la boucle fixe
     // joue le bon nombre de ticks et la vidéo est cadencée au mur près.
     .insert_resource(TimeUpdateStrategy::ManualDuration(frame_dt))
     .insert_resource(RecordPlan {
-        width: settings.width,
-        height: settings.height,
+        width,
+        height,
         frames,
     })
     .insert_resource(FrameSink(tx))
@@ -253,8 +298,14 @@ fn main() -> AppExit {
     }
 
     eprintln!(
-        "record : {} frames à {} fps ({:.1}s), {}×{} → {}",
-        frames, settings.fps, settings.seconds, settings.width, settings.height, settings.out
+        "record : {} frames à {} fps ({:.1}s), {}×{}{} → {}",
+        frames,
+        settings.fps,
+        settings.seconds,
+        width,
+        height,
+        if settings.hud { " +HUD" } else { "" },
+        settings.out
     );
     let exit = app.run();
 
