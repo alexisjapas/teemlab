@@ -207,9 +207,9 @@ fn advance_page(time: Res<Time<Virtual>>, mut viz: ResMut<DataViz>) {
     }
 }
 
-/// `Update` : recompose les viewports en 9:16 quand actif, et restaure le plein cadre à la
-/// désactivation. Le carré du haut reçoit la sim (arène cadrée), la bande du bas le
-/// visualiseur ; les marges (fenêtre non 9:16) sont noircies par la caméra de fond.
+/// `Update` : recompose les viewports en 9:16 **plein cadre** quand actif, et restaure le
+/// cadrage normal à la désactivation. Le carré du haut reçoit la sim (arène cadrée), la bande
+/// du bas le visualiseur ; les marges (cible non 9:16) sont noircies par la caméra de fond.
 fn compose_viewports(
     mut viz: ResMut<DataViz>,
     config: Res<SimConfig>,
@@ -225,24 +225,28 @@ fn compose_viewports(
         let Ok((mut sim_cam, mut sim_proj, mut sim_tf)) = sim.single_mut() else {
             return;
         };
+        // Région de base : toute la cible de rendu (fenêtre ou image vidéo).
         let Some(target) = sim_cam.physical_target_size() else {
             return;
         };
-        let (tw, th) = (target.x as f32, target.y as f32);
-        // Plus grand rectangle 9:16 inscrit dans la cible (lettre-box au besoin).
+        let (bx, by, bw, bh) = (0.0, 0.0, target.x as f32, target.y as f32);
+
+        // Plus grand rectangle 9:16 **inscrit** dans la cible (jamais de débordement → pas de
+        // viewport hors-cible). Sur une cible 9:16 (vidéo 1080×1920) il remplit pile ; sur une
+        // cible plus large/haute, lettre-box (bandes noircies par la caméra de fond).
         const ASPECT: f32 = 9.0 / 16.0;
-        let (rw, rh) = if tw / th > ASPECT {
-            (th * ASPECT, th)
+        let (rw, rh) = if bw / bh > ASPECT {
+            (bh * ASPECT, bh)
         } else {
-            (tw, tw / ASPECT)
+            (bw, bw / ASPECT)
         };
-        let ox = ((tw - rw) * 0.5).max(0.0);
-        let oy = ((th - rh) * 0.5).max(0.0);
+        let ox = bx + (bw - rw) * 0.5;
+        let oy = by + (bh - rh) * 0.5;
         let square = rw; // carré du haut = pleine largeur du cadre 9:16
 
         // Caméra de sim : viewport = carré du haut, arène cadrée (AutoMin), centrée.
         sim_cam.viewport = Some(Viewport {
-            physical_position: UVec2::new(ox as u32, oy as u32),
+            physical_position: UVec2::new(ox.max(0.0) as u32, oy.max(0.0) as u32),
             physical_size: UVec2::new(square.max(1.0) as u32, square.max(1.0) as u32),
             ..default()
         });
@@ -270,14 +274,20 @@ fn compose_viewports(
 
         if let Ok(mut vc) = viz_cam.single_mut() {
             vc.viewport = Some(Viewport {
-                physical_position: UVec2::new(ox as u32, (oy + square) as u32),
+                physical_position: UVec2::new(ox.max(0.0) as u32, (oy + square).max(0.0) as u32),
                 physical_size: UVec2::new(rw.max(1.0) as u32, (rh - square).max(1.0) as u32),
                 ..default()
             });
             vc.is_active = true;
         }
+        // Caméra de fond : nettoie **la région** (pas toute la fenêtre, sinon les panneaux
+        // egui seraient noircis) ; ses marges (région non 9:16) restent noires.
         if let Ok(mut lc) = letterbox.single_mut() {
-            lc.viewport = None;
+            lc.viewport = Some(Viewport {
+                physical_position: UVec2::new(bx.max(0.0) as u32, by.max(0.0) as u32),
+                physical_size: UVec2::new(bw.max(1.0) as u32, bh.max(1.0) as u32),
+                ..default()
+            });
             lc.is_active = true;
         }
     } else if viz.was_active {

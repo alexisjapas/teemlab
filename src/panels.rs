@@ -34,8 +34,10 @@ use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 
-/// Bande du haut, pleine largeur : **scénario** (choisir / recharger / sauver-charger)
-/// à gauche, **enregistrement** vidéo à droite — tout l'IO « entrée/sortie » d'une run.
+/// Bande du haut, **une seule ligne** : **scénario** (choisir / recharger / sauver-charger)
+/// calé à gauche, **enregistrement** vidéo calé **à droite** — tout l'IO « entrée/sortie »
+/// d'une run. L'enregistrement est aligné à droite via un layout `right_to_left` ; un
+/// `left_to_right` imbriqué préserve l'ordre de lecture de ses widgets.
 pub fn top_bar(
     mut contexts: EguiContexts,
     mut runs_panel: ResMut<RunsPanel>,
@@ -44,19 +46,20 @@ pub fn top_bar(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-        // Deux groupes verticaux côte à côte : chacun empile ses propres lignes sans
-        // que l'`horizontal` extérieur ne les mette bout à bout.
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.heading("Scénario");
+        // Barre **forcée pleine largeur** : sinon le `right_to_left` n'a pas d'espace pour
+        // pousser l'enregistrement à droite. Scénario à gauche (ordre normal), enregistrement
+        // collé à droite (émis en ordre inverse, cf. `recorder_section`).
+        let row_h = ui.spacing().interact_size.y;
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), row_h),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
                 runs::scenario_section(ui, &mut runs_panel, &mut config);
-            });
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.heading("Enregistrement");
-                recorder::recorder_section(ui, &mut recorder_panel);
-            });
-        });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    recorder::recorder_section(ui, &mut recorder_panel);
+                });
+            },
+        );
     });
     Ok(())
 }
@@ -105,7 +108,8 @@ pub fn right_panel(
 }
 
 /// Bandeau du bas (juste sous la sim) : **contrôles** (pause/pas/vitesse/réinit.) à
-/// gauche, **stats globales** à droite, même ligne.
+/// gauche, **stats globales** à droite, même ligne. (Le visualiseur natif Bevy n'existe que
+/// pour la vidéo, cf. `bin/record` ; il n'y a pas de bascule ici.)
 pub fn bottom_bar(
     mut contexts: EguiContexts,
     mut sim_controls: ResMut<SimControls>,

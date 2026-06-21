@@ -84,53 +84,57 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
     let mut pending = None;
     let mut rescan = false;
 
-    ui.horizontal(|ui| {
-        ui.strong("Scénario :");
-        let label = selected
-            .and_then(|i| scenarios.get(i))
-            .map(String::as_str)
-            .unwrap_or("(choisir…)");
-        egui::ComboBox::from_id_salt("scenario_combo")
-            .selected_text(label)
-            .show_ui(ui, |ui| {
-                for (i, path) in scenarios.iter().enumerate() {
-                    ui.selectable_value(&mut selected, Some(i), path);
-                }
-            });
-        if ui
-            .button("↻")
-            .on_hover_text("Rescanner scenarios/")
-            .clicked()
-        {
-            rescan = true;
-        }
-        if ui
-            .add_enabled(selected.is_some(), egui::Button::new("⟲ Recharger"))
-            .on_hover_text("Charge le scénario sélectionné et redémarre la run.")
-            .clicked()
-            && let Some(path) = selected.and_then(|i| scenarios.get(i))
-        {
-            pending = Some(RunAction::LoadScenario(path.clone()));
-        }
-    });
+    // Émis **inline** (pas de `ui.horizontal` propre) : `top_bar` enveloppe scénario +
+    // enregistrement dans un même `horizontal_wrapped` → une seule ligne en haut.
+    ui.strong("Scénario :");
+    let label = selected
+        .and_then(|i| scenarios.get(i))
+        .map(String::as_str)
+        .unwrap_or("(choisir…)");
+    egui::ComboBox::from_id_salt("scenario_combo")
+        .selected_text(label)
+        .show_ui(ui, |ui| {
+            for (i, path) in scenarios.iter().enumerate() {
+                ui.selectable_value(&mut selected, Some(i), path);
+            }
+        });
+    if ui
+        .button("↻")
+        .on_hover_text("Rescanner scenarios/")
+        .clicked()
+    {
+        rescan = true;
+    }
+    if ui
+        .add_enabled(selected.is_some(), egui::Button::new("⟲ Recharger"))
+        .on_hover_text("Charge le scénario sélectionné et redémarre la run.")
+        .clicked()
+        && let Some(path) = selected.and_then(|i| scenarios.get(i))
+    {
+        pending = Some(RunAction::LoadScenario(path.clone()));
+    }
 
-    ui.horizontal(|ui| {
-        ui.label("Fichier RON :");
-        ui.text_edit_singleline(&mut scenario_path);
-        if ui.button("💾 Sauver").clicked() {
-            panel.status = match config.save_ron_file(&scenario_path) {
-                Ok(()) => format!("Sauvé → {scenario_path}"),
-                Err(e) => format!("Échec : {e}"),
-            };
-        }
-        if ui
-            .button("📂 Charger")
-            .on_hover_text("Charge ce fichier et redémarre la run.")
-            .clicked()
-        {
-            pending = Some(RunAction::LoadScenario(scenario_path.clone()));
-        }
-    });
+    ui.separator();
+    ui.label("RON :");
+    ui.add(egui::TextEdit::singleline(&mut scenario_path).desired_width(140.0))
+        .on_hover_text("Fichier de scénario (.ron)");
+    if ui
+        .button("💾")
+        .on_hover_text("Sauver le scénario courant")
+        .clicked()
+    {
+        panel.status = match config.save_ron_file(&scenario_path) {
+            Ok(()) => format!("Sauvé → {scenario_path}"),
+            Err(e) => format!("Échec : {e}"),
+        };
+    }
+    if ui
+        .button("📂")
+        .on_hover_text("Charger ce fichier et redémarrer la run")
+        .clicked()
+    {
+        pending = Some(RunAction::LoadScenario(scenario_path.clone()));
+    }
 
     if !panel.status.is_empty() {
         ui.weak(&panel.status);

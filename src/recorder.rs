@@ -85,89 +85,86 @@ fn record_binary() -> PathBuf {
     PathBuf::from("record")
 }
 
-/// La section « Enregistrement », rendue dans le panneau de droite (item dock). Ne
-/// fait que lire/écrire son propre état et poser `launch_requested` ; le lancement et
-/// le suivi vivent dans [`drive_recorder`].
+/// La section « Enregistrement », collée **à droite** de la barre du haut. L'appelant
+/// ([`crate::panels::top_bar`]) l'enveloppe dans un layout `right_to_left` (seul moyen fiable
+/// d'aligner un groupe à droite dans cette version d'egui) — on émet donc les widgets en
+/// **ordre inverse** (droite→gauche) pour que la lecture finale soit gauche→droite. Sliders →
+/// `DragValue` compacts, libellés longs en infobulles. Ne fait que lire/écrire son état et
+/// poser `launch_requested` ; le lancement et le suivi vivent dans [`drive_recorder`].
 pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     let recording = panel.child.is_some();
-    ui.small(
-        "Ré-exécute le scénario courant à frais (rendu headless propre, \
-         sans cette interface) et l'encode en vidéo via ffmpeg.",
-    );
-    ui.separator();
 
-    ui.horizontal(|ui| {
-        ui.label("Fichier :");
-        ui.text_edit_singleline(&mut panel.out);
-    });
-    ui.add(egui::Slider::new(&mut panel.seconds, 1.0..=120.0).text("Durée (s)"));
-    ui.add(egui::Slider::new(&mut panel.fps, 24.0..=60.0).text("FPS"));
-    ui.horizontal(|ui| {
-        ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
-            .on_hover_text("Largeur (px)");
-        ui.label("×");
-        ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
-            .on_hover_text("Hauteur (px)");
-    });
-
-    ui.separator();
-    // Sélection automatique : montrer en continu les rayons d'un agent dans la vidéo,
-    // sans intervention. Le « mode de roulement » choisit comment l'agent mis en avant
-    // change au fil du temps.
-    ui.horizontal(|ui| {
-        ui.label("Sélection auto :");
-        egui::ComboBox::from_id_salt("rec_select")
-            .selected_text(panel.select.label())
-            .show_ui(ui, |ui| {
-                for m in SelectionRoll::ALL {
-                    ui.selectable_value(&mut panel.select, m, m.label());
-                }
-            });
-    })
-    .response
-    .on_hover_text(
-        "Garde un agent mobile mis en avant pendant la vidéo (anneau + rayons de vision), \
-         pour que les spectateurs voient les raycasts. « Aucune » = vidéo inchangée.",
-    );
-    if panel.select.rolls() {
-        ui.add(egui::Slider::new(&mut panel.select_interval, 0.5..=30.0).text("intervalle (s)"))
-            .on_hover_text("Temps entre deux changements d'agent mis en avant.");
+    // ⚠ Ordre INVERSE (le layout parent est `right_to_left`). Le plus à droite d'abord.
+    if !panel.status.is_empty() {
+        ui.weak(&panel.status);
     }
-
-    ui.separator();
-    // Visualiseur natif incrusté : compose la vidéo en 9:16 (arène + stats/courbes/
-    // inspecteur), identique au mode présentation (F1) du fenêtré.
-    ui.checkbox(
-        &mut panel.hud,
-        "HUD incrusté (stats / courbes / inspecteur)",
-    )
-    .on_hover_text(
-        "Compose la vidéo en 9:16 : arène en haut, visualiseur natif en bas (identique \
-             au mode présentation F1). Décoché : vidéo de la seule arène (choisir alors \
-             1080×1080).",
-    );
-    if panel.hud {
-        ui.add(
-            egui::Slider::new(&mut panel.hud_interval, 1.0..=30.0).text("rotation sections (s)"),
-        )
-        .on_hover_text("Temps entre deux sections affichées (courbes ↔ inspecteur).");
-    }
-
-    ui.separator();
     if recording {
-        ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
         ui.spinner();
+        ui.add_enabled(false, egui::Button::new("⏺ Enregistrement…"));
     } else if ui
-        .button("⏺ Lancer l'enregistrement")
+        .button("⏺ Enregistrer")
         .on_hover_text("Lance le binaire headless `record` en sous-processus.")
         .clicked()
     {
         panel.launch_requested = true;
     }
 
-    if !panel.status.is_empty() {
-        ui.weak(&panel.status);
+    // Visualiseur natif incrusté : compose la vidéo en 9:16 (identique au mode F1).
+    if panel.hud {
+        ui.add(
+            egui::DragValue::new(&mut panel.hud_interval)
+                .range(1.0..=30.0)
+                .suffix(" s"),
+        )
+        .on_hover_text("Rotation des sections (courbes ↔ inspecteur)");
     }
+    ui.checkbox(&mut panel.hud, "HUD").on_hover_text(
+        "Compose la vidéo en 9:16 : arène en haut, visualiseur natif (stats / courbes / \
+         inspecteur) en bas — identique au mode présentation F1. Décoché : vidéo de la \
+         seule arène (choisir alors 1080×1080).",
+    );
+
+    // Sélection automatique : garde un agent mis en avant (anneau + rayons) dans la vidéo.
+    if panel.select.rolls() {
+        ui.add(
+            egui::DragValue::new(&mut panel.select_interval)
+                .range(0.5..=30.0)
+                .suffix(" s"),
+        )
+        .on_hover_text("Intervalle de changement d'agent suivi");
+    }
+    egui::ComboBox::from_id_salt("rec_select")
+        .selected_text(panel.select.label())
+        .show_ui(ui, |ui| {
+            for m in SelectionRoll::ALL {
+                ui.selectable_value(&mut panel.select, m, m.label());
+            }
+        });
+    ui.label("Suivi :");
+
+    ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
+        .on_hover_text("Hauteur (px)");
+    ui.label("×");
+    ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
+        .on_hover_text("Largeur (px)");
+    ui.add(
+        egui::DragValue::new(&mut panel.fps)
+            .range(24.0..=60.0)
+            .suffix(" fps"),
+    )
+    .on_hover_text("Images par seconde");
+    ui.add(
+        egui::DragValue::new(&mut panel.seconds)
+            .range(1.0..=120.0)
+            .suffix(" s"),
+    )
+    .on_hover_text("Durée");
+    ui.add(egui::TextEdit::singleline(&mut panel.out).desired_width(140.0))
+        .on_hover_text("Fichier de sortie");
+    ui.strong("Vidéo :").on_hover_text(
+        "Ré-exécute le scénario courant à frais (rendu headless propre, sans cette \
+         interface) et l'encode via ffmpeg.",
+    );
 }
 
 /// `Update` : surveille la fin du process `record` et, si l'UI l'a demandé,

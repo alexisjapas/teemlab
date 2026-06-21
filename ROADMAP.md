@@ -75,22 +75,22 @@ ouverts au §9.
   MLP construit) ; les scénarios MLP ont un réseau plus large — `tests/mlp` revalidé (domination sur
   les 5 graines préservée). Unité `mlp_reads_threat_channel` : preuve falsifiable que le canal n'est
   plus ignoré (deux perceptions ≠ par la seule menace → actions ≠).
-- **Visualiseur natif Bevy + réagencement du HUD** : un second backend de rendu des panneaux
-  d'observation (stats, courbes, inspecteur) **en Bevy** (Text2d + Sprite + gizmos), pour qu'ils
-  soient **filmables** — l'overlay egui, lui, ne l'est jamais (§7). La *donnée* est partagée via une
-  couche commune montée dans la lib (`metrics` : `History` + `sample_history`, `live_stats`,
-  `population_curves`/`trait_curves`) → **exactement** les mêmes nombres/courbes qu'egui, deux tracés.
-  Composition **fixe 9:16** : arène carrée en haut, visualiseur en bas (viewports + caméras
-  d'encadrement créées **en lazy** à l'activation — sinon >1 `Camera2d` casse le contexte primaire
-  egui), avec **rotation** des sections (courbes ↔ inspecteur) à intervalle configurable quand la
-  place manque. *Un seul chemin de rendu* (`dataviz::DataVizPlugin`) : le mode **présentation** du
-  fenêtré (touche **F1**, masque egui) est strictement identique à la vidéo. `record` l'active **par
-  défaut** (cible 1080×1920 ; `--no-hud` → ancienne sortie carrée 1080×1080 ; `--hud-interval`).
-  Police **DejaVu Sans** embarquée (`assets/fonts/`, 1er asset du dépôt) car la police Bevy par défaut
-  est ASCII-only (accents, noms de gènes inclus). Panneaux egui ré-agencés **sémantiquement** :
-  *monde* à gauche, *entités* à droite, *scénario + enregistrement* en bande du haut, *contrôles +
-  stats* puis *courbes + inspecteur* en bas. **Snapshots de run supprimés** (item 13, inutilisés) :
-  UI, systèmes, `src/snapshot.rs` et `tests/snapshot.rs` retirés intégralement.
+- **Visualiseur natif Bevy (vidéo) + réagencement du HUD** : un second backend de rendu des
+  panneaux d'observation (stats, courbes, inspecteur) **en Bevy** (Text2d + Sprite + gizmos), pour
+  qu'ils apparaissent **dans la vidéo** — l'overlay egui, lui, n'est jamais filmé (§7). La *donnée*
+  est partagée via une couche commune montée dans la lib (`metrics` : `History` + `sample_history`,
+  `live_stats`, `population_curves`/`trait_curves`) → **exactement** les mêmes nombres/courbes
+  qu'egui, deux tracés. Composition **9:16** (arène carrée en haut, visualiseur en bas ; viewports +
+  caméra de fond), avec **rotation** des sections (courbes ↔ inspecteur) à intervalle configurable.
+  **Réservé au binaire `record`** (`DataVizPlugin`, actif par défaut, cible 1080×1920 ; `--no-hud`
+  → carré 1080×1080 ; `--hud-interval`). **Pas dans le fenêtré** : bevy_egui rend egui via la caméra
+  de sim, donc recomposer la vue casserait l'UI — l'éditeur reste 100 % egui (cf. mémoire). Police
+  **DejaVu Sans** embarquée (`assets/fonts/`, 1er asset du dépôt) car la police Bevy par défaut est
+  ASCII-only (accents, noms de gènes inclus). Panneaux egui ré-agencés **sémantiquement** : *monde*
+  à gauche, *entités* à droite, *scénario + enregistrement* (sur une seule ligne) en bande du haut,
+  *contrôles + stats* puis *courbes + inspecteur* en bas ; raccourci **Espace** = play/pause.
+  **Snapshots de run supprimés** (item 13, inutilisés) : UI, systèmes, `src/snapshot.rs` et
+  `tests/snapshot.rs` retirés intégralement.
 - Outillage : enregistrement vidéo (re-render headless via ffmpeg, défauts 30 fps / 61 s),
   drivers de test multi-graines (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`, …),
   `clippy`/`fmt` propres.
@@ -321,8 +321,8 @@ Outillage d'observation et de pilotage, entièrement dans le binaire fenêtré (
 14. Rendu headless → `ffmpeg` (pipe direct des frames, sans PNG intermédiaire ; re-render frais).
     Menu d'enregistrement intégré au build fenêtré (lance `record` en sous-process). Rendu de la sim
     factorisé (`VisualsPlugin`) partagé fenêtré ⇄ enregistreur. **HUD natif incrustable** (stats /
-    courbes / inspecteur en Bevy, composition 9:16 ; `--hud` par défaut, `--no-hud`), partagé avec le
-    mode présentation du fenêtré via `DataVizPlugin` + `MetricsPlugin` (cf. §0).
+    courbes / inspecteur en Bevy, composition 9:16 ; `--hud` par défaut, `--no-hud`) via
+    `DataVizPlugin` + `MetricsPlugin` — **propre à `record`** (le fenêtré reste egui, cf. §0).
 
 ### P4 — Sélection naturelle approfondie + intelligence évoluée (régime continu, en cours)
 
