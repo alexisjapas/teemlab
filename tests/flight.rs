@@ -46,6 +46,8 @@ fn prey_sees_and_flees_its_predator() {
                 brain: BrainKind::Hunter,
                 mutable: Mutability::default(),
                 source: None,
+                captured_brain: None,
+                captured_from: None,
             },
             // Espèce 1 : le prédateur, immobile (max_speed 0) — l'épouvantail.
             Archetype {
@@ -61,6 +63,8 @@ fn prey_sees_and_flees_its_predator() {
                 brain: BrainKind::Hunter,
                 mutable: Mutability::default(),
                 source: None,
+                captured_brain: None,
+                captured_from: None,
             },
         ],
         // Le prédateur (espèce 1) peut agir SUR la proie (espèce 0) : la proie le perçoit

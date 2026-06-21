@@ -41,6 +41,8 @@ fn hunter_sees_and_chases_its_target() {
                 brain: BrainKind::Hunter,
                 mutable: Mutability::default(),
                 source: None,
+                captured_brain: None,
+                captured_from: None,
             },
             // L'appât : une source sessile (Phase 3b) — immobile, jamais consommée
             // (relation à débit nul) ; le chasseur doit la voir comme « cible ».
@@ -57,6 +59,8 @@ fn hunter_sees_and_chases_its_target() {
                 brain: BrainKind::Sessile,
                 mutable: Mutability::all_fixed(),
                 source: None,
+                captured_brain: None,
+                captured_from: None,
             },
         ],
         relations: vec![Relation {

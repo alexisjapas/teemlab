@@ -14,7 +14,7 @@
 //! [`BrainKind::Sessile`] qui vit de photosynthèse (gène) et ne se reproduit pas — le
 //! cas dégénéré d'une flore. Plus de numéro spécial, donc plus de collision.
 
-use crate::brain::BrainKind;
+use crate::brain::{Brain, BrainKind};
 use crate::genotype::Genotype;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -122,6 +122,23 @@ pub struct Archetype {
     /// quand absent (`skip_serializing_if`) : les scénarios sans import sont inchangés.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Cerveau **concret capturé** d'un agent vivant (item « capturer comme
+    /// archétype ») : quand présent, les **fondateurs** de cet archétype naissent
+    /// avec CE cerveau (poids appris clonés) au lieu d'un cerveau frais recompilé
+    /// depuis [`brain`](Self::brain) (cf. [`crate::spawn`]). C'est ce qui permet de
+    /// **réutiliser des poids entraînés** : on relance une population depuis un
+    /// individu déjà compétent, qui diverge ensuite par mutation. Omis du RON quand
+    /// absent — les scénarios sans capture sont inchangés.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_brain: Option<Brain>,
+    /// **Lien d'origine** d'un archétype capturé, *informatif* (libellé
+    /// `"<espèce> · G<génération>"`). Volontairement une étiquette d'affichage et non
+    /// un index : les index d'archétype sont remappés au réordonnancement/suppression
+    /// (cf. `swap_archetypes`/`remove_archetype`), et une population vivante en cours
+    /// d'évolution n'est pas « resynchronisable » comme un fichier de la biblio
+    /// ([`source`](Self::source), qui reste distinct). Omis du RON quand absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_from: Option<String>,
 }
 
 impl Archetype {
@@ -152,6 +169,8 @@ impl Archetype {
             brain: BrainKind::default(),
             mutable: Mutability::default(),
             source: None,
+            captured_brain: None,
+            captured_from: None,
         }
     }
 
@@ -184,6 +203,8 @@ impl Archetype {
             brain: BrainKind::Sessile,
             mutable: Mutability::all_fixed(),
             source: None,
+            captured_brain: None,
+            captured_from: None,
         }
     }
 
@@ -193,6 +214,27 @@ impl Archetype {
     /// fait d'un archétype une « source », c'est son cerveau, pas un variant de schéma.
     pub fn is_sessile(&self) -> bool {
         matches!(self.brain, BrainKind::Sessile)
+    }
+
+    /// Archétype **dérivé d'un agent vivant** : un clone de *cet* archétype
+    /// (couleur, rayon, réserve, effectif, type de cerveau, mutabilité) où l'on
+    /// remplace le génome par le **génotype évolué** de l'agent et où l'on **fige
+    /// ses poids concrets** (`captured_brain`). C'est la couture qui permet de
+    /// réutiliser des poids entraînés : les fondateurs du nouvel archétype naîtront
+    /// avec ce cerveau exact (cf. [`crate::spawn`]). Le lien d'origine
+    /// ([`captured_from`](Self::captured_from)) garde la trace de l'espèce et de la
+    /// génération source ; `source` (lien biblio) est effacé — ce n'est pas un import
+    /// de fichier. Le nom reçoit un suffixe ` (capturé)` (le marqueur `✦` de la liste
+    /// vient, lui, de `captured_brain.is_some()`).
+    pub fn capture(&self, genotype: Genotype, brain: Brain, generation: u32) -> Archetype {
+        Archetype {
+            name: format!("{} (capturé)", self.name),
+            genotype,
+            captured_brain: Some(brain),
+            captured_from: Some(format!("{} · G{generation}", self.name)),
+            source: None,
+            ..self.clone()
+        }
     }
 
     /// Sérialise l'archétype en RON lisible — l'**export** d'une espèce réutilisable
@@ -460,6 +502,17 @@ impl SimConfig {
             .unwrap_or_default()
     }
 
+    /// Le **cerveau concret capturé** de l'archétype `species`, s'il en a un (item
+    /// « capturer comme archétype »). Présent ⇒ ses fondateurs naissent avec ce
+    /// cerveau exact (poids appris) plutôt qu'un cerveau frais compilé depuis
+    /// [`brain_of`](Self::brain_of). `None` (cas par défaut, tous les scénarios
+    /// existants) → chemin de spawn inchangé.
+    pub fn captured_brain_of(&self, species: u16) -> Option<&Brain> {
+        self.archetypes
+            .get(species as usize)
+            .and_then(|a| a.captured_brain.as_ref())
+    }
+
     /// La **mutabilité** (facet « mutable ? » par gène) de l'archétype `species`.
     /// Repli sur le défaut pour un index hors-liste.
     pub fn mutable_of(&self, species: u16) -> Mutability {
@@ -599,7 +652,7 @@ impl From<ron::error::SpannedError> for ScenarioError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::brain::BrainKind;
+    use crate::brain::{Brain, BrainKind, MlpBrain};
 
     /// Premier archétype **mobile** (non sessile) — helper de test.
     fn first_mobile(cfg: &SimConfig) -> &Archetype {
@@ -635,6 +688,63 @@ mod tests {
     #[test]
     fn unknown_field_is_rejected() {
         assert!(SimConfig::from_ron_str("(seedz: 9)").is_err());
+    }
+
+    /// `capture` dérive un archétype qui fige le **génome évolué** ET les **poids
+    /// concrets** de l'agent, garde un lien d'origine, et laisse l'espèce source
+    /// intacte — la couture de « réutiliser des poids entraînés ».
+    #[test]
+    fn capture_freezes_genome_and_weights_with_origin_link() {
+        let source = Archetype::new_agent(0); // "Espèce 0", BrainKind par défaut
+        let evolved = Genotype {
+            vision_range: 123.0, // un génome distinct du défaut
+            ..Genotype::default()
+        };
+        let brain = Brain::Mlp(MlpBrain::random(7, MlpBrain::input_size(3), &[6]));
+
+        let captured = source.capture(evolved, brain.clone(), 42);
+
+        assert_eq!(captured.captured_brain, Some(brain), "poids concrets figés");
+        assert_eq!(
+            captured.genotype.vision_range, 123.0,
+            "génome évolué repris"
+        );
+        assert_eq!(
+            captured.captured_from.as_deref(),
+            Some("Espèce 0 · G42"),
+            "lien d'origine = espèce + génération"
+        );
+        assert_eq!(captured.source, None, "pas un import de bibliothèque");
+        assert!(captured.name.contains("(capturé)"), "nom marqué");
+        // Le reste est cloné de la source.
+        assert_eq!(captured.color, source.color);
+        assert_eq!(captured.radius, source.radius);
+        assert_eq!(captured.count, source.count);
+        // La source reste intacte.
+        assert!(
+            source.captured_brain.is_none(),
+            "l'espèce d'origine est intacte"
+        );
+    }
+
+    /// Les poids capturés survivent à un aller-retour RON (c'est ce qui rend une
+    /// espèce entraînée réutilisable via la biblio / un scénario sauvé). Un archétype
+    /// sans capture n'émet pas le champ (`skip_serializing_if`), donc les scénarios
+    /// existants restent inchangés.
+    #[test]
+    fn captured_brain_survives_ron_round_trip() {
+        let brain = Brain::Mlp(MlpBrain::random(3, MlpBrain::input_size(4), &[5]));
+        let captured = Archetype::new_agent(0).capture(Genotype::default(), brain, 1);
+        let ron = captured.to_ron_string().expect("sérialisable");
+        let back = Archetype::from_ron_str(&ron).expect("désérialisable");
+        assert_eq!(back, captured, "aller-retour RON fidèle (poids compris)");
+
+        let plain = Archetype::new_agent(0);
+        let plain_ron = plain.to_ron_string().expect("sérialisable");
+        assert!(
+            !plain_ron.contains("captured_brain"),
+            "champ omis quand absent : {plain_ron}"
+        );
     }
 
     /// Aller-retour sérialisation : ce que l'éditeur sauve se relit à l'identique.

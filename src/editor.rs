@@ -134,12 +134,21 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
             "⬤ "
         };
         let suffix = if arch.is_sessile() { " · sessile" } else { "" };
-        let label = egui::RichText::new(format!("{mark}{}{suffix}", arch.name))
+        // ✦ : cet archétype porte des **poids capturés** (cf. `Archetype::capture`).
+        let captured = if arch.captured_brain.is_some() {
+            " ✦"
+        } else {
+            ""
+        };
+        let label = egui::RichText::new(format!("{mark}{}{suffix}{captured}", arch.name))
             .color(archetype_color32(arch));
-        let resp = ui.add_sized(
+        let mut resp = ui.add_sized(
             [ui.available_width(), 28.0],
             egui::Button::new(label).sense(egui::Sense::click_and_drag()),
         );
+        if let Some(from) = &arch.captured_from {
+            resp = resp.on_hover_text(format!("Poids capturés depuis {from}"));
+        }
         if resp.drag_started() {
             started = Some(i);
         }
@@ -489,6 +498,10 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
 fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     // Bornes (globales) capturées avant d'emprunter `config.archetypes` en mutable.
     let trait_bounds: Vec<_> = TRAITS.iter().map(|t| (t.bounds)(config)).collect();
+    // Type de cerveau AVANT édition : si l'utilisateur change la topologie ou le type
+    // alors que des poids avaient été capturés, ces poids ne correspondent plus → on les
+    // efface (cf. fin de fonction).
+    let brain_before = config.archetypes[i].brain.clone();
     let arch = &mut config.archetypes[i];
 
     ui.horizontal(|ui| {
@@ -559,6 +572,28 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     ui.separator();
     ui.strong("Cerveau (auteur de la décision)");
     brain_kind_editor(ui, brain, genotype.ray_count());
+
+    // Poids capturés (item « capturer comme archétype ») : statut + retrait. Re-emprunt
+    // de l'archétype après l'éditeur de cerveau (les réemprunts ci-dessus ne servent plus).
+    let arch = &mut config.archetypes[i];
+    // Topologie/type changé alors que des poids étaient capturés → ils sont devenus
+    // incohérents (fan-in/forme), on les efface plutôt que de spawner des cerveaux muets.
+    if arch.brain != brain_before && arch.captured_brain.is_some() {
+        arch.captured_brain = None;
+        arch.captured_from = None;
+    }
+    if let Some(from) = arch.captured_from.clone() {
+        ui.separator();
+        ui.weak(format!("Poids capturés depuis {from}"));
+        if ui
+            .button("Effacer les poids capturés")
+            .on_hover_text("Les fondateurs repartiront de poids frais (recette du cerveau).")
+            .clicked()
+        {
+            arch.captured_brain = None;
+            arch.captured_from = None;
+        }
+    }
 }
 
 /// Édite **un** [`BrainKind`] : combo de type (sélection par *kind*, pour ne pas

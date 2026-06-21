@@ -16,6 +16,7 @@ use teemlab::brain::Brain;
 use teemlab::components::{
     Action, Age, Agent, Generation, Perception, Radius, Reserve, Species, Vision,
 };
+use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::selection::Selection;
 
@@ -126,10 +127,15 @@ pub fn delete_under_cursor(
 
 /// L'inspecteur d'agent — génotype, énergie, perception, action (+ graphe MLP) de
 /// l'agent sélectionné. Rendu dans le panneau du bas (à droite, item dock). Si
-/// l'agent sélectionné a disparu (mort), on le signale. Lecture seule du monde.
+/// l'agent sélectionné a disparu (mort), on le signale. **Lecture seule du monde** :
+/// on n'écrit jamais dans la sim. Le bouton « Capturer » ne fait pas exception — il
+/// *lit* l'agent et **retourne** un [`Archetype`] dérivé (génome évolué + poids
+/// concrets) que l'appelant ajoutera à la config (comme l'éditeur écrit la config,
+/// pas la sim). `None` quand l'utilisateur ne capture pas ce tick.
 pub(crate) fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
+    config: &SimConfig,
     agents: &Query<
         (
             &Species,
@@ -144,10 +150,10 @@ pub(crate) fn inspector_section(
         ),
         With<Agent>,
     >,
-) {
+) -> Option<Archetype> {
     let Some(entity) = selection.0 else {
         ui.weak("Clique un agent dans l'aire pour l'inspecter.");
-        return;
+        return None;
     };
     let Ok((species, reserve, genotype, vision, perception, action, brain, generation, age)) =
         agents.get(entity)
@@ -157,8 +163,12 @@ pub(crate) fn inspector_section(
             "L'agent sélectionné n'existe plus (mort ?).",
         );
         ui.weak("Clique un autre agent, ou dans le vide pour désélectionner.");
-        return;
+        return None;
     };
+
+    // Demande de capture éventuelle (cf. doc) : positionnée par le bouton plus bas,
+    // retournée à l'appelant qui l'ajoutera à la config.
+    let mut capture: Option<Archetype> = None;
 
     // Une entité immobile (flore / source sessile) ne se meut ni n'exploite de vision :
     // on masque alors les gènes inertes (locomotion, vision) et la section perception —
@@ -216,6 +226,25 @@ pub(crate) fn inspector_section(
         ui.label(format!("cap désiré : {heading_deg:+.0}°"));
         ui.add(egui::ProgressBar::new(throttle).text(format!("accélérateur {throttle:.2}")));
 
+        // CAPTURE : figer cet agent (génome évolué + poids concrets) en un nouvel
+        // archétype réutilisable. On ne touche pas la sim : on construit l'archétype
+        // dérivé (clone de l'espèce d'origine, cf. `Archetype::capture`) et on le
+        // retourne — l'appelant l'ajoutera à la config.
+        ui.separator();
+        if ui
+            .button("💾 Capturer comme archétype")
+            .on_hover_text(
+                "Crée un nouvel archétype figeant le génome évolué ET les poids de cet \
+                 agent (pour réutiliser des poids entraînés). L'espèce d'origine reste intacte.",
+            )
+            .clicked()
+        {
+            capture = config
+                .archetypes
+                .get(species.0 as usize)
+                .map(|src| src.capture(*genotype, brain.clone(), generation.0));
+        }
+
         // Cerveau MLP : le réseau en action (item 18b-viz). Nœuds colorés par leur
         // activation courante (le dernier `think`), arêtes par signe/poids — la
         // décision apprise rendue lisible. Les autres cerveaux n'ont pas de graphe.
@@ -264,4 +293,6 @@ pub(crate) fn inspector_section(
             }
         }
     });
+
+    capture
 }

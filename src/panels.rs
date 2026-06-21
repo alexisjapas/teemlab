@@ -18,6 +18,7 @@ use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
+use teemlab::config::Archetype;
 use teemlab::genotype::Genotype;
 use teemlab::selection::Selection;
 
@@ -102,7 +103,8 @@ pub fn bottom_panel(
     mut contexts: EguiContexts,
     mut history: ResMut<History>,
     selection: Res<Selection>,
-    config: Res<SimConfig>,
+    mut config: ResMut<SimConfig>,
+    mut palette: ResMut<Palette>,
     agents: Query<
         (
             &Species,
@@ -141,10 +143,16 @@ pub fn bottom_panel(
                         hud::hud_section(ui, &mut history, &config);
                     });
             };
-            // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`.
-            let inspecteur = |ui: &mut egui::Ui| {
+            // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`. Il ne
+            // mute pas la sim : s'il y a une demande de capture, il **retourne**
+            // l'archétype dérivé, qu'on ajoute à la config après les fermetures (pour ne
+            // pas emprunter `config` en mutable pendant que les courbes le lisent).
+            let mut capture_request: Option<Archetype> = None;
+            let mut inspecteur = |ui: &mut egui::Ui| {
                 ui.strong("Inspecteur d'agent");
-                inspector::inspector_section(ui, &selection, &agents);
+                if let Some(arch) = inspector::inspector_section(ui, &selection, &config, &agents) {
+                    capture_request = Some(arch);
+                }
             };
 
             if ui.available_width() >= MIN_TWO_COLUMN_WIDTH {
@@ -157,6 +165,16 @@ pub fn bottom_panel(
                 courbes(ui);
                 ui.separator();
                 inspecteur(ui);
+            }
+
+            // Capture validée : l'archétype dérivé rejoint la config et devient la
+            // sélection de l'éditeur (les fermetures ci-dessus, qui empruntaient `config`
+            // en partage, ne sont plus utilisées ici → emprunt mutable autorisé).
+            if let Some(arch) = capture_request {
+                let from = arch.captured_from.clone().unwrap_or_default();
+                config.archetypes.push(arch);
+                palette.selected = Some(config.archetypes.len() - 1);
+                palette.status = format!("Archétype capturé depuis {from}.");
             }
         });
     Ok(())

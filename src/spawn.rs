@@ -77,19 +77,40 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     for (i, species) in species_seq.into_iter().enumerate() {
         let span = config.arena_half_extent - config.agent_radius_of(species) - 5.0;
         let pos = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
+        // `heading` est tiré **dans tous les cas** (même si une capture l'ignore) pour
+        // garder le flux RNG bit-à-bit identique aux scénarios sans capture ; `brain_seed`
+        // n'est pas un tirage (dérivé de la graine).
         let heading = rng.next_f32() * std::f32::consts::TAU;
         let brain_seed = config.seed ^ (i as u64).wrapping_mul(0x9E37_79B1);
-        spawn_agent(
-            commands,
-            config,
-            config.genotype_of(species),
-            Species(species),
-            pos,
-            heading,
-            brain_seed,
-            config.reserve_max_of(species),
-            0, // fondateur : génération 0.
-        );
+        let genotype = config.genotype_of(species);
+        // Si l'archétype porte un **cerveau capturé** (poids entraînés réutilisés), le
+        // fondateur naît avec ce cerveau exact ; sinon, le chemin habituel compile un
+        // cerveau frais depuis la graine. Le `build` d'un cerveau frais n'utilise qu'un
+        // `Rng` local → le flux RNG global est le même dans les deux branches.
+        match config.captured_brain_of(species) {
+            Some(brain) => spawn_agent_with_brain(
+                commands,
+                config,
+                genotype,
+                Species(species),
+                pos,
+                brain.clone(),
+                config.reserve_max_of(species),
+                0,   // fondateur : génération 0.
+                0.0, // ...né à l'âge 0.
+            ),
+            None => spawn_agent(
+                commands,
+                config,
+                genotype,
+                Species(species),
+                pos,
+                heading,
+                brain_seed,
+                config.reserve_max_of(species),
+                0, // fondateur : génération 0.
+            ),
+        }
     }
 }
 
