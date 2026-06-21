@@ -1,32 +1,35 @@
-//! Couche de rendu **partagée** par les binaires qui *affichent* la sim : le
-//! build fenêtré (`main.rs`) et l'enregistreur vidéo headless (`bin/record.rs`).
+//! Rendering layer **shared** by the binaries that *display* the sim: the
+//! windowed build (`main.rs`) and the headless video recorder (`bin/record.rs`).
 //!
-//! C'est strictement du rendu/observation — tout vit dans `Update`, **jamais**
-//! dans `FixedUpdate` (invariant cardinal). Volontairement hors de [`crate::SimPlugin`],
-//! qui reste agnostique au rendu : le headless « pur » (`bin/headless.rs`) ne
-//! l'inclut pas. Centraliser ici évite de dupliquer le rendu entre l'aperçu live
-//! et l'enregistrement (item 14, §7 : *re-render frais* d'une run).
+//! This is strictly rendering/observation — everything lives in `Update`,
+//! **never** in `FixedUpdate` (cardinal invariant). Deliberately outside
+//! [`crate::SimPlugin`], which stays render-agnostic: the "pure" headless
+//! (`bin/headless.rs`) does not include it. Centralizing here avoids duplicating
+//! the rendering between the live preview and the recording (item 14, §7: *fresh
+//! re-render* of a run).
 
 use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
 use crate::config::SimConfig;
 use bevy::prelude::*;
 
-/// Ajoute les systèmes de rendu de la sim (mesh des entités, teinte par réserve,
-/// arène, indicateur de cap, **fonds** intérieur/extérieur). À combiner avec une caméra
-/// fournie par le binaire (fenêtre pour `main`, cible image pour `record`). L'éventail
-/// détaillé des rayons de vision n'en fait pas partie : il est réservé à l'agent inspecté,
-/// côté fenêtré.
+/// Adds the sim's rendering systems (entity meshes, reserve-based shading,
+/// arena, heading indicator, inner/outer **backgrounds**). To be combined with a
+/// camera provided by the binary (window for `main`, image target for `record`).
+/// The detailed fan of vision rays is not part of it: it is reserved for the
+/// inspected agent, on the windowed side.
 ///
-/// Les fonds ([`draw_play_area`]) vivent ici — donc **partagés** par l'aperçu live et
-/// l'enregistrement vidéo — pour qu'une vidéo rende exactement les couleurs réglées dans
-/// l'éditeur (item couleurs de fond), et pas un fond figé.
+/// The backgrounds ([`draw_play_area`]) live here — therefore **shared** by the
+/// live preview and the video recording — so that a video renders exactly the
+/// colors set in the editor (background-colors item), and not a frozen
+/// background.
 pub struct VisualsPlugin;
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
-        // `ClearColor` pilote le hors-jeu côté fenêtré (la caméra de `main` l'utilise) ;
-        // on garantit sa présence pour que `draw_play_area` puisse l'écrire dans les deux
-        // binaires (l'enregistreur, lui, fixe le hors-jeu sur sa caméra-image).
+        // `ClearColor` drives the off-game area on the windowed side (the `main`
+        // camera uses it); we ensure its presence so `draw_play_area` can write it
+        // in both binaries (the recorder, for its part, sets the off-game area on
+        // its image-camera).
         app.init_resource::<ClearColor>().add_systems(
             Update,
             (
@@ -40,37 +43,37 @@ impl Plugin for VisualsPlugin {
     }
 }
 
-/// Marqueur du quad de fond matérialisant l'aire de jeu (intérieur de l'arène).
+/// Marker of the background quad materializing the play area (inside of the arena).
 #[derive(Component)]
 pub struct PlayAreaBg;
 
-/// `Color` opaque depuis un triplet sRGB `[r, g, b]` du scénario (réglages de fond).
+/// Opaque `Color` from an sRGB triplet `[r, g, b]` of the scenario (background settings).
 pub fn srgb3([r, g, b]: [f32; 3]) -> Color {
     Color::srgb(r, g, b)
 }
 
-/// Couleur de base d'une espèce (palette cyclique). Le rendu seul donne un sens
-/// visuel à l'entier d'espèce ; la sim, elle, n'a pas de couleur.
+/// Base color of a species (cyclic palette). Rendering alone gives a visual
+/// meaning to the species integer; the sim itself has no color.
 pub fn species_color(species: Species) -> Srgba {
     const PALETTE: [Srgba; 4] = [
-        Srgba::new(0.30, 0.70, 1.00, 1.0), // bleu
-        Srgba::new(1.00, 0.45, 0.35, 1.0), // corail
-        Srgba::new(0.55, 0.90, 0.45, 1.0), // vert
-        Srgba::new(0.95, 0.80, 0.30, 1.0), // ambre
+        Srgba::new(0.30, 0.70, 1.00, 1.0), // blue
+        Srgba::new(1.00, 0.45, 0.35, 1.0), // coral
+        Srgba::new(0.55, 0.90, 0.45, 1.0), // green
+        Srgba::new(0.95, 0.80, 0.30, 1.0), // amber
     ];
     PALETTE[species.0 as usize % PALETTE.len()]
 }
 
-/// Couleur d'affichage d'une entité : celle de **son archétype** (l'index porté par
-/// [`Species`]), avec repli sur la palette pour un index hors-liste. C'est ainsi que
-/// la couleur choisie dans l'éditeur d'archétype se voit à l'écran.
+/// Display color of an entity: that of **its archetype** (the index carried by
+/// [`Species`]), falling back to the palette for an out-of-list index. This is
+/// how the color chosen in the archetype editor shows on screen.
 fn entity_color(config: &SimConfig, species: Species) -> Srgba {
     let [r, g, b] = config.color_of(species.0);
     Srgba::new(r, g, b, 1.0)
 }
 
-/// Rendu seul : donner un mesh visible aux agents fraîchement spawnés, teinté par la
-/// couleur de leur archétype. Tourne dans `Update` car ça manipule des assets de rendu.
+/// Rendering only: give a visible mesh to freshly spawned agents, tinted by their
+/// archetype's color. Runs in `Update` because it manipulates render assets.
 fn attach_visuals(
     mut commands: Commands,
     config: Res<SimConfig>,
@@ -86,9 +89,9 @@ fn attach_visuals(
     }
 }
 
-/// Rendu seul : assombrir un agent à mesure que sa réserve baisse, pour *voir*
-/// la prédation vider ses proies. Chaque agent possède son propre matériau (créé
-/// dans `attach_visuals`), qu'on module ici par la fraction de réserve.
+/// Rendering only: darken an agent as its reserve drops, to *see* predation drain
+/// its prey. Each agent owns its own material (created in `attach_visuals`),
+/// which we modulate here by the reserve fraction.
 fn shade_by_reserve(
     config: Res<SimConfig>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -103,30 +106,30 @@ fn shade_by_reserve(
     }
 }
 
-/// Rendu seul : un court **indicateur de cap** pour les agents **mobiles** — un trait
-/// du centre au bord du corps, le long du cap, pour lire d'un coup d'œil l'orientation
-/// d'une entité mouvante. Il s'arrête au rayon (`Radius`) : il ne déborde jamais du
-/// corps. On relit le cap déjà calculé par la sim (`Perception::heading`), sans rien
-/// recalculer.
+/// Rendering only: a short **heading indicator** for **mobile** agents — a line
+/// from the center to the body's edge, along the heading, to read a moving
+/// entity's orientation at a glance. It stops at the radius (`Radius`): it never
+/// overflows the body. We re-read the heading already computed by the sim
+/// (`Perception::heading`), recomputing nothing.
 ///
-/// Une entité **immobile** (flore / source sessile, [`Locomotion::is_immobile`]) n'en
-/// reçoit **pas** : son « cap » n'est qu'un repli fixe (`+X`), pas une direction de
-/// regard — l'afficher tracerait un trait trompeur sur un buisson.
+/// An **immobile** entity (flora / sessile source, [`Locomotion::is_immobile`])
+/// gets **none**: its "heading" is only a fixed fallback (`+X`), not a gaze
+/// direction — showing it would draw a misleading line over a bush.
 ///
-/// Le **détail** de la vision (l'éventail complet des rayons, l'occlusion à l'œuvre)
-/// n'est PAS dessiné ici : à tous les agents il saturerait l'écran. C'est le binaire
-/// fenêtré qui le trace, pour le seul agent **inspecté** (cf. `inspector`).
+/// The vision **detail** (the full fan of rays, occlusion at work) is NOT drawn
+/// here: on every agent it would saturate the screen. It is the windowed binary
+/// that draws it, for the single **inspected** agent (cf. `inspector`).
 fn draw_heading(
     mut gizmos: Gizmos,
     agents: Query<(&Transform, &Radius, &Perception, &Locomotion), With<Agent>>,
 ) {
     for (transform, radius, perception, loco) in &agents {
         if loco.is_immobile() {
-            continue; // flore : aucun cap utile à montrer.
+            continue; // flora: no useful heading to show.
         }
         let facing = perception.heading;
         if facing == Vec2::ZERO {
-            continue; // pas encore de cap (1er tick) : rien à montrer.
+            continue; // no heading yet (1st tick): nothing to show.
         }
         let origin = transform.translation.truncate();
         gizmos.line_2d(
@@ -137,7 +140,7 @@ fn draw_heading(
     }
 }
 
-/// Rendu seul : tracer le contour de l'arène avec des gizmos.
+/// Rendering only: draw the arena outline with gizmos.
 fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
     let h = config.arena_half_extent;
     let color = Color::srgb(0.40, 0.40, 0.46);
@@ -153,19 +156,20 @@ fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
     );
 }
 
-/// Rendu seul : matérialise les **deux fonds** réglés par le scénario
+/// Rendering only: materializes the **two backgrounds** set by the scenario
 /// ([`SimConfig::play_area_color`] / [`SimConfig::off_game_color`]).
 ///
-/// - L'**aire de jeu** (intérieur de l'arène) est un quad peint **sous** les agents
-///   (z négatif), suivant la taille de l'arène (`arena_half_extent`, qui peut changer au
-///   rechargement d'un scénario) et la couleur intérieure.
-/// - Le **hors-jeu** (au-delà des murs) est piloté par `ClearColor`, écrit ici depuis la
-///   couleur extérieure. La caméra fenêtrée (`main`) l'utilise telle quelle ; l'enregistreur
-///   (`record`) fixe la même couleur sur sa caméra-image (qui ignore `ClearColor`).
+/// - The **play area** (inside of the arena) is a quad painted **under** the
+///   agents (negative z), following the arena's size (`arena_half_extent`, which
+///   may change when a scenario is reloaded) and the inner color.
+/// - The **off-game area** (beyond the walls) is driven by `ClearColor`, written
+///   here from the outer color. The windowed camera (`main`) uses it as-is; the
+///   recorder (`record`) sets the same color on its image-camera (which ignores
+///   `ClearColor`).
 ///
-/// Partagé par l'aperçu live et l'enregistrement vidéo : une vidéo rend donc exactement
-/// les couleurs choisies. Les deux teintes sont relues **en continu** → un changement dans
-/// l'éditeur (ou au chargement d'un scénario) se voit immédiatement, sans reset.
+/// Shared by the live preview and the video recording: a video therefore renders
+/// exactly the chosen colors. Both tints are re-read **continuously** → a change
+/// in the editor (or when loading a scenario) shows immediately, without a reset.
 fn draw_play_area(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

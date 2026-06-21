@@ -1,17 +1,18 @@
-//! Flore évolutive (Phase 3) — driver : une population de plantes sessiles **s'auto-régule**.
+//! Evolutionary flora (Phase 3) — driver: a population of sessile plants **self-regulates**.
 //!
-//! Falsification du cœur de l'item : une *flore* (cerveau [`Brain::Sessile`], énergie par
-//! photosynthèse, semis local) est une entité de plein droit qui (a) **croît** fortement
-//! depuis quelques fondateurs (photosynthèse + semis fonctionnent), (b) reste **bornée bien
-//! en deçà de la saturation physique** de l'arène — la compétition intraspécifique (relation
-//! Plante→Plante, primitive d'interaction §3 : lumière/espace disputés) freine la croissance
-//! en une onde spatiale au lieu de remplir l'arène —, et (c) **persiste** à un effectif
-//! soutenu, le tout robustement sur plusieurs graines.
+//! Falsification of the item's core: a *flora* ([`Brain::Sessile`] brain, energy
+//! from photosynthesis, local seeding) is a full-fledged entity that (a) **grows**
+//! strongly from a few founders (photosynthesis + seeding work), (b) stays
+//! **bounded well below the physical saturation** of the arena — intraspecific
+//! competition (Plant→Plant relation, §3 interaction primitive: contested
+//! light/space) slows the growth into a spatial wave instead of filling the arena
+//! —, and (c) **persists** at a sustained count, all of this robustly over several
+//! seeds.
 //!
-//! C'est une **rétroaction négative** (densité haute → drain de compétition → moins de
-//! semis / mortalité), donc robuste — pas le couplage oscillant *knife-edge* de
-//! proie-prédateur. On fait tourner le *vrai* monde de sim (même `SimPlugin` que les
-//! binaires), en pas-à-pas.
+//! It is a **negative feedback** (high density → competition drain → less seeding /
+//! mortality), hence robust — not the oscillating *knife-edge* coupling of
+//! predator-prey. We run the *real* sim world (same `SimPlugin` as the binaries),
+//! in single-stepping.
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -19,17 +20,17 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-/// Le scénario versionné, chargé tel quel.
-const SCENARIO: &str = include_str!("../scenarios/flore.ron");
+/// The bundled scenario, loaded as-is.
+const SCENARIO: &str = include_str!("../scenarios/flora.ron");
 
-/// Quatre mondes indépendants : une bande qui tient pour tous n'est pas un coup de chance.
+/// Four independent worlds: a band that holds for all of them is not luck.
 const SEEDS: [u64; 4] = [0x00C0_FFEE, 0x1234, 0x9999, 0xBEEF];
 
 const SECONDS: usize = 120;
 
-/// Effectif de plantes échantillonné chaque seconde de sim, pour une graine.
+/// Plant count sampled each sim second, for a seed.
 fn population_trajectory(seed: u64) -> Vec<usize> {
-    let mut config = SimConfig::from_ron_str(SCENARIO).expect("scénario flore valide");
+    let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid flora scenario");
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
@@ -51,7 +52,7 @@ fn flora_grows_and_self_regulates_across_seeds() {
     let founders = SimConfig::from_ron_str(SCENARIO).unwrap().archetypes[0].count;
 
     let mut failures = Vec::new();
-    eprintln!("  seed         | fondateurs={founders} | pic | bande 2ᵉ moitié (min..max)");
+    eprintln!("  seed         | founders={founders} | peak | 2nd-half band (min..max)");
     for seed in SEEDS {
         let traj = population_trajectory(seed);
         let peak = *traj.iter().max().unwrap();
@@ -60,34 +61,32 @@ fn flora_grows_and_self_regulates_across_seeds() {
         let hi = *back.iter().max().unwrap();
         let sampled: Vec<String> = traj.iter().step_by(20).map(|n| n.to_string()).collect();
         eprintln!(
-            "  {seed:#012x} | pic {peak:>4} | {lo:>4}..{hi:<4}  t=0,20,..: {}",
+            "  {seed:#012x} | peak {peak:>4} | {lo:>4}..{hi:<4}  t=0,20,..: {}",
             sampled.join("  ")
         );
 
-        // (a) a CRÛ fortement (≫ fondateurs) → photosynthèse + semis fonctionnent.
+        // (a) GREW strongly (≫ founders) → photosynthesis + seeding work.
         if peak < 200 {
             failures.push(format!(
-                "seed {seed:#x} : croissance trop faible (pic {peak}, fondateurs {founders})"
+                "seed {seed:#x}: growth too weak (peak {peak}, founders {founders})"
             ));
         }
-        // (b) bornée LOIN de la saturation physique de l'arène (~4500 corps pour
-        //     rayon 6, demi-arène 360) → la compétition freine, l'arène ne se remplit pas.
+        // (b) bounded FAR from the arena's physical saturation (~4500 bodies for
+        //     radius 6, half-arena 360) → competition slows it, the arena does not fill.
         if peak > 2000 {
             failures.push(format!(
-                "seed {seed:#x} : la compétition ne borne pas (pic {peak})"
+                "seed {seed:#x}: competition does not bound (peak {peak})"
             ));
         }
-        // (c) PERSISTE à un effectif soutenu sur la 2ᵉ moitié (pas d'effondrement).
+        // (c) PERSISTS at a sustained count over the 2nd half (no collapse).
         if lo < 100 {
-            failures.push(format!(
-                "seed {seed:#x} : effectif non soutenu (creux {lo})"
-            ));
+            failures.push(format!("seed {seed:#x}: count not sustained (trough {lo})"));
         }
     }
 
     assert!(
         failures.is_empty(),
-        "auto-régulation non robuste :\n  {}",
+        "self-regulation not robust:\n  {}",
         failures.join("\n  ")
     );
 }

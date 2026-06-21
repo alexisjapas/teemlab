@@ -1,12 +1,12 @@
-//! Driver de la **conservation d'énergie à la reproduction** (review #1).
+//! Driver of **energy conservation at reproduction** (review #1).
 //!
-//! `ecology::reproduce` déduit `offspring_energy` du parent et la donne à l'enfant :
-//! l'énergie doit être *conservée*, jamais créée. Or seuil et coût de reproduction
-//! sont deux gènes qui dérivent indépendamment — rien ne garantit `seuil >= coût`.
-//! Le garde `reserve >= offspring_energy` rend la conservation **inconditionnelle** ;
-//! ces tests font tourner le *vrai* `SimPlugin` (le même que les binaires) et
-//! vérifient qu'aucune énergie n'apparaît, dans le régime normal comme dans le cas
-//! pathologique (coût > réserve) que le garde doit neutraliser.
+//! `ecology::reproduce` deducts `offspring_energy` from the parent and gives it to
+//! the child: energy must be *conserved*, never created. But the reproduction
+//! threshold and cost are two genes that drift independently — nothing guarantees
+//! `threshold >= cost`. The `reserve >= offspring_energy` guard makes conservation
+//! **unconditional**; these tests run the *real* `SimPlugin` (the same as the
+//! binaries) and check that no energy appears, in the normal regime as in the
+//! pathological case (cost > reserve) that the guard must neutralize.
 
 use std::time::Duration;
 
@@ -15,10 +15,10 @@ use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Reserve};
 use teemlab::{SimConfig, SimPlugin};
 
-/// Un monde de reproduction *pur* : un seul agent, pas de métabolisme ni de
-/// nourriture ni d'interaction → la seule chose qui peut bouger l'énergie est la
-/// reproduction. On isole ainsi l'invariant testé. La capacité, le seuil et le coût
-/// de reproduction sont paramétrés (gènes de l'unique archétype).
+/// A *pure* reproduction world: a single agent, no metabolism nor food nor
+/// interaction → the only thing that can move energy is reproduction. We thus
+/// isolate the tested invariant. The capacity, threshold and reproduction cost are
+/// parameterized (genes of the single archetype).
 fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
     use teemlab::brain::BrainKind;
     use teemlab::config::{Archetype, Mutability};
@@ -26,7 +26,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
     let genotype = Genotype {
         reproduction_threshold: threshold,
         offspring_energy: offspring,
-        mutation_rate: 0.0, // gènes stables : on raisonne sur des valeurs exactes.
+        mutation_rate: 0.0, // stable genes: we reason on exact values.
         base_metabolism: 0.0,
         move_cost: 0.0,
         ..Genotype::default()
@@ -51,7 +51,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
     }
 }
 
-/// App en pas-à-pas manuel (cf. les autres drivers) : un `update()` = un tick fixe.
+/// A manual single-stepping app (cf. the other drivers): one `update()` = one fixed tick.
 fn stepping_app(config: SimConfig) -> App {
     let mut app = App::new();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
@@ -59,14 +59,14 @@ fn stepping_app(config: SimConfig) -> App {
     )));
     app.add_plugins(MinimalPlugins);
     app.add_plugins(SimPlugin::new(config));
-    // Avian insère certaines ressources dans finish()/cleanup() : à déclencher
-    // soi-même quand on pompe la boucle à la main.
+    // Avian inserts some resources in finish()/cleanup(): to be triggered ourselves
+    // when we pump the loop by hand.
     app.finish();
     app.cleanup();
     app
 }
 
-/// Population vivante + énergie totale en réserve, à un instant donné.
+/// Living population + total energy in reserve, at a given instant.
 fn population_and_energy(app: &mut App) -> (usize, f32) {
     let world = app.world_mut();
     let mut q = world.query_filtered::<&Reserve, With<Agent>>();
@@ -79,41 +79,41 @@ fn population_and_energy(app: &mut App) -> (usize, f32) {
     (n, total)
 }
 
-/// Régime normal (`seuil >= coût`, comme les scénarios livrés) : le fondateur, né à
-/// pleine réserve, se reproduit **une fois** ; l'énergie passe du parent à l'enfant
-/// sans rien créer, et la population se stabilise à deux.
+/// Normal regime (`threshold >= cost`, like the shipped scenarios): the founder,
+/// born at full reserve, reproduces **once**; energy passes from parent to child
+/// without creating anything, and the population stabilizes at two.
 #[test]
 fn reproduction_conserves_energy_in_the_normal_regime() {
-    // seuil atteignable (= réserve de départ), coût < seuil : régime sain.
+    // reachable threshold (= starting reserve), cost < threshold: healthy regime.
     let config = repro_world(120.0, 95.0, 45.0);
-    let initial = 120.0; // l'unique fondateur naît plein.
+    let initial = 120.0; // the single founder is born full.
     let mut app = stepping_app(config);
 
-    // Une seconde de sim : largement assez pour la (seule) reproduction.
+    // One sim second: more than enough for the (single) reproduction.
     for _ in 0..64 {
         app.update();
         let (_, energy) = population_and_energy(&mut app);
         assert!(
             energy <= initial + 1e-3,
-            "l'énergie totale ne doit jamais dépasser l'apport initial ({initial}), vue : {energy}"
+            "the total energy must never exceed the initial input ({initial}), seen: {energy}"
         );
     }
 
     let (population, energy) = population_and_energy(&mut app);
-    assert_eq!(population, 2, "le fondateur s'est reproduit une fois");
+    assert_eq!(population, 2, "the founder reproduced once");
     assert!(
         (energy - initial).abs() < 1e-3,
-        "énergie conservée : {energy} ≈ {initial}"
+        "energy conserved: {energy} ≈ {initial}"
     );
 }
 
-/// Cas pathologique que le garde neutralise : `offspring_energy > réserve`. Sans le
-/// garde, le parent paierait plus qu'il n'a (réserve négative → mort), mais l'enfant
-/// emporterait la pleine `offspring_energy` → énergie créée. Avec le garde, la
-/// reproduction est simplement refusée : population et énergie restent figées.
+/// Pathological case the guard neutralizes: `offspring_energy > reserve`. Without
+/// the guard, the parent would pay more than it has (negative reserve → death), but
+/// the child would carry the full `offspring_energy` → energy created. With the
+/// guard, reproduction is simply refused: population and energy stay frozen.
 #[test]
 fn reproduction_is_refused_when_offspring_costs_more_than_reserve() {
-    // seuil franchi (réserve de départ = 50), coût > réserve : impossible à payer.
+    // threshold crossed (starting reserve = 50), cost > reserve: impossible to pay.
     let config = repro_world(50.0, 40.0, 80.0);
     let initial = 50.0;
     let mut app = stepping_app(config);
@@ -121,14 +121,14 @@ fn reproduction_is_refused_when_offspring_costs_more_than_reserve() {
     for _ in 0..64 {
         app.update();
         let (population, energy) = population_and_energy(&mut app);
-        // Jamais d'enfant (coût impayable), donc jamais d'énergie créée.
+        // Never a child (unpayable cost), hence never any energy created.
         assert_eq!(
             population, 1,
-            "aucune reproduction : le coût dépasse la réserve"
+            "no reproduction: the cost exceeds the reserve"
         );
         assert!(
             (energy - initial).abs() < 1e-3,
-            "énergie figée à {initial} (rien créé, rien mis en négatif) : {energy}"
+            "energy frozen at {initial} (nothing created, nothing made negative): {energy}"
         );
     }
 }

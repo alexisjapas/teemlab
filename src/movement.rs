@@ -1,8 +1,8 @@
-//! La boucle **percevoir → décider → agir**, chaînée dans `FixedUpdate`.
+//! The **perceive → decide → act** loop, chained in `FixedUpdate`.
 //!
-//! Trois systèmes distincts pour garder la couture cerveau/corps nette : le
-//! cerveau ne lit que [`Perception`] et n'écrit que [`Action`] ; lui seul
-//! ignore tout d'Avian.
+//! Three distinct systems to keep the brain/body seam clean: the brain only
+//! reads [`Perception`] and only writes [`Action`]; it alone knows nothing of
+//! Avian.
 
 use crate::brain::Brain;
 use crate::components::{Action, Agent, Locomotion, Perception, Species, Vision};
@@ -10,18 +10,18 @@ use crate::config::SimConfig;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
-/// PERCEVOIR : remplir l'entrée sensorielle depuis le monde.
+/// PERCEIVE: fill the sensory input from the world.
 ///
-/// Vision par raycast via les *spatial queries* d'Avian (la broad-phase fait
-/// office de structure de voisinage — pas de hash maison, cf. §5). Chaque agent
-/// éventaille `ray_count` rayons sur son champ de vision, centrés sur son cap.
-/// Le rayon ne retient que le hit le plus proche : **l'occlusion est
-/// intrinsèque** (un mur masque un agent derrière lui). Le résultat est une
-/// *proximité* normalisée par rayon, prête à devenir une entrée du cerveau.
+/// Raycast vision via Avian's *spatial queries* (the broad-phase serves as the
+/// neighborhood structure — no homemade hash, cf. §5). Each agent fans out
+/// `ray_count` rays over its field of view, centered on its heading. The ray
+/// keeps only the nearest hit: **occlusion is intrinsic** (a wall hides an agent
+/// behind it). The result is a normalized *proximity* per ray, ready to become a
+/// brain input.
 ///
-/// La requête lit l'arbre de colliders tel qu'il était au tick précédent (la
-/// physique tourne en `FixedPostUpdate`, après nous) : un décalage d'un tick,
-/// sans conséquence pour de la perception.
+/// The query reads the collider tree as it was at the previous tick (physics
+/// runs in `FixedPostUpdate`, after us): a one-tick lag, inconsequential for
+/// perception.
 pub fn perceive(
     spatial: SpatialQuery,
     config: Res<SimConfig>,
@@ -38,21 +38,22 @@ pub fn perceive(
         With<Agent>,
     >,
     species_of: Query<&Species>,
-    // Filtre de raycast réutilisé d'un agent à l'autre (cf. boucle) : on évite de
-    // réallouer un `EntityHashSet` à chaque agent et chaque tick.
+    // Raycast filter reused from one agent to the next (cf. loop): we avoid
+    // reallocating an `EntityHashSet` for every agent and every tick.
     mut filter: Local<SpatialQueryFilter>,
 ) {
     for (entity, transform, velocity, species, vision, loco, mut perception) in &mut agents {
-        // Une entité **immobile** (flore / source sessile) ne lance aucun rayon : sans
-        // cap ni locomotion, sa vision est inexploitable (son cerveau l'ignore). On la
-        // saute donc — on n'écrit pas sa perception (rien ne la lit numériquement : son
-        // action reste nulle, son énergie ne dépend que de la photosynthèse et de la
-        // prédation), ce qui épargne `ray_count` raycasts par tick et par plante. La sim
-        // reste donc rigoureusement inchangée, seuls disparaissent des rayons inutiles.
+        // An **immobile** entity (flora / sessile source) casts no ray: without a
+        // heading or locomotion, its vision is unusable (its brain ignores it).
+        // We therefore skip it — we do not write its perception (nothing reads it
+        // numerically: its action stays zero, its energy depends only on
+        // photosynthesis and predation), which spares `ray_count` raycasts per
+        // tick and per plant. The sim therefore stays rigorously unchanged; only
+        // useless rays disappear.
         if loco.is_immobile() {
             continue;
         }
-        // Cap = direction de déplacement, repli sur +X à l'arrêt (1er tick).
+        // Heading = movement direction, falling back to +X when stopped (1st tick).
         let facing = velocity.0.normalize_or_zero();
         let facing = if facing == Vec2::ZERO {
             Vec2::X
@@ -61,9 +62,9 @@ pub fn perceive(
         };
         perception.heading = facing;
 
-        // Buffers de la bonne taille (l'espèce peut avoir changé de forme entre
-        // deux runs ; au régime établi c'est un no-op). Les trois canaux partagent
-        // la cardinalité `ray_count`.
+        // Buffers of the right size (the species may have changed shape between
+        // two runs; at steady state this is a no-op). The three channels share
+        // the `ray_count` cardinality.
         if perception.vision.len() != vision.ray_count {
             perception.vision = vec![0.0; vision.ray_count].into_boxed_slice();
             perception.target = vec![0.0; vision.ray_count].into_boxed_slice();
@@ -72,14 +73,14 @@ pub fn perceive(
         }
 
         let origin = transform.translation.truncate();
-        // On ne se voit pas soi-même ; tout le reste (murs ET agents) occlut. Le filtre
-        // est un `Local` réutilisé : on remet juste l'entité exclue (l'agent courant),
-        // au lieu d'en reconstruire un par agent et par tick.
+        // We do not see ourselves; everything else (walls AND agents) occludes.
+        // The filter is a reused `Local`: we just re-insert the excluded entity
+        // (the current agent), instead of rebuilding one per agent and per tick.
         filter.excluded_entities.clear();
         filter.excluded_entities.insert(entity);
 
-        // Cap converti en angle **une fois** par agent ; `ray_dir_from_angle` ajoute
-        // l'offset de chaque rayon sans refaire l'atan2 (cf. `Vision::ray_dir`).
+        // Heading converted to an angle **once** per agent; `ray_dir_from_angle`
+        // adds each ray's offset without redoing the atan2 (cf. `Vision::ray_dir`).
         let base_angle = facing.to_angle();
         for i in 0..vision.ray_count {
             let dir = vision.ray_dir_from_angle(i, base_angle);
@@ -94,12 +95,12 @@ pub fn perceive(
                 Some(hit) => {
                     let proximity = 1.0 - (hit.distance / vision.range).clamp(0.0, 1.0);
                     perception.vision[i] = proximity;
-                    // Canaux « cible » et « menace », symétriques inverses : on lit
-                    // l'espèce du hit le plus proche **une seule fois**, et la table de
-                    // relations (dirigée) tranche les deux sens — nous agissons sur elle
-                    // (cible, elle nous attire) ou elle agit sur nous (menace, elle nous
-                    // fait fuir). Un mur (sans [`Species`]) ou une espèce sans relation
-                    // dans aucun sens → les deux à 0.
+                    // "target" and "threat" channels, inverse symmetric: we read
+                    // the nearest hit's species **only once**, and the (directed)
+                    // relation table decides both directions — we act on it
+                    // (target, it attracts us) or it acts on us (threat, it makes
+                    // us flee). A wall (without [`Species`]) or a species with no
+                    // relation either way → both at 0.
                     let (is_target, is_threat) =
                         species_of
                             .get(hit.entity)
@@ -122,18 +123,18 @@ pub fn perceive(
     }
 }
 
-/// DÉCIDER : faire tourner chaque cerveau sur sa perception → commande motrice.
+/// DECIDE: run each brain on its perception → motor command.
 pub fn decide(mut agents: Query<(&mut Brain, &Perception, &mut Action)>) {
     for (mut brain, perception, mut action) in &mut agents {
         *action = brain.think(perception);
     }
 }
 
-/// AGIR : traduire la commande en mouvement, borné par les magnitudes du corps.
+/// ACT: translate the command into movement, bounded by the body's magnitudes.
 ///
-/// On braque la vitesse vers la vitesse désirée (lerp), au lieu de l'imposer :
-/// les impulsions de collision d'Avian perturbent alors visiblement la
-/// trajectoire avant que le cerveau ne re-corrige.
+/// We steer the velocity toward the desired velocity (lerp), instead of forcing
+/// it: Avian's collision impulses then visibly perturb the trajectory before the
+/// brain re-corrects.
 pub fn act(mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity)>) {
     for (action, loco, mut velocity) in &mut agents {
         let desired = action.dir.normalize_or_zero() * loco.max_speed * action.throttle;

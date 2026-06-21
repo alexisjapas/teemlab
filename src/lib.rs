@@ -1,16 +1,16 @@
-//! teemlab — moteur de simulation évolutive.
+//! teemlab — evolutionary simulation engine.
 //!
-//! Un *seul* moteur interprète de la donnée ; chaque simulation n'est qu'un
-//! scénario. La boucle est toujours **percevoir → décider → agir**.
+//! A *single* engine interprets data; each simulation is just a scenario. The
+//! loop is always **perceive → decide → act**.
 //!
-//! Ce crate expose le cœur *render-agnostic* ([`SimPlugin`]) partagé par les
-//! deux points d'entrée (fenêtré et headless), pour qu'ils fassent avancer
-//! exactement le même monde.
+//! This crate exposes the *render-agnostic* core ([`SimPlugin`]) shared by the
+//! two entry points (windowed and headless), so that they advance exactly the
+//! same world.
 
-// Les requêtes Bevy (tuples de composants + filtres) déclenchent `type_complexity`
-// par nature ; c'est la forme idiomatique d'un système ECS, pas une dette. On
-// l'autorise au niveau du crate plutôt que de saupoudrer des `#[allow]` ou
-// d'inventer des alias qui masqueraient ce qu'un système lit vraiment.
+// Bevy queries (component tuples + filters) trigger `type_complexity` by their
+// very nature; that is the idiomatic shape of an ECS system, not debt. We allow
+// it at the crate level rather than sprinkling `#[allow]` or inventing aliases
+// that would hide what a system actually reads.
 #![allow(clippy::type_complexity)]
 
 pub mod brain;
@@ -32,12 +32,12 @@ use bevy::prelude::*;
 
 pub use config::SimConfig;
 
-/// Le cœur de la simulation : tout ce qui fait avancer le monde.
+/// The heart of the simulation: everything that advances the world.
 ///
-/// **Règle absolue : aucune logique de sim dans `Update`.** L'agentivité vit
-/// dans [`FixedUpdate`] et la physique Avian dans [`FixedPostUpdate`]. `Update`
-/// est réservé au rendu / UI du binaire fenêtré. Ainsi le build headless et le
-/// build fenêtré font tourner le *même* monde, à l'identique.
+/// **Absolute rule: no sim logic in `Update`.** Agency lives in [`FixedUpdate`]
+/// and Avian physics in [`FixedPostUpdate`]. `Update` is reserved for the
+/// rendering / UI of the windowed binary. This way the headless build and the
+/// windowed build run the *same* world, identically.
 #[derive(Default)]
 pub struct SimPlugin {
     pub config: SimConfig,
@@ -52,23 +52,23 @@ impl SimPlugin {
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.config.clone())
-            // Physique placée explicitement dans FixedPostUpdate.
+            // Physics placed explicitly in FixedPostUpdate.
             .add_plugins(PhysicsPlugins::new(FixedPostUpdate))
-            // Vue top-down : pas de gravité (inséré après le plugin pour
-            // l'emporter sur son défaut).
+            // Top-down view: no gravity (inserted after the plugin so it
+            // overrides its default).
             .insert_resource(Gravity(Vec2::ZERO))
-            // Cadence de sim constante (64 Hz par défaut), indépendante du rendu.
+            // Constant sim rate (64 Hz by default), independent of rendering.
             .insert_resource(Time::<Fixed>::from_hz(self.config.tick_hz))
-            // Flux aléatoire de la sim (semis, mutations, …), seedé à part du
-            // peuplement pour ne pas corréler les deux.
+            // The sim's random stream (seeding, mutations, …), seeded separately
+            // from population so the two are not correlated.
             .insert_resource(ecology::SimRng::from_config(&self.config))
             .add_systems(Startup, spawn::setup_world)
-            // percevoir → décider → agir, strictement dans FixedUpdate.
-            // `interact` prolonge l'« agir » (manger/attaquer) ; puis l'économie
-            // d'énergie : métaboliser (photosynthèse comprise), mourir, vieillir, se
-            // reproduire. L'ordre interact → metabolize → reap fait qu'une source
-            // photosynthétique broutée à zéro regagne `photosynthesis·dt` avant le
-            // ramassage : un patch renouvelable ne meurt donc pas (Phase 3b).
+            // perceive → decide → act, strictly within FixedUpdate.
+            // `interact` extends "act" (eat/attack); then the energy economy:
+            // metabolize (photosynthesis included), die, age, reproduce. The
+            // order interact → metabolize → reap means a photosynthetic source
+            // grazed to zero regains `photosynthesis·dt` before reaping: a
+            // renewable patch therefore does not die (Phase 3b).
             .add_systems(
                 FixedUpdate,
                 (

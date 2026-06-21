@@ -1,18 +1,18 @@
-//! Item 17 — le **driver** du scénario proie-prédateur co-évolutif.
+//! Item 17 — the **driver** of the co-evolutionary predator-prey scenario.
 //!
-//! Le critère de falsification de l'item 17 a trois volets : (1) **bande de
-//! population** — les deux lignées coexistent sans qu'aucune s'éteigne ni
-//! n'explose, et ce **robustement** (sur plusieurs graines, pas par chance) ;
-//! (2) **dérive attendue** — la vision se MAINTIENT (le chasseur s'en sert), au
-//! lieu de s'effondrer comme sous l'errance ; (3) **« scénario en donnée + un
-//! driver, zéro édition de `movement`/`interaction`/`ecology` »** — ce fichier de
-//! test EST ce driver, et ces trois systèmes moteur n'ont pas bougé d'une ligne
-//! (l'addition « effectif par espèce » de l'item 17 vit dans `config`/`spawn`).
+//! The item-17 falsification criterion has three parts: (1) **population band** —
+//! the two lineages coexist without either going extinct or exploding, and that
+//! **robustly** (over several seeds, not by luck); (2) **expected drift** — vision
+//! is MAINTAINED (the hunter uses it), instead of collapsing as under wandering;
+//! (3) **"scenario as data + one driver, zero edits to
+//! `movement`/`interaction`/`ecology`"** — this test file IS that driver, and
+//! these three engine systems have not moved a line (item 17's "per-species count"
+//! addition lives in `config`/`spawn`).
 //!
-//! On fait tourner le *vrai* monde de sim (le même `SimPlugin` que les deux
-//! binaires), en pas-à-pas manuel (cf. débit headless, §6), et on échantillonne la
-//! population par espèce au fil du temps, **pour plusieurs graines** : la
-//! coexistence d'une seule graine serait anecdotique, pas une bande.
+//! We run the *real* sim world (the same `SimPlugin` as both binaries), in manual
+//! single-stepping (cf. headless throughput, §6), and sample the per-species
+//! population over time, **for several seeds**: a single seed's coexistence would
+//! be anecdotal, not a band.
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -21,31 +21,31 @@ use teemlab::genotype::Genotype;
 
 mod common;
 
-/// Le scénario versionné, chargé tel quel : le driver mesure CE que lancent les
-/// binaires, pas une variante de test.
-const SCENARIO: &str = include_str!("../scenarios/proie_predateur.ron");
+/// The bundled scenario, loaded as-is: the driver measures WHAT the binaries
+/// launch, not a test variant.
+const SCENARIO: &str = include_str!("../scenarios/predator_prey.ron");
 
-/// Graines d'expérience (cf. §5 : on rejoue une *config*, pas le bit-à-bit). Cinq
-/// mondes indépendants : si la coexistence tient pour tous, ce n'est pas un coup
-/// de chance mais une propriété de l'économie calibrée.
+/// Experiment seeds (cf. §5: we replay a *config*, not bit-for-bit). Five
+/// independent worlds: if coexistence holds for all of them, it is not luck but a
+/// property of the calibrated economy.
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 
 const SECONDS: usize = 120;
 
-/// Trajectoire d'une run : effectifs (prédateurs = espèce 0, proies = espèce 1)
-/// échantillonnés chaque seconde de sim, + la vision moyenne finale par espèce.
+/// Trajectory of a run: counts (predators = species 0, prey = species 1) sampled
+/// each sim second, + the final mean vision per species.
 struct Run {
     traj: Vec<(usize, usize)>,
     pred_vision: f32,
     prey_vision: f32,
-    /// Vision moyenne sur **tous** les agents vivants en fin de run (robuste à
-    /// une espèce momentanément vide, où la moyenne par espèce serait NaN).
+    /// Mean vision over **all** living agents at the end of the run (robust to a
+    /// momentarily empty species, where the per-species mean would be NaN).
     all_vision: f32,
 }
 
-/// Fait tourner le scénario `SECONDS` secondes pour une graine donnée.
+/// Runs the scenario for `SECONDS` seconds for a given seed.
 fn run_seed(seed: u64) -> Run {
-    let mut config = SimConfig::from_ron_str(SCENARIO).expect("scénario proie-prédateur valide");
+    let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid predator-prey scenario");
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
@@ -104,12 +104,12 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
 
     let mut failures = Vec::new();
     eprintln!(
-        "  seed       | préd(min..max) | proie(min..max) | vision préd/proie (fond {founder_vision:.0})"
+        "  seed       | pred(min..max) | prey(min..max) | vision pred/prey (founder {founder_vision:.0})"
     );
     for seed in SEEDS {
         let run = run_seed(seed);
-        // On juge sur la 2ᵉ moitié : on laisse passer le transitoire initial
-        // (pic des fondateurs, premier ajustement) et on regarde le régime établi.
+        // We judge on the 2nd half: we let the initial transient pass (founders'
+        // peak, first adjustment) and look at the steady state.
         let back = &run.traj[SECONDS / 2..];
         let pred_min = back.iter().map(|&(p, _)| p).min().unwrap();
         let pred_max = back.iter().map(|&(p, _)| p).max().unwrap();
@@ -120,7 +120,7 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
             "  {seed:#012x} | {pred_min:>4}..{pred_max:<4}    | {prey_min:>4}..{prey_max:<4}     | {:.0} / {:.0}",
             run.pred_vision, run.prey_vision
         );
-        // Trajectoire grossière (préd/proie tous les 20 s) — la forme du régime.
+        // Coarse trajectory (pred/prey every 20 s) — the shape of the regime.
         let sampled: Vec<String> = run
             .traj
             .iter()
@@ -129,27 +129,26 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
             .collect();
         eprintln!("              t=0,20,..: {}", sampled.join("  "));
 
-        // --- Volet 1 : bande de population (coexistence bornée), pour CETTE graine. ---
+        // --- Part 1: population band (bounded coexistence), for THIS seed. ---
         if pred_min == 0 {
             failures.push(format!(
-                "seed {seed:#x} : prédateurs éteints (chaîne non soutenue)"
+                "seed {seed:#x}: predators extinct (chain not sustained)"
             ));
         }
         if prey_min == 0 {
-            failures.push(format!("seed {seed:#x} : proies éteintes (surprédation)"));
+            failures.push(format!("seed {seed:#x}: prey extinct (overpredation)"));
         }
         if peak > 600 {
-            failures.push(format!("seed {seed:#x} : explosion (pic {peak})"));
+            failures.push(format!("seed {seed:#x}: explosion (peak {peak})"));
         }
 
-        // --- Volet 2 : dérive attendue. Sous un chasseur, la vision SERT — elle se
-        // maintient bien au-dessus du plancher (borne basse 30) vers lequel
-        // l'errance la ferait fondre (cf. evolution.ron). On ne vise pas une valeur
-        // précise (dérive stochastique en petite population), seulement le contraste
-        // qualitatif : elle n'a pas fondu.
+        // --- Part 2: expected drift. Under a hunter, vision IS USED — it stays well
+        // above the floor (lower bound 30) toward which wandering would melt it (cf.
+        // evolution.ron). We do not aim at a precise value (stochastic drift in a
+        // small population), only the qualitative contrast: it did not melt away.
         if run.all_vision < 90.0 {
             failures.push(format!(
-                "seed {seed:#x} : vision effondrée ({:.0}) — un chasseur devrait la maintenir",
+                "seed {seed:#x}: vision collapsed ({:.0}) — a hunter should maintain it",
                 run.all_vision
             ));
         }
@@ -157,7 +156,7 @@ fn predator_prey_coexists_in_a_band_across_seeds() {
 
     assert!(
         failures.is_empty(),
-        "coexistence non robuste :\n  {}",
+        "coexistence not robust:\n  {}",
         failures.join("\n  ")
     );
 }

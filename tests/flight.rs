@@ -1,13 +1,13 @@
-//! Fuite active — la proie voit et **fuit** son prédateur.
+//! Active flight — the prey sees and **flees** its predator.
 //!
-//! Le miroir exact de `tests/hunter.rs` (item 16), côté répulsion : on teste de bout
-//! en bout le canal « menace » de la perception + la fuite de [`Brain::Hunter`]. On
-//! pose une proie à l'origine, cap +X, et un prédateur (une espèce qui peut agir
-//! *sur* elle, via la table de relations) droit devant, dans sa portée de vision ;
-//! on fait tourner le *vrai* monde de sim et on vérifie (1) que le prédateur
-//! s'inscrit dans le canal « menace » de la proie, et (2) qu'elle s'en **éloigne**
-//! franchement — la preuve que le même cerveau `Hunter`, lu par l'espèce-proie via la
-//! relation *inverse*, produit une FUITE (le pendant de l'attraction « cible »).
+//! The exact mirror of `tests/hunter.rs` (item 16), on the repulsion side: we test
+//! end-to-end the perception's "threat" channel + [`Brain::Hunter`]'s flight. We
+//! place a prey at the origin, heading +X, and a predator (a species that can act
+//! *on* it, via the relation table) straight ahead, within its vision range; we run
+//! the *real* sim world and check (1) that the predator registers in the prey's
+//! "threat" channel, and (2) that it moves **away** from it clearly — the proof
+//! that the same `Hunter` brain, read by the prey species via the *inverse*
+//! relation, produces a FLIGHT (the counterpart of the "target" attraction).
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
@@ -22,18 +22,18 @@ mod common;
 
 #[test]
 fn prey_sees_and_flees_its_predator() {
-    // Monde nu : pas de peuplement auto (on place tout à la main), pas de métabolisme
-    // (la proie ne meurt pas pendant le test), une relation prédateur→proie à débit
-    // NUL et portée courte — le prédateur est un **épouvantail stable** : perçu comme
-    // menace, mais il ne mange jamais. Il est de plus IMMOBILE (max_speed 0) : un
-    // point de menace fixe, comme la nourriture est un appât fixe dans `tests/hunter.rs`.
+    // Bare world: no auto population (we place everything by hand), no metabolism
+    // (the prey does not die during the test), a predator→prey relation with a ZERO
+    // rate and short range — the predator is a **stable scarecrow**: perceived as a
+    // threat, but it never eats. It is also IMMOBILE (max_speed 0): a fixed threat
+    // point, just as the food is a fixed bait in `tests/hunter.rs`.
     let config = SimConfig {
         arena_half_extent: 400.0,
         archetypes: vec![
-            // Espèce 0 : la proie (chasseur). Ici elle n'a aucune cible — seule la
-            // menace la pilote → fuite pure. Vision portée à 260 pour voir l'épouvantail.
+            // Species 0: the prey (hunter). Here it has no target — only the threat
+            // drives it → pure flight. Vision raised to 260 to see the scarecrow.
             Archetype {
-                name: "Proie".into(),
+                name: "Prey".into(),
                 color: Archetype::default_color(0),
                 count: 0,
                 radius: 8.0,
@@ -49,9 +49,9 @@ fn prey_sees_and_flees_its_predator() {
                 captured_brain: None,
                 captured_from: None,
             },
-            // Espèce 1 : le prédateur, immobile (max_speed 0) — l'épouvantail.
+            // Species 1: the predator, immobile (max_speed 0) — the scarecrow.
             Archetype {
-                name: "Prédateur".into(),
+                name: "Predator".into(),
                 color: Archetype::default_color(1),
                 count: 0,
                 radius: 8.0,
@@ -67,9 +67,9 @@ fn prey_sees_and_flees_its_predator() {
                 captured_from: None,
             },
         ],
-        // Le prédateur (espèce 1) peut agir SUR la proie (espèce 0) : la proie le perçoit
-        // donc comme une MENACE (relation *inverse* du canal « cible »). Débit nul → il
-        // ne fait que menacer.
+        // The predator (species 1) can act ON the prey (species 0): the prey
+        // therefore perceives it as a THREAT (the *inverse* relation of the "target"
+        // channel). Zero rate → it only threatens.
         relations: vec![Relation {
             actor: 1,
             target: 0,
@@ -80,15 +80,15 @@ fn prey_sees_and_flees_its_predator() {
         ..SimConfig::default()
     };
 
-    // Un tick fixe pile par `update()` (cf. `common::stepping_app`).
+    // Exactly one fixed tick per `update()` (cf. `common::stepping_app`).
     let mut app = common::stepping_app(&config);
 
-    // Proie à l'origine (cap +X), prédateur droit devant à 120 u : dans la portée
-    // (260) et assez PROCHE pour franchir le seuil de fuite (proximité ≈ 0.54 > 0.35).
+    // Prey at the origin (heading +X), predator straight ahead at 120 u: within
+    // range (260) and CLOSE enough to cross the flight threshold (proximity ≈ 0.54 > 0.35).
     let predator_x = 120.0_f32;
     app.world_mut()
         .run_system_once(move |mut commands: Commands, config: Res<SimConfig>| {
-            // Proie (espèce 0).
+            // Prey (species 0).
             spawn_agent(
                 &mut commands,
                 &config,
@@ -98,9 +98,9 @@ fn prey_sees_and_flees_its_predator() {
                 0.0,
                 0,
                 config.reserve_max_of(0),
-                0, // fondateur : génération 0.
+                0, // founder: generation 0.
             );
-            // Prédateur immobile (espèce 1), droit devant.
+            // Immobile predator (species 1), straight ahead.
             spawn_agent(
                 &mut commands,
                 &config,
@@ -113,12 +113,12 @@ fn prey_sees_and_flees_its_predator() {
                 0,
             );
         })
-        .expect("spawn ponctuel");
+        .expect("one-off spawn");
 
-    // La broad-phase d'Avian a besoin de quelques ticks pour intégrer le prédateur ;
-    // pendant ce temps la proie commence déjà à se détourner. On échantillonne donc le
-    // canal « menace » sur les premiers ticks : il doit s'allumer AU MOINS une fois (la
-    // fenêtre où le prédateur est intégré ET encore dans le cône de vision avant).
+    // Avian's broad-phase needs a few ticks to integrate the predator; meanwhile the
+    // prey already starts turning away. We therefore sample the "threat" channel
+    // over the first ticks: it must light up AT LEAST once (the window where the
+    // predator is integrated AND still in the forward vision cone).
     let mut ever_saw_threat = false;
     for _ in 0..12 {
         app.update();
@@ -132,11 +132,11 @@ fn prey_sees_and_flees_its_predator() {
     }
     assert!(
         ever_saw_threat,
-        "le prédateur droit devant doit apparaître dans le canal « menace » de la proie"
+        "the predator straight ahead must appear in the prey's \"threat\" channel"
     );
 
-    // On laisse courir : la proie doit s'être ÉLOIGNÉE du prédateur — fuite vers les x
-    // négatifs, à l'opposé de l'épouvantail posé en +X.
+    // We let it run: the prey must have moved AWAY from the predator — flight toward
+    // negative x, opposite to the scarecrow placed at +X.
     for _ in 0..80 {
         app.update();
     }
@@ -146,9 +146,9 @@ fn prey_sees_and_flees_its_predator() {
         .iter(world)
         .find(|(s, _)| s.0 == 0)
         .map(|(_, t)| t.translation.x)
-        .expect("la proie existe encore");
+        .expect("the prey still exists");
     assert!(
         prey_x < -50.0,
-        "la proie doit avoir fui sa menace (x={prey_x:.1}, départ 0, prédateur en {predator_x})"
+        "the prey must have fled its threat (x={prey_x:.1}, start 0, predator at {predator_x})"
     );
 }

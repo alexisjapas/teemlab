@@ -1,82 +1,82 @@
-//! Le **génotype** : la description héritée et mutable d'un agent.
+//! The **genotype**: an agent's inherited, mutable description.
 //!
-//! §2 — *génotype ≠ phénotype*. On mute le génotype (cette structure de gènes),
-//! puis on le **compile vers le phénotype vivant** (composants [`Locomotion`],
-//! [`Vision`], …) au spawn. L'évolution ne touche jamais l'état physique en
-//! cours : elle réécrit la recette, pas le plat.
+//! §2 — *genotype ≠ phenotype*. We mutate the genotype (this gene struct), then
+//! **compile it into the living phenotype** ([`Locomotion`], [`Vision`], …
+//! components) at spawn. Evolution never touches the ongoing physical state: it
+//! rewrites the recipe, not the dish.
 //!
-//! Les gènes font varier les **magnitudes** (portée de vision, vitesse, …) *et*,
-//! depuis le gène `vision_rays`, le **nombre de canaux sensoriels** (la précision
-//! visuelle). Ce nombre varie donc par individu : la couche d'entrée du MLP s'y
-//! adapte à la reproduction (cf. [`crate::brain::MlpBrain::reproduced`]) — un
-//! premier pas vers la topologie variable, sans aller jusqu'au NEAT complet.
+//! The genes vary the **magnitudes** (vision range, speed, …) *and*, since the
+//! `vision_rays` gene, the **number of sensory channels** (visual precision).
+//! This number therefore varies per individual: the MLP's input layer adapts to
+//! it at reproduction (cf. [`crate::brain::MlpBrain::reproduced`]) — a first step
+//! toward variable topology, without going all the way to full NEAT.
 //!
-//! Chaque gène forme avec ses bornes ([`crate::config::Bounds`]) et son couplage
-//! de coût (l'économie d'énergie) le triplet du §2.
+//! Each gene forms, together with its bounds ([`crate::config::Bounds`]) and its
+//! cost coupling (the energy economy), the triplet of §2.
 
 use crate::components::{Locomotion, Vision};
 use crate::config::{Bounds, Mutability, SimConfig};
 use crate::rng::Rng;
 use bevy::prelude::*;
 
-/// Les gènes d'un agent. Composant (porté par l'agent vivant, hérité par ses
-/// enfants) **et** « génome » sérialisable d'une instance — la distinction
-/// archétype (config) / génome (instance) de l'item 5.
+/// An agent's genes. A component (carried by the living agent, inherited by its
+/// children) **and** the serializable "genome" of an instance — the archetype
+/// (config) / genome (instance) distinction of item 5.
 #[derive(Component, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Genotype {
-    /// Vitesse maximale.
+    /// Maximum speed.
     pub max_speed: f32,
-    /// Vivacité du braquage, dans `[0, 1]`.
+    /// Steering responsiveness, in `[0, 1]`.
     pub agility: f32,
-    /// Portée de vision.
+    /// Vision range.
     pub vision_range: f32,
-    /// Champ de vision *total*, en **degrés** — l'unité du designer (config,
-    /// éditeur, bornes). Converti en radians au seul point de compilation
-    /// phénotype (cf. [`Genotype::vision`]).
+    /// *Total* field of view, in **degrees** — the designer's unit (config,
+    /// editor, bounds). Converted to radians at the single phenotype-compilation
+    /// point (cf. [`Genotype::vision`]).
     pub vision_fov_deg: f32,
-    /// Énergie à atteindre pour se reproduire. `0` → cet agent ne se reproduit
-    /// pas. Caractéristique d'entité (§1, *le corps*) → la stratégie de
-    /// reproduction est elle-même sélectionnable.
+    /// Energy to reach in order to reproduce. `0` → this agent does not reproduce.
+    /// An entity characteristic (§1, *the body*) → the reproduction strategy is
+    /// itself selectable.
     pub reproduction_threshold: f32,
-    /// Énergie passée à l'enfant, déduite du parent (conservation : rien créé).
+    /// Energy passed to the child, deducted from the parent (conservation: nothing created).
     pub offspring_energy: f32,
-    /// Taux de mutation transmis à la descendance (écart-type, en fraction de
-    /// l'étendue d'un gène). Le gène qui pilote sa propre lignée. **Non mutable
-    /// par défaut** ([`crate::config::Mutability`]) : laissé mutable, il dérive
-    /// (méta-évolution) et peut se figer à 0 → évolution morte.
+    /// Mutation rate transmitted to the offspring (std-dev, as a fraction of a
+    /// gene's span). The gene that drives its own lineage. **Not mutable by
+    /// default** ([`crate::config::Mutability`]): left mutable, it drifts
+    /// (meta-evolution) and may freeze at 0 → dead evolution.
     pub mutation_rate: f32,
-    /// Métabolisme de base : énergie drainée **par seconde** au repos — le coût de
-    /// survie (§2), pression de sélection de base. Per-espèce, **non mutable par
-    /// défaut** : évolvable, il se ferait raboter à 0 (la pression disparaîtrait).
+    /// Base metabolism: energy drained **per second** at rest — the cost of
+    /// survival (§2), the base selection pressure. Per-species, **not mutable by
+    /// default**: evolvable, it would be whittled down to 0 (the pressure would vanish).
     pub base_metabolism: f32,
-    /// Surcoût de locomotion : énergie/s à pleine vitesse. Couple la vitesse à un
-    /// coût (§2). Per-espèce, **non mutable par défaut** : sinon le gène de
-    /// vitesse pourrait « s'auto-annuler » son coût.
+    /// Locomotion surcharge: energy/s at full speed. Couples speed to a cost (§2).
+    /// Per-species, **not mutable by default**: otherwise the speed gene could
+    /// "cancel out" its own cost.
     pub move_cost: f32,
-    /// Précision visuelle : le **nombre de rayons** de vision. Gène à part entière
-    /// (mutable, hérité), stocké en `f32` pour entrer dans la mécanique de mutation
-    /// gaussienne commune, et arrondi en entier à la compilation du phénotype (cf.
-    /// [`Genotype::ray_count`]). Plus de rayons = vision plus fine *mais* plus
-    /// chère ([`Vision::metabolic_cost`]) — le couplage de coût qui borne sa dérive.
+    /// Visual precision: the **number of vision rays**. A full-fledged gene
+    /// (mutable, inherited), stored as `f32` to fit the common Gaussian-mutation
+    /// machinery, and rounded to an integer at phenotype compilation (cf.
+    /// [`Genotype::ray_count`]). More rays = finer vision *but* more expensive
+    /// ([`Vision::metabolic_cost`]) — the cost coupling that bounds its drift.
     pub vision_rays: f32,
-    /// **Gène de flore** (Phase 3) : énergie **gagnée** par seconde, passivement — la
-    /// *photosynthèse*. C'est la source d'énergie d'une entité sessile, le pendant de
-    /// « manger » pour la faune. `0` pour la faune (inerte). Ajouté en **fin** (comme
-    /// `vision_rays`) pour préserver le flux de tirages de [`mutate`](Genotype::mutate).
+    /// **Flora gene** (Phase 3): energy **gained** per second, passively — the
+    /// *photosynthesis*. It is a sessile entity's energy source, the counterpart
+    /// of "eating" for fauna. `0` for fauna (inert). Added at the **end** (like
+    /// `vision_rays`) to preserve [`mutate`](Genotype::mutate)'s draw stream.
     pub photosynthesis: f32,
-    /// **Gène de flore** (Phase 3) : distance à laquelle un descendant est semé du parent
-    /// (la *dissémination*). `0` → repli sur le décalage rapproché par défaut (rayon ×
-    /// 2.5, le comportement de la faune, inchangé). Une flore l'augmente pour disperser
-    /// ses graines au lieu de s'agglutiner.
+    /// **Flora gene** (Phase 3): distance at which an offspring is seeded from the
+    /// parent (the *dispersal*). `0` → falls back to the default close offset
+    /// (radius × 2.5, fauna behavior, unchanged). A flora increases it to scatter
+    /// its seeds instead of clustering.
     pub seed_dispersal: f32,
 }
 
 impl Default for Genotype {
-    /// Valeurs fondatrices par défaut (l'« archétype » de base) : reprises par
-    /// [`Archetype::new_agent`](crate::config::Archetype::new_agent) et par tout gène
-    /// omis d'un génotype partiel en RON (`#[serde(default)]`). Chaque gène dans son
-    /// unité de stockage — le fov en degrés.
+    /// Default founding values (the base "archetype"): reused by
+    /// [`Archetype::new_agent`](crate::config::Archetype::new_agent) and by any
+    /// gene omitted from a partial RON genotype (`#[serde(default)]`). Each gene in
+    /// its storage unit — the fov in degrees.
     fn default() -> Self {
         Self {
             max_speed: 140.0,
@@ -89,8 +89,8 @@ impl Default for Genotype {
             base_metabolism: 0.0,
             move_cost: 0.0,
             vision_rays: 7.0,
-            // Gènes de flore inactifs par défaut (faune) : pas de gain passif, semis
-            // rapproché par défaut.
+            // Flora genes inactive by default (fauna): no passive gain, close
+            // seeding by default.
             photosynthesis: 0.0,
             seed_dispersal: 0.0,
         }
@@ -98,7 +98,7 @@ impl Default for Genotype {
 }
 
 impl Genotype {
-    /// Compile le gène de locomotion vers son phénotype.
+    /// Compiles the locomotion gene into its phenotype.
     pub fn locomotion(&self) -> Locomotion {
         Locomotion {
             max_speed: self.max_speed,
@@ -106,24 +106,25 @@ impl Genotype {
         }
     }
 
-    /// Nombre de rayons *effectif* : le gène `vision_rays` arrondi à l'entier le
-    /// plus proche, au moins 1. Le seul point où la précision visuelle (gène f32)
-    /// devient une forme discrète (nombre de canaux).
+    /// *Effective* ray count: the `vision_rays` gene rounded to the nearest
+    /// integer, at least 1. The only point where visual precision (an f32 gene)
+    /// becomes a discrete shape (number of channels).
     pub fn ray_count(&self) -> usize {
         (self.vision_rays.round() as usize).max(1)
     }
 
-    /// Compile les gènes de vision vers son phénotype. La *forme* (nombre de
-    /// rayons) vient désormais du gène `vision_rays` ([`Genotype::ray_count`]), donc
-    /// varie par individu. **Seul point** où le fov passe des degrés (gène) aux
-    /// radians (phénotype, attendus par le raycast).
+    /// Compiles the vision genes into their phenotype. The *shape* (number of
+    /// rays) now comes from the `vision_rays` gene ([`Genotype::ray_count`]), so it
+    /// varies per individual. **The only point** where the fov goes from degrees
+    /// (gene) to radians (phenotype, expected by the raycast).
     ///
-    /// Note — une entité **immobile** (flore, [`Locomotion::is_immobile`]) ne *lance* aucun
-    /// rayon (`perceive` la saute) et n'en affiche aucun (inspecteur, gizmos) : sans cap ni
-    /// locomotion, sa vision est inexploitable. On garde néanmoins ses dimensions ici
-    /// (donc son coût métabolique inchangé) pour ne pas altérer l'économie d'énergie des
-    /// scénarios existants — la suppression des rayons est **observable** (rien à percevoir
-    /// ni à dessiner), pas un re-calibrage de la sim.
+    /// Note — an **immobile** entity (flora, [`Locomotion::is_immobile`]) *casts*
+    /// no ray (`perceive` skips it) and displays none (inspector, gizmos): without
+    /// a heading or locomotion, its vision is unusable. We nonetheless keep its
+    /// dimensions here (and thus its metabolic cost unchanged) so as not to alter
+    /// the energy economy of existing scenarios — removing the rays is
+    /// **observable** (nothing to perceive or draw), not a re-calibration of the
+    /// sim.
     pub fn vision(&self) -> Vision {
         Vision {
             ray_count: self.ray_count(),
@@ -132,22 +133,22 @@ impl Genotype {
         }
     }
 
-    /// Copie mutée pour un enfant : chaque gène **mutable** de la table [`TRAITS`]
-    /// reçoit une perturbation gaussienne d'écart-type `mutation_rate · étendue`,
-    /// puis est ramené dans ses bornes ; un gène non mutable est **quand même copié
-    /// du parent** mais sans perturbation (il reste donc figé sur la valeur du
-    /// fondateur le long d'une lignée). Boucle générique → ajouter un trait n'y
-    /// touche pas. Tous les gènes sont dans l'unité de leurs bornes (fov en degrés),
-    /// donc un seul chemin, sans conversion.
+    /// A mutated copy for a child: each **mutable** gene of the [`TRAITS`] table
+    /// receives a Gaussian perturbation of std-dev `mutation_rate · span`, then is
+    /// brought back within its bounds; a non-mutable gene is **still copied from
+    /// the parent** but without perturbation (it therefore stays frozen on the
+    /// founder's value along a lineage). A generic loop → adding a trait does not
+    /// touch it. All genes are in their bounds' unit (fov in degrees), so a single
+    /// path, without conversion.
     ///
-    /// Le taux vient **du génotype** (`self.mutation_rate`), pas d'un réglage
-    /// global : chaque lignée porte sa propre vitesse d'évolution.
+    /// The rate comes **from the genotype** (`self.mutation_rate`), not from a
+    /// global setting: each lineage carries its own evolution speed.
     pub fn mutate(&self, rng: &mut Rng, mutable: &Mutability, config: &SimConfig) -> Self {
         let rate = self.mutation_rate;
         let mut child = *self;
         for t in &TRAITS {
-            // Trait non mutable : l'enfant garde la valeur du parent (déjà copiée
-            // dans `child`) et ne consomme aucun tirage.
+            // Non-mutable trait: the child keeps the parent's value (already copied
+            // into `child`) and consumes no draw.
             if !(t.mutable)(mutable) {
                 continue;
             }
@@ -159,50 +160,51 @@ impl Genotype {
     }
 }
 
-/// Le descripteur d'**une** caractéristique héritable : le triplet du §2 —
-/// (valeur, bornes, …) — rendu *itérable*. La table [`TRAITS`] en est la source
-/// de vérité unique ; les pilotes (mutation, éditeur, HUD, inspecteur) bouclent
-/// dessus au lieu d'énumérer les gènes à la main. Ajouter un trait = une entrée
-/// ici (+ un champ de [`Genotype`] et ses bornes en config) ; aucun pilote à
-/// rééditer — c'est ce que l'item 15 falsifie contre la pluralité existante.
+/// The descriptor of **one** heritable characteristic: the §2 triplet —
+/// (value, bounds, …) — made *iterable*. The [`TRAITS`] table is its single
+/// source of truth; the drivers (mutation, editor, HUD, inspector) loop over it
+/// instead of enumerating the genes by hand. Adding a trait = one entry here
+/// (+ a [`Genotype`] field and its bounds in config); no driver to re-edit —
+/// that is what item 15 falsifies against the existing plurality.
 pub struct TraitSpec {
-    /// Libellé pour l'éditeur et le HUD.
+    /// Label for the editor and the HUD.
     pub name: &'static str,
-    /// Valeur du gène dans le génotype (lecture).
+    /// The gene's value in the genotype (read).
     pub get: fn(&Genotype) -> f32,
-    /// Valeur du gène dans le génotype (écriture).
+    /// The gene's value in the genotype (write).
     pub set: fn(&mut Genotype, f32),
-    /// Bornes du gène, lues dans le scénario.
+    /// The gene's bounds, read from the scenario.
     pub bounds: fn(&SimConfig) -> Bounds,
-    /// Bornes du gène en **écriture** : même champ `*_bounds` que [`bounds`](Self::bounds),
-    /// côté mutable. L'éditeur de monde boucle dessus pour exposer min/max sans champ
-    /// codé en dur (item 3) — la contrepartie « écriture » du couple lecture/écriture
-    /// déjà offert pour la valeur ([`get`](Self::get)/[`set`](Self::set)) et la
-    /// mutabilité ([`mutable`](Self::mutable)/[`set_mutable`](Self::set_mutable)).
+    /// The gene's bounds in **write**: the same `*_bounds` field as
+    /// [`bounds`](Self::bounds), on the mutable side. The world editor loops over
+    /// it to expose min/max without a hard-coded field (item 3) — the "write"
+    /// counterpart of the read/write pair already offered for the value
+    /// ([`get`](Self::get)/[`set`](Self::set)) and the mutability
+    /// ([`mutable`](Self::mutable)/[`set_mutable`](Self::set_mutable)).
     pub bounds_mut: fn(&mut SimConfig) -> &mut Bounds,
-    /// Le facet « mutable ? » de ce trait dans le scénario (lecture).
+    /// This trait's "mutable?" facet in the scenario (read).
     pub mutable: fn(&Mutability) -> bool,
-    /// Le facet « mutable ? » de ce trait (écriture, pour l'éditeur).
+    /// This trait's "mutable?" facet (write, for the editor).
     pub set_mutable: fn(&mut Mutability, bool),
-    /// Décimales d'affichage (inspecteur).
+    /// Display decimals (inspector).
     pub decimals: u8,
-    /// `true` si ce gène est **inerte sur une entité immobile** (flore) : les gènes de
-    /// locomotion (agilité, coût de locomotion) et de vision (portée, fov, rayons) n'ont
-    /// aucun effet sans mouvement ni rayon à exploiter (cf.
-    /// [`Genotype::vision`]). `max_speed`, lui, reste pertinent — c'est l'interrupteur de
-    /// mobilité. Les pilotes d'UI (éditeur, inspecteur) masquent ces gènes quand l'entité
-    /// ne peut pas se mouvoir, pour ne pas exposer des caractéristiques sans effet.
+    /// `true` if this gene is **inert on an immobile entity** (flora): the
+    /// locomotion genes (agility, locomotion cost) and vision genes (range, fov,
+    /// rays) have no effect without movement or a ray to exploit (cf.
+    /// [`Genotype::vision`]). `max_speed`, by contrast, stays relevant — it is the
+    /// mobility switch. The UI drivers (editor, inspector) hide these genes when
+    /// the entity cannot move, so as not to expose characteristics without effect.
     pub inert_when_immobile: bool,
 }
 
-/// Les caractéristiques mutables, **dans l'ordre des champs de [`Genotype`]**
-/// (cet ordre fixe le flux de tirages de [`Genotype::mutate`], donc la
-/// reproductibilité d'une config seedée — d'où l'ajout en **fin** de table, qui
-/// laisse intact le flux des traits préexistants). Table constante partagée par
-/// tous les agents.
+/// The mutable characteristics, **in [`Genotype`]'s field order** (this order
+/// fixes [`Genotype::mutate`]'s draw stream, and hence the reproducibility of a
+/// seeded config — whence the addition at the **end** of the table, which leaves
+/// the pre-existing traits' stream intact). A constant table shared by all
+/// agents.
 pub const TRAITS: [TraitSpec; 12] = [
     TraitSpec {
-        name: "Vitesse max",
+        name: "Max speed",
         get: |g| g.max_speed,
         set: |g, v| g.max_speed = v,
         bounds: |c| c.speed_bounds,
@@ -210,11 +212,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.max_speed,
         set_mutable: |m, b| m.max_speed = b,
         decimals: 1,
-        // L'interrupteur de mobilité : toujours pertinent (le mettre à 0 fait une flore).
+        // The mobility switch: always relevant (setting it to 0 makes a flora).
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Agilité",
+        name: "Agility",
         get: |g| g.agility,
         set: |g, v| g.agility = v,
         bounds: |c| c.agility_bounds,
@@ -222,11 +224,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.agility,
         set_mutable: |m, b| m.agility = b,
         decimals: 3,
-        // Locomotion : braquer une vitesse qu'on n'a pas n'a aucun effet.
+        // Locomotion: steering a speed you do not have has no effect.
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Portée vision",
+        name: "Vision range",
         get: |g| g.vision_range,
         set: |g, v| g.vision_range = v,
         bounds: |c| c.vision_range_bounds,
@@ -234,11 +236,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_range,
         set_mutable: |m, b| m.vision_range = b,
         decimals: 1,
-        // Vision : une entité immobile n'a aucun rayon (cf. `Genotype::vision`).
+        // Vision: an immobile entity has no ray (cf. `Genotype::vision`).
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Champ vision (°)",
+        name: "Vision FOV (°)",
         get: |g| g.vision_fov_deg,
         set: |g, v| g.vision_fov_deg = v,
         bounds: |c| c.vision_fov_bounds,
@@ -246,11 +248,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_fov,
         set_mutable: |m, b| m.vision_fov = b,
         decimals: 0,
-        // Vision : sans rayon, l'angle du cône n'a rien à couvrir.
+        // Vision: without a ray, the cone's angle has nothing to cover.
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Seuil de repro",
+        name: "Repro threshold",
         get: |g| g.reproduction_threshold,
         set: |g, v| g.reproduction_threshold = v,
         bounds: |c| c.reproduction_threshold_bounds,
@@ -258,11 +260,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.reproduction_threshold,
         set_mutable: |m, b| m.reproduction_threshold = b,
         decimals: 0,
-        // La reproduction vaut pour la flore aussi (semis local) : pertinent.
+        // Reproduction applies to flora too (local seeding): relevant.
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Énergie/enfant",
+        name: "Energy/child",
         get: |g| g.offspring_energy,
         set: |g, v| g.offspring_energy = v,
         bounds: |c| c.offspring_energy_bounds,
@@ -270,11 +272,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.offspring_energy,
         set_mutable: |m, b| m.offspring_energy = b,
         decimals: 0,
-        // Dotation d'un nouveau-né : pertinent pour le semis de la flore aussi.
+        // A newborn's endowment: relevant for flora seeding too.
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Taux mutation",
+        name: "Mutation rate",
         get: |g| g.mutation_rate,
         set: |g, v| g.mutation_rate = v,
         bounds: |c| c.mutation_rate_bounds,
@@ -282,11 +284,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.mutation_rate,
         set_mutable: |m, b| m.mutation_rate = b,
         decimals: 3,
-        // Pilote la vitesse d'évolution de la lignée : pertinent quelle que soit la mobilité.
+        // Drives the lineage's evolution speed: relevant whatever the mobility.
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Métabolisme/s",
+        name: "Metabolism/s",
         get: |g| g.base_metabolism,
         set: |g, v| g.base_metabolism = v,
         bounds: |c| c.base_metabolism_bounds,
@@ -294,11 +296,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.base_metabolism,
         set_mutable: |m, b| m.base_metabolism = b,
         decimals: 1,
-        // Coût de survie de base : draine la flore comme la faune.
+        // Base cost of survival: drains flora as well as fauna.
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Coût locomotion",
+        name: "Locomotion cost",
         get: |g| g.move_cost,
         set: |g, v| g.move_cost = v,
         bounds: |c| c.move_cost_bounds,
@@ -306,11 +308,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.move_cost,
         set_mutable: |m, b| m.move_cost = b,
         decimals: 1,
-        // Surcoût d'énergie au mouvement : nul effet sur une entité qui ne bouge pas.
+        // Energy surcharge for moving: no effect on an entity that does not move.
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Rayons (précision)",
+        name: "Rays (precision)",
         get: |g| g.vision_rays,
         set: |g, v| g.vision_rays = v,
         bounds: |c| c.vision_rays_bounds,
@@ -318,11 +320,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.vision_rays,
         set_mutable: |m, b| m.vision_rays = b,
         decimals: 0,
-        // Précision visuelle : une entité immobile est compilée sans aucun rayon.
+        // Visual precision: an immobile entity is compiled with no ray at all.
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Photosynthèse/s",
+        name: "Photosynthesis/s",
         get: |g| g.photosynthesis,
         set: |g, v| g.photosynthesis = v,
         bounds: |c| c.photosynthesis_bounds,
@@ -330,11 +332,11 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.photosynthesis,
         set_mutable: |m, b| m.photosynthesis = b,
         decimals: 1,
-        // Gain passif : c'est précisément la source d'énergie de la flore immobile.
+        // Passive gain: this is precisely the immobile flora's energy source.
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Dissémination",
+        name: "Dispersal",
         get: |g| g.seed_dispersal,
         set: |g, v| g.seed_dispersal = v,
         bounds: |c| c.seed_dispersal_bounds,
@@ -342,7 +344,7 @@ pub const TRAITS: [TraitSpec; 12] = [
         mutable: |m| m.seed_dispersal,
         set_mutable: |m, b| m.seed_dispersal = b,
         decimals: 0,
-        // Distance de semis : c'est la dispersion d'une flore (sessile) — pertinent.
+        // Seeding distance: this is a (sessile) flora's dispersal — relevant.
         inert_when_immobile: false,
     },
 ];
@@ -356,8 +358,8 @@ mod tests {
         SimConfig::default()
     }
 
-    /// Le génotype par défaut porte des valeurs fondatrices cohérentes (fov en degrés,
-    /// rayons entiers stockés en `f32`).
+    /// The default genotype carries consistent founding values (fov in degrees,
+    /// integer rays stored as `f32`).
     #[test]
     fn default_has_founder_values() {
         let g = Genotype::default();
@@ -367,33 +369,28 @@ mod tests {
         assert_eq!(g.ray_count(), 7);
     }
 
-    /// L'immobilité se lit sur le phénotype de locomotion (vitesse max nulle) : c'est ce
-    /// signal qui prive la flore de cap affiché et de rayons (cf. `visuals`, `movement`,
-    /// `inspector`). Le génotype garde ses gènes de vision (donc son coût métabolique
-    /// inchangé) — la suppression des rayons est observable, pas un re-calibrage de la sim.
+    /// Immobility is read from the locomotion phenotype (zero max speed): it is
+    /// this signal that deprives flora of a displayed heading and of rays (cf.
+    /// `visuals`, `movement`, `inspector`). The genotype keeps its vision genes
+    /// (and thus its metabolic cost unchanged) — removing the rays is observable,
+    /// not a re-calibration of the sim.
     #[test]
     fn immobility_is_read_from_zero_max_speed() {
-        let plante = Genotype {
+        let plant = Genotype {
             max_speed: 0.0,
             ..Genotype::default()
         };
-        assert!(
-            plante.locomotion().is_immobile(),
-            "vitesse max nulle = flore"
-        );
+        assert!(plant.locomotion().is_immobile(), "zero max speed = flora");
 
-        let faune = Genotype {
+        let fauna = Genotype {
             max_speed: 140.0,
             ..Genotype::default()
         };
-        assert!(
-            !faune.locomotion().is_immobile(),
-            "un agent mobile peut bouger"
-        );
+        assert!(!fauna.locomotion().is_immobile(), "a mobile agent can move");
 
-        // Garde-fou de cohérence : seuls les gènes de locomotion et de vision sont
-        // marqués inertes sur une entité immobile (et `max_speed`, l'interrupteur, ne
-        // l'est pas). Ce sont ceux que l'éditeur et l'inspecteur masquent alors.
+        // Consistency guardrail: only the locomotion and vision genes are marked
+        // inert on an immobile entity (and `max_speed`, the switch, is not). These
+        // are the ones the editor and inspector then hide.
         let inert: Vec<&str> = TRAITS
             .iter()
             .filter(|t| t.inert_when_immobile)
@@ -402,39 +399,39 @@ mod tests {
         assert_eq!(
             inert,
             vec![
-                "Agilité",
-                "Portée vision",
-                "Champ vision (°)",
-                "Coût locomotion",
-                "Rayons (précision)",
+                "Agility",
+                "Vision range",
+                "Vision FOV (°)",
+                "Locomotion cost",
+                "Rays (precision)",
             ]
         );
     }
 
-    /// Les deux accesseurs de bornes d'un trait visent le **même** champ : la lecture
-    /// (`bounds`) et l'écriture (`bounds_mut`) ne peuvent pas diverger — garde contre
-    /// une faute de copier-coller dans la table [`TRAITS`] (l'éditeur de monde s'appuie
-    /// sur `bounds_mut`, item 3).
+    /// A trait's two bounds accessors target the **same** field: the read
+    /// (`bounds`) and the write (`bounds_mut`) cannot diverge — a guard against a
+    /// copy-paste mistake in the [`TRAITS`] table (the world editor relies on
+    /// `bounds_mut`, item 3).
     #[test]
     fn bounds_and_bounds_mut_target_the_same_field() {
         let mut c = config();
         for t in &TRAITS {
             let read = (t.bounds)(&c);
             let write = *(t.bounds_mut)(&mut c);
-            assert_eq!(read, write, "bornes incohérentes pour « {} »", t.name);
+            assert_eq!(read, write, "inconsistent bounds for \"{}\"", t.name);
         }
     }
 
-    /// Toute mutation laisse **chaque** gène de [`TRAITS`] dans ses bornes — même
-    /// répétée, même partant d'une valeur au bord. Générique : un nouveau trait
-    /// est couvert sans toucher ce test.
+    /// Any mutation leaves **every** [`TRAITS`] gene within its bounds — even
+    /// repeated, even starting from a value at the edge. Generic: a new trait is
+    /// covered without touching this test.
     #[test]
     fn mutation_stays_within_bounds() {
         let c = config();
         let mutable = Mutability::default();
         let mut rng = Rng::new(42);
         let mut g = Genotype {
-            mutation_rate: 0.4, // forte, pour stresser le clamp
+            mutation_rate: 0.4, // strong, to stress the clamp
             ..Genotype::default()
         };
         for _ in 0..1000 {
@@ -444,14 +441,14 @@ mod tests {
                 let v = (t.get)(&g);
                 assert!(
                     v >= b.min - 1e-4 && v <= b.max + 1e-4,
-                    "{} hors bornes : {v}",
+                    "{} out of bounds: {v}",
                     t.name
                 );
             }
         }
     }
 
-    /// Mutation nulle = clone fidèle (régime évolution éteinte).
+    /// Zero mutation = faithful clone (evolution-off regime).
     #[test]
     fn zero_mutation_is_identity() {
         let c = config();
@@ -461,48 +458,47 @@ mod tests {
         assert_eq!(g.mutate(&mut rng, &mutable, &c), g);
     }
 
-    /// Le facet « mutable ? » (par espèce) : un trait marqué non mutable reste figé
-    /// sur la valeur du fondateur au fil des générations, alors que les mutables
-    /// dérivent.
+    /// The "mutable?" facet (per species): a trait marked non-mutable stays frozen
+    /// on the founder's value across generations, while the mutable ones drift.
     #[test]
     fn non_mutable_trait_stays_fixed() {
         let c = config();
         let mutable = Mutability {
-            max_speed: false, // figé
+            max_speed: false, // frozen
             ..Mutability::default()
         };
         let mut rng = Rng::new(7);
         let base = Genotype {
-            mutation_rate: 0.4, // forte mutation, pour que la dérive soit nette
+            mutation_rate: 0.4, // strong mutation, so the drift is clear
             ..Genotype::default()
         };
         let mut g = base;
         let mut drifted = false;
         for _ in 0..200 {
             g = g.mutate(&mut rng, &mutable, &c);
-            assert_eq!(g.max_speed, base.max_speed, "trait non mutable figé");
+            assert_eq!(g.max_speed, base.max_speed, "non-mutable trait frozen");
             if (g.vision_range - base.vision_range).abs() > 1e-3 {
                 drifted = true;
             }
         }
-        assert!(drifted, "un trait mutable doit, lui, dériver");
+        assert!(drifted, "a mutable trait, for its part, must drift");
     }
 
-    /// Le taux de mutation est un gène **de l'entité** : la mutation lit
-    /// `self.mutation_rate`. Un génotype à taux nul ne dérive donc pas.
+    /// The mutation rate is an **entity** gene: mutation reads
+    /// `self.mutation_rate`. A genotype with a zero rate therefore does not drift.
     #[test]
     fn mutation_rate_is_per_genotype() {
         let c = config();
         let mutable = Mutability::default();
         let mut rng = Rng::new(3);
         let mut g = Genotype {
-            mutation_rate: 0.0, // ce génotype ne mute pas
+            mutation_rate: 0.0, // this genotype does not mutate
             ..Genotype::default()
         };
         let before = g;
         for _ in 0..50 {
             g = g.mutate(&mut rng, &mutable, &c);
         }
-        assert_eq!(g, before, "un génotype à taux nul reste identique");
+        assert_eq!(g, before, "a genotype with a zero rate stays identical");
     }
 }

@@ -3,7 +3,7 @@
     arena_half_extent: 360.0,
     archetypes: [
         (
-            name: "Chasseur",
+            name: "Hunter",
             color: (0.3, 0.7, 1.0),
             count: 30,
             radius: 8.0,
@@ -35,7 +35,7 @@
             ),
         ),
         (
-            name: "Errance",
+            name: "Wanderer",
             color: (1.0, 0.45, 0.35),
             count: 30,
             radius: 8.0,
@@ -68,12 +68,12 @@
                 vision_rays: true,
             ),
         ),
-        // Nourriture commune (Phase 3b) : patch sessile photosynthétique, effectif fixe.
-        // SPARSE et riche (40 buissons, photosynthèse 18 → même débit ≈ 720/s) : trouver
-        // la nourriture par hasard devient difficile, si bien que CHERCHER (le chasseur)
-        // l'emporte nettement sur ERRER — le contraste que valide ce scénario (§4).
+        // Shared food (Phase 3b): sessile photosynthetic patch, fixed count. SPARSE
+        // and rich (40 bushes, photosynthesis 18 → same throughput ≈ 720/s): finding
+        // the food by chance becomes hard, so that SEARCHING (the hunter) wins
+        // clearly over WANDERING — the contrast this scenario validates (§4).
         (
-            name: "Nourriture",
+            name: "Food",
             color: (0.55, 0.9, 0.45),
             count: 120,
             radius: 7.0,

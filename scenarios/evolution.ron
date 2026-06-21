@@ -3,7 +3,7 @@
     arena_half_extent: 320.0,
     archetypes: [
         (
-            name: "Brouteur",
+            name: "Grazer",
             color: (0.3, 0.7, 1.0),
             count: 40,
             radius: 8.0,
@@ -36,13 +36,13 @@
                 vision_rays: true,
             ),
         ),
-        // Source de nourriture (Phase 3b) : un patch SESSILE photosynthétique. Il
-        // regagne son énergie sur place (`photosynthesis`) après broutage, ne se
-        // reproduit pas (`reproduction_threshold: 0` → effectif fixe = `count`) et est
-        // immobile (`max_speed: 0`). Le débit d'énergie de l'écosystème ≈ count ×
-        // photosynthesis (ici 70 × 7 ≈ l'ancien regen 8/s × énergie 60).
+        // Food source (Phase 3b): a SESSILE photosynthetic patch. It regains its
+        // energy in place (`photosynthesis`) after grazing, does not reproduce
+        // (`reproduction_threshold: 0` → fixed count = `count`) and is immobile
+        // (`max_speed: 0`). The ecosystem's energy throughput ≈ count × photosynthesis
+        // (here 70 × 7 ≈ the old regen 8/s × energy 60).
         (
-            name: "Nourriture",
+            name: "Food",
             color: (1.0, 0.45, 0.35),
             count: 70,
             radius: 8.0,

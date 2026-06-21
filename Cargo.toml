@@ -2,7 +2,7 @@
 name = "teemlab"
 version = "0.1.0"
 edition = "2024"
-description = "Moteur de simulation évolutive — un moteur, des scénarios."
+description = "Evolutionary simulation engine — one engine, many scenarios."
 
 [dependencies]
 bevy = { version = "0.18", features = ["wayland"] }
@@ -17,9 +17,9 @@ avian2d = { version = "0.6", default-features = false, features = [
     "parallel",
 ] }
 
-# Scénario = donnée externe. RON plutôt que JSON : commentaires, types nommés,
-# littéraux hex — un fichier de scénario lisible et annotable à la main. serde
-# et ron sont déjà tirés transitivement par Bevy (aucune résolution nouvelle).
+# Scenario = external data. RON rather than JSON: comments, named types, hex
+# literals — a scenario file that is readable and annotatable by hand. serde and
+# ron are already pulled in transitively by Bevy (no new resolution).
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
 bevy_egui = "0.39"

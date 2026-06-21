@@ -1,21 +1,21 @@
-//! Disposition **dockée** du build fenêtré : des panneaux egui fixes autour de la
-//! zone de simulation centrale.
+//! **Docked** layout of the windowed build: fixed egui panels around the central
+//! simulation area.
 //!
-//! Module du *binaire* fenêtré uniquement. On n'invente rien : chaque panneau
-//! appelle la `*_section(ui, …)` réutilisable déjà exposée par son module d'outil
-//! (`controls`, `editor`, `runs`, `hud`, `recorder`, `inspector`). Le rôle de ces
-//! systèmes est purement la **mise en page** — réserver les bords de l'écran egui.
+//! A module of the windowed *binary* only. We invent nothing: each panel calls
+//! the reusable `*_section(ui, …)` already exposed by its tool module
+//! (`controls`, `editor`, `runs`, `hud`, `recorder`, `inspector`). The role of
+//! these systems is purely **layout** — reserving the edges of the egui screen.
 //!
-//! Découpage **sémantique** : *monde* à gauche, *entités* à droite, *scénario +
-//! enregistrement* en bande du haut, *contrôles + stats* puis *courbes + inspecteur*
-//! en bas.
+//! **Semantic** split: *world* on the left, *entities* on the right, *scenario +
+//! recording* in the top strip, *controls + stats* then *curves + inspector* at
+//! the bottom.
 //!
-//! C'est ce qui rend la zone centrale auto-ajustée : les `SidePanel`/`TopBottomPanel`
-//! *réservent* leur espace, donc `ctx.available_rect()` se réduit au centre, et
-//! `main::set_sim_camera` (qui tourne en dernier du pass egui) y cadre la sim — d'où
-//! une simulation toujours **centrée et entièrement visible**, quelle que soit la
-//! taille des panneaux. Aucun `CentralPanel` : le centre reste « transparent » et
-//! laisse transparaître le rendu Bevy.
+//! This is what makes the central area self-fitting: the
+//! `SidePanel`/`TopBottomPanel`s *reserve* their space, so `ctx.available_rect()`
+//! shrinks to the center, and `main::set_sim_camera` (which runs last in the egui
+//! pass) frames the sim there — hence a simulation always **centered and fully
+//! visible**, whatever the panels' size. No `CentralPanel`: the center stays
+//! "transparent" and lets the Bevy rendering show through.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -34,10 +34,10 @@ use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 
-/// Bande du haut, **une seule ligne** : **scénario** (choisir / recharger / sauver-charger)
-/// calé à gauche, **enregistrement** vidéo calé **à droite** — tout l'IO « entrée/sortie »
-/// d'une run. L'enregistrement est aligné à droite via un layout `right_to_left` ; un
-/// `left_to_right` imbriqué préserve l'ordre de lecture de ses widgets.
+/// Top strip, **a single line**: **scenario** (choose / reload / save-load)
+/// pinned left, video **recording** pinned **right** — all of a run's
+/// "input/output" IO. Recording is right-aligned via a `right_to_left` layout; a
+/// nested `left_to_right` preserves the reading order of its widgets.
 pub fn top_bar(
     mut contexts: EguiContexts,
     mut runs_panel: ResMut<RunsPanel>,
@@ -46,9 +46,9 @@ pub fn top_bar(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-        // Barre **forcée pleine largeur** : sinon le `right_to_left` n'a pas d'espace pour
-        // pousser l'enregistrement à droite. Scénario à gauche (ordre normal), enregistrement
-        // collé à droite (émis en ordre inverse, cf. `recorder_section`).
+        // Bar **forced to full width**: otherwise the `right_to_left` has no space
+        // to push recording to the right. Scenario on the left (normal order),
+        // recording pinned right (emitted in reverse order, cf. `recorder_section`).
         let row_h = ui.spacing().interact_size.y;
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), row_h),
@@ -64,22 +64,22 @@ pub fn top_bar(
     Ok(())
 }
 
-/// Colonne de gauche, redimensionnable : le **monde** — paramètres globaux de
-/// scénario (arène, cadence, graine, fonds), bornes des gènes et table de relations.
+/// Left column, resizable: the **world** — global scenario parameters (arena,
+/// rate, seed, backgrounds), gene bounds and relation table.
 pub fn left_tools(mut contexts: EguiContexts, mut config: ResMut<SimConfig>) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::SidePanel::left("left_tools")
         .resizable(true)
         .default_width(280.0)
         .show(ctx, |ui| {
-            ui.heading("Monde");
+            ui.heading("World");
             egui::ScrollArea::vertical().show(ui, |ui| editor::world_section(ui, &mut config));
         });
     Ok(())
 }
 
-/// Colonne de droite, redimensionnable : les **entités** — palette d'archétypes
-/// (sélecteur + bibliothèque d'espèces) et éditeur de l'archétype sélectionné.
+/// Right column, resizable: the **entities** — archetype palette (selector +
+/// species library) and editor of the selected archetype.
 pub fn right_panel(
     mut contexts: EguiContexts,
     mut palette: ResMut<Palette>,
@@ -90,14 +90,14 @@ pub fn right_panel(
         .resizable(true)
         .default_width(320.0)
         .show(ctx, |ui| {
-            ui.heading("Entités");
+            ui.heading("Entities");
             egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::CollapsingHeader::new("Archétypes")
+                egui::CollapsingHeader::new("Archetypes")
                     .default_open(true)
                     .show(ui, |ui| {
                         editor::selector_section(ui, &mut palette, &mut config)
                     });
-                egui::CollapsingHeader::new("Éditeur d'archétype")
+                egui::CollapsingHeader::new("Archetype editor")
                     .default_open(true)
                     .show(ui, |ui| {
                         editor::editor_section(ui, &mut palette, &mut config)
@@ -107,9 +107,9 @@ pub fn right_panel(
     Ok(())
 }
 
-/// Bandeau du bas (juste sous la sim) : **contrôles** (pause/pas/vitesse/réinit.) à
-/// gauche, **stats globales** à droite, même ligne. (Le visualiseur natif Bevy n'existe que
-/// pour la vidéo, cf. `bin/record` ; il n'y a pas de bascule ici.)
+/// Bottom bar (just below the sim): **controls** (pause/step/speed/reset) on the
+/// left, **global stats** on the right, same line. (The native Bevy visualizer
+/// exists only for the video, cf. `bin/record`; there is no toggle here.)
 pub fn bottom_bar(
     mut contexts: EguiContexts,
     mut sim_controls: ResMut<SimControls>,
@@ -127,8 +127,8 @@ pub fn bottom_bar(
     Ok(())
 }
 
-/// Panneau du bas, redimensionnable : courbes d'évolution (gauche) et inspecteur
-/// d'agent (droite), en deux colonnes.
+/// Bottom panel, resizable: evolution curves (left) and agent inspector (right),
+/// in two columns.
 pub fn bottom_panel(
     mut contexts: EguiContexts,
     mut history: ResMut<History>,
@@ -150,13 +150,13 @@ pub fn bottom_panel(
         With<Agent>,
     >,
 ) -> Result {
-    /// Largeur minimale du panneau central sous laquelle on n'essaie plus de le
-    /// scinder en deux colonnes. `egui::Ui::columns` calcule une largeur de colonne
-    /// négative — et **panique** (`ui.rs:958`, « Negative width makes no sense ») —
-    /// quand l'espace dispo est presque nul, ce qui arrive dès que les colonnes
-    /// latérales (gauche + droite) mangent quasiment toute la fenêtre. En deçà, on
-    /// empile les deux sections au lieu de planter (et d'emporter tout le pass egui,
-    /// panneau d'enregistrement compris).
+    /// Minimum width of the central panel below which we no longer try to split it
+    /// into two columns. `egui::Ui::columns` computes a negative column width — and
+    /// **panics** (`ui.rs:958`, "Negative width makes no sense") — when the
+    /// available space is nearly zero, which happens as soon as the side columns
+    /// (left + right) eat almost the whole window. Below it, we stack the two
+    /// sections instead of crashing (and taking down the whole egui pass, the
+    /// recording panel included).
     const MIN_TWO_COLUMN_WIDTH: f32 = 160.0;
 
     let ctx = contexts.ctx_mut()?;
@@ -164,22 +164,23 @@ pub fn bottom_panel(
         .resizable(true)
         .default_height(220.0)
         .show(ctx, |ui| {
-            // Courbes : on les enveloppe d'un défilement (elles n'en ont pas).
-            let mut courbes = |ui: &mut egui::Ui| {
+            // Curves: we wrap them in a scroll area (they have none).
+            let mut curves = |ui: &mut egui::Ui| {
                 egui::ScrollArea::vertical()
-                    .id_salt("courbes")
+                    .id_salt("curves")
                     .show(ui, |ui| {
-                        ui.strong("Évolution — courbes");
+                        ui.strong("Evolution — curves");
                         hud::hud_section(ui, &mut history, &config);
                     });
             };
-            // Inspecteur : `inspector_section` porte déjà sa propre `ScrollArea`. Il ne
-            // mute pas la sim : s'il y a une demande de capture, il **retourne**
-            // l'archétype dérivé, qu'on ajoute à la config après les fermetures (pour ne
-            // pas emprunter `config` en mutable pendant que les courbes le lisent).
+            // Inspector: `inspector_section` already carries its own `ScrollArea`.
+            // It does not mutate the sim: if there is a capture request, it
+            // **returns** the derived archetype, which we add to the config after
+            // the closures (so as not to borrow `config` mutably while the curves
+            // read it).
             let mut capture_request: Option<Archetype> = None;
-            let mut inspecteur = |ui: &mut egui::Ui| {
-                ui.strong("Inspecteur d'agent");
+            let mut inspector = |ui: &mut egui::Ui| {
+                ui.strong("Agent inspector");
                 if let Some(arch) = inspector::inspector_section(ui, &selection, &config, &agents) {
                     capture_request = Some(arch);
                 }
@@ -187,24 +188,24 @@ pub fn bottom_panel(
 
             if ui.available_width() >= MIN_TWO_COLUMN_WIDTH {
                 ui.columns(2, |cols| {
-                    courbes(&mut cols[0]);
-                    inspecteur(&mut cols[1]);
+                    curves(&mut cols[0]);
+                    inspector(&mut cols[1]);
                 });
             } else {
-                // Panneau central trop étroit : empilé, chacun gardant son défilement.
-                courbes(ui);
+                // Central panel too narrow: stacked, each keeping its scroll area.
+                curves(ui);
                 ui.separator();
-                inspecteur(ui);
+                inspector(ui);
             }
 
-            // Capture validée : l'archétype dérivé rejoint la config et devient la
-            // sélection de l'éditeur (les fermetures ci-dessus, qui empruntaient `config`
-            // en partage, ne sont plus utilisées ici → emprunt mutable autorisé).
+            // Capture confirmed: the derived archetype joins the config and becomes
+            // the editor's selection (the closures above, which borrowed `config`
+            // shared, are no longer used here → mutable borrow allowed).
             if let Some(arch) = capture_request {
                 let from = arch.captured_from.clone().unwrap_or_default();
                 config.archetypes.push(arch);
                 palette.selected = Some(config.archetypes.len() - 1);
-                palette.status = format!("Archétype capturé depuis {from}.");
+                palette.status = format!("Archetype captured from {from}.");
             }
         });
     Ok(())

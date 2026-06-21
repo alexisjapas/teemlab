@@ -1,26 +1,26 @@
-//! Composants du *corps* d'un agent.
+//! Components of an agent's *body*.
 //!
-//! [`Perception`] et [`Action`] matérialisent le contrat du cerveau :
-//! *flottants normalisés en entrée → flottants en sortie*. C'est le corps qui
-//! impose la forme de ces I/O.
+//! [`Perception`] and [`Action`] materialize the brain's contract:
+//! *normalized floats in → floats out*. It is the body that imposes the shape
+//! of these I/O.
 
 use bevy::prelude::*;
 
-/// Marqueur d'un agent simulé.
+/// Marker for a simulated agent.
 #[derive(Component)]
 pub struct Agent;
 
-/// Identité d'espèce / de camp. Sert de filtre de cible pour la primitive
-/// d'interaction : c'est le *scénario* (via sa table de relations) qui donne un
-/// sens à cet entier — relation trophique prédateur→proie, ou camp ennemi→ennemi.
-/// Le moteur, lui, ne connaît que « l'espèce A peut agir sur l'espèce B ».
+/// Species / faction identity. Serves as a target filter for the interaction
+/// primitive: it is the *scenario* (via its relation table) that gives meaning
+/// to this integer — trophic relation predator→prey, or enemy→enemy faction.
+/// The engine itself only knows that "species A may act on species B".
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Species(pub u16);
 
-/// Réserve : la *ressource* qu'une interaction réduit, et que la prédation
-/// transfère. Volontairement générique — le scénario décide si elle représente
-/// de l'énergie (sélection naturelle) ou des points de vie (bataille). L'économie
-/// qui l'alimente et la mort à zéro arrivent avec le scénario nº1 (item 8).
+/// Reserve: the *resource* an interaction reduces, and that predation
+/// transfers. Deliberately generic — the scenario decides whether it represents
+/// energy (natural selection) or hit points (battle). The economy that feeds it
+/// and death at zero arrive with scenario #1 (item 8).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Reserve {
     pub current: f32,
@@ -28,12 +28,12 @@ pub struct Reserve {
 }
 
 impl Reserve {
-    /// Réserve pleine.
+    /// Full reserve.
     pub fn full(max: f32) -> Self {
         Self { current: max, max }
     }
 
-    /// Fraction de remplissage dans `[0, 1]` (0 si `max` nul).
+    /// Fill fraction in `[0, 1]` (0 if `max` is zero).
     pub fn fraction(&self) -> f32 {
         if self.max > 0.0 {
             (self.current / self.max).clamp(0.0, 1.0)
@@ -43,67 +43,67 @@ impl Reserve {
     }
 }
 
-/// Marqueur d'un mur statique de l'arène.
+/// Marker for a static arena wall.
 #[derive(Component)]
 pub struct Wall;
 
-/// Rayon du corps. Composant explicite pour que le code de rendu dimensionne
-/// le mesh sans fouiller dans le collider Avian.
+/// Body radius. Explicit component so the rendering code can size the mesh
+/// without digging into the Avian collider.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Radius(pub f32);
 
-/// Génération de l'agent : `0` pour un fondateur (peuplement, placement éditeur),
-/// `parent + 1` pour un nouveau-né. Fixée à la naissance et jamais modifiée — c'est
-/// la profondeur généalogique, pas un état vivant. Lisible pour suivre l'avancée
-/// d'une lignée (inspecteur, snapshot).
+/// Agent generation: `0` for a founder (population, editor placement),
+/// `parent + 1` for a newborn. Set at birth and never modified — it is the
+/// genealogical depth, not a living state. Readable to track a lineage's
+/// progress (inspector, snapshot).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Generation(pub u32);
 
-/// Âge de l'agent, en **secondes simulées** écoulées depuis sa naissance.
-/// Incrémenté à chaque tick par [`crate::ecology::age_agents`]. À zéro à la
-/// naissance ; restauré tel quel depuis un snapshot.
+/// Agent age, in **simulated seconds** elapsed since its birth.
+/// Incremented every tick by [`crate::ecology::age_agents`]. Zero at birth;
+/// restored as-is from a snapshot.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Age(pub f32);
 
-/// Magnitudes de locomotion — ce que les gènes feront varier (v1 : fixe).
+/// Locomotion magnitudes — what the genes will vary (v1: fixed).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Locomotion {
-    /// Vitesse maximale.
+    /// Maximum speed.
     pub max_speed: f32,
-    /// Vivacité du braquage vers la vitesse désirée, dans `[0, 1]`.
+    /// Steering responsiveness toward the desired velocity, in `[0, 1]`.
     pub agility: f32,
 }
 
 impl Locomotion {
-    /// `true` si l'entité **ne peut pas se mouvoir** (vitesse max nulle) — une flore /
-    /// source sessile. Un tel corps n'a pas de cap à montrer (son « cap » est un repli
-    /// fixe `+X`, pas une direction de regard) ni de vision à exploiter : le rendu et la
-    /// compilation du phénotype s'en servent pour ne lui donner ni indicateur de cap
-    /// ([`crate::visuals`]) ni rayon ([`crate::genotype::Genotype::vision`]). C'est la
-    /// convention du moteur : une entité sessile a toujours `max_speed: 0` (cf. le
-    /// préréglage de nourriture et `spawn`).
+    /// `true` if the entity **cannot move** (zero max speed) — sessile flora /
+    /// source. Such a body has no heading to show (its "heading" is a fixed `+X`
+    /// fallback, not a gaze direction) nor any vision to exploit: rendering and
+    /// phenotype compilation use this to give it neither a heading indicator
+    /// ([`crate::visuals`]) nor a ray ([`crate::genotype::Genotype::vision`]).
+    /// It is the engine's convention: a sessile entity always has `max_speed: 0`
+    /// (cf. the food preset and `spawn`).
     pub fn is_immobile(&self) -> bool {
         self.max_speed <= 0.0
     }
 }
 
-/// Capteur visuel par raycast. La *forme* — le nombre de rayons — est
-/// verrouillée par espèce (v1) ; les gènes feront varier les *magnitudes*
-/// (`fov`, `range`), jamais le nombre de canaux. C'est cette forme fixe qui
-/// impose la taille du vecteur d'entrée du cerveau.
+/// Visual sensor by raycast. The *shape* — the number of rays — is locked per
+/// species (v1); the genes will vary the *magnitudes* (`fov`, `range`), never
+/// the number of channels. It is this fixed shape that imposes the size of the
+/// brain's input vector.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Vision {
-    /// Nombre de rayons (= nombre de canaux de proximité produits).
+    /// Number of rays (= number of proximity channels produced).
     pub ray_count: usize,
-    /// Champ de vision *total*, en radians, centré sur le cap.
+    /// *Total* field of view, in radians, centered on the heading.
     pub fov: f32,
-    /// Portée d'un rayon, en unités monde.
+    /// Range of a ray, in world units.
     pub range: f32,
 }
 
 impl Vision {
-    /// Décalage angulaire (radians) du rayon `i` par rapport au cap, réparti
-    /// symétriquement sur `[-fov/2, +fov/2]`. Un seul rayon → droit devant.
+    /// Angular offset (radians) of ray `i` relative to the heading, spread
+    /// symmetrically over `[-fov/2, +fov/2]`. A single ray → straight ahead.
     pub fn ray_offset(&self, i: usize) -> f32 {
         if self.ray_count <= 1 {
             0.0
@@ -113,76 +113,78 @@ impl Vision {
         }
     }
 
-    /// Direction monde du rayon `i` pour un agent regardant vers `facing`.
+    /// World direction of ray `i` for an agent looking toward `facing`.
     pub fn ray_dir(&self, i: usize, facing: Vec2) -> Vec2 {
         self.ray_dir_from_angle(i, facing.to_angle())
     }
 
-    /// Comme [`ray_dir`](Self::ray_dir), mais depuis le **cap déjà converti en angle**
-    /// (`facing.to_angle()`). `perceive` éventaille `ray_count` rayons depuis un même
-    /// cap : on calcule alors l'`atan2` **une seule fois** par agent (puis un
-    /// `from_angle` par rayon) au lieu de le refaire à chaque rayon. Résultat
-    /// **bit-à-bit identique** — même expression `from_angle(base + offset)`, juste
-    /// l'atan2 redondant en moins.
+    /// Like [`ray_dir`](Self::ray_dir), but from the **heading already converted
+    /// to an angle** (`facing.to_angle()`). `perceive` fans out `ray_count` rays
+    /// from a single heading: we then compute the `atan2` **only once** per agent
+    /// (then one `from_angle` per ray) instead of redoing it for every ray.
+    /// **Bit-for-bit identical** result — same `from_angle(base + offset)`
+    /// expression, just minus the redundant atan2.
     pub fn ray_dir_from_angle(&self, i: usize, base_angle: f32) -> Vec2 {
         Vec2::from_angle(base_angle + self.ray_offset(i))
     }
 
-    /// Coût métabolique du capteur, par tick (cf. §2 « valeur, bornes, couplage
-    /// de coût » et §7 « traiter la vision comme un coût »). Borne la dérive :
-    /// plus de portée et de rayons = plus cher. Le *consommateur* (l'économie
-    /// d'énergie) arrive avec le scénario de sélection naturelle ; ici on
-    /// quantifie déjà le couplage pour qu'il n'ait qu'à soustraire.
+    /// Metabolic cost of the sensor, per tick (cf. §2 "value, bounds, cost
+    /// coupling" and §7 "treat vision as a cost"). Bounds the drift: more range
+    /// and more rays = more expensive. The *consumer* (the energy economy)
+    /// arrives with the natural-selection scenario; here we already quantify the
+    /// coupling so it only has to subtract.
     pub fn metabolic_cost(&self) -> f32 {
         const COST_PER_UNIT_RAY: f32 = 0.0005;
         self.range * self.ray_count as f32 * COST_PER_UNIT_RAY
     }
 }
 
-/// Instantané sensoriel. Écrit par `perceive`, lu par `decide` — conceptuellement
-/// le vecteur d'entrée du cerveau. Il réunit les **canaux normalisés** (`vision`,
-/// `target`, `threat`, dans `[0, 1]`) et la **géométrie** qui les situe (`heading`,
-/// `ray_dirs`), pour qu'un cerveau décide sans rien savoir du corps ([`Vision`]).
+/// Sensory snapshot. Written by `perceive`, read by `decide` — conceptually the
+/// brain's input vector. It gathers the **normalized channels** (`vision`,
+/// `target`, `threat`, in `[0, 1]`) and the **geometry** that situates them
+/// (`heading`, `ray_dirs`), so a brain can decide without knowing anything about
+/// the body ([`Vision`]).
 #[derive(Component, Default)]
 pub struct Perception {
-    /// Cap courant en vecteur unitaire (nul à l'arrêt).
+    /// Current heading as a unit vector (zero when stopped).
     pub heading: Vec2,
-    /// Proximité d'**obstacle** par rayon, un canal par rayon de [`Vision`], dans
-    /// `[0, 1]` : `0` = rien dans la portée, `1` = au contact. Occlusion
-    /// intrinsèque (chaque rayon ne retient que le hit le plus proche) ; le hit
-    /// est pris quel qu'il soit — mur, agent ou nourriture.
+    /// **Obstacle** proximity per ray, one channel per [`Vision`] ray, in
+    /// `[0, 1]`: `0` = nothing in range, `1` = in contact. Intrinsic occlusion
+    /// (each ray keeps only the nearest hit); the hit is taken whatever it is —
+    /// wall, agent or food.
     pub vision: Box<[f32]>,
-    /// Proximité de **cible** par rayon, dans `[0, 1]` : `0` si le hit le plus
-    /// proche de ce rayon n'est pas une espèce que la nôtre peut viser (table de
-    /// relations, cf. [`crate::config::SimConfig::acts_on`]), sinon sa proximité.
-    /// L'occlusion est incluse — une proie derrière un mur ne s'y lit pas, c'est
-    /// le mur (hit le plus proche) qui occupe le rayon. Le canal qui *attire*
+    /// **Target** proximity per ray, in `[0, 1]`: `0` if this ray's nearest hit
+    /// is not a species ours can target (relation table, cf.
+    /// [`crate::config::SimConfig::acts_on`]), otherwise its proximity.
+    /// Occlusion is included — a prey behind a wall is not read here; the wall
+    /// (nearest hit) occupies the ray instead. The channel that *attracts*
     /// `Brain::Hunter`.
     pub target: Box<[f32]>,
-    /// Proximité de **menace** par rayon, dans `[0, 1]` : le **symétrique inverse**
-    /// du canal `target`. Il vaut `0` sauf si le hit le plus proche de ce rayon
-    /// porte une espèce qui peut agir **sur nous** (relation *inverse*,
-    /// `acts_on(autre, nous)`, cf. [`crate::config::SimConfig::acts_on`]), auquel
-    /// cas il vaut sa proximité. Une proie y lit son prédateur ; un prédateur au
-    /// sommet de la chaîne n'y lit rien (canal nul → comportement inchangé).
-    /// Occlusion incluse, comme `target`. Le canal qui fait **fuir** `Brain::Hunter`
-    /// (répulsion) — le pendant exact du canal `target` qui l'attire.
+    /// **Threat** proximity per ray, in `[0, 1]`: the **inverse symmetric** of
+    /// the `target` channel. It is `0` unless this ray's nearest hit carries a
+    /// species that can act **on us** (the *inverse* relation,
+    /// `acts_on(other, us)`, cf. [`crate::config::SimConfig::acts_on`]), in which
+    /// case it equals its proximity. A prey reads its predator here; an apex
+    /// predator reads nothing (zero channel → unchanged behavior). Occlusion
+    /// included, like `target`. The channel that makes `Brain::Hunter` **flee**
+    /// (repulsion) — the exact counterpart of the `target` channel that attracts
+    /// it.
     pub threat: Box<[f32]>,
-    /// Direction **monde** (unitaire) de chaque rayon, situant les canaux
-    /// ci-dessus. `perceive` la dérive déjà pour lancer le raycast ; l'exposer
-    /// évite au cerveau de connaître la géométrie de [`Vision`] (fov, nombre de
-    /// rayons) : un réflexe décode « rayon i → direction » sans dépendre du corps,
-    /// et le contrat `Perception → Action` reste pur (un MLP ignorera ce champ).
+    /// **World** direction (unit) of each ray, situating the channels above.
+    /// `perceive` already derives it to cast the raycast; exposing it spares the
+    /// brain from knowing [`Vision`]'s geometry (fov, ray count): a reflex
+    /// decodes "ray i → direction" without depending on the body, and the
+    /// `Perception → Action` contract stays pure (an MLP will ignore this field).
     pub ray_dirs: Box<[Vec2]>,
 }
 
-/// Commande motrice. Écrite par `decide`, lue par `act`.
-/// Conceptuellement le vecteur de sortie du cerveau.
+/// Motor command. Written by `decide`, read by `act`.
+/// Conceptually the brain's output vector.
 #[derive(Component, Default)]
 pub struct Action {
-    /// Direction de déplacement désirée (quasi-unitaire).
+    /// Desired movement direction (near-unit).
     pub dir: Vec2,
-    /// Fraction désirée de la vitesse max, dans `[0, 1]`.
+    /// Desired fraction of max speed, in `[0, 1]`.
     pub throttle: f32,
 }
 
@@ -198,8 +200,8 @@ mod tests {
         }
     }
 
-    /// L'éventail est symétrique : premier et dernier rayon aux bords du FOV, et
-    /// le rayon central pile sur le cap.
+    /// The fan is symmetric: first and last ray at the FOV edges, and the
+    /// central ray exactly on the heading.
     #[test]
     fn ray_offsets_span_fov_symmetrically() {
         let v = vision(5);
@@ -208,13 +210,13 @@ mod tests {
         assert!(v.ray_offset(2).abs() < 1e-6);
     }
 
-    /// Un seul rayon regarde droit devant, sans division par zéro.
+    /// A single ray looks straight ahead, without division by zero.
     #[test]
     fn single_ray_points_forward() {
         assert_eq!(vision(1).ray_offset(0), 0.0);
     }
 
-    /// `ray_dir` est unitaire et, cap = +X, le rayon central pointe bien en +X.
+    /// `ray_dir` is unit and, with heading = +X, the central ray indeed points to +X.
     #[test]
     fn ray_dir_is_unit_and_centered() {
         let v = vision(3);
@@ -223,8 +225,8 @@ mod tests {
         assert!((d - Vec2::X).length() < 1e-5);
     }
 
-    /// Le coût croît strictement avec la portée et le nombre de rayons : c'est
-    /// ce qui bornera la dérive évolutive (cf. §7).
+    /// The cost grows strictly with range and ray count: this is what will
+    /// bound evolutionary drift (cf. §7).
     #[test]
     fn metabolic_cost_grows_with_range_and_rays() {
         let small = vision(3);
@@ -235,7 +237,7 @@ mod tests {
         assert!(longer.metabolic_cost() > small.metabolic_cost());
     }
 
-    /// La fraction de réserve est dans `[0, 1]`, robuste à un `max` nul.
+    /// The reserve fraction is in `[0, 1]`, robust to a zero `max`.
     #[test]
     fn reserve_fraction_is_clamped() {
         assert_eq!(Reserve::full(100.0).fraction(), 1.0);

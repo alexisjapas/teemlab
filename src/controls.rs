@@ -1,15 +1,16 @@
-//! Contrôles de simulation du build fenêtré : **pause / vitesse / pas-à-pas /
+//! Simulation controls of the windowed build: **pause / speed / single-step /
 //! reset** (item 11).
 //!
-//! Module du *binaire* fenêtré uniquement (comme [`crate::editor`] et
-//! [`crate::hud`]). Le pilotage du temps passe par `Time<Virtual>` — l'horloge
-//! fixe le suit (§6), donc la pause fige la sim *et* le HUD pendant que le rendu
-//! continue, et l'accéléré change la cadence d'évolution sans toucher au rendu.
+//! A module of the windowed *binary* only (like [`crate::editor`] and
+//! [`crate::hud`]). Time control goes through `Time<Virtual>` — the fixed clock
+//! follows it (§6), so the pause freezes the sim *and* the HUD while rendering
+//! continues, and the fast-forward changes the evolution rate without touching
+//! rendering.
 //!
-//! Invariant cardinal respecté : on ne touche jamais la *logique* de sim, on ne
-//! fait que régler son horloge ou, pour le reset, **reconstruire le monde**
-//! depuis le `SimConfig` — l'équivalent d'un nouveau `Startup`, déclenché à la
-//! main (comme le placement de l'éditeur, c'est de l'édition, pas de la sim).
+//! Cardinal invariant respected: we never touch the sim *logic*, we only set its
+//! clock or, for the reset, **rebuild the world** from the `SimConfig` — the
+//! equivalent of a new `Startup`, triggered by hand (like the editor's
+//! placement, it is editing, not sim).
 
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -19,18 +20,17 @@ use teemlab::ecology::SimRng;
 use teemlab::metrics::History;
 use teemlab::spawn;
 
-/// État des contrôles : vitesse choisie, pas en attente, reset demandé. Les
-/// boutons (en `EguiPrimaryContextPass`, trop tard pour la boucle fixe de la
-/// frame) ne font qu'écrire ici ; ce sont [`drive_steps`] et [`apply_reset`], en
-/// `PreUpdate`, qui agissent **avant** que la boucle fixe ne tourne.
+/// Controls state: chosen speed, pending steps, requested reset. The buttons (in
+/// `EguiPrimaryContextPass`, too late for the frame's fixed loop) only write
+/// here; it is [`drive_steps`] and [`apply_reset`], in `PreUpdate`, that act
+/// **before** the fixed loop runs.
 #[derive(Resource)]
 pub struct SimControls {
-    /// Vitesse relative active (appliquée à `Time<Virtual>` quand on n'est pas en
-    /// pause).
+    /// Active relative speed (applied to `Time<Virtual>` when not paused).
     pub speed: f32,
-    /// Nombre de ticks fixes à jouer un par un pendant la pause.
+    /// Number of fixed ticks to play one by one while paused.
     pub steps_pending: u32,
-    /// Reset demandé ce frame.
+    /// Reset requested this frame.
     pub reset_requested: bool,
 }
 
@@ -44,17 +44,17 @@ impl Default for SimControls {
     }
 }
 
-/// `Startup` : la sim démarre **en pause**, pour qu'on puisse placer/éditer et
-/// préparer une run avant qu'elle ne tourne. On ne fige que l'horloge
-/// (`Time<Virtual>`) — l'horloge fixe la suit (§6) ; le rendu, lui, continue.
+/// `Startup`: the sim starts **paused**, so one can place/edit and prepare a run
+/// before it runs. We only freeze the clock (`Time<Virtual>`) — the fixed clock
+/// follows it (§6); rendering, meanwhile, continues.
 pub fn pause_at_launch(mut vtime: ResMut<Time<Virtual>>) {
     vtime.pause();
 }
 
-/// Les contrôles de simulation — pause / pas / vitesse / réinitialiser. N'agit que
-/// sur `Time<Virtual>` (pause/vitesse) ou pose un drapeau (pas, reset). Rendu **à
-/// gauche de la barre du haut** (dock fixe) par [`crate::panels::top_bar`], qui
-/// s'occupe du panneau ; cette section ne dessine que la rangée de boutons.
+/// The simulation controls — pause / step / speed / reset. Only acts on
+/// `Time<Virtual>` (pause/speed) or sets a flag (step, reset). Rendered **on the
+/// left of the top bar** (fixed dock) by [`crate::panels::top_bar`], which
+/// handles the panel; this section only draws the button row.
 pub(crate) fn controls_section(
     ui: &mut egui::Ui,
     controls: &mut SimControls,
@@ -62,7 +62,7 @@ pub(crate) fn controls_section(
 ) {
     let paused = vtime.is_paused();
     if ui
-        .button(if paused { "▶ Lecture" } else { "⏸ Pause" })
+        .button(if paused { "▶ Play" } else { "⏸ Pause" })
         .clicked()
     {
         if paused {
@@ -71,21 +71,20 @@ pub(crate) fn controls_section(
             vtime.pause();
         }
     }
-    // Le pas-à-pas n'a de sens qu'à l'arrêt.
+    // Single-stepping only makes sense when stopped.
     ui.add_enabled_ui(paused, |ui| {
-        if ui.button("⏭ Pas").clicked() {
+        if ui.button("⏭ Step").clicked() {
             controls.steps_pending += 1;
         }
     });
 
     ui.separator();
-    // Slider à échelle logarithmique : réglage fin du x0.1 au x100 sur une seule
-    // poignée.
+    // Logarithmic-scale slider: fine tuning from x0.1 to x100 on a single handle.
     if ui
         .add(
             egui::Slider::new(&mut controls.speed, 0.1..=100.0)
                 .logarithmic(true)
-                .text("Vitesse ×"),
+                .text("Speed ×"),
         )
         .changed()
     {
@@ -93,19 +92,19 @@ pub(crate) fn controls_section(
     }
 
     ui.separator();
-    if ui.button("⟲ Réinitialiser").clicked() {
+    if ui.button("⟲ Reset").clicked() {
         controls.reset_requested = true;
     }
     if paused {
         ui.separator();
-        ui.weak("en pause");
+        ui.weak("paused");
     }
 }
 
-/// Pas-à-pas : pendant la pause, avancer `Time<Virtual>` d'**exactement un
-/// `timestep`** par pas demandé. Tourne en `PreUpdate` (après la mise à jour du
-/// temps, avant la boucle fixe) pour qu'un seul tick fixe soit joué cette frame.
-/// Hors pause, les pas en attente sont abandonnés (le déroulé normal reprend).
+/// Single-step: while paused, advance `Time<Virtual>` by **exactly one
+/// `timestep`** per requested step. Runs in `PreUpdate` (after the time update,
+/// before the fixed loop) so that a single fixed tick is played this frame. When
+/// not paused, pending steps are dropped (the normal flow resumes).
 pub fn drive_steps(
     mut controls: ResMut<SimControls>,
     mut vtime: ResMut<Time<Virtual>>,
@@ -118,24 +117,24 @@ pub fn drive_steps(
     if controls.steps_pending == 0 {
         return;
     }
-    // Un timestep injecté à la main : la boucle fixe l'accumulera et exécutera
-    // pile un tick. (`advance_by` écrit le delta même sur une horloge en pause —
-    // la pause ne fait que mettre le delta calculé par Bevy à zéro.)
+    // A timestep injected by hand: the fixed loop will accumulate it and execute
+    // exactly one tick. (`advance_by` writes the delta even on a paused clock —
+    // the pause only sets the delta computed by Bevy to zero.)
     vtime.advance_by(fixed.timestep());
     controls.steps_pending -= 1;
 }
 
-/// Reset à chaud : reconstruire le monde depuis le `SimConfig`. Despawn de tout
-/// ce qui est simulé (agents, nourriture, murs), re-peuplement, et remise à zéro
-/// des ressources de sim (RNG, reliquat de repousse) et du HUD. En `PreUpdate` :
-/// les commandes s'appliquent avant la boucle fixe, donc la frame repart déjà sur
-/// le monde neuf.
+/// Hot reset: rebuild the world from the `SimConfig`. Despawn everything that is
+/// simulated (agents, food, walls), re-populate, and reset the sim resources
+/// (RNG, regrowth remainder) and the HUD. In `PreUpdate`: the commands apply
+/// before the fixed loop, so the frame already restarts on the new world.
 ///
-/// C'est aussi **le point de passage unique** où l'on ré-applique la cadence de sim
-/// `tick_hz` (cf. [`SimPlugin`](teemlab::SimPlugin), qui ne la pose qu'au build) :
-/// le reset étant déclenché aussi par le rechargement de scénario
-/// ([`crate::runs::apply_scenario_load`]), un changement de cadence (éditeur ou autre
-/// `.ron`) prend effet ici, comme l'arène et la graine — un paramètre « (reset) ».
+/// This is also **the single passage point** where we re-apply the sim rate
+/// `tick_hz` (cf. [`SimPlugin`](teemlab::SimPlugin), which only sets it at
+/// build): the reset being triggered also by the scenario reload
+/// ([`crate::runs::apply_scenario_load`]), a rate change (editor or another
+/// `.ron`) takes effect here, like the arena and the seed — a "(reset)"
+/// parameter.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_reset(
     mut controls: ResMut<SimControls>,
@@ -155,8 +154,8 @@ pub fn apply_reset(
         commands.entity(entity).despawn();
     }
     spawn::populate(&mut commands, &config);
-    // Ré-applique la cadence fixe depuis la config (le build du plugin l'a posée une
-    // fois ; un monde neuf peut vouloir une autre cadence).
+    // Re-apply the fixed rate from the config (the plugin build set it once; a
+    // new world may want a different rate).
     fixed.set_timestep_hz(config.tick_hz);
 
     *sim_rng = SimRng::from_config(&config);

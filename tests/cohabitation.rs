@@ -1,24 +1,24 @@
-//! Item 18a — le **driver** de la cohabitation témoin/appris.
+//! Item 18a — the **driver** of the control/learned cohabitation.
 //!
-//! La couture « cerveau par espèce » + l'héritage du cerveau à la reproduction,
-//! falsifiés avec les DEUX cerveaux déterministes existants (chasseur vs errance),
-//! avant que le MLP (18b) n'arrive. Deux espèces partagent le même corps et la même
-//! économie, ne diffèrent QUE par le cerveau, et broutent la même nourriture. Le
-//! critère a trois volets, jugés sur plusieurs graines (la réussite d'une seule
-//! serait anecdotique) :
+//! The "brain per species" seam + brain inheritance at reproduction, falsified
+//! with the TWO existing deterministic brains (hunter vs wander), before the MLP
+//! (18b) arrives. Two species share the same body and the same economy, differ
+//! ONLY by their brain, and graze the same food. The criterion has three parts,
+//! judged over several seeds (a single one's success would be anecdotal):
 //!
-//! 1. **Invariant d'héritage** — tout agent vivant d'espèce 0 porte `Brain::Hunter`,
-//!    tout agent d'espèce 1 porte `Brain::Wander`. Si la reproduction reconstruisait
-//!    le cerveau depuis le `config` global au lieu d'hériter du parent, ce volet
-//!    casserait : c'est la falsification directe de la couture.
-//! 2. **Reproduction effective** — la population de chasseurs croît au-delà de ses
-//!    fondateurs : sans cela, l'héritage ne serait pas exercé.
-//! 3. **Domination du témoin compétent** (§4) — à ressource commune et limitée, le
-//!    chasseur l'emporte sur l'errant (population). C'est le contraste qu'un cerveau
-//!    appris devra, en 18b, au moins égaler.
+//! 1. **Inheritance invariant** — every living agent of species 0 carries
+//!    `Brain::Hunter`, every agent of species 1 carries `Brain::Wander`. If
+//!    reproduction rebuilt the brain from the global `config` instead of inheriting
+//!    from the parent, this part would break: it is the direct falsification of the
+//!    seam.
+//! 2. **Effective reproduction** — the hunter population grows beyond its founders:
+//!    without it, inheritance would not be exercised.
+//! 3. **Domination of the competent control** (§4) — with a shared and limited
+//!    resource, the hunter wins over the wanderer (population). It is the contrast
+//!    that a learned brain will, in 18b, have to at least match.
 //!
-//! On fait tourner le *vrai* monde de sim (le même `SimPlugin` que les deux
-//! binaires), en pas-à-pas manuel (cf. débit headless, §6).
+//! We run the *real* sim world (the same `SimPlugin` as both binaries), in manual
+//! single-stepping (cf. headless throughput, §6).
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -27,35 +27,35 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-/// Le scénario versionné, chargé tel quel : le driver mesure CE que lancent les
-/// binaires, pas une variante de test.
+/// The bundled scenario, loaded as-is: the driver measures WHAT the binaries
+/// launch, not a test variant.
 const SCENARIO: &str = include_str!("../scenarios/cohabitation.ron");
 
-/// Graines d'expérience (cf. §5 : on rejoue une *config*, pas le bit-à-bit). Cinq
-/// mondes indépendants : si la domination tient pour tous, ce n'est pas un coup de
-/// chance mais une propriété du cerveau.
+/// Experiment seeds (cf. §5: we replay a *config*, not bit-for-bit). Five
+/// independent worlds: if the domination holds for all of them, it is not luck but
+/// a property of the brain.
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 
 const SECONDS: usize = 120;
 
-/// Espèce 0 = chasseur (témoin compétent), espèce 1 = errance (témoin naïf).
+/// Species 0 = hunter (competent control), species 1 = wander (naive control).
 const HUNTER: u16 = 0;
 const WANDER: u16 = 1;
 
-/// Trajectoire d'une run : effectifs (chasseurs, errants) par seconde de sim, + un
-/// bilan de fin de run pour l'invariant d'héritage.
+/// Trajectory of a run: counts (hunters, wanderers) per sim second, + an
+/// end-of-run tally for the inheritance invariant.
 struct Run {
     traj: Vec<(usize, usize)>,
-    /// Nombre d'agents vivants dont le cerveau NE correspond PAS à leur espèce
-    /// (chasseur attendu pour 0, errance pour 1) — doit rester nul (volet 1).
+    /// Number of living agents whose brain does NOT match their species (hunter
+    /// expected for 0, wander for 1) — must stay zero (part 1).
     brain_mismatches: usize,
-    /// Pic de chasseurs sur toute la run (volet 2 : croissance > fondateurs).
+    /// Peak of hunters over the whole run (part 2: growth > founders).
     hunter_peak: usize,
 }
 
-/// Fait tourner le scénario `SECONDS` secondes pour une graine donnée.
+/// Runs the scenario for `SECONDS` seconds for a given seed.
 fn run_seed(seed: u64) -> Run {
-    let mut config = SimConfig::from_ron_str(SCENARIO).expect("scénario cohabitation valide");
+    let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid cohabitation scenario");
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
@@ -79,7 +79,7 @@ fn run_seed(seed: u64) -> Run {
         traj.push((hunters, wanderers));
     }
 
-    // Bilan d'héritage : le cerveau de chaque agent vivant correspond-il à son espèce ?
+    // Inheritance tally: does each living agent's brain match its species?
     let world = app.world_mut();
     let mut q = world.query_filtered::<(&Species, &Brain), With<Agent>>();
     let brain_mismatches = q
@@ -106,12 +106,12 @@ fn hunter_outforages_wanderer_across_seeds() {
 
     let mut failures = Vec::new();
     eprintln!(
-        "  seed         | chasseur(moy 2e moitié) | errance(moy 2e moitié) | pic chasseur (fond {hunter_founders})"
+        "  seed         | hunter(2nd-half mean) | wander(2nd-half mean) | hunter peak (founders {hunter_founders})"
     );
     for seed in SEEDS {
         let run = run_seed(seed);
-        // On juge la domination sur la 2ᵉ moitié : on laisse passer le transitoire
-        // (croissance depuis les fondateurs, premier ajustement de la compétition).
+        // We judge the domination on the 2nd half: we let the transient pass
+        // (growth from the founders, first adjustment of the competition).
         let back = &run.traj[SECONDS / 2..];
         let mean = |f: &dyn Fn(&(usize, usize)) -> usize| -> f32 {
             back.iter().map(f).sum::<usize>() as f32 / back.len() as f32
@@ -130,38 +130,38 @@ fn hunter_outforages_wanderer_across_seeds() {
         );
         eprintln!("               t=0,20,..: {}", sampled.join("  "));
 
-        // --- Volet 1 : invariant d'héritage (la couture par espèce). ---
+        // --- Part 1: inheritance invariant (the per-species seam). ---
         if run.brain_mismatches > 0 {
             failures.push(format!(
-                "seed {seed:#x} : {} agent(s) au cerveau incohérent avec leur espèce \
-                 (l'héritage du cerveau a failli)",
+                "seed {seed:#x}: {} agent(s) with a brain inconsistent with their species \
+                 (brain inheritance failed)",
                 run.brain_mismatches
             ));
         }
 
-        // --- Volet 2 : reproduction effective (les chasseurs ont essaimé). ---
+        // --- Part 2: effective reproduction (the hunters spread). ---
         if run.hunter_peak <= hunter_founders {
             failures.push(format!(
-                "seed {seed:#x} : les chasseurs n'ont pas crû au-delà des fondateurs \
-                 (pic {} ≤ {hunter_founders}) — héritage non exercé",
+                "seed {seed:#x}: the hunters did not grow beyond the founders \
+                 (peak {} ≤ {hunter_founders}) — inheritance not exercised",
                 run.hunter_peak
             ));
         }
 
-        // --- Volet 3 : domination du témoin compétent (§4). À ressource commune et
-        // limitée, le chasseur (qui trouve la nourriture) doit l'emporter NETTEMENT
-        // sur l'errant (qui ne la croise que par hasard). ---
+        // --- Part 3: domination of the competent control (§4). With a shared and
+        // limited resource, the hunter (which finds the food) must win CLEARLY over
+        // the wanderer (which only crosses it by chance). ---
         if hunter_mean <= wander_mean * 1.3 {
             failures.push(format!(
-                "seed {seed:#x} : le chasseur ne domine pas l'errant ({hunter_mean:.1} vs \
-                 {wander_mean:.1}) — le témoin compétent devrait fourrager bien mieux"
+                "seed {seed:#x}: the hunter does not dominate the wanderer ({hunter_mean:.1} vs \
+                 {wander_mean:.1}) — the competent control should forage far better"
             ));
         }
     }
 
     assert!(
         failures.is_empty(),
-        "cohabitation non concluante :\n  {}",
+        "cohabitation inconclusive:\n  {}",
         failures.join("\n  ")
     );
 }

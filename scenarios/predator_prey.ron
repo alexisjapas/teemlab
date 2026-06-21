@@ -1,30 +1,26 @@
 (
     tick_hz: 64.0,
-    arena_half_extent: 360.0,
+    arena_half_extent: 560.0,
     archetypes: [
         (
-            name: "MLP",
+            name: "Predator",
             color: (0.3, 0.7, 1.0),
-            count: 70,
+            count: 10,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
                 max_speed: 140.0,
                 agility: 0.12,
-                vision_range: 180.0,
-                vision_fov_deg: 120.0,
-                reproduction_threshold: 95.0,
-                offspring_energy: 45.0,
-                mutation_rate: 0.1,
+                vision_range: 170.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 90.0,
+                offspring_energy: 40.0,
+                mutation_rate: 0.06,
                 base_metabolism: 4.0,
                 move_cost: 2.0,
                 vision_rays: 7.0,
             ),
-            brain: Mlp(
-                hidden: [
-                    8,
-                ],
-            ),
+            brain: Hunter,
             mutable: (
                 max_speed: true,
                 agility: true,
@@ -39,26 +35,24 @@
             ),
         ),
         (
-            name: "Errance",
+            name: "Prey",
             color: (1.0, 0.45, 0.35),
-            count: 70,
+            count: 60,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
                 max_speed: 140.0,
                 agility: 0.12,
-                vision_range: 180.0,
-                vision_fov_deg: 120.0,
-                reproduction_threshold: 95.0,
-                offspring_energy: 45.0,
-                mutation_rate: 0.1,
+                vision_range: 170.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 90.0,
+                offspring_energy: 40.0,
+                mutation_rate: 0.06,
                 base_metabolism: 4.0,
                 move_cost: 2.0,
                 vision_rays: 7.0,
             ),
-            brain: Wander(
-                turn_rate: 0.25,
-            ),
+            brain: Hunter,
             mutable: (
                 max_speed: true,
                 agility: true,
@@ -72,17 +66,15 @@
                 vision_rays: true,
             ),
         ),
-        // Nourriture commune et limitée (Phase 3b) : patch sessile photosynthétique,
-        // dense mais à repousse LENTE (les fourrageurs efficaces gardent les patchs
-        // épuisés → rareté). Calibré pour que l'appris, une fois entraîné, exclue
-        // nettement l'errance, tout en laissant la cohorte initiale (poids aléatoires)
-        // amorcer son apprentissage sans s'éteindre.
+        // Trophic base (Phase 3b): a SESSILE photosynthetic patch grazed by the prey.
+        // Fixed count (no seeding), renewed in place by photosynthesis. Throughput ≈
+        // 220 × 5 ≈ the old regen 24/s × energy 45.
         (
-            name: "Nourriture",
+            name: "Plant",
             color: (0.55, 0.9, 0.45),
-            count: 90,
+            count: 220,
             radius: 7.0,
-            reserve_max: 55.0,
+            reserve_max: 45.0,
             genotype: (
                 max_speed: 0.0,
                 vision_range: 30.0,
@@ -91,7 +83,7 @@
                 base_metabolism: 0.0,
                 move_cost: 0.0,
                 vision_rays: 1.0,
-                photosynthesis: 9.0,
+                photosynthesis: 5.0,
                 seed_dispersal: 0.0,
             ),
             brain: Sessile,
@@ -101,22 +93,22 @@
     relations: [
         (
             actor: 0,
-            target: 2,
+            target: 1,
             transfer: true,
-            rate: 200.0,
-            range: 26.0,
+            rate: 26.0,
+            range: 20.0,
         ),
         (
             actor: 1,
             target: 2,
             transfer: true,
-            rate: 200.0,
+            rate: 220.0,
             range: 26.0,
         ),
     ],
     speed_bounds: (
         min: 40.0,
-        max: 260.0,
+        max: 280.0,
     ),
     agility_bounds: (
         min: 0.02,
@@ -124,7 +116,7 @@
     ),
     vision_range_bounds: (
         min: 30.0,
-        max: 300.0,
+        max: 320.0,
     ),
     vision_fov_bounds: (
         min: 40.0,

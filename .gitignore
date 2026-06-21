@@ -3,13 +3,13 @@
 *.rs.bk
 .DS_Store
 
-# Fichier scratch écrit par défaut depuis l'éditeur (Sauver).
+# Scratch file written by default from the editor (Save).
 /scenarios/edited.ron
 
-# Snapshot de run écrit par défaut depuis le panneau Runs (Sauver la run).
+# Run snapshot written by default from the Runs panel (Save the run).
 /run.ron
 
-# Sorties des simulations (vidéos, images…) écrites par l'enregistreur `record`
-# et le panneau Enregistrement. On versionne le dossier (.gitkeep), pas son contenu.
+# Simulation outputs (videos, images…) written by the `record` recorder and the
+# Recording panel. We version the directory (.gitkeep), not its contents.
 /outputs/*
 !/outputs/.gitkeep

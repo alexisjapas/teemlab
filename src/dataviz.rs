@@ -1,24 +1,24 @@
-//! **Visualiseur natif Bevy** des stats / courbes / inspecteur — le pendant *rendu*
-//! (non-egui) des panneaux d'observation, pour qu'ils apparaissent **dans la vidéo**
-//! (l'overlay egui, lui, n'est jamais filmé : §7).
+//! **Native Bevy visualizer** of the stats / curves / inspector — the *rendered*
+//! (non-egui) counterpart of the observation panels, so they appear **in the
+//! video** (the egui overlay, for its part, is never filmed: §7).
 //!
-//! Couche de rendu partagée (comme [`crate::visuals`]) : tout vit dans `Update`, jamais
-//! de logique de sim. La *donnée* (stats, courbes) vient de [`crate::metrics`] — donc
-//! **exactement** les mêmes nombres/polylignes que les versions egui ; ici on ne fait que
-//! les *tracer* en Bevy (Text2d + Sprite + gizmos).
+//! A shared rendering layer (like [`crate::visuals`]): everything lives in
+//! `Update`, never any sim logic. The *data* (stats, curves) comes from
+//! [`crate::metrics`] — therefore **exactly** the same numbers/polylines as the
+//! egui versions; here we only *plot* them in Bevy (Text2d + Sprite + gizmos).
 //!
-//! ## Composition 9:16 (fixe)
-//! Quand le visualiseur est **actif**, la cible de rendu est recomposée en portrait
-//! 9:16 : l'**arène carrée** occupe le carré du haut, le **visualiseur** la bande du
-//! bas (largeur × 7/9). Deux caméras supplémentaires (une de fond/lettre-box, une pour
-//! le visualiseur) encadrent la caméra de sim, dont on règle le `viewport`. Le mode
-//! « présentation » du fenêtré et le rendu vidéo empruntent **le même** chemin → l'aperçu
-//! éditeur est strictement identique à la vidéo.
+//! ## 9:16 composition (fixed)
+//! When the visualizer is **active**, the render target is recomposed into 9:16
+//! portrait: the **square arena** occupies the top square, the **visualizer** the
+//! bottom strip (width × 7/9). Two extra cameras (one background/letterbox, one for
+//! the visualizer) frame the sim camera, whose `viewport` we set. The windowed
+//! "presentation" mode and the video rendering take **the same** path → the editor
+//! preview is strictly identical to the video.
 //!
-//! ## Rotation des sections
-//! La bande du bas est de taille fixe : on y montre les **stats** en permanence (en haut)
-//! et on fait **tourner** le reste — courbes puis inspecteur — toutes les `interval`
-//! secondes (configurable).
+//! ## Section rotation
+//! The bottom strip is of fixed size: we show the **stats** permanently (at the
+//! top) and **rotate** the rest — curves then inspector — every `interval` seconds
+//! (configurable).
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{RenderTarget, ScalingMode, Viewport};
@@ -32,39 +32,40 @@ use crate::genotype::{Genotype, TRAITS};
 use crate::metrics::{Curve, History, live_stats, population_curves, trait_curves};
 use crate::selection::Selection;
 
-/// Layer de rendu du visualiseur (Text2d / Sprite / gizmos `VizGizmos`).
+/// Render layer of the visualizer (Text2d / Sprite / `VizGizmos` gizmos).
 const VIZ_LAYER: usize = 1;
-/// Layer de la caméra de fond (lettre-box) : aucune entité, elle ne fait que *nettoyer*.
+/// Layer of the background (letterbox) camera: no entity, it only *clears*.
 const LETTERBOX_LAYER: usize = 2;
-/// Toile logique du visualiseur (ratio 9:7 = la bande du bas d'un cadre 9:16). On dessine
-/// dans ce repère pixel virtuel (origine coin haut-gauche), indépendant de la résolution
-/// réelle → mise en page identique entre l'aperçu éditeur et la vidéo.
+/// Logical canvas of the visualizer (9:7 ratio = the bottom strip of a 9:16 frame).
+/// We draw in this virtual pixel frame (origin at the top-left corner), independent
+/// of the real resolution → identical layout between the editor preview and the
+/// video.
 const VIZ_W: f32 = 900.0;
 const VIZ_H: f32 = 700.0;
-/// Marge de respiration autour de l'arène dans le carré du haut.
+/// Breathing margin around the arena in the top square.
 const ARENA_MARGIN: f32 = 1.08;
-/// Nombre de pages tournantes (0 = courbes, 1 = inspecteur).
+/// Number of rotating pages (0 = curves, 1 = inspector).
 const PAGES: usize = 2;
 
-/// Groupe de gizmos dédié au visualiseur, restreint au [`VIZ_LAYER`] (cf. `build`).
+/// Gizmo group dedicated to the visualizer, restricted to [`VIZ_LAYER`] (cf. `build`).
 #[derive(Default, Reflect, GizmoConfigGroup)]
 struct VizGizmos;
 
-/// État du visualiseur : actif ou non, et la rotation des sections.
+/// State of the visualizer: active or not, and the section rotation.
 #[derive(Resource)]
 pub struct DataViz {
-    /// Le visualiseur recompose-t-il la vue (9:16) et dessine-t-il ?
+    /// Does the visualizer recompose the view (9:16) and draw?
     pub active: bool,
-    /// Intervalle de rotation des sections (secondes simulées).
+    /// Section rotation interval (simulated seconds).
     pub interval: f32,
     elapsed: f32,
     page: usize,
     was_active: bool,
 }
 
-/// Ajoute le visualiseur natif. `enabled` = état initial (vidéo : `true` ; éditeur :
-/// `false`, basculé par une touche). À combiner avec [`crate::metrics::MetricsPlugin`]
-/// (la donnée des courbes) et une caméra de sim fournie par le binaire.
+/// Adds the native visualizer. `enabled` = initial state (video: `true`; editor:
+/// `false`, toggled by a key). To be combined with [`crate::metrics::MetricsPlugin`]
+/// (the curve data) and a sim camera provided by the binary.
 pub struct DataVizPlugin {
     pub enabled: bool,
     pub interval: f32,
@@ -92,40 +93,41 @@ impl Plugin for DataVizPlugin {
                     .chain(),
             );
 
-        // Les gizmos du visualiseur ne doivent paraître que dans sa caméra (sa bande),
-        // pas par-dessus la sim : on les restreint à son layer.
+        // The visualizer's gizmos must appear only in its camera (its strip), not on
+        // top of the sim: we restrict them to its layer.
         let mut store = app.world_mut().resource_mut::<GizmoConfigStore>();
         let (config, _) = store.config_mut::<VizGizmos>();
         config.render_layers = RenderLayers::layer(VIZ_LAYER);
     }
 }
 
-/// Police du visualiseur. La police Bevy par défaut est ASCII-only (pas d'accents) ; on
-/// embarque DejaVu Sans (libre) pour rendre le français — noms de gènes compris — comme
-/// dans l'aperçu egui.
+/// The visualizer's font. The default Bevy font is ASCII-only; we embed DejaVu Sans
+/// (free) for full glyph coverage (degree signs, bullets, …) — as in the egui
+/// preview.
 #[derive(Resource)]
 struct VizFont(Handle<Font>);
 
-/// `Startup` : charge la police du visualiseur depuis `assets/fonts/`.
+/// `Startup`: loads the visualizer's font from `assets/fonts/`.
 fn load_viz_font(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(VizFont(assets.load("fonts/DejaVuSans.ttf")));
 }
 
-/// Marqueur de la caméra du visualiseur (bande du bas).
+/// Marker of the visualizer's camera (bottom strip).
 #[derive(Component)]
 struct VizCamera;
-/// Marqueur de la caméra de fond/lettre-box (plein cadre, nettoie seulement).
+/// Marker of the background/letterbox camera (full frame, only clears).
 #[derive(Component)]
 struct LetterboxCamera;
-/// Marqueur des entités d'affichage recréées à chaque frame (texte, barres).
+/// Marker of the display entities recreated every frame (text, bars).
 #[derive(Component)]
 struct VizEntity;
 
-/// `Update` : crée les deux caméras d'encadrement **à l'activation** et les détruit au
-/// retour en mode normal. Crucial pour le fenêtré : en mode normal, il ne doit rester
-/// qu'une seule `Camera2d`, sinon bevy_egui ne résout plus son contexte primaire (plus
-/// aucun panneau) et les requêtes `single()` de caméra échouent. On les crée donc
-/// seulement en présentation/vidéo, ciblant le même rendu que la caméra de sim.
+/// `Update`: creates the two framing cameras **on activation** and destroys them on
+/// return to normal mode. Crucial for the windowed build: in normal mode, only a
+/// single `Camera2d` must remain, otherwise bevy_egui no longer resolves its
+/// primary context (no panels left) and the camera `single()` queries fail. We
+/// therefore create them only in presentation/video, targeting the same render as
+/// the sim camera.
 fn manage_viz_cameras(
     mut commands: Commands,
     viz: Res<DataViz>,
@@ -137,7 +139,7 @@ fn manage_viz_cameras(
 ) {
     let present = !existing.is_empty();
     if !viz.active {
-        // Retour en mode normal : on retire les caméras d'encadrement (egui revient).
+        // Return to normal mode: we remove the framing cameras (egui comes back).
         if present {
             for e in &existing {
                 commands.entity(e).despawn();
@@ -146,14 +148,14 @@ fn manage_viz_cameras(
         return;
     }
     if present {
-        return; // déjà en place ; `compose_viewports` règle leurs viewports.
+        return; // already in place; `compose_viewports` sets their viewports.
     }
 
-    // Activation : on crée les caméras (inactives ; `compose_viewports` les allumera une
-    // fois leurs viewports posés, le frame suivant — pas de flash plein cadre).
+    // Activation: we create the cameras (inactive; `compose_viewports` will turn
+    // them on once their viewports are set, the next frame — no full-frame flash).
     let target = sim.single().ok().flatten().cloned();
 
-    // Fond / lettre-box : plein cadre (pas de viewport), nettoie en noir, ne rend rien.
+    // Background / letterbox: full frame (no viewport), clears to black, renders nothing.
     let mut letterbox = commands.spawn((
         Camera2d,
         Camera {
@@ -170,7 +172,7 @@ fn manage_viz_cameras(
         letterbox.insert(t.clone());
     }
 
-    // Visualiseur : toile logique fixe 900×700 (origine au centre), au-dessus de la sim.
+    // Visualizer: fixed logical canvas 900×700 (origin at center), above the sim.
     let mut viz = commands.spawn((
         Camera2d,
         Camera {
@@ -194,8 +196,8 @@ fn manage_viz_cameras(
     }
 }
 
-/// `Update` : fait tourner la page affichée toutes les `interval` secondes (temps simulé,
-/// donc figé en pause). Inactif → ne touche à rien.
+/// `Update`: rotates the displayed page every `interval` seconds (simulated time,
+/// hence frozen while paused). Inactive → touches nothing.
 fn advance_page(time: Res<Time<Virtual>>, mut viz: ResMut<DataViz>) {
     if !viz.active {
         return;
@@ -207,9 +209,10 @@ fn advance_page(time: Res<Time<Virtual>>, mut viz: ResMut<DataViz>) {
     }
 }
 
-/// `Update` : recompose les viewports en 9:16 **plein cadre** quand actif, et restaure le
-/// cadrage normal à la désactivation. Le carré du haut reçoit la sim (arène cadrée), la bande
-/// du bas le visualiseur ; les marges (cible non 9:16) sont noircies par la caméra de fond.
+/// `Update`: recomposes the viewports into **full-frame** 9:16 when active, and
+/// restores the normal framing on deactivation. The top square receives the sim
+/// (framed arena), the bottom strip the visualizer; the margins (non-9:16 target)
+/// are blackened by the background camera.
 fn compose_viewports(
     mut viz: ResMut<DataViz>,
     config: Res<SimConfig>,
@@ -225,15 +228,15 @@ fn compose_viewports(
         let Ok((mut sim_cam, mut sim_proj, mut sim_tf)) = sim.single_mut() else {
             return;
         };
-        // Région de base : toute la cible de rendu (fenêtre ou image vidéo).
+        // Base region: the whole render target (window or video image).
         let Some(target) = sim_cam.physical_target_size() else {
             return;
         };
         let (bx, by, bw, bh) = (0.0, 0.0, target.x as f32, target.y as f32);
 
-        // Plus grand rectangle 9:16 **inscrit** dans la cible (jamais de débordement → pas de
-        // viewport hors-cible). Sur une cible 9:16 (vidéo 1080×1920) il remplit pile ; sur une
-        // cible plus large/haute, lettre-box (bandes noircies par la caméra de fond).
+        // Largest 9:16 rectangle **inscribed** in the target (never an overflow → no
+        // off-target viewport). On a 9:16 target (1080×1920 video) it fills exactly;
+        // on a wider/taller target, letterbox (bands blackened by the background camera).
         const ASPECT: f32 = 9.0 / 16.0;
         let (rw, rh) = if bw / bh > ASPECT {
             (bh * ASPECT, bh)
@@ -242,9 +245,9 @@ fn compose_viewports(
         };
         let ox = bx + (bw - rw) * 0.5;
         let oy = by + (bh - rh) * 0.5;
-        let square = rw; // carré du haut = pleine largeur du cadre 9:16
+        let square = rw; // top square = full width of the 9:16 frame
 
-        // Caméra de sim : viewport = carré du haut, arène cadrée (AutoMin), centrée.
+        // Sim camera: viewport = top square, framed arena (AutoMin), centered.
         sim_cam.viewport = Some(Viewport {
             physical_position: UVec2::new(ox.max(0.0) as u32, oy.max(0.0) as u32),
             physical_size: UVec2::new(square.max(1.0) as u32, square.max(1.0) as u32),
@@ -280,8 +283,8 @@ fn compose_viewports(
             });
             vc.is_active = true;
         }
-        // Caméra de fond : nettoie **la région** (pas toute la fenêtre, sinon les panneaux
-        // egui seraient noircis) ; ses marges (région non 9:16) restent noires.
+        // Background camera: clears **the region** (not the whole window, otherwise
+        // the egui panels would be blackened); its margins (non-9:16 region) stay black.
         if let Ok(mut lc) = letterbox.single_mut() {
             lc.viewport = Some(Viewport {
                 physical_position: UVec2::new(bx.max(0.0) as u32, by.max(0.0) as u32),
@@ -291,8 +294,8 @@ fn compose_viewports(
             lc.is_active = true;
         }
     } else if viz.was_active {
-        // Désactivation : on rend le plein cadre à la sim (le fenêtré reprend son cadrage
-        // egui via `set_sim_camera`) et on coupe les caméras d'encadrement.
+        // Deactivation: we give the full frame back to the sim (the windowed build
+        // resumes its egui framing via `set_sim_camera`) and turn off the framing cameras.
         if let Ok((mut sim_cam, mut sim_proj, _)) = sim.single_mut() {
             sim_cam.viewport = None;
             *sim_proj = Projection::from(OrthographicProjection::default_2d());
@@ -308,11 +311,11 @@ fn compose_viewports(
 }
 
 // ---------------------------------------------------------------------------
-// Tracé (immédiat : on recrée texte/barres à chaque frame ; les gizmos le sont déjà)
+// Drawing (immediate: we recreate text/bars every frame; the gizmos already are)
 // ---------------------------------------------------------------------------
 
-/// Coin haut-gauche px (0..VIZ_W, 0..VIZ_H, y vers le bas) → monde de la toile (origine
-/// au centre, y vers le haut).
+/// Top-left px (0..VIZ_W, 0..VIZ_H, y downward) → canvas world (origin at center,
+/// y upward).
 fn p(x: f32, y: f32) -> Vec2 {
     Vec2::new(x - VIZ_W * 0.5, VIZ_H * 0.5 - y)
 }
@@ -321,8 +324,8 @@ fn srgb([r, g, b]: [f32; 3]) -> Color {
     Color::srgb(r, g, b)
 }
 
-/// Spawne un texte aligné en haut-gauche à la position px de la toile (police DejaVu pour
-/// les accents).
+/// Spawns text aligned top-left at the canvas's px position (DejaVu font for the
+/// non-ASCII glyphs).
 fn text(
     commands: &mut Commands,
     font: &Handle<Font>,
@@ -348,7 +351,7 @@ fn text(
     ));
 }
 
-/// Spawne un rectangle plein, coin haut-gauche à (x, y) px, taille (w, h) px.
+/// Spawns a filled rectangle, top-left corner at (x, y) px, size (w, h) px.
 fn rect(commands: &mut Commands, x: f32, y: f32, w: f32, h: f32, color: Color, z: f32) {
     let pos = p(x, y);
     commands.spawn((
@@ -360,14 +363,14 @@ fn rect(commands: &mut Commands, x: f32, y: f32, w: f32, h: f32, color: Color, z
     ));
 }
 
-/// Une barre de progression (fond + remplissage), `frac` ∈ [0, 1].
+/// A progress bar (background + fill), `frac` ∈ [0, 1].
 fn bar(commands: &mut Commands, x: f32, y: f32, w: f32, h: f32, frac: f32, fill: Color) {
     rect(commands, x, y, w, h, Color::srgb(0.16, 0.16, 0.20), 0.1);
     rect(commands, x, y, w * frac.clamp(0.0, 1.0), h, fill, 0.2);
 }
 
-/// `Update` : redessine tout le visualiseur. Recrée les entités de texte/barres (les
-/// précédentes sont retirées) ; les gizmos sont déjà immédiats.
+/// `Update`: redraws the whole visualizer. Recreates the text/bar entities (the
+/// previous ones are removed); the gizmos are already immediate.
 #[allow(clippy::too_many_arguments)]
 fn draw_viz(
     mut commands: Commands,
@@ -409,12 +412,8 @@ fn draw_viz(
         _ => draw_inspector(&mut commands, &mut gizmos, font, &selection, &inspect_q),
     }
 
-    // Indicateur de page (coin bas-droit).
-    let label = if viz.page == 0 {
-        "courbes"
-    } else {
-        "inspecteur"
-    };
+    // Page indicator (bottom-right corner).
+    let label = if viz.page == 0 { "curves" } else { "inspector" };
     text(
         &mut commands,
         font,
@@ -426,7 +425,7 @@ fn draw_viz(
     );
 }
 
-/// Stats globales, toujours en haut de la bande. Mêmes nombres que `editor::stats_section`.
+/// Global stats, always at the top of the strip. Same numbers as `editor::stats_section`.
 fn draw_stats(
     commands: &mut Commands,
     font: &Handle<Font>,
@@ -438,7 +437,7 @@ fn draw_stats(
         commands,
         font,
         format!(
-            "Pop {}    Nourriture {}    Réserve {:.0}",
+            "Pop {}    Food {}    Reserve {:.0}",
             s.population, s.food, s.mean_reserve
         ),
         24.0,
@@ -454,7 +453,7 @@ fn draw_stats(
     text(
         commands,
         font,
-        format!("gènes moy. — {}", genes.join("   ")),
+        format!("mean genes — {}", genes.join("   ")),
         24.0,
         52.0,
         15.0,
@@ -462,7 +461,7 @@ fn draw_stats(
     );
 }
 
-/// Page « courbes » : population (haut) et dérive des gènes (bas), via [`crate::metrics`].
+/// "Curves" page: population (top) and gene drift (bottom), via [`crate::metrics`].
 fn draw_curves(
     commands: &mut Commands,
     gizmos: &mut Gizmos<VizGizmos>,
@@ -474,7 +473,7 @@ fn draw_curves(
         text(
             commands,
             font,
-            "(en attente de données…)",
+            "(waiting for data…)",
             24.0,
             120.0,
             18.0,
@@ -487,7 +486,7 @@ fn draw_curves(
     text(
         commands,
         font,
-        "Population par espèce",
+        "Population per species",
         24.0,
         100.0,
         18.0,
@@ -506,7 +505,7 @@ fn draw_curves(
     text(
         commands,
         font,
-        "Dérive des gènes (0–1)",
+        "Gene drift (0–1)",
         24.0,
         356.0,
         18.0,
@@ -524,7 +523,7 @@ fn draw_curves(
     );
 }
 
-/// Trace un cadre, ses polylignes et une légende, dans `(x, y, w, h)` px de la toile.
+/// Draws a frame, its polylines and a legend, in `(x, y, w, h)` px of the canvas.
 fn plot(
     commands: &mut Commands,
     gizmos: &mut Gizmos<VizGizmos>,
@@ -534,7 +533,7 @@ fn plot(
     y_max: f32,
     (x, y, w, h): (f32, f32, f32, f32),
 ) {
-    // Cadre.
+    // Frame.
     let center = p(x + w * 0.5, y + h * 0.5);
     gizmos.rect_2d(center, Vec2::new(w, h), Color::srgb(0.3, 0.3, 0.35));
 
@@ -552,7 +551,7 @@ fn plot(
         return;
     }
     let y_span = (y_max - y_min).max(1e-6);
-    // Point donnée → px de la toile (haut = grande valeur), puis monde.
+    // Data point → canvas px (top = high value), then world.
     let map = |t: f32, v: f32| {
         let px = x + (t - x_min) / (x_max - x_min) * w;
         let py = y + h - (v - y_min) / y_span * h;
@@ -565,7 +564,7 @@ fn plot(
         }
     }
 
-    // Légende : pastille + nom, en ligne sous le cadre (pas de chevauchement au-delà de 6).
+    // Legend: dot + name, in a row under the frame (no overlap beyond 6).
     let mut lx = x;
     let ly = y + h + 4.0;
     for c in curves {
@@ -583,8 +582,8 @@ fn plot(
     }
 }
 
-/// Page « inspecteur » : l'agent sélectionné (mêmes informations que `inspector_section`,
-/// hors bouton « Capturer » qui est une interaction, pas une donnée).
+/// "Inspector" page: the selected agent (same information as `inspector_section`,
+/// minus the "Capture" button which is an interaction, not data).
 fn draw_inspector(
     commands: &mut Commands,
     gizmos: &mut Gizmos<VizGizmos>,
@@ -607,15 +606,7 @@ fn draw_inspector(
 ) {
     let dim = Color::srgb(0.6, 0.6, 0.65);
     let Some(entity) = selection.0 else {
-        text(
-            commands,
-            font,
-            "Aucun agent sélectionné.",
-            24.0,
-            120.0,
-            18.0,
-            dim,
-        );
+        text(commands, font, "No agent selected.", 24.0, 120.0, 18.0, dim);
         return;
     };
     let Ok((species, reserve, genotype, vision, perception, action, brain, generation, age)) =
@@ -624,7 +615,7 @@ fn draw_inspector(
         text(
             commands,
             font,
-            "L'agent inspecté n'existe plus.",
+            "The inspected agent no longer exists.",
             24.0,
             120.0,
             18.0,
@@ -637,11 +628,11 @@ fn draw_inspector(
     let ink = Color::srgb(0.9, 0.9, 0.93);
     let key = Color::srgb(0.7, 0.7, 0.75);
 
-    // --- Colonne gauche : identité, énergie, gènes, action ---
+    // --- Left column: identity, energy, genes, action ---
     text(
         commands,
         font,
-        format!("Espèce {}", species.0),
+        format!("Species {}", species.0),
         24.0,
         100.0,
         18.0,
@@ -650,7 +641,7 @@ fn draw_inspector(
     text(
         commands,
         font,
-        format!("Cerveau : {}", brain.name()),
+        format!("Brain: {}", brain.name()),
         24.0,
         124.0,
         16.0,
@@ -659,14 +650,14 @@ fn draw_inspector(
     text(
         commands,
         font,
-        format!("Génération {} · âge {:.1} s", generation.0, age.0),
+        format!("Generation {} · age {:.1} s", generation.0, age.0),
         24.0,
         146.0,
         16.0,
         key,
     );
 
-    text(commands, font, "Énergie / réserve", 24.0, 176.0, 16.0, ink);
+    text(commands, font, "Energy / reserve", 24.0, 176.0, 16.0, ink);
     bar(
         commands,
         24.0,
@@ -689,7 +680,7 @@ fn draw_inspector(
     text(
         commands,
         font,
-        "Génotype (gènes hérités)",
+        "Genotype (inherited genes)",
         24.0,
         232.0,
         16.0,
@@ -715,7 +706,7 @@ fn draw_inspector(
         text(
             commands,
             font,
-            format!("coût vision/s: {:.3}", vision.metabolic_cost()),
+            format!("vision cost/s: {:.3}", vision.metabolic_cost()),
             30.0,
             gy,
             14.0,
@@ -724,7 +715,7 @@ fn draw_inspector(
         gy += 18.0;
     }
 
-    // Action (sortie du cerveau).
+    // Action (brain output).
     let heading_deg = if action.dir.length_squared() > 1e-6 {
         action.dir.to_angle().to_degrees()
     } else {
@@ -733,7 +724,7 @@ fn draw_inspector(
     text(
         commands,
         font,
-        "Action (sortie du cerveau)",
+        "Action (brain output)",
         24.0,
         gy + 8.0,
         16.0,
@@ -742,7 +733,7 @@ fn draw_inspector(
     text(
         commands,
         font,
-        format!("cap désiré {heading_deg:+.0}°"),
+        format!("desired heading {heading_deg:+.0}°"),
         30.0,
         gy + 30.0,
         14.0,
@@ -760,19 +751,19 @@ fn draw_inspector(
     text(
         commands,
         font,
-        format!("accélérateur {:.2}", action.throttle),
+        format!("throttle {:.2}", action.throttle),
         30.0,
         gy + 50.0,
         13.0,
         Color::WHITE,
     );
 
-    // --- Colonne droite : cerveau MLP + perception ---
+    // --- Right column: MLP brain + perception ---
     if let Brain::Mlp(mlp) = brain {
         text(
             commands,
             font,
-            "Cerveau MLP (activations)",
+            "MLP brain (activations)",
             470.0,
             100.0,
             16.0,
@@ -795,7 +786,7 @@ fn draw_inspector(
         text(
             commands,
             font,
-            format!("Perception — {} rayons", vision.ray_count),
+            format!("Perception — {} rays", vision.ray_count),
             470.0,
             424.0,
             16.0,
@@ -804,13 +795,13 @@ fn draw_inspector(
         text(
             commands,
             font,
-            "obstacle · cible · menace",
+            "obstacle · target · threat",
             470.0,
             446.0,
             13.0,
             dim,
         );
-        // Une ligne par rayon (cap à ce qui tient dans la bande).
+        // One row per ray (capped to what fits in the strip).
         let row_h = 14.0;
         let max_rows = (((VIZ_H - 30.0) - 468.0) / row_h).floor() as usize;
         for (i, &prox) in perception.vision.iter().take(max_rows).enumerate() {
@@ -848,20 +839,20 @@ fn draw_inspector(
     }
 }
 
-/// Couleur d'un nœud selon son activation (froid<0<chaud), mêmes teintes que l'éditeur.
+/// Color of a node by its activation (cold<0<warm), same tints as the editor.
 fn activation_color(v: f32) -> Color {
     let t = v.clamp(-1.0, 1.0).abs();
     let base = 0.24;
     let lerp = |to: f32| base + (to - base) * t;
     if v >= 0.0 {
-        Color::srgb(lerp(0.94), lerp(0.59), lerp(0.16)) // chaud
+        Color::srgb(lerp(0.94), lerp(0.59), lerp(0.16)) // warm
     } else {
-        Color::srgb(lerp(0.24), lerp(0.55), lerp(0.94)) // froid
+        Color::srgb(lerp(0.24), lerp(0.55), lerp(0.94)) // cold
     }
 }
 
-/// Dessine le MLP (arêtes teintées par poids, nœuds par activation, taille ∝ |biais|),
-/// dans `(x, y, w, h)` px. Reprend la géométrie de l'éditeur mais en gizmos.
+/// Draws the MLP (edges tinted by weight, nodes by activation, size ∝ |bias|), in
+/// `(x, y, w, h)` px. Reuses the editor's geometry but in gizmos.
 fn draw_mlp(
     commands: &mut Commands,
     gizmos: &mut Gizmos<VizGizmos>,
@@ -879,7 +870,7 @@ fn draw_mlp(
     const LABEL_W: f32 = 34.0;
     let (ix, iw) = (x + LABEL_W, w - 2.0 * LABEL_W);
 
-    // Position px (toile) du nœud `node` de la colonne `col`.
+    // Px position (canvas) of node `node` of column `col`.
     let node_px = |col: usize, node: usize, n: usize| -> (f32, f32) {
         let px = if cols == 1 {
             ix + iw * 0.5
@@ -894,7 +885,7 @@ fn draw_mlp(
         (px, py)
     };
 
-    // Arêtes d'abord (sous les nœuds, ordre de tracé du groupe gizmo).
+    // Edges first (under the nodes, the gizmo group's draw order).
     for col in 0..cols - 1 {
         let (from_n, to_n) = (sizes[col], sizes[col + 1]);
         let weights = (col < mlp.weight_layers()).then(|| mlp.layer_weights(col));
@@ -919,7 +910,7 @@ fn draw_mlp(
         }
     }
 
-    // Nœuds : rayon de référence rétréci par |biais| (normalisé au plus grand biais).
+    // Nodes: reference radius shrunk by |bias| (normalized to the largest bias).
     let base_r = (h / (widest as f32 * 2.2)).clamp(2.5, 9.0);
     let max_bias = (0..mlp.weight_layers())
         .flat_map(|l| mlp.layer_biases(l).iter().copied())
@@ -944,11 +935,11 @@ fn draw_mlp(
         }
     }
 
-    // Étiquettes des groupes d'entrée (vis/cib/men) et des sorties (avant/côté).
+    // Labels of the input groups (vis/tgt/thr) and the outputs (fwd/side).
     let n_in = sizes[0];
     if n_in.is_multiple_of(3) {
         let rays = n_in / 3;
-        for (g, name) in ["vis", "cib", "men"].iter().enumerate() {
+        for (g, name) in ["vis", "tgt", "thr"].iter().enumerate() {
             let (_, py) = node_px(0, g * rays + rays / 2, n_in);
             text(
                 commands,
@@ -963,7 +954,7 @@ fn draw_mlp(
     }
     let last = cols - 1;
     if sizes[last] == MlpBrain::OUTPUTS {
-        for (o, name) in ["avant", "côté"].iter().enumerate() {
+        for (o, name) in ["fwd", "side"].iter().enumerate() {
             let (px, py) = node_px(last, o, MlpBrain::OUTPUTS);
             text(
                 commands,

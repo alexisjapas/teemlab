@@ -1,16 +1,17 @@
-//! **Métriques d'observation** : l'historique glissant des courbes et les statistiques
-//! en direct — la *donnée* d'affichage, partagée par les deux backends qui la rendent
-//! (egui dans le binaire fenêtré, natif Bevy dans [`crate::dataviz`]).
+//! **Observation metrics**: the sliding history of curves and the live
+//! statistics — the display *data*, shared by the two backends that render it
+//! (egui in the windowed binary, native Bevy in [`crate::dataviz`]).
 //!
-//! Vit dans la lib (et non plus dans le binaire fenêtré) pour que l'enregistreur vidéo
-//! ([`crate::dataviz`] côté `record`) échantillonne et trace **exactement** les mêmes
-//! courbes/stats que l'aperçu live — un seul calcul de donnée, deux tracés.
+//! Lives in the lib (no longer in the windowed binary) so that the video
+//! recorder ([`crate::dataviz`] on the `record` side) samples and plots
+//! **exactly** the same curves/stats as the live preview — one data computation,
+//! two plots.
 //!
-//! Strictement de l'**observation** : tout tourne dans `Update` (jamais `FixedUpdate`),
-//! lecture seule du monde — la sim reste byte-identique (invariant cardinal).
+//! Strictly **observation**: everything runs in `Update` (never `FixedUpdate`),
+//! read-only over the world — the sim stays byte-identical (cardinal invariant).
 //!
-//! L'échantillonnage se cale sur `Time<Virtual>` : il se fige avec la pause et suit
-//! l'accéléré, comme la sim (§6).
+//! Sampling is keyed to `Time<Virtual>`: it freezes with the pause and follows
+//! the fast-forward, like the sim (§6).
 
 use std::collections::VecDeque;
 
@@ -21,8 +22,8 @@ use crate::components::{Agent, Reserve, Species};
 use crate::config::{Bounds, SimConfig};
 use crate::genotype::{Genotype, TRAITS};
 
-/// Ajoute l'échantillonnage des courbes (ressource [`History`] + système
-/// [`sample_history`]). À combiner avec un backend de tracé (egui ou [`crate::dataviz`]).
+/// Adds curve sampling (the [`History`] resource + the [`sample_history`]
+/// system). To be combined with a plotting backend (egui or [`crate::dataviz`]).
 pub struct MetricsPlugin;
 
 impl Plugin for MetricsPlugin {
@@ -32,30 +33,30 @@ impl Plugin for MetricsPlugin {
     }
 }
 
-/// Un instantané de métriques, daté en temps simulé.
+/// A metrics snapshot, timestamped in simulated time.
 struct Sample {
-    /// Temps simulé (`Time<Virtual>`) de l'échantillon, en secondes.
+    /// Simulated time (`Time<Virtual>`) of the sample, in seconds.
     t: f32,
-    /// Population vivante par espèce (indexée comme `Species`).
+    /// Living population per species (indexed like `Species`).
     population: Vec<u32>,
-    /// Sources de nourriture présentes (somme des espèces **sessiles**, Phase 3b).
+    /// Food sources present (sum of the **sessile** species, Phase 3b).
     food: u32,
-    /// Gènes moyens, un par caractéristique de [`TRAITS`] (même ordre), chacun
-    /// **normalisé dans ses bornes** (`[0, 1]`) pour que des traits d'échelles
-    /// différentes (vitesse vs angle) se comparent sur un seul graphe.
+    /// Mean genes, one per [`TRAITS`] characteristic (same order), each
+    /// **normalized within its bounds** (`[0, 1]`) so traits of different scales
+    /// (speed vs angle) compare on a single graph.
     traits: Vec<f32>,
 }
 
-/// Historique glissant des métriques. Partagé par les deux backends de tracé.
+/// Sliding history of metrics. Shared by the two plotting backends.
 #[derive(Resource)]
 pub struct History {
-    /// Intervalle entre deux échantillons, en secondes simulées.
+    /// Interval between two samples, in simulated seconds.
     interval: f32,
-    /// Nombre maximal d'échantillons conservés (fenêtre glissante).
+    /// Maximum number of samples kept (sliding window).
     max_samples: usize,
-    /// Prochain instant d'échantillonnage (temps simulé).
+    /// Next sampling instant (simulated time).
     next_at: f32,
-    /// Les échantillons, du plus ancien au plus récent.
+    /// The samples, from oldest to newest.
     samples: VecDeque<Sample>,
 }
 
@@ -63,7 +64,7 @@ impl Default for History {
     fn default() -> Self {
         Self {
             interval: 0.5,
-            max_samples: 1200, // 0,5 s × 1200 = 10 min de temps simulé
+            max_samples: 1200, // 0.5 s × 1200 = 10 min of simulated time
             next_at: 0.0,
             samples: VecDeque::new(),
         }
@@ -71,25 +72,25 @@ impl Default for History {
 }
 
 impl History {
-    /// Repart de zéro : vide les échantillons et réarme l'horloge. Appelé par le
-    /// bouton « Effacer » du HUD et par la réinitialisation à chaud (item 11).
+    /// Starts over: clears the samples and rearms the clock. Called by the HUD's
+    /// "Clear" button and by the hot reset (item 11).
     pub fn clear(&mut self) {
         self.samples.clear();
         self.next_at = 0.0;
     }
 
-    /// Nombre d'échantillons conservés (pour l'affichage « N échantillons »).
+    /// Number of samples kept (for the "N samples" display).
     pub fn sample_count(&self) -> usize {
         self.samples.len()
     }
 
-    /// Vrai tant qu'aucun échantillon n'a été pris (rien à tracer).
+    /// True as long as no sample has been taken (nothing to plot).
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
 }
 
-/// Normalise une valeur de gène dans ses bornes, vers `[0, 1]`.
+/// Normalizes a gene value within its bounds, to `[0, 1]`.
 fn norm(v: f32, b: Bounds) -> f32 {
     if b.span() > 0.0 {
         ((v - b.min) / b.span()).clamp(0.0, 1.0)
@@ -98,9 +99,9 @@ fn norm(v: f32, b: Bounds) -> f32 {
     }
 }
 
-/// Échantillonne les métriques du monde à cadence fixe en temps simulé. Lecture
-/// seule : c'est de l'observation pour affichage, pas de la logique de sim — d'où
-/// sa place légitime dans `Update`.
+/// Samples the world's metrics at a fixed rate in simulated time. Read-only: it
+/// is observation for display, not sim logic — hence its rightful place in
+/// `Update`.
 pub fn sample_history(
     time: Res<Time<Virtual>>,
     config: Res<SimConfig>,
@@ -121,9 +122,9 @@ pub fn sample_history(
     for (species, g) in &agents {
         let idx = (species.0 as usize).min(species_count - 1);
         population[idx] += 1;
-        // Moyennes de gènes sur la **faune** seule : les sources sessiles (gènes figés,
-        // souvent en grand nombre) écraseraient la dérive de la faune. Elles comptent
-        // dans la population/nourriture, pas ici.
+        // Gene means over the **fauna** alone: sessile sources (frozen genes,
+        // often numerous) would swamp the fauna's drift. They count toward
+        // population/food, not here.
         if cfg.archetypes.get(idx).is_some_and(|a| a.is_sessile()) {
             continue;
         }
@@ -133,9 +134,9 @@ pub fn sample_history(
         n += 1;
     }
 
-    // Population zéro → on garde les derniers gènes moyens connus (un graphe qui
-    // s'effondre à zéro laisserait croire que les gènes ont fondu, pas que la
-    // population s'est éteinte).
+    // Zero population → we keep the last known mean genes (a graph collapsing to
+    // zero would suggest the genes melted away, not that the population went
+    // extinct).
     let traits = if n > 0 {
         let inv = 1.0 / n as f32;
         sums.iter().map(|s| s * inv).collect()
@@ -145,8 +146,8 @@ pub fn sample_history(
         vec![0.0; TRAITS.len()]
     };
 
-    // « Nourriture » = somme des espèces sessiles (sources/flore), dérivée de la
-    // population par espèce (Phase 3b : plus de marqueur `Food` à compter).
+    // "Food" = sum of the sessile species (sources/flora), derived from the
+    // per-species population (Phase 3b: no more `Food` marker to count).
     let food = population
         .iter()
         .enumerate()
@@ -166,27 +167,27 @@ pub fn sample_history(
 }
 
 // ---------------------------------------------------------------------------
-// Donnée d'affichage partagée (anti-divergence egui ↔ Bevy natif)
+// Shared display data (anti-divergence egui ↔ native Bevy)
 // ---------------------------------------------------------------------------
 
-/// Statistiques globales en direct — les mêmes nombres pour la barre egui
-/// ([`stats_section`](../editor/fn.stats_section.html)) et le visualiseur natif.
-/// Calculées sur la **faune** (les sources sessiles comptent dans `food`, pas dans
-/// les moyennes — sinon leurs gènes figés écraseraient la dérive).
+/// Live global statistics — the same numbers for the egui bar
+/// ([`stats_section`](../editor/fn.stats_section.html)) and the native
+/// visualizer. Computed over the **fauna** (sessile sources count toward `food`,
+/// not toward the means — otherwise their frozen genes would swamp the drift).
 pub struct LiveStats {
-    /// Agents mobiles vivants.
+    /// Living mobile agents.
     pub population: usize,
-    /// Sources sessiles (flore / nourriture).
+    /// Sessile sources (flora / food).
     pub food: usize,
-    /// Réserve moyenne de la faune.
+    /// Mean reserve of the fauna.
     pub mean_reserve: f32,
-    /// Moyenne de chaque gène de [`TRAITS`] (même ordre), sur la faune (valeur brute).
+    /// Mean of each [`TRAITS`] gene (same order), over the fauna (raw value).
     pub mean_traits: Vec<f32>,
 }
 
-/// Calcule [`LiveStats`] en une passe sur les agents. Le filtre « mobile vs sessile »
-/// (cerveau [`Brain::Sessile`]) est l'unique source de vérité partagée par les deux
-/// backends.
+/// Computes [`LiveStats`] in a single pass over the agents. The "mobile vs
+/// sessile" filter (the [`Brain::Sessile`] brain) is the single source of truth
+/// shared by both backends.
 pub fn live_stats(agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>) -> LiveStats {
     let mut population = 0usize;
     let mut total = 0usize;
@@ -212,18 +213,19 @@ pub fn live_stats(agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>) ->
     }
 }
 
-/// Une courbe à tracer : un nom, une couleur **sRGB** `[r, g, b] ∈ [0, 1]` (agnostique
-/// au backend), et ses points `[temps, valeur]`. egui et Bevy ne font que la tracer.
+/// A curve to plot: a name, an **sRGB** color `[r, g, b] ∈ [0, 1]`
+/// (backend-agnostic), and its `[time, value]` points. egui and Bevy only plot it.
 pub struct Curve {
     pub name: String,
     pub color: [f32; 3],
     pub pts: Vec<[f32; 2]>,
 }
 
-/// Courbes de **population par espèce** + l'agrégat « nourriture » (somme des sessiles).
-/// Renvoie aussi le `y_max` observé (≥ 1). On ne trace QUE les espèces qui existent (ou
-/// ont existé) sur la fenêtre : un archétype défini mais jamais peuplé n'ajoute pas une
-/// courbe à zéro. Les sessiles sont agrégées dans « nourriture », pas tracées seules.
+/// Curves of **population per species** + the "food" aggregate (sum of the
+/// sessiles). Also returns the observed `y_max` (≥ 1). We plot ONLY the species
+/// that exist (or have existed) over the window: an archetype defined but never
+/// populated does not add a zero curve. The sessiles are aggregated into "food",
+/// not plotted on their own.
 pub fn population_curves(history: &History, config: &SimConfig) -> (Vec<Curve>, f32) {
     let Some(last) = history.samples.back() else {
         return (Vec::new(), 1.0);
@@ -257,7 +259,7 @@ pub fn population_curves(history: &History, config: &SimConfig) -> (Vec<Curve>, 
             .archetypes
             .get(sp)
             .map(|a| a.name.clone())
-            .unwrap_or_else(|| format!("espèce {sp}"));
+            .unwrap_or_else(|| format!("species {sp}"));
         curves.push(Curve {
             name,
             color: config.color_of(sp as u16),
@@ -265,7 +267,7 @@ pub fn population_curves(history: &History, config: &SimConfig) -> (Vec<Curve>, 
         });
     }
 
-    // « Nourriture » = somme des sessiles, tracée seulement si une source a existé.
+    // "Food" = sum of the sessiles, plotted only if a source has existed.
     if history.samples.iter().any(|s| s.food > 0) {
         let pts: Vec<[f32; 2]> = history
             .samples
@@ -276,7 +278,7 @@ pub fn population_curves(history: &History, config: &SimConfig) -> (Vec<Curve>, 
             y_max = y_max.max(q[1]);
         }
         curves.push(Curve {
-            name: "nourriture".to_string(),
+            name: "food".to_string(),
             color: [0.59, 0.59, 0.59],
             pts,
         });
@@ -285,8 +287,9 @@ pub fn population_curves(history: &History, config: &SimConfig) -> (Vec<Curve>, 
     (curves, y_max)
 }
 
-/// Courbes de **dérive des gènes** (normalisées `[0, 1]`) : une par caractéristique de
-/// [`TRAITS`], couleur tirée de [`trait_color`]. Bornes Y fixes `[0, 1]` côté tracé.
+/// Curves of **gene drift** (normalized `[0, 1]`): one per [`TRAITS`]
+/// characteristic, color drawn from [`trait_color`]. Fixed Y bounds `[0, 1]` on
+/// the plotting side.
 pub fn trait_curves(history: &History) -> Vec<Curve> {
     TRAITS
         .iter()
@@ -303,19 +306,19 @@ pub fn trait_curves(history: &History) -> Vec<Curve> {
         .collect()
 }
 
-/// Couleur sRGB de la courbe du trait d'indice `i` (palette du HUD ; la couleur est
-/// une affaire d'affichage, donc elle vit ici et non dans [`TRAITS`]).
+/// sRGB color of the curve for the trait at index `i` (the HUD palette; color is
+/// a display matter, so it lives here and not in [`TRAITS`]).
 pub fn trait_color(i: usize) -> [f32; 3] {
     const PALETTE: [[f32; 3]; 9] = [
-        [0.47, 0.78, 1.00], // bleu
+        [0.47, 0.78, 1.00], // blue
         [1.00, 0.67, 0.35], // orange
-        [0.59, 0.90, 0.47], // vert
+        [0.59, 0.90, 0.47], // green
         [0.86, 0.55, 0.90], // mauve
-        [0.94, 0.86, 0.47], // jaune
+        [0.94, 0.86, 0.47], // yellow
         [0.47, 0.90, 0.86], // cyan
-        [0.92, 0.51, 0.51], // rouge
-        [0.71, 0.71, 0.71], // gris clair
-        [0.78, 0.63, 0.43], // brun
+        [0.92, 0.51, 0.51], // red
+        [0.71, 0.71, 0.71], // light gray
+        [0.78, 0.63, 0.43], // brown
     ];
     PALETTE[i % PALETTE.len()]
 }

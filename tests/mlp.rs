@@ -1,15 +1,15 @@
-//! Item 18b (cœur) — le **driver** du cerveau MLP évolué.
+//! Item 18b (core) — the **driver** of the evolved MLP brain.
 //!
-//! La falsification du §4 par l'expérience la plus robuste : la **cohabitation**
-//! (cf. `tests/cohabitation.rs`). Deux espèces au même corps et à la même économie,
-//! nourriture commune et limitée, ne diffèrent que par le cerveau — espèce 0 = MLP
-//! (appris, parti de poids aléatoires), espèce 1 = errance (témoin naïf). À ressource
-//! rare, le meilleur fourrageur exclut l'autre : si la neuroévolution apprend quoi que
-//! ce soit d'utile, le MLP prend l'avantage sur l'errance. On le vérifie sur plusieurs
-//! graines (une seule serait anecdotique).
+//! The §4 falsification through the most robust experiment: **cohabitation** (cf.
+//! `tests/cohabitation.rs`). Two species with the same body and the same economy,
+//! shared and limited food, differ only by their brain — species 0 = MLP (learned,
+//! started from random weights), species 1 = wander (naive control). With a scarce
+//! resource, the better forager excludes the other: if neuroevolution learns
+//! anything useful, the MLP gains the upper hand over the wanderer. We check it
+//! over several seeds (a single one would be anecdotal).
 //!
-//! On fait tourner le *vrai* monde de sim (le même `SimPlugin` que les binaires), en
-//! pas-à-pas manuel (cf. §6).
+//! We run the *real* sim world (the same `SimPlugin` as the binaries), in manual
+//! single-stepping (cf. §6).
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -18,16 +18,16 @@ use teemlab::genotype::Genotype;
 
 mod common;
 
-const SCENARIO: &str = include_str!("../scenarios/cerveau_mlp.ron");
+const SCENARIO: &str = include_str!("../scenarios/mlp_brain.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 const SECONDS: usize = 200;
 
-/// Espèce 0 = MLP (appris), espèce 1 = errance (témoin naïf).
+/// Species 0 = MLP (learned), species 1 = wander (naive control).
 const MLP: u16 = 0;
 const WANDER: u16 = 1;
 
-/// Trajectoire d'une run : effectifs (MLP, errance) par seconde + vision moyenne
-/// finale par espèce (la vision se maintient si le cerveau s'en sert).
+/// Trajectory of a run: counts (MLP, wander) per second + final mean vision per
+/// species (vision is maintained if the brain uses it).
 struct Run {
     traj: Vec<(usize, usize)>,
     mlp_vision: f32,
@@ -35,7 +35,7 @@ struct Run {
 }
 
 fn run_seed(seed: u64) -> Run {
-    let mut config = SimConfig::from_ron_str(SCENARIO).expect("scénario MLP valide");
+    let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid MLP scenario");
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
@@ -86,11 +86,11 @@ fn run_seed(seed: u64) -> Run {
 #[test]
 fn mlp_outforages_wanderer_across_seeds() {
     let mut failures = Vec::new();
-    eprintln!("  seed         | MLP(moy 2e moitié) | errance(moy 2e moitié) | vision MLP/errance");
+    eprintln!("  seed         | MLP(2nd-half mean) | wander(2nd-half mean) | vision MLP/wander");
     for seed in SEEDS {
         let run = run_seed(seed);
-        // 2ᵉ moitié : on laisse passer le transitoire (croissance, premières
-        // générations le temps que la neuroévolution démarre).
+        // 2nd half: we let the transient pass (growth, the first generations while
+        // neuroevolution gets going).
         let back = &run.traj[SECONDS / 2..];
         let mean = |f: &dyn Fn(&(usize, usize)) -> usize| -> f32 {
             back.iter().map(f).sum::<usize>() as f32 / back.len() as f32
@@ -109,24 +109,24 @@ fn mlp_outforages_wanderer_across_seeds() {
         );
         eprintln!("               t=0,25,..: {}", sampled.join("  "));
 
-        // Le MLP appris doit DOMINER l'errance (fourrager bien mieux) : à départ égal
-        // et corps identique, c'est la preuve qu'il a appris (§4). On exige une
-        // domination nette (≥ 2×), pas une coudée — et que le MLP lui-même prospère
-        // (sinon « les deux se sont effondrés » passerait à tort).
+        // The learned MLP must DOMINATE the wanderer (forage far better): with an
+        // equal start and an identical body, this is the proof that it learned (§4).
+        // We require a clear domination (≥ 2×), not a hair — and that the MLP itself
+        // thrives (otherwise "both collapsed" would pass wrongly).
         if mlp_mean < 50.0 {
             failures.push(format!(
-                "seed {seed:#x} : le MLP ne prospère pas ({mlp_mean:.1}) — il n'a pas appris à fourrager"
+                "seed {seed:#x}: the MLP does not thrive ({mlp_mean:.1}) — it did not learn to forage"
             ));
         } else if mlp_mean <= 2.0 * wander_mean {
             failures.push(format!(
-                "seed {seed:#x} : le MLP ne domine pas l'errance ({mlp_mean:.1} vs {wander_mean:.1}) — apprentissage insuffisant"
+                "seed {seed:#x}: the MLP does not dominate the wanderer ({mlp_mean:.1} vs {wander_mean:.1}) — insufficient learning"
             ));
         }
     }
 
     assert!(
         failures.is_empty(),
-        "le MLP n'a pas su battre le témoin d'errance :\n  {}",
+        "the MLP failed to beat the wander control:\n  {}",
         failures.join("\n  ")
     );
 }

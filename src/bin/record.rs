@@ -1,39 +1,40 @@
-//! Enregistreur vidéo **headless** (P3, item 14).
+//! **Headless** video recorder (P3, item 14).
 //!
-//! On *re-render à frais* une run (§7 : sans déterminisme bit-à-bit, pas de
-//! rejeu par seed — on relance la run et on la filme ; c'est représentatif, pas
-//! le match historique exact) et on **pipe les frames brutes directement vers un
-//! process `ffmpeg`** : aucun PNG intermédiaire sur disque.
+//! We *re-render fresh* a run (§7: without bit-for-bit determinism, no replay by
+//! seed — we relaunch the run and film it; it is representative, not the exact
+//! historical match) and **pipe the raw frames directly to an `ffmpeg`
+//! process**: no intermediate PNG on disk.
 //!
-//! Le rendu est *réellement* sans fenêtre : on désactive `WinitPlugin`, on
-//! supprime la fenêtre primaire, et la caméra rend dans une **image-cible**
-//! (`RenderTarget::Image`). `ScheduleRunnerPlugin` pompe la boucle ; chaque
-//! `Update` on capture l'image-cible via l'API `Screenshot` (qui fait le readback
-//! GPU→CPU pour nous), et un thread dédié écrit les pixels RGBA bruts sur le
-//! `stdin` de `ffmpeg`.
+//! The rendering is *genuinely* windowless: we disable `WinitPlugin`, remove the
+//! primary window, and the camera renders into a **target image**
+//! (`RenderTarget::Image`). `ScheduleRunnerPlugin` pumps the loop; each `Update`
+//! we capture the target image via the `Screenshot` API (which does the GPU→CPU
+//! readback for us), and a dedicated thread writes the raw RGBA pixels to
+//! `ffmpeg`'s `stdin`.
 //!
-//! Le temps avance d'un pas *fixe* par frame (`TimeUpdateStrategy::ManualDuration`,
-//! = `1/fps`), indépendamment du mur d'horloge : la boucle fixe de sim joue le bon
-//! nombre de ticks par frame vidéo, et la durée enregistrée est exacte.
+//! Time advances by a *fixed* step per frame (`TimeUpdateStrategy::ManualDuration`,
+//! = `1/fps`), independently of wall-clock time: the sim's fixed loop plays the
+//! right number of ticks per video frame, and the recorded duration is exact.
 //!
-//! Run **unique**, mono-thread (la parallélisation inter-matchs est repoussée en
-//! P5 avec le GA). Tout vit dans `Update` / au `Startup` — jamais de logique de
-//! sim hors `FixedUpdate` (invariant cardinal) : on ne fait qu'*observer*.
+//! A **single** run, single-threaded (inter-match parallelization is deferred to
+//! P5 with the GA). Everything lives in `Update` / at `Startup` — never any sim
+//! logic outside `FixedUpdate` (cardinal invariant): we only *observe*.
 //!
-//! Usage : `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
+//! Usage: `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
 //! [--width W] [--height H] [--select MODE] [--select-interval S] [--no-hud]
 //! [--hud-interval S]`.
 //!
-//! `--hud` (défaut) incruste le visualiseur natif (stats / courbes / inspecteur) en
-//! composition **9:16** — arène carrée en haut, visualiseur en bas — strictement
-//! identique au mode « présentation » du fenêtré ; `--no-hud` rend la seule arène
-//! (carré, comportement historique). `--hud-interval` règle la rotation des sections.
+//! `--hud` (default) overlays the native visualizer (stats / curves / inspector)
+//! in a **9:16** composition — square arena on top, visualizer at the bottom —
+//! strictly identical to the windowed "presentation" mode; `--no-hud` renders the
+//! arena alone (square, historical behavior). `--hud-interval` sets the section
+//! rotation.
 //!
-//! `--select` garde un agent mobile **mis en avant** pendant la vidéo (anneau + rayons de
-//! vision), pour montrer les raycasts aux spectateurs. MODE ∈ `off`, `sticky` (fixe),
-//! `cycle` (rotation), `active` (le plus « en action »), `species` (tour des espèces),
-//! `eldest` (doyen). `cycle`/`active`/`species` changent toutes les `--select-interval` s
-//! (défaut 4) ; `sticky`/`eldest` ne changent qu'à la mort de la cible.
+//! `--select` keeps a mobile agent **highlighted** during the video (ring + vision
+//! rays), to show the raycasts to viewers. MODE ∈ `off`, `sticky`, `cycle`,
+//! `active` (the most "active"), `species` (species tour), `eldest`.
+//! `cycle`/`active`/`species` change every `--select-interval` s (default 4);
+//! `sticky`/`eldest` change only at the target's death.
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::asset::RenderAssetUsages;
@@ -54,23 +55,23 @@ use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll}
 use teemlab::visuals::{VisualsPlugin, srgb3};
 use teemlab::{SimConfig, SimPlugin};
 
-/// Paramètres d'enregistrement, lus depuis la ligne de commande.
+/// Recording parameters, read from the command line.
 struct Settings {
     scenario: Option<String>,
     out: String,
     fps: f64,
     seconds: f64,
-    /// Largeur/hauteur explicites, sinon résolues d'après `hud` (9:16 portrait avec HUD,
-    /// carré sans) — cf. [`main`].
+    /// Explicit width/height, otherwise resolved from `hud` (9:16 portrait with
+    /// HUD, square without) — cf. [`main`].
     width: Option<u32>,
     height: Option<u32>,
-    /// Mode de roulement de la sélection automatique (rayons visibles dans la vidéo).
+    /// Roll mode of the automatic selection (rays visible in the video).
     select: SelectionRoll,
-    /// Intervalle (s) entre deux changements de sélection (modes « à timer »).
+    /// Interval (s) between two selection changes ("timer" modes).
     select_interval: f32,
-    /// Incruster le visualiseur natif (stats / courbes / inspecteur), composition 9:16.
+    /// Overlay the native visualizer (stats / curves / inspector), 9:16 composition.
     hud: bool,
-    /// Intervalle (s) de rotation des sections du visualiseur (courbes ↔ inspecteur).
+    /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
 }
 
@@ -81,14 +82,14 @@ impl Settings {
             out: "outputs/out.mp4".into(),
             fps: 30.0,
             seconds: 61.0,
-            // Dimensions résolues d'après `hud` si non fournies (cf. `main`).
+            // Dimensions resolved from `hud` if not provided (cf. `main`).
             width: None,
             height: None,
-            // Doyen par défaut : on met en avant le survivant (rayons visibles dans la
-            // vidéo) ; `--select off` désactive.
+            // Eldest by default: we highlight the survivor (rays visible in the
+            // video); `--select off` disables.
             select: SelectionRoll::Eldest,
             select_interval: 4.0,
-            // Visualiseur incrusté **par défaut** (§ vidéo) ; `--no-hud` le coupe.
+            // Visualizer overlaid **by default** (§ video); `--no-hud` turns it off.
             hud: true,
             hud_interval: 6.0,
         };
@@ -96,38 +97,38 @@ impl Settings {
         while let Some(arg) = args.next() {
             let mut next = || {
                 args.next().unwrap_or_else(|| {
-                    eprintln!("record : valeur manquante après « {arg} »");
+                    eprintln!("record: missing value after \"{arg}\"");
                     std::process::exit(2);
                 })
             };
             match arg.as_str() {
                 "--out" | "-o" => s.out = next(),
-                "--fps" => s.fps = next().parse().expect("--fps : nombre attendu"),
+                "--fps" => s.fps = next().parse().expect("--fps: number expected"),
                 "--seconds" | "-s" => {
-                    s.seconds = next().parse().expect("--seconds : nombre attendu")
+                    s.seconds = next().parse().expect("--seconds: number expected")
                 }
                 "--width" | "-w" => {
-                    s.width = Some(next().parse().expect("--width : entier attendu"))
+                    s.width = Some(next().parse().expect("--width: integer expected"))
                 }
                 "--height" | "-h" => {
-                    s.height = Some(next().parse().expect("--height : entier attendu"))
+                    s.height = Some(next().parse().expect("--height: integer expected"))
                 }
-                // Visualiseur incrusté (stats / courbes / inspecteur), composition 9:16.
+                // Overlaid visualizer (stats / curves / inspector), 9:16 composition.
                 "--hud" => s.hud = true,
                 "--no-hud" => s.hud = false,
                 "--hud-interval" => {
                     s.hud_interval = next()
                         .parse()
-                        .expect("--hud-interval : nombre (secondes) attendu");
+                        .expect("--hud-interval: number (seconds) expected");
                 }
-                // Sélection automatique d'un agent pendant la vidéo (pour montrer ses
-                // rayons) ; modes : cf. l'en-tête du module et `SelectionRoll`.
+                // Automatic selection of an agent during the video (to show its
+                // rays); modes: cf. the module header and `SelectionRoll`.
                 "--select" => {
                     let v = next();
                     s.select = SelectionRoll::from_cli(&v).unwrap_or_else(|| {
                         let modes: Vec<&str> = SelectionRoll::ALL.iter().map(|m| m.cli()).collect();
                         eprintln!(
-                            "record : mode de sélection inconnu « {v} » ({})",
+                            "record: unknown selection mode \"{v}\" ({})",
                             modes.join("|")
                         );
                         std::process::exit(2);
@@ -136,14 +137,14 @@ impl Settings {
                 "--select-interval" => {
                     s.select_interval = next()
                         .parse()
-                        .expect("--select-interval : nombre (secondes) attendu");
+                        .expect("--select-interval: number (seconds) expected");
                 }
                 other if other.starts_with('-') => {
-                    eprintln!("record : option inconnue « {other} »");
+                    eprintln!("record: unknown option \"{other}\"");
                     std::process::exit(2);
                 }
-                // Premier argument positionnel = chemin du scénario (comme le
-                // reste du projet : scénario = donnée, 1ᵉʳ argument).
+                // First positional argument = scenario path (like the rest of the
+                // project: scenario = data, 1st argument).
                 positional => {
                     if s.scenario.is_none() {
                         s.scenario = Some(positional.to_string());
@@ -155,11 +156,11 @@ impl Settings {
     }
 }
 
-/// Handle de l'image dans laquelle la caméra rend (cible de capture).
+/// Handle of the image the camera renders into (capture target).
 #[derive(Resource)]
 struct RecordTarget(Handle<Image>);
 
-/// Combien de frames filmer, et leur taille.
+/// How many frames to film, and their size.
 #[derive(Resource)]
 struct RecordPlan {
     width: u32,
@@ -167,15 +168,15 @@ struct RecordPlan {
     frames: u32,
 }
 
-/// Avancement : frames demandées (screenshots lancés) vs livrées (readback reçu).
+/// Progress: frames requested (screenshots launched) vs delivered (readback received).
 #[derive(Resource, Default)]
 struct RecordProgress {
     spawned: u32,
     written: u32,
 }
 
-/// Émetteur des frames brutes vers le thread d'écriture `ffmpeg`. Le retirer du
-/// `World` ferme le canal et termine proprement le thread (et donc `ffmpeg`).
+/// Sender of the raw frames to the `ffmpeg` writer thread. Removing it from the
+/// `World` closes the channel and cleanly terminates the thread (and thus `ffmpeg`).
 #[derive(Resource)]
 struct FrameSink(Sender<Vec<u8>>);
 
@@ -183,15 +184,15 @@ fn main() -> AppExit {
     let settings = Settings::parse();
     let config = match &settings.scenario {
         Some(path) => SimConfig::from_ron_file(path).unwrap_or_else(|err| {
-            eprintln!("record : scénario « {path} » illisible : {err}");
+            eprintln!("record: scenario \"{path}\" unreadable: {err}");
             std::process::exit(1);
         }),
         None => SimConfig::default(),
     };
     let frames = (settings.fps * settings.seconds).round().max(1.0) as u32;
 
-    // Dimensions : 9:16 portrait quand le visualiseur est incrusté (arène carrée en haut,
-    // viz en bas), carré sinon. Une taille explicite l'emporte.
+    // Dimensions: 9:16 portrait when the visualizer is overlaid (square arena on
+    // top, viz at the bottom), square otherwise. An explicit size wins.
     let (def_w, def_h) = if settings.hud {
         (1080, 1920)
     } else {
@@ -200,21 +201,21 @@ fn main() -> AppExit {
     let width = settings.width.unwrap_or(def_w);
     let height = settings.height.unwrap_or(def_h);
 
-    // On crée le dossier de sortie au besoin (par défaut `outputs/`, ignoré par
-    // git) — ffmpeg n'écrit pas dans une arborescence manquante.
+    // We create the output directory if needed (by default `outputs/`, ignored by
+    // git) — ffmpeg does not write into a missing tree.
     if let Some(parent) = std::path::Path::new(&settings.out).parent()
         && !parent.as_os_str().is_empty()
         && let Err(err) = std::fs::create_dir_all(parent)
     {
         eprintln!(
-            "record : dossier de sortie « {} » impossible : {err}",
+            "record: output directory \"{}\" cannot be created: {err}",
             parent.display()
         );
         std::process::exit(1);
     }
 
-    // `ffmpeg` lit du rawvideo RGBA sur stdin → encode en H.264/yuv420p. Pas de
-    // fichier intermédiaire : on branche directement le pipe.
+    // `ffmpeg` reads raw RGBA video on stdin → encodes to H.264/yuv420p. No
+    // intermediate file: we wire up the pipe directly.
     let mut child: Child = Command::new("ffmpeg")
         .args([
             "-y",
@@ -237,23 +238,23 @@ fn main() -> AppExit {
         .stdin(Stdio::piped())
         .spawn()
         .unwrap_or_else(|err| {
-            eprintln!("record : impossible de lancer ffmpeg ({err}). Est-il installé ?");
+            eprintln!("record: cannot launch ffmpeg ({err}). Is it installed?");
             std::process::exit(1);
         });
 
-    let stdin = child.stdin.take().expect("stdin ffmpeg piped");
+    let stdin = child.stdin.take().expect("ffmpeg stdin piped");
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
-    // Thread d'écriture : tout le pipe vers ffmpeg vit hors de la boucle Bevy,
-    // pour ne pas bloquer le rendu sur les I/O. Il tourne tant qu'un émetteur
-    // existe ; sa fin ferme le stdin de ffmpeg → finalisation du fichier.
+    // Writer thread: the whole pipe to ffmpeg lives outside the Bevy loop, so as
+    // not to block rendering on I/O. It runs while a sender exists; its end closes
+    // ffmpeg's stdin → file finalization.
     let writer = std::thread::spawn(move || feed_ffmpeg(stdin, rx));
 
     let frame_dt = Duration::from_secs_f64(1.0 / settings.fps);
     let mut app = App::new();
     app.add_plugins(
-        // Rendu réel mais sans fenêtre : pas de winit (c'est ScheduleRunnerPlugin
-        // qui pilote la boucle), pas de fenêtre primaire — la caméra rend dans une
-        // image, pas dans une surface.
+        // Real rendering but windowless: no winit (it is ScheduleRunnerPlugin that
+        // drives the loop), no primary window — the camera renders into an image,
+        // not into a surface.
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: None,
@@ -266,15 +267,15 @@ fn main() -> AppExit {
     .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
     .add_plugins(SimPlugin::new(config))
     .add_plugins(VisualsPlugin)
-    // Échantillonnage des courbes (partagé avec le fenêtré) + visualiseur natif incrusté.
-    // Avec HUD, `DataVizPlugin` recompose la cible en 9:16 (arène en haut, viz en bas).
+    // Curve sampling (shared with the windowed build) + overlaid native visualizer.
+    // With HUD, `DataVizPlugin` recomposes the target in 9:16 (arena on top, viz at bottom).
     .add_plugins(MetricsPlugin)
     .add_plugins(DataVizPlugin {
         enabled: settings.hud,
         interval: settings.hud_interval,
     })
-    // Temps piloté : chaque update avance d'exactement 1/fps, donc la boucle fixe
-    // joue le bon nombre de ticks et la vidéo est cadencée au mur près.
+    // Driven time: each update advances by exactly 1/fps, so the fixed loop plays
+    // the right number of ticks and the video is paced to the wall clock.
     .insert_resource(TimeUpdateStrategy::ManualDuration(frame_dt))
     .insert_resource(RecordPlan {
         width,
@@ -286,9 +287,9 @@ fn main() -> AppExit {
     .add_systems(Startup, setup_recorder)
     .add_systems(Update, capture_frame);
 
-    // Sélection automatique (option `--select`) : garde un agent mobile mis en avant
-    // pendant toute la vidéo, pour en montrer les rayons. Le rendu (anneau + rayons) est
-    // partagé avec le fenêtré ; ici la cible roule toute seule selon le mode choisi.
+    // Automatic selection (`--select` option): keeps a mobile agent highlighted
+    // throughout the video, to show its rays. The rendering (ring + rays) is shared
+    // with the windowed build; here the target rolls on its own per the chosen mode.
     if settings.select != SelectionRoll::Off {
         app.add_plugins(SelectionRenderPlugin)
             .add_plugins(AutoSelectPlugin {
@@ -298,7 +299,7 @@ fn main() -> AppExit {
     }
 
     eprintln!(
-        "record : {} frames à {} fps ({:.1}s), {}×{}{} → {}",
+        "record: {} frames at {} fps ({:.1}s), {}×{}{} → {}",
         frames,
         settings.fps,
         settings.seconds,
@@ -309,19 +310,19 @@ fn main() -> AppExit {
     );
     let exit = app.run();
 
-    // Fin de run : on lâche l'émetteur restant (la ressource) pour fermer le
-    // canal, on attend la fin de l'écriture, puis la finalisation de ffmpeg.
+    // End of run: we drop the remaining sender (the resource) to close the
+    // channel, wait for the writing to finish, then for ffmpeg's finalization.
     app.world_mut().remove_resource::<FrameSink>();
     let _ = writer.join();
     match child.wait() {
-        Ok(status) if status.success() => eprintln!("record : vidéo écrite."),
-        Ok(status) => eprintln!("record : ffmpeg a terminé avec {status}."),
-        Err(err) => eprintln!("record : attente de ffmpeg échouée : {err}"),
+        Ok(status) if status.success() => eprintln!("record: video written."),
+        Ok(status) => eprintln!("record: ffmpeg finished with {status}."),
+        Err(err) => eprintln!("record: waiting for ffmpeg failed: {err}"),
     }
     exit
 }
 
-/// `Startup` : crée l'image-cible et la caméra qui rend dedans, cadrée sur l'arène.
+/// `Startup`: creates the target image and the camera that renders into it, framed on the arena.
 fn setup_recorder(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
@@ -340,23 +341,24 @@ fn setup_recorder(
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
     );
-    // Cible de rendu *et* source de copie (pour le readback du screenshot).
+    // Render target *and* copy source (for the screenshot readback).
     image.texture_descriptor.usage =
         TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING;
     let handle = images.add(image);
 
-    // Cadrage : l'arène (± half_extent) tient toujours, avec une marge.
+    // Framing: the arena (± half_extent) always fits, with a margin.
     let span = config.arena_half_extent * 2.0 * 1.1;
     commands.spawn((
         Camera2d,
         Camera {
-            // Hors-jeu (au-delà de l'arène) = couleur extérieure du scénario, comme le
-            // fenêtré ; l'aire de jeu (intérieur) est peinte par `VisualsPlugin`. La
-            // caméra-image ignore la ressource `ClearColor`, on fixe donc la couleur ici.
+            // Off-game (beyond the arena) = the scenario's outer color, like the
+            // windowed build; the play area (inside) is painted by `VisualsPlugin`.
+            // The image-camera ignores the `ClearColor` resource, so we set the
+            // color here.
             clear_color: ClearColorConfig::Custom(srgb3(config.off_game_color)),
             ..default()
         },
-        // En 0.18 la cible de rendu est un composant à part, requis par `Camera`.
+        // In 0.18 the render target is a separate component, required by `Camera`.
         RenderTarget::from(handle.clone()),
         Projection::from(OrthographicProjection {
             scaling_mode: ScalingMode::AutoMin {
@@ -370,9 +372,9 @@ fn setup_recorder(
     commands.insert_resource(RecordTarget(handle));
 }
 
-/// `Update` : tant qu'il reste des frames à filmer, demande une capture de
-/// l'image-cible. L'observateur (déclenché quand le readback GPU→CPU est prêt)
-/// pousse les pixels vers le thread ffmpeg et, à la dernière frame livrée, sort.
+/// `Update`: while there remain frames to film, requests a capture of the target
+/// image. The observer (triggered when the GPU→CPU readback is ready) pushes the
+/// pixels to the ffmpeg thread and, at the last delivered frame, exits.
 fn capture_frame(
     mut commands: Commands,
     target: Res<RecordTarget>,
@@ -385,16 +387,16 @@ fn capture_frame(
     }
     progress.spawned += 1;
     let tx = sink.0.clone();
-    // Une capture par frame rendue : le pipeline de rendu les livre dans l'ordre
-    // de soumission et le canal est FIFO → l'ordre des frames est préservé.
+    // One capture per rendered frame: the render pipeline delivers them in
+    // submission order and the channel is FIFO → frame order is preserved.
     commands.spawn(Screenshot::image(target.0.clone())).observe(
         move |captured: On<ScreenshotCaptured>,
               plan: Res<RecordPlan>,
               mut progress: ResMut<RecordProgress>,
               mut exit: MessageWriter<AppExit>| {
             if let Some(data) = captured.image.data.clone() {
-                // Canal plein/fermé = thread ffmpeg parti : rien à faire de
-                // plus, la fin de run gérera la sortie.
+                // Full/closed channel = ffmpeg thread gone: nothing more to do,
+                // the end of run will handle the exit.
                 let _ = tx.send(data);
             }
             progress.written += 1;
@@ -405,16 +407,16 @@ fn capture_frame(
     );
 }
 
-/// Thread d'écriture : draine les frames brutes et les pousse sur le stdin de
-/// ffmpeg. S'arrête quand tous les émetteurs sont lâchés (fin de run), puis ferme
-/// le stdin (via `drop`) pour que ffmpeg finalise le fichier.
+/// Writer thread: drains the raw frames and pushes them to ffmpeg's stdin. Stops
+/// when all senders are dropped (end of run), then closes stdin (via `drop`) so
+/// ffmpeg finalizes the file.
 fn feed_ffmpeg(mut stdin: std::process::ChildStdin, rx: Receiver<Vec<u8>>) {
     while let Ok(frame) = rx.recv() {
         if stdin.write_all(&frame).is_err() {
-            // ffmpeg a fermé son entrée (erreur d'encodage) : inutile d'insister.
+            // ffmpeg closed its input (encoding error): no point insisting.
             break;
         }
     }
     let _ = stdin.flush();
-    // `stdin` est droppé ici → EOF côté ffmpeg → finalisation.
+    // `stdin` is dropped here → EOF on ffmpeg's side → finalization.
 }

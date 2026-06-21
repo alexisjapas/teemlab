@@ -1,11 +1,11 @@
-//! Item 16 — le chasseur voit et poursuit sa cible.
+//! Item 16 — the hunter sees and pursues its target.
 //!
-//! Test de bout en bout du canal « cible » de la perception + du réflexe
-//! [`Brain::Hunter`] : on pose un chasseur à l'origine, cap +X, et une nourriture
-//! droit devant, dans sa portée de vision ; on fait tourner le *vrai* monde de sim
-//! et on vérifie (1) que la cible s'inscrit dans son canal de perception, et (2)
-//! qu'il s'en rapproche franchement — preuve que percevoir→décider→agir est devenu
-//! PORTEUR (et que la sélection de cerveau par scénario fonctionne).
+//! End-to-end test of the perception's "target" channel + the [`Brain::Hunter`]
+//! reflex: we place a hunter at the origin, heading +X, and food straight ahead,
+//! within its vision range; we run the *real* sim world and check (1) that the
+//! target registers in its perception channel, and (2) that it moves clearly
+//! closer to it — proof that perceive→decide→act has become MEANINGFUL (and that
+//! the per-scenario brain selection works).
 
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
@@ -20,15 +20,15 @@ mod common;
 
 #[test]
 fn hunter_sees_and_chases_its_target() {
-    // Monde nu : pas de peuplement auto (on place tout à la main), pas de
-    // métabolisme (le chasseur ne meurt pas pendant le test), une relation à débit
-    // NUL — la nourriture reste un appât stable : visée (donc « cible »), jamais
-    // consommée. C'est `brain: Hunter` qu'on met à l'épreuve.
+    // Bare world: no auto population (we place everything by hand), no metabolism
+    // (the hunter does not die during the test), a ZERO-rate relation — the food
+    // stays a stable bait: targeted (hence "target"), never consumed. It is `brain:
+    // Hunter` that we put to the test.
     let config = SimConfig {
         arena_half_extent: 400.0,
         archetypes: vec![
             Archetype {
-                name: "Chasseur".into(),
+                name: "Hunter".into(),
                 color: Archetype::default_color(0),
                 count: 0,
                 radius: 8.0,
@@ -44,10 +44,10 @@ fn hunter_sees_and_chases_its_target() {
                 captured_brain: None,
                 captured_from: None,
             },
-            // L'appât : une source sessile (Phase 3b) — immobile, jamais consommée
-            // (relation à débit nul) ; le chasseur doit la voir comme « cible ».
+            // The bait: a sessile source (Phase 3b) — immobile, never consumed
+            // (zero-rate relation); the hunter must see it as a "target".
             Archetype {
-                name: "Nourriture".into(),
+                name: "Food".into(),
                 color: Archetype::default_color(1),
                 count: 0,
                 radius: 6.0,
@@ -73,10 +73,10 @@ fn hunter_sees_and_chases_its_target() {
         ..SimConfig::default()
     };
 
-    // Un tick fixe pile par `update()` (cf. `common::stepping_app`).
+    // Exactly one fixed tick per `update()` (cf. `common::stepping_app`).
     let mut app = common::stepping_app(&config);
 
-    // Chasseur à l'origine (cap +X), nourriture droit devant à 200 u (< portée).
+    // Hunter at the origin (heading +X), food straight ahead at 200 u (< range).
     let food_x = 200.0_f32;
     app.world_mut()
         .run_system_once(move |mut commands: Commands, config: Res<SimConfig>| {
@@ -90,9 +90,9 @@ fn hunter_sees_and_chases_its_target() {
                 0.0,
                 0,
                 config.reserve_max_of(0),
-                0, // fondateur : génération 0.
+                0, // founder: generation 0.
             );
-            // L'appât sessile, posé via le même `spawn_agent` (corps pass-through).
+            // The sessile bait, placed via the same `spawn_agent` (pass-through body).
             spawn_agent(
                 &mut commands,
                 &config,
@@ -105,10 +105,10 @@ fn hunter_sees_and_chases_its_target() {
                 0,
             );
         })
-        .expect("spawn ponctuel");
+        .expect("one-off spawn");
 
-    // Quelques ticks pour que la broad-phase d'Avian intègre la nourriture, puis on
-    // vérifie qu'elle s'inscrit dans le canal « cible » du chasseur.
+    // A few ticks for Avian's broad-phase to integrate the food, then we check that
+    // it registers in the hunter's "target" channel.
     for _ in 0..10 {
         app.update();
     }
@@ -119,10 +119,10 @@ fn hunter_sees_and_chases_its_target() {
         .any(|p| p.target.iter().any(|&v| v > 0.0));
     assert!(
         saw_target,
-        "la nourriture droit devant doit apparaître dans le canal « cible »"
+        "the food straight ahead must appear in the \"target\" channel"
     );
 
-    // On laisse courir : le chasseur doit se rapprocher franchement de sa cible.
+    // We let it run: the hunter must move clearly closer to its target.
     for _ in 0..80 {
         app.update();
     }
@@ -131,11 +131,11 @@ fn hunter_sees_and_chases_its_target() {
     let x = transforms
         .iter(world)
         .next()
-        .expect("le chasseur existe encore")
+        .expect("the hunter still exists")
         .translation
         .x;
     assert!(
         x > 100.0,
-        "le chasseur doit avoir foncé vers sa cible (x={x:.1}, départ 0, cible {food_x})"
+        "the hunter must have charged toward its target (x={x:.1}, start 0, target {food_x})"
     );
 }

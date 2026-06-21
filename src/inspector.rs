@@ -1,14 +1,14 @@
-//! Inspecteur d'agent du build fenêtré : **cliquer un agent → voir son état**
+//! Agent inspector of the windowed build: **click an agent → see its state**
 //! (item 12).
 //!
-//! Module du *binaire* fenêtré uniquement (comme [`crate::editor`],
-//! [`crate::hud`], [`crate::controls`]). C'est l'outil de débogage du
-//! comportement — le garde-fou du groupe témoin déterministe : on lit le
-//! génotype, l'énergie, la perception et l'action courante d'un agent vivant.
+//! A module of the windowed *binary* only (like [`crate::editor`],
+//! [`crate::hud`], [`crate::controls`]). It is the behavior debugging tool — the
+//! guardrail of the deterministic control group: we read the genotype, energy,
+//! perception and current action of a living agent.
 //!
-//! Lecture seule : on n'écrit jamais dans la sim. La sélection (un `Entity`) et
-//! son rendu (un anneau en gizmo) vivent dans le binaire fenêtré ; l'invariant
-//! cardinal tient.
+//! Read-only: we never write into the sim. The selection (an `Entity`) and its
+//! rendering (a gizmo ring) live in the windowed binary; the cardinal invariant
+//! holds.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -22,10 +22,10 @@ use teemlab::selection::Selection;
 
 use crate::editor::{Palette, draw_mlp_graph};
 
-/// Position **monde** du curseur dans l'aire de jeu (caméra et fenêtre uniques),
-/// si elle existe. Partagée par le picking de l'inspecteur et la suppression : le
-/// `viewport_to_world_2d` tient compte de l'offset de la sim centrée (cf.
-/// `main::set_sim_camera`), donc le curseur fenêtre reste la bonne entrée.
+/// **World** position of the cursor in the play area (single camera and window),
+/// if it exists. Shared by the inspector's picking and the deletion: the
+/// `viewport_to_world_2d` accounts for the centered sim's offset (cf.
+/// `main::set_sim_camera`), so the window cursor remains the correct input.
 fn pointer_world(
     cameras: &Query<(&Camera, &GlobalTransform)>,
     windows: &Query<&Window>,
@@ -36,9 +36,9 @@ fn pointer_world(
     camera.viewport_to_world_2d(cam_tf, cursor).ok()
 }
 
-/// L'entité (corps) la plus proche dont le rayon **contient** `world`, le cas
-/// échéant. Même critère pour sélectionner (inspecteur) et supprimer — d'où le
-/// partage. `None` = curseur dans le vide.
+/// The nearest entity (body) whose radius **contains** `world`, if any. Same
+/// criterion for selecting (inspector) and deleting — hence the sharing. `None` =
+/// cursor in the void.
 fn body_at<'a>(
     world: Vec2,
     bodies: impl IntoIterator<Item = (Entity, &'a Transform, &'a Radius)>,
@@ -53,9 +53,9 @@ fn body_at<'a>(
     best.map(|(entity, _)| entity)
 }
 
-/// Sélectionne l'agent sous le curseur au clic dans l'aire de jeu. Un clic dans
-/// le vide désélectionne ; un clic sur un panneau egui ou pendant un glisser
-/// d'archétype est ignoré (c'est l'éditeur qui gère ce dernier).
+/// Selects the agent under the cursor on a click in the play area. A click in the
+/// void deselects; a click on an egui panel or during an archetype drag is
+/// ignored (the editor handles the latter).
 pub fn pick_agent(
     mut contexts: EguiContexts,
     mut selection: ResMut<Selection>,
@@ -65,8 +65,8 @@ pub fn pick_agent(
     agents: Query<(Entity, &Transform, &Radius), With<Agent>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    // On ne pioche pas pendant un glisser-déposer d'archétype (éditeur), ni quand
-    // le clic vise un panneau egui, ni s'il n'y a pas de clic du tout.
+    // We do not pick during an archetype drag-and-drop (editor), nor when the
+    // click targets an egui panel, nor if there is no click at all.
     if palette.dragging.is_some()
         || !ctx.input(|i| i.pointer.any_click())
         || ctx.is_pointer_over_area()
@@ -76,22 +76,21 @@ pub fn pick_agent(
     let Some(world) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
-    // L'agent le plus proche dont le corps contient le clic ; sinon (vide) → None.
+    // The nearest agent whose body contains the click; otherwise (void) → None.
     selection.0 = body_at(world, agents);
     Ok(())
 }
 
-/// Suppression manuelle (Suppr / Retour arrière) : retire l'entité **sous le
-/// curseur** — agent OU nourriture (tout corps à [`Radius`] ; les murs, sans
-/// `Radius`, sont épargnés). Édition manuelle déclenchée par l'utilisateur, comme
-/// le placement de l'éditeur → vit hors `FixedUpdate`, et reste autorisée même
-/// hors pause, par cohérence avec le placement. Pas d'annulation en v1 : une
-/// entité se repose depuis la palette (le monde est un bac à sable d'expérience,
-/// pas une donnée précieuse).
+/// Manual deletion (Delete / Backspace): removes the entity **under the cursor**
+/// — agent OR food (any body with a [`Radius`]; walls, which have no `Radius`, are
+/// spared). Manual editing triggered by the user, like the editor's placement →
+/// lives outside `FixedUpdate`, and remains allowed even when not paused, for
+/// consistency with placement. No undo in v1: an entity is re-placed from the
+/// palette (the world is an experiment sandbox, not precious data).
 ///
-/// Comme [`pick_agent`] et `resolve_drag`, doit tourner **après** les fenêtres egui
-/// pour que `is_pointer_over_area` soit à jour (sinon un Suppr au-dessus d'un
-/// panneau viserait l'entité cachée dessous).
+/// Like [`pick_agent`] and `resolve_drag`, it must run **after** the egui windows
+/// so that `is_pointer_over_area` is up to date (otherwise a Delete over a panel
+/// would target the entity hidden beneath it).
 #[allow(clippy::too_many_arguments)]
 pub fn delete_under_cursor(
     mut contexts: EguiContexts,
@@ -107,31 +106,31 @@ pub fn delete_under_cursor(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    // Pas pendant un glisser d'archétype, ni quand le curseur vise un panneau egui.
+    // Not during an archetype drag, nor when the cursor targets an egui panel.
     if palette.dragging.is_some() || ctx.is_pointer_over_area() {
         return Ok(());
     }
     let Some(world) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
-    // Le corps le plus proche dont le rayon contient le curseur (même critère que
-    // le picking de l'inspecteur).
+    // The nearest body whose radius contains the cursor (same criterion as the
+    // inspector's picking).
     if let Some(entity) = body_at(world, bodies) {
         commands.entity(entity).despawn();
         if selection.0 == Some(entity) {
-            selection.0 = None; // ne pas garder une sélection fantôme.
+            selection.0 = None; // do not keep a phantom selection.
         }
     }
     Ok(())
 }
 
-/// L'inspecteur d'agent — génotype, énergie, perception, action (+ graphe MLP) de
-/// l'agent sélectionné. Rendu dans le panneau du bas (à droite, item dock). Si
-/// l'agent sélectionné a disparu (mort), on le signale. **Lecture seule du monde** :
-/// on n'écrit jamais dans la sim. Le bouton « Capturer » ne fait pas exception — il
-/// *lit* l'agent et **retourne** un [`Archetype`] dérivé (génome évolué + poids
-/// concrets) que l'appelant ajoutera à la config (comme l'éditeur écrit la config,
-/// pas la sim). `None` quand l'utilisateur ne capture pas ce tick.
+/// The agent inspector — genotype, energy, perception, action (+ MLP graph) of
+/// the selected agent. Rendered in the bottom panel (on the right, dock item). If
+/// the selected agent has disappeared (died), we report it. **Read-only over the
+/// world**: we never write into the sim. The "Capture" button is no exception —
+/// it *reads* the agent and **returns** a derived [`Archetype`] (evolved genome +
+/// concrete weights) that the caller will add to the config (as the editor writes
+/// the config, not the sim). `None` when the user does not capture this tick.
 pub(crate) fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
@@ -152,7 +151,7 @@ pub(crate) fn inspector_section(
     >,
 ) -> Option<Archetype> {
     let Some(entity) = selection.0 else {
-        ui.weak("Clique un agent dans l'aire pour l'inspecter.");
+        ui.weak("Click an agent in the area to inspect it.");
         return None;
     };
     let Ok((species, reserve, genotype, vision, perception, action, brain, generation, age)) =
@@ -160,45 +159,45 @@ pub(crate) fn inspector_section(
     else {
         ui.colored_label(
             egui::Color32::from_rgb(255, 140, 120),
-            "L'agent sélectionné n'existe plus (mort ?).",
+            "The selected agent no longer exists (dead?).",
         );
-        ui.weak("Clique un autre agent, ou dans le vide pour désélectionner.");
+        ui.weak("Click another agent, or in the void to deselect.");
         return None;
     };
 
-    // Demande de capture éventuelle (cf. doc) : positionnée par le bouton plus bas,
-    // retournée à l'appelant qui l'ajoutera à la config.
+    // Possible capture request (cf. doc): set by the button below, returned to the
+    // caller who will add it to the config.
     let mut capture: Option<Archetype> = None;
 
-    // Une entité immobile (flore / source sessile) ne se meut ni n'exploite de vision :
-    // on masque alors les gènes inertes (locomotion, vision) et la section perception —
-    // des caractéristiques sans effet, qui n'auraient rien à montrer.
+    // An immobile entity (flora / sessile source) neither moves nor exploits
+    // vision: we then hide the inert genes (locomotion, vision) and the perception
+    // section — characteristics without effect, that would have nothing to show.
     let immobile = genotype.locomotion().is_immobile();
 
-    // Un défilement évite de rogner la liste des rayons de vision quand le panneau
-    // est réduit.
+    // A scroll area avoids clipping the list of vision rays when the panel is
+    // reduced.
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.label(format!("Espèce : {}", species.0));
-        ui.label(format!("Cerveau : {}", brain.name()));
-        ui.label(format!("Génération : {}", generation.0));
-        ui.label(format!("Âge : {:.1} s", age.0));
+        ui.label(format!("Species: {}", species.0));
+        ui.label(format!("Brain: {}", brain.name()));
+        ui.label(format!("Generation: {}", generation.0));
+        ui.label(format!("Age: {:.1} s", age.0));
 
         ui.separator();
-        ui.strong("Énergie / réserve");
+        ui.strong("Energy / reserve");
         ui.add(
             egui::ProgressBar::new(reserve.fraction())
                 .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
         );
 
         ui.separator();
-        ui.strong("Génotype (gènes hérités)");
+        ui.strong("Genotype (inherited genes)");
         if immobile {
-            ui.weak("Immobile : gènes de locomotion et de vision masqués (sans effet).");
+            ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
         }
         egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-            // Une ligne par caractéristique de TRAITS : ajouter un trait l'affiche
-            // ici sans toucher l'inspecteur. Sur une entité immobile, on saute les
-            // gènes inertes (locomotion, vision).
+            // One row per TRAITS characteristic: adding a trait displays it here
+            // without touching the inspector. On an immobile entity, we skip the
+            // inert genes (locomotion, vision).
             for t in &TRAITS {
                 if immobile && t.inert_when_immobile {
                     continue;
@@ -207,35 +206,35 @@ pub(crate) fn inspector_section(
                 ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
                 ui.end_row();
             }
-            // Le coût de vision n'a de sens que pour une entité qui voit (rayons > 0).
+            // The vision cost only makes sense for an entity that sees (rays > 0).
             if !immobile {
-                ui.label("coût vision/s");
+                ui.label("vision cost/s");
                 ui.label(format!("{:.3}", vision.metabolic_cost()));
                 ui.end_row();
             }
         });
 
         ui.separator();
-        ui.strong("Action (sortie du cerveau)");
+        ui.strong("Action (brain output)");
         let throttle = action.throttle;
         let heading_deg = if action.dir.length_squared() > 1e-6 {
             action.dir.to_angle().to_degrees()
         } else {
             0.0
         };
-        ui.label(format!("cap désiré : {heading_deg:+.0}°"));
-        ui.add(egui::ProgressBar::new(throttle).text(format!("accélérateur {throttle:.2}")));
+        ui.label(format!("desired heading: {heading_deg:+.0}°"));
+        ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
 
-        // CAPTURE : figer cet agent (génome évolué + poids concrets) en un nouvel
-        // archétype réutilisable. On ne touche pas la sim : on construit l'archétype
-        // dérivé (clone de l'espèce d'origine, cf. `Archetype::capture`) et on le
-        // retourne — l'appelant l'ajoutera à la config.
+        // CAPTURE: freeze this agent (evolved genome + concrete weights) into a new
+        // reusable archetype. We do not touch the sim: we build the derived
+        // archetype (a clone of the original species, cf. `Archetype::capture`) and
+        // return it — the caller will add it to the config.
         ui.separator();
         if ui
-            .button("💾 Capturer comme archétype")
+            .button("💾 Capture as archetype")
             .on_hover_text(
-                "Crée un nouvel archétype figeant le génome évolué ET les poids de cet \
-                 agent (pour réutiliser des poids entraînés). L'espèce d'origine reste intacte.",
+                "Creates a new archetype freezing this agent's evolved genome AND weights \
+                 (to reuse trained weights). The original species stays intact.",
             )
             .clicked()
         {
@@ -245,28 +244,28 @@ pub(crate) fn inspector_section(
                 .map(|src| src.capture(*genotype, brain.clone(), generation.0));
         }
 
-        // Cerveau MLP : le réseau en action (item 18b-viz). Nœuds colorés par leur
-        // activation courante (le dernier `think`), arêtes par signe/poids — la
-        // décision apprise rendue lisible. Les autres cerveaux n'ont pas de graphe.
+        // MLP brain: the network in action (item 18b-viz). Nodes colored by their
+        // current activation (the last `think`), edges by sign/weight — the learned
+        // decision made readable. The other brains have no graph.
         if let Brain::Mlp(mlp) = brain {
             ui.separator();
-            ui.strong("Cerveau MLP (activations)");
+            ui.strong("MLP brain (activations)");
             ui.weak(
-                "entrée (vision/cible) → couches cachées → pilotage · couleur = activation (froid<0<chaud) · taille = |biais|",
+                "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
             );
-            // Les activations sont recalculées ici, à la demande, pour le seul agent
-            // inspecté (le `think` du cœur de sim ne les mémorise plus).
+            // The activations are recomputed here, on demand, for the single
+            // inspected agent (the sim core's `think` no longer memorizes them).
             let activations = mlp.forward_activations(perception);
             draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
         }
 
-        // Section perception réservée aux entités qui voient : une flore (immobile, sans
-        // rayon) n'a aucun canal à montrer.
+        // Perception section reserved for entities that see: a flora (immobile,
+        // without a ray) has no channel to show.
         if !immobile {
             ui.separator();
-            ui.strong(format!("Perception — vision ({} rayons)", vision.ray_count));
+            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
             ui.weak(
-                "obstacle (gris) · cible comestible (orange) · menace (rouge) — 0 = rien, 1 = au contact",
+                "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
             );
             for (i, &proximity) in perception.vision.iter().enumerate() {
                 let target = perception.target.get(i).copied().unwrap_or(0.0);

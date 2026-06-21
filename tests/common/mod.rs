@@ -1,8 +1,8 @@
-//! Helpers partagés par les drivers d'intégration.
+//! Helpers shared by the integration drivers.
 //!
-//! Chaque test d'intégration est son *propre* crate ; pour mutualiser du code on
-//! l'inclut via `mod common;`, le fichier vivant dans `common/mod.rs` (et non
-//! `common.rs`) pour que cargo ne le prenne pas lui-même pour un binaire de test.
+//! Each integration test is its *own* crate; to share code we include it via `mod
+//! common;`, the file living in `common/mod.rs` (and not `common.rs`) so cargo
+//! does not itself take it for a test binary.
 
 use std::time::Duration;
 
@@ -10,15 +10,15 @@ use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use teemlab::{SimConfig, SimPlugin};
 
-/// App de sim en **pas-à-pas manuel** : un `app.update()` avance d'exactement un
-/// tick fixe (`TimeUpdateStrategy::ManualDuration(1/tick_hz)`, cf. débit headless,
-/// §6), avec les seuls `MinimalPlugins` (ni fenêtre ni rendu) et le `SimPlugin` du
-/// scénario — le *même* monde que les deux binaires.
+/// A sim app in **manual single-stepping**: one `app.update()` advances by exactly
+/// one fixed tick (`TimeUpdateStrategy::ManualDuration(1/tick_hz)`, cf. headless
+/// throughput, §6), with only `MinimalPlugins` (no window, no rendering) and the
+/// scenario's `SimPlugin` — the *same* world as both binaries.
 ///
-/// On déclenche soi-même `finish()`/`cleanup()` : en pas-à-pas on pompe la boucle
-/// à la main, or Avian insère certaines de ses ressources dans ces hooks. Prend le
-/// `SimConfig` par référence (et le clone) pour que l'appelant le garde sous la
-/// main (graine, effectifs fondateurs, …).
+/// We trigger `finish()`/`cleanup()` ourselves: in single-stepping we pump the
+/// loop by hand, yet Avian inserts some of its resources in these hooks. Takes the
+/// `SimConfig` by reference (and clones it) so the caller keeps it on hand (seed,
+/// founding counts, …).
 pub fn stepping_app(config: &SimConfig) -> App {
     let mut app = App::new();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(

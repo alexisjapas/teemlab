@@ -1,11 +1,11 @@
-//! La **primitive d'interaction unique** (§3 : *manger et attaquer sont le même
-//! verbe*).
+//! The **single interaction primitive** (§3: *eating and attacking are the same
+//! verb*).
 //!
-//! Le moteur n'a qu'un seul mécanisme : un acteur réduit la [`Reserve`] d'une
-//! cible à portée. Le *scénario* en fixe la sémantique via sa table de
-//! [`Relation`]s — qui agit sur qui, transfert (prédation) ou destruction
-//! (combat). Les requêtes de voisinage passent par la broad-phase d'Avian (pas
-//! de structure maison, cf. §5).
+//! The engine has only one mechanism: an actor reduces the [`Reserve`] of a
+//! target within range. The *scenario* sets its semantics via its table of
+//! [`Relation`]s — who acts on whom, transfer (predation) or destruction
+//! (combat). Neighborhood queries go through Avian's broad-phase (no homemade
+//! structure, cf. §5).
 
 use crate::components::{Agent, Reserve, Species};
 use crate::config::SimConfig;
@@ -13,37 +13,37 @@ use avian2d::prelude::*;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
-/// AGIR (suite) : résoudre les interactions dirigées du tick.
+/// ACT (continued): resolve the tick's directed interactions.
 ///
-/// Pour chaque acteur et chaque relation dont il est l'acteur, on cherche les
-/// cibles de la bonne espèce dans un disque de rayon `range` (broad-phase
-/// d'Avian) : chacune subit une demande de `rate · dt`, et si la relation
-/// transfère, l'acteur gagne sa part de ce qui est *réellement* prélevé.
+/// For each actor and each relation in which it is the actor, we look for
+/// targets of the right species in a disk of radius `range` (Avian's
+/// broad-phase): each one takes a demand of `rate · dt`, and if the relation
+/// transfers, the actor gains its share of what is *actually* drawn.
 ///
-/// **Conservation sous contention.** Quand plusieurs acteurs visent la **même**
-/// cible dans le même tick (p. ex. des fourrageurs agglutinés sur un même patch),
-/// on ne peut leur transférer, en tout, plus que la réserve disponible de la cible.
-/// On procède donc en **deux passes** : d'abord on accumule la *demande* totale par
-/// cible, puis on **met à l'échelle** chaque prélèvement par `min(1, réserve/demande)`.
-/// La cible perd ainsi exactement `min(demande, réserve)` et chaque acteur reçoit sa
-/// part *proportionnelle* — jamais de l'énergie créée ex nihilo. (Sans cette mise à
-/// l'échelle, le clamp final bornait bien la **perte** de la cible mais pas le **gain**
-/// cumulé des acteurs : un patch épuisé pouvait nourrir N fourrageurs de sa pleine
-/// valeur chacun → emballement. La nourriture sessile à position fixe, sur laquelle les
-/// fourrageurs s'agglutinent, a révélé ce défaut à la Phase 3b.) Les deux passes sont
-/// **indépendantes de l'ordre** de visite.
+/// **Conservation under contention.** When several actors target the **same**
+/// target in the same tick (e.g. foragers clustered on a single patch), we
+/// cannot transfer to them, in total, more than the target's available reserve.
+/// We therefore proceed in **two passes**: first we accumulate the total
+/// *demand* per target, then we **scale** each draw by `min(1, reserve/demand)`.
+/// The target thus loses exactly `min(demand, reserve)` and each actor receives
+/// its *proportional* share — never energy created out of nothing. (Without this
+/// scaling, the final clamp did bound the target's **loss** but not the actors'
+/// cumulative **gain**: a depleted patch could feed N foragers at its full value
+/// each → runaway. Fixed-position sessile food, on which foragers cluster,
+/// revealed this flaw in Phase 3b.) Both passes are **order-independent** of the
+/// visiting order.
 ///
-/// La mort à zéro et la régénération vivent dans `ecology` (item 8) ; ici on ne
-/// fait que transférer/détruire de la réserve.
+/// Death at zero and regeneration live in `ecology` (item 8); here we only
+/// transfer/destroy reserve.
 ///
-/// Seuls les agents *initient* (ils ont un corps qui se meut), mais une cible
-/// peut être n'importe quelle entité portant [`Species`] + [`Reserve`] — un
-/// autre agent (prédation) **ou** une source de nourriture (manger passe ainsi
-/// par la même primitive). Les colliders sans `Species` (murs) sont ignorés.
+/// Only agents *initiate* (they have a body that moves), but a target can be any
+/// entity carrying [`Species`] + [`Reserve`] — another agent (predation) **or** a
+/// food source (eating thus goes through the same primitive). Colliders without
+/// `Species` (walls) are ignored.
 ///
-/// `too_many_arguments` : système ECS — 6 paramètres réels, plus les **tampons
-/// `Local`** réutilisés d'un tick à l'autre (filtre de raycast, `hits`, `demand`,
-/// `deltas`). L'idiome Bevy, comme sur les fonctions de spawn.
+/// `too_many_arguments`: an ECS system — 6 real parameters, plus the **`Local`
+/// buffers** reused from tick to tick (raycast filter, `hits`, `demand`,
+/// `deltas`). The Bevy idiom, as on spawn functions.
 #[allow(clippy::too_many_arguments)]
 pub fn interact(
     spatial: SpatialQuery,
@@ -52,12 +52,12 @@ pub fn interact(
     actors: Query<(Entity, &Transform, &Species), With<Agent>>,
     species_of: Query<&Species>,
     mut reserves: Query<&mut Reserve>,
-    // Filtre de portée réutilisé d'un acteur à l'autre (cf. boucle) : on évite de
-    // réallouer un `EntityHashSet` à chaque acteur et chaque tick.
+    // Reach filter reused from one actor to the next (cf. loop): we avoid
+    // reallocating an `EntityHashSet` for every actor and every tick.
     mut filter: Local<SpatialQueryFilter>,
-    // Tampons des deux passes, réutilisés d'un tick à l'autre (cf. plus bas) : vidés en
-    // tête, ils gardent leur capacité au lieu de réallouer un `Vec` + deux `HashMap` à
-    // chaque tick. `hits`/`demand` portent la passe 1, `deltas` la passe 2.
+    // Buffers for the two passes, reused from tick to tick (cf. below): cleared
+    // at the top, they keep their capacity instead of reallocating a `Vec` + two
+    // `HashMap`s every tick. `hits`/`demand` carry pass 1, `deltas` carries pass 2.
     mut hits: Local<Vec<(Entity, Entity, f32, bool)>>,
     mut demand: Local<HashMap<Entity, f32>>,
     mut deltas: Local<HashMap<Entity, f32>>,
@@ -66,27 +66,27 @@ pub fn interact(
         return;
     }
     let dt = time.delta_secs();
-    // On repart de tampons vides (capacité conservée du tick précédent).
+    // We start from empty buffers (capacity kept from the previous tick).
     hits.clear();
     demand.clear();
     deltas.clear();
 
-    // Un collider de portée par relation, construit **une seule fois** : la forme
-    // ne dépend que de la relation, pas de l'acteur. Construire un collider parry
-    // n'est pas gratuit ; le faire par (acteur × relation × tick) était du gâchis.
+    // One reach collider per relation, built **only once**: the shape depends
+    // only on the relation, not on the actor. Building a parry collider is not
+    // free; doing it per (actor × relation × tick) was wasteful.
     let reaches: Vec<Collider> = config
         .relations
         .iter()
         .map(|r| Collider::circle(r.range))
         .collect();
 
-    // Passe 1 : recenser les prélèvements (acteur, cible, montant, transfert) et la
-    // **demande** totale par cible. On ne touche pas encore aux réserves.
+    // Pass 1: tally the draws (actor, target, amount, transfer) and the total
+    // **demand** per target. We do not touch the reserves yet.
     for (actor, transform, species) in &actors {
         let origin = transform.translation.truncate();
-        // On ne s'inflige rien à soi-même ; le filtre exclut l'acteur (il ne dépend pas
-        // de la relation). `Local` réutilisé : on remet juste l'entité exclue, au lieu
-        // d'en reconstruire un par acteur et par tick.
+        // We never act on ourselves; the filter excludes the actor (it does not
+        // depend on the relation). `Local` reused: we just re-insert the excluded
+        // entity, instead of rebuilding one per actor and per tick.
         filter.excluded_entities.clear();
         filter.excluded_entities.insert(actor);
         for (relation, reach) in config.relations.iter().zip(&reaches) {
@@ -99,14 +99,14 @@ pub fn interact(
                     *demand.entry(target).or_insert(0.0) += amount;
                     hits.push((actor, target, amount, relation.transfer));
                 }
-                true // continuer à parcourir les cibles
+                true // keep iterating over the targets
             });
         }
     }
 
-    // Passe 2 : mettre à l'échelle par disponibilité de la cible (conservation), puis
-    // accumuler les deltas. `avail` est la réserve au début du tick — borne ce qu'on
-    // peut, en tout, prélever sur la cible.
+    // Pass 2: scale by the target's availability (conservation), then accumulate
+    // the deltas. `avail` is the reserve at the start of the tick — it bounds
+    // what can, in total, be drawn from the target.
     for &(actor, target, amount, transfer) in hits.iter() {
         let total = demand.get(&target).copied().unwrap_or(0.0);
         if total <= 0.0 {

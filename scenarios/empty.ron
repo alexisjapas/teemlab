@@ -3,7 +3,7 @@
     arena_half_extent: 400.0,
     archetypes: [
         (
-            name: "Espèce 0",
+            name: "Species 0",
             color: (0.3, 0.7, 1.0),
             count: 0,
             radius: 8.0,

@@ -1,5 +1,5 @@
 {
-  description = "teemlab — moteur de simulation évolutive (Bevy + Avian)";
+  description = "teemlab — evolutionary simulation engine (Bevy + Avian)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -24,12 +24,12 @@
         systemdLibs # libudev (gamepad/input enumeration)
       ];
 
-      # `play` : construit tout l'atelier (teemlab + record + headless) dans le
-      # profil choisi, puis lance le build fenêtré. Nécessaire parce que le menu
-      # d'enregistrement (P3) lance `record` en sous-process voisin de l'exécutable :
-      # `cargo run --bin teemlab` ne compilerait que `teemlab`, alors que
-      # `cargo build` (sans --bin) construit *tous* les binaires. Vit dans le dev
-      # shell (hérite de LD_LIBRARY_PATH + toolchain) ; aucun script .sh versionné.
+      # `play`: builds the whole workshop (teemlab + record + headless) in the
+      # chosen profile, then launches the windowed build. Needed because the
+      # recording menu (P3) launches `record` as a subprocess next to the
+      # executable: `cargo run --bin teemlab` would only compile `teemlab`, whereas
+      # `cargo build` (without --bin) builds *all* the binaries. Lives in the dev
+      # shell (inherits LD_LIBRARY_PATH + toolchain); no versioned .sh script.
       play = pkgs.writeShellScriptBin "play" ''
         profile=()
         forward=()
@@ -55,11 +55,11 @@
           # Vulkan/OpenGL HUD overlay: `mangohud cargo run --bin teemlab`
           # to watch FPS / frame times while tuning the simulation.
           mangohud
-          # Encodeur vidéo de l'enregistreur headless (P3, item 14) : `record`
-          # pipe ses frames brutes directement sur le stdin de `ffmpeg`.
+          # Video encoder of the headless recorder (P3, item 14): `record` pipes its
+          # raw frames directly into `ffmpeg`'s stdin.
           ffmpeg
-          # `play [--release] [scenario.ron]` : build l'atelier + lance le fenêtré
-          # (record compris). Défini dans le `let` ci-dessus.
+          # `play [--release] [scenario.ron]`: builds the workshop + launches the
+          # windowed build (record included). Defined in the `let` above.
           play
         ];
 
@@ -77,7 +77,7 @@
 
         shellHook = ''
           echo "teemlab dev shell — $(rustc --version)"
-          echo "  play [--release] [scenario.ron]  # build l'atelier + lance le fenêtré (record inclus)"
+          echo "  play [--release] [scenario.ron]  # build the workshop + launch the windowed build (record included)"
         '';
       };
     };

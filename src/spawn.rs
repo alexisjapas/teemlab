@@ -1,5 +1,5 @@
-//! Peuplement initial du monde : l'arène (murs statiques) et les agents
-//! (corps dynamiques + cerveau). Tourne une fois, au `Startup`.
+//! Initial population of the world: the arena (static walls) and the agents
+//! (dynamic bodies + brain). Runs once, at `Startup`.
 
 use crate::brain::{Brain, MlpBrain};
 use crate::components::{
@@ -15,35 +15,35 @@ pub fn setup_world(mut commands: Commands, config: Res<SimConfig>) {
     populate(&mut commands, &config);
 }
 
-/// Peuple le monde : arène (murs statiques) + population fondatrice. Partagé par
-/// le `Startup` ([`setup_world`]) et la **réinitialisation à chaud** (item 11),
-/// pour que reset et premier peuplement produisent rigoureusement le même monde.
+/// Populates the world: arena (static walls) + founding population. Shared by
+/// `Startup` ([`setup_world`]) and the **hot reset** (item 11), so that reset and
+/// first population produce rigorously the same world.
 pub fn populate(commands: &mut Commands, config: &SimConfig) {
     spawn_arena(commands, config);
     spawn_agents(commands, config);
 }
 
-/// Quatre **demi-espaces** (plans infinis) formant une boîte fermée autour de
-/// l'arène. Un demi-espace a un côté solide *infini* : un agent ne peut donc ni
-/// le tunneler en un tick, ni s'échapper s'il naît (reproduction) ou est déposé
-/// (éditeur) au-delà du bord — le solveur le repousse toujours vers l'intérieur.
-/// Un mur d'épaisseur finie, lui, laisse « dehors » une issue libre.
+/// Four **half-spaces** (infinite planes) forming a closed box around the arena.
+/// A half-space has an *infinite* solid side: an agent therefore can neither
+/// tunnel through it in one tick, nor escape if it is born (reproduction) or
+/// dropped (editor) beyond the edge — the solver always pushes it back inward. A
+/// wall of finite thickness, by contrast, leaves a free exit "outside".
 ///
-/// La normale passée à [`Collider::half_space`] pointe vers le côté **libre**
-/// (à l'opposé du solide), comme la normale « vers le haut » d'un sol. On la
-/// dirige donc vers l'intérieur de l'arène, et on pose chaque plan pile sur le
-/// bord `±arena_half_extent` (aligné avec la boîte dessinée par `draw_arena`).
+/// The normal passed to [`Collider::half_space`] points toward the **free** side
+/// (away from the solid), like a floor's "upward" normal. We therefore aim it
+/// toward the inside of the arena, and place each plane exactly on the
+/// `±arena_half_extent` edge (aligned with the box drawn by `draw_arena`).
 ///
-/// Public pour que la restauration d'un snapshot (item 13) reconstruise l'arène
-/// avant d'y reposer les agents sauvegardés (le snapshot ne stocke pas les murs,
-/// qui se déduisent du `SimConfig`).
+/// Public so that snapshot restoration (item 13) rebuilds the arena before
+/// putting the saved agents back into it (the snapshot does not store the walls,
+/// which are derived from the `SimConfig`).
 pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     let h = config.arena_half_extent;
     let walls = [
-        (Vec2::new(0.0, -h), Vec2::Y),    // bas    : solide en dessous
-        (Vec2::new(0.0, h), Vec2::NEG_Y), // haut   : solide au-dessus
-        (Vec2::new(-h, 0.0), Vec2::X),    // gauche : solide à gauche
-        (Vec2::new(h, 0.0), Vec2::NEG_X), // droite : solide à droite
+        (Vec2::new(0.0, -h), Vec2::Y),    // bottom : solid below
+        (Vec2::new(0.0, h), Vec2::NEG_Y), // top    : solid above
+        (Vec2::new(-h, 0.0), Vec2::X),    // left   : solid on the left
+        (Vec2::new(h, 0.0), Vec2::NEG_X), // right  : solid on the right
     ];
     for (origin, inward_normal) in walls {
         commands.spawn((
@@ -55,18 +55,18 @@ pub fn spawn_arena(commands: &mut Commands, config: &SimConfig) {
     }
 }
 
-/// Population fondatrice : pour **chaque** archétype, son effectif (`count`) d'agents
-/// dispersés au hasard, chacun compilé depuis le génotype et le cerveau de son
-/// archétype, graîné de façon déterministe. Depuis la Phase 3b, les sources de
-/// nourriture sont des agents sessiles comme les autres : elles sont donc peuplées ici
-/// aussi (effectif fixe, pas de robinet `replenish_food`). L'ordre — espèces
-/// **contiguës** dans l'ordre des archétypes — fixe le flux de tirages RNG ; les
-/// archétypes mobiles venant en général avant les sources, leurs tirages restent
-/// inchangés par l'ajout des sources en fin.
+/// Founding population: for **each** archetype, its head count (`count`) of
+/// agents scattered at random, each compiled from its archetype's genotype and
+/// brain, seeded deterministically. Since Phase 3b, food sources are sessile
+/// agents like any other: they are therefore populated here too (fixed count, no
+/// `replenish_food` faucet). The order — species **contiguous** in archetype
+/// order — fixes the stream of RNG draws; the mobile archetypes generally coming
+/// before the sources, their draws stay unchanged by adding the sources at the
+/// end.
 fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     let mut rng = Rng::new(config.seed);
-    // La suite des espèces à peupler : `count` agents par archétype, dans l'ordre des
-    // archétypes (sources de nourriture sessiles comprises).
+    // The sequence of species to populate: `count` agents per archetype, in
+    // archetype order (sessile food sources included).
     let species_seq: Vec<u16> = config
         .archetypes
         .iter()
@@ -77,16 +77,16 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     for (i, species) in species_seq.into_iter().enumerate() {
         let span = config.arena_half_extent - config.agent_radius_of(species) - 5.0;
         let pos = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
-        // `heading` est tiré **dans tous les cas** (même si une capture l'ignore) pour
-        // garder le flux RNG bit-à-bit identique aux scénarios sans capture ; `brain_seed`
-        // n'est pas un tirage (dérivé de la graine).
+        // `heading` is drawn **in all cases** (even if a capture ignores it) to
+        // keep the RNG stream bit-for-bit identical to scenarios without capture;
+        // `brain_seed` is not a draw (derived from the seed).
         let heading = rng.next_f32() * std::f32::consts::TAU;
         let brain_seed = config.seed ^ (i as u64).wrapping_mul(0x9E37_79B1);
         let genotype = config.genotype_of(species);
-        // Si l'archétype porte un **cerveau capturé** (poids entraînés réutilisés), le
-        // fondateur naît avec ce cerveau exact ; sinon, le chemin habituel compile un
-        // cerveau frais depuis la graine. Le `build` d'un cerveau frais n'utilise qu'un
-        // `Rng` local → le flux RNG global est le même dans les deux branches.
+        // If the archetype carries a **captured brain** (reused trained weights),
+        // the founder is born with this exact brain; otherwise, the usual path
+        // compiles a fresh brain from the seed. Building a fresh brain only uses a
+        // local `Rng` → the global RNG stream is the same in both branches.
         match config.captured_brain_of(species) {
             Some(brain) => spawn_agent_with_brain(
                 commands,
@@ -96,8 +96,8 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 pos,
                 brain.clone(),
                 config.reserve_max_of(species),
-                0,   // fondateur : génération 0.
-                0.0, // ...né à l'âge 0.
+                0,   // founder: generation 0.
+                0.0, // ...born at age 0.
             ),
             None => spawn_agent(
                 commands,
@@ -108,16 +108,16 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 heading,
                 brain_seed,
                 config.reserve_max_of(species),
-                0, // fondateur : génération 0.
+                0, // founder: generation 0.
             ),
         }
     }
 }
 
-/// Spawn d'un **agent** à partir d'un génotype : le seul endroit où le génotype
-/// est *compilé* vers son phénotype vivant (§2). Partagé par le peuplement
-/// initial et la reproduction (item 9), pour qu'un nouveau-né soit en tout point
-/// un agent comme un autre.
+/// Spawns an **agent** from a genotype: the only place where the genotype is
+/// *compiled* into its living phenotype (§2). Shared by the initial population
+/// and reproduction (item 9), so that a newborn is in every respect an agent like
+/// any other.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_agent(
     commands: &mut Commands,
@@ -130,26 +130,27 @@ pub fn spawn_agent(
     energy: f32,
     generation: u32,
 ) {
-    // Le scénario choisit le *type* de cerveau **par espèce** (item 18a) ; on le
-    // compile ici en un cerveau frais (§1, l'auteur de la décision). La graine sert
-    // les cerveaux à état (errance, poids initiaux du MLP) ; `n_inputs` dimensionne la
-    // couche d'entrée du MLP (= les canaux de perception), tirée du **gène** de
-    // précision visuelle de cet agent (item 3) et non plus d'un réglage de scénario.
+    // The scenario chooses the *type* of brain **per species** (item 18a); we
+    // compile it here into a fresh brain (§1, the author of the decision). The
+    // seed serves the stateful brains (wandering, the MLP's initial weights);
+    // `n_inputs` sizes the MLP's input layer (= the perception channels), drawn
+    // from this agent's visual-precision **gene** (item 3) rather than from a
+    // scenario setting.
     let n_inputs = MlpBrain::input_size(genotype.ray_count());
     let brain = config
         .brain_of(species.0)
         .build(brain_seed, heading, n_inputs);
-    // Un agent fraîchement compilé naît à l'âge 0.
+    // A freshly compiled agent is born at age 0.
     spawn_agent_with_brain(
         commands, config, genotype, species, pos, brain, energy, generation, 0.0,
     );
 }
 
-/// Variante prenant un [`Brain`] **déjà construit** plutôt qu'une graine : c'est
-/// le chemin de la restauration d'un snapshot (item 13), qui réinjecte le cerveau
-/// exact (état du RNG d'errance compris) lu dans le fichier. [`spawn_agent`] n'en
-/// est que le cas « cerveau neuf depuis une graine ». Source unique du *bundle*
-/// d'agent, pour qu'un agent restauré soit en tout point un agent comme un autre.
+/// Variant taking an **already-built** [`Brain`] rather than a seed: this is the
+/// snapshot-restoration path (item 13), which reinjects the exact brain
+/// (including the wander RNG state) read from the file. [`spawn_agent`] is only
+/// its "fresh brain from a seed" case. The single source of the agent *bundle*,
+/// so that a restored agent is in every respect an agent like any other.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_agent_with_brain(
     commands: &mut Commands,
@@ -163,7 +164,7 @@ pub fn spawn_agent_with_brain(
     age: f32,
 ) {
     let r = config.agent_radius_of(species.0);
-    // La forme (nombre de rayons) vient désormais du gène de précision visuelle.
+    // The shape (number of rays) now comes from the visual-precision gene.
     let vision = genotype.vision();
     commands.spawn((
         Agent,
@@ -174,8 +175,8 @@ pub fn spawn_agent_with_brain(
             max: config.reserve_max_of(species.0),
         },
         Radius(r),
-        // Généalogie : profondeur (fixe) et âge (croît au tick). Groupés en
-        // sous-tuple pour rester sous la borne d'arité des bundles Bevy.
+        // Genealogy: depth (fixed) and age (grows per tick). Grouped in a
+        // sub-tuple to stay under Bevy's bundle arity bound.
         (Generation(generation), Age(age)),
         genotype.locomotion(),
         vision,
@@ -188,13 +189,14 @@ pub fn spawn_agent_with_brain(
         },
         Action::default(),
         brain,
-        // Corps **solide** (et non *sensor*) y compris pour une entité sessile (flore,
-        // source de nourriture — Phase 3b) : l'exclusion physique entre corps est le
-        // mécanisme qui borne la densité d'une flore (capacité de charge spatiale), une
-        // source photosynthétique étant par ailleurs *immortelle* sous l'ordre
-        // interact→metabolize→reap. Un fourrageur la mange **à portée** (la portée
-        // d'interaction dépasse la somme des rayons), sans avoir à la chevaucher. Le
-        // génotype d'une sessile fixe `max_speed: 0` (+ cerveau no-op) → elle ne bouge pas.
+        // A **solid** body (not a *sensor*) including for a sessile entity (flora,
+        // food source — Phase 3b): physical exclusion between bodies is the
+        // mechanism that bounds a flora's density (spatial carrying capacity), a
+        // photosynthetic source being otherwise *immortal* under the
+        // interact→metabolize→reap order. A forager eats it **within range** (the
+        // interaction range exceeds the sum of the radii), without having to
+        // overlap it. A sessile's genotype fixes `max_speed: 0` (+ no-op brain) →
+        // it does not move.
         RigidBody::Dynamic,
         Collider::circle(r),
         LinearVelocity::default(),

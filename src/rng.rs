@@ -1,8 +1,8 @@
-//! PRNG déterministe minimal (SplitMix64).
+//! Minimal deterministic PRNG (SplitMix64).
 //!
-//! Auto-contenu : chaque agent peut posséder son propre flux reproductible sans
-//! contention inter-systèmes (pas de `Res` RNG mutable partagée qui sérialise
-//! tout). On garde la graine pour rejouer une config, pas pour le bit-à-bit.
+//! Self-contained: each agent can own its own reproducible stream without
+//! inter-system contention (no shared mutable `Res` RNG that serializes
+//! everything). We keep the seed to replay a config, not for bit-for-bit.
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rng {
@@ -22,21 +22,21 @@ impl Rng {
         z ^ (z >> 31)
     }
 
-    /// Flottant uniforme dans `[0, 1)`.
+    /// Uniform float in `[0, 1)`.
     pub fn next_f32(&mut self) -> f32 {
-        // 24 bits de mantisse.
+        // 24 bits of mantissa.
         (self.next_u64() >> 40) as f32 / (1u32 << 24) as f32
     }
 
-    /// Flottant uniforme dans `[-1, 1)`.
+    /// Uniform float in `[-1, 1)`.
     pub fn next_signed(&mut self) -> f32 {
         self.next_f32() * 2.0 - 1.0
     }
 
-    /// Tirage gaussien centré réduit (moyenne 0, écart-type 1), par Box-Muller.
-    /// Sert à perturber les gènes lors d'une mutation.
+    /// Standard normal draw (mean 0, std-dev 1), via Box-Muller.
+    /// Used to perturb genes during a mutation.
     pub fn next_gaussian(&mut self) -> f32 {
-        // `max` écarte le log de zéro ; u2 fournit la phase.
+        // `max` keeps the log away from zero; u2 provides the phase.
         let u1 = self.next_f32().max(1e-7);
         let u2 = self.next_f32();
         (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()

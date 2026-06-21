@@ -1,20 +1,20 @@
-// Flore évolutive (Phase 3) — une population de plantes SESSILES qui s'auto-régule.
+// Evolutionary flora (Phase 3) — a population of SESSILE plants that self-regulates.
 //
-// Chaque plante : cerveau `Sessile` (ne décide ni ne bouge), gagne de l'énergie par
-// `photosynthesis` (gain passif), et se reproduit par SEMIS LOCAL (la reproduction de
-// l'item 9 pose déjà l'enfant près du parent ; `seed_dispersal` règle la distance). La
-// capacité de charge émerge d'une COMPÉTITION intraspécifique — une relation
-// Plante→Plante sans transfert (la primitive d'interaction §3 : lumière/espace disputés)
-// qui draine l'énergie des voisines proches. Densité haute → drain > photosynthèse →
-// l'énergie chute, le semis s'arrête (et les plus serrées meurent) → équilibre logistique
-// stable. Depuis la Phase 3b, une *source de nourriture* est le cas dégénéré de cette
-// flore (cerveau sessile, mais reproduction coupée) — plus de type `Food` spécial.
+// Each plant: `Sessile` brain (neither decides nor moves), gains energy through
+// `photosynthesis` (passive gain), and reproduces by LOCAL SEEDING (item 9's
+// reproduction already places the child near the parent; `seed_dispersal` sets the
+// distance). The carrying capacity emerges from intraspecific COMPETITION — a
+// Plant→Plant relation without transfer (the §3 interaction primitive: contested
+// light/space) that drains the energy of nearby neighbors. High density → drain >
+// photosynthesis → energy drops, seeding stops (and the most crowded die) → a stable
+// logistic equilibrium. Since Phase 3b, a *food source* is the degenerate case of
+// this flora (sessile brain, but reproduction off) — no special `Food` type.
 (
     tick_hz: 64.0,
     arena_half_extent: 360.0,
     archetypes: [
         (
-            name: "Plante",
+            name: "Plant",
             color: (0.55, 0.9, 0.45),
             count: 20,
             radius: 6.0,
@@ -39,8 +39,8 @@
                 agility: false,
                 vision_range: false,
                 vision_fov: false,
-                // La stratégie de reproduction et la dissémination, elles, ÉVOLUENT
-                // sous la pression de la compétition (la part « flore évolutive »).
+                // The reproduction strategy and the dispersal, for their part, EVOLVE
+                // under competition pressure (the "evolutionary flora" part).
                 reproduction_threshold: true,
                 offspring_energy: false,
                 mutation_rate: false,
@@ -53,8 +53,8 @@
         ),
     ],
     relations: [
-        // Compétition intraspécifique (lumière / espace) : chaque plante draine ses
-        // voisines proches, SANS transfert (destruction) → capacité de charge spatiale.
+        // Intraspecific competition (light / space): each plant drains its nearby
+        // neighbors, WITHOUT transfer (destruction) → spatial carrying capacity.
         (
             actor: 0,
             target: 0,

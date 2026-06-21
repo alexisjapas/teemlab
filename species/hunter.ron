@@ -1,8 +1,8 @@
-// Espèce réutilisable (bibliothèque, item 4) : un chasseur générique, importable dans
-// n'importe quel scénario. Génotype partiel (les gènes omis prennent leur défaut),
-// mutabilité par défaut (`()`). Pas de champ `source` : ce fichier EST la source.
+// Reusable species (library, item 4): a generic hunter, importable into any
+// scenario. Partial genotype (omitted genes take their default), default mutability
+// (`()`). No `source` field: this file IS the source.
 (
-    name: "Chasseur",
+    name: "Hunter",
     color: (0.3, 0.7, 1.0),
     count: 40,
     radius: 8.0,

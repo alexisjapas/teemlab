@@ -1,19 +1,19 @@
-//! Gestion des **scénarios** à chaud, build fenêtré (item 13).
+//! Hot **scenario** management, windowed build (item 13).
 //!
-//! Module du *binaire* fenêtré uniquement (comme [`crate::editor`], …). Tout l'IO
-//! de scénario est réuni ici :
+//! A module of the windowed *binary* only (like [`crate::editor`], …). All
+//! scenario IO is gathered here:
 //!
-//! - **sélecteur de scénario** : la liste des `scenarios/*.ron`, à choisir et
-//!   **recharger dans le monde vivant** sans relancer le binaire ;
-//! - **sauvegarde / chargement par chemin** : écrire le `SimConfig` courant vers un
-//!   `.ron`, ou en recharger un dans le monde vivant.
+//! - **scenario selector**: the list of `scenarios/*.ron`, to choose and
+//!   **reload into the living world** without restarting the binary;
+//! - **save / load by path**: write the current `SimConfig` to a `.ron`, or
+//!   reload one into the living world.
 //!
-//! Comme l'éditeur et le reset (item 11), recharger est de l'édition déclenchée à la
-//! main (hors `FixedUpdate`) : le bouton ne pose qu'une *action en attente* ; c'est le
-//! système `PreUpdate` [`apply_scenario_load`] qui l'applique **avant** la boucle fixe
-//! de la frame, en réutilisant le reset (item 11) pour reconstruire le monde — pas de
-//! logique de peuplement dupliquée. La *sauvegarde* (simple écriture de fichier, sans
-//! mutation du monde) se fait, elle, en place dans la section UI.
+//! Like the editor and the reset (item 11), reloading is hand-triggered editing
+//! (outside `FixedUpdate`): the button only sets a *pending action*; it is the
+//! `PreUpdate` system [`apply_scenario_load`] that applies it **before** the
+//! frame's fixed loop, reusing the reset (item 11) to rebuild the world — no
+//! duplicated population logic. The *save* (a plain file write, without mutating
+//! the world) is done in place in the UI section.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -22,28 +22,28 @@ use teemlab::SimConfig;
 use crate::controls::SimControls;
 use crate::editor::Palette;
 
-/// Une action demandée par l'UI, appliquée au prochain `PreUpdate`.
+/// An action requested by the UI, applied at the next `PreUpdate`.
 enum RunAction {
-    /// Recharger ce scénario dans le monde vivant (config + reset).
+    /// Reload this scenario into the living world (config + reset).
     LoadScenario(String),
 }
 
-/// État du panneau « Scénario ».
+/// State of the "Scenario" panel.
 #[derive(Resource)]
 pub struct RunsPanel {
-    /// Chemins des `scenarios/*.ron` trouvés au lancement.
+    /// Paths of the `scenarios/*.ron` found at launch.
     scenarios: Vec<String>,
-    /// Index du scénario sélectionné dans la liste.
+    /// Index of the selected scenario in the list.
     selected: Option<usize>,
-    /// Chemin de sauvegarde/chargement RON par saisie libre.
+    /// Free-entry RON save/load path.
     scenario_path: String,
-    /// Dernier message (succès/échec).
+    /// Last message (success/failure).
     status: String,
-    /// Action en attente d'application en `PreUpdate`.
+    /// Action pending application in `PreUpdate`.
     pending: Option<RunAction>,
 }
 
-/// Liste les scénarios RON présents dans `scenarios/`, triés.
+/// Lists the RON scenarios present in `scenarios/`, sorted.
 fn scan_scenarios() -> Vec<String> {
     let mut found = Vec::new();
     if let Ok(entries) = std::fs::read_dir("scenarios") {
@@ -60,7 +60,7 @@ fn scan_scenarios() -> Vec<String> {
     found
 }
 
-/// Construit le panneau au `Startup`.
+/// Builds the panel at `Startup`.
 pub fn build_runs_panel(mut commands: Commands) {
     commands.insert_resource(RunsPanel {
         scenarios: scan_scenarios(),
@@ -71,26 +71,26 @@ pub fn build_runs_panel(mut commands: Commands) {
     });
 }
 
-/// La section « Scénario », rendue dans la bande du haut (item dock). Lit/écrit son
-/// propre état, **sauve** directement le scénario courant (écriture de fichier, pas une
-/// mutation du monde → en place), et **pose une action en attente** pour les
-/// (re)chargements (qui, eux, reconstruisent le monde en `PreUpdate`).
+/// The "Scenario" section, rendered in the top strip (dock item). Reads/writes
+/// its own state, **saves** the current scenario directly (a file write, not a
+/// world mutation → in place), and **sets a pending action** for the
+/// (re)loads (which, for their part, rebuild the world in `PreUpdate`).
 pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config: &mut SimConfig) {
-    // On travaille sur des copies locales pour que la fermeture egui du combo ne
-    // capture pas `panel` (évite les emprunts croisés).
+    // We work on local copies so the combo's egui closure does not capture
+    // `panel` (avoids cross borrows).
     let scenarios = panel.scenarios.clone();
     let mut selected = panel.selected;
     let mut scenario_path = panel.scenario_path.clone();
     let mut pending = None;
     let mut rescan = false;
 
-    // Émis **inline** (pas de `ui.horizontal` propre) : `top_bar` enveloppe scénario +
-    // enregistrement dans un même `horizontal_wrapped` → une seule ligne en haut.
-    ui.strong("Scénario :");
+    // Emitted **inline** (no dedicated `ui.horizontal`): `top_bar` wraps scenario
+    // + recording in a single `horizontal_wrapped` → one line at the top.
+    ui.strong("Scenario:");
     let label = selected
         .and_then(|i| scenarios.get(i))
         .map(String::as_str)
-        .unwrap_or("(choisir…)");
+        .unwrap_or("(choose…)");
     egui::ComboBox::from_id_salt("scenario_combo")
         .selected_text(label)
         .show_ui(ui, |ui| {
@@ -98,16 +98,12 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
                 ui.selectable_value(&mut selected, Some(i), path);
             }
         });
-    if ui
-        .button("↻")
-        .on_hover_text("Rescanner scenarios/")
-        .clicked()
-    {
+    if ui.button("↻").on_hover_text("Rescan scenarios/").clicked() {
         rescan = true;
     }
     if ui
-        .add_enabled(selected.is_some(), egui::Button::new("⟲ Recharger"))
-        .on_hover_text("Charge le scénario sélectionné et redémarre la run.")
+        .add_enabled(selected.is_some(), egui::Button::new("⟲ Reload"))
+        .on_hover_text("Loads the selected scenario and restarts the run.")
         .clicked()
         && let Some(path) = selected.and_then(|i| scenarios.get(i))
     {
@@ -115,22 +111,22 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
     }
 
     ui.separator();
-    ui.label("RON :");
+    ui.label("RON:");
     ui.add(egui::TextEdit::singleline(&mut scenario_path).desired_width(140.0))
-        .on_hover_text("Fichier de scénario (.ron)");
+        .on_hover_text("Scenario file (.ron)");
     if ui
         .button("💾")
-        .on_hover_text("Sauver le scénario courant")
+        .on_hover_text("Save the current scenario")
         .clicked()
     {
         panel.status = match config.save_ron_file(&scenario_path) {
-            Ok(()) => format!("Sauvé → {scenario_path}"),
-            Err(e) => format!("Échec : {e}"),
+            Ok(()) => format!("Saved → {scenario_path}"),
+            Err(e) => format!("Failed: {e}"),
         };
     }
     if ui
         .button("📂")
-        .on_hover_text("Charger ce fichier et redémarrer la run")
+        .on_hover_text("Load this file and restart the run")
         .clicked()
     {
         pending = Some(RunAction::LoadScenario(scenario_path.clone()));
@@ -140,7 +136,7 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
         ui.weak(&panel.status);
     }
 
-    // Report des copies locales vers la ressource.
+    // Copy the local copies back to the resource.
     panel.selected = selected;
     panel.scenario_path = scenario_path;
     if rescan {
@@ -152,14 +148,14 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
     }
 }
 
-/// Recharge un scénario dans le monde vivant : remplace le `SimConfig`, resynchro
-/// la palette de l'éditeur, **met la sim en pause**, puis **délègue la reconstruction
-/// au reset** (item 11) en levant son drapeau. Doit tourner avant
-/// `controls::apply_reset` (chaîné).
+/// Reloads a scenario into the living world: replaces the `SimConfig`, resyncs
+/// the editor's palette, **pauses the sim**, then **delegates the rebuild to the
+/// reset** (item 11) by raising its flag. Must run before `controls::apply_reset`
+/// (chained).
 ///
-/// La pause (sur `Time<Virtual>`, comme [`crate::controls`]) avant le reset : on
-/// repart sur un monde neuf **figé**, pour le placer/éditer/inspecter avant de le
-/// lancer — calqué sur le démarrage en pause (`controls::pause_at_launch`).
+/// The pause (on `Time<Virtual>`, like [`crate::controls`]) before the reset: we
+/// restart on a **frozen** new world, to place/edit/inspect it before launching
+/// — modeled on the paused start (`controls::pause_at_launch`).
 pub fn apply_scenario_load(
     mut panel: ResMut<RunsPanel>,
     mut config: ResMut<SimConfig>,
@@ -178,11 +174,11 @@ pub fn apply_scenario_load(
             *config = loaded;
             palette.selected = None;
             palette.dragging = None;
-            // Pause avant la reconstruction : le monde neuf naît figé.
+            // Pause before the rebuild: the new world is born frozen.
             vtime.pause();
             controls.reset_requested = true;
-            format!("Scénario rechargé (en pause) ← {path}")
+            format!("Scenario reloaded (paused) ← {path}")
         }
-        Err(e) => format!("Échec : {e}"),
+        Err(e) => format!("Failed: {e}"),
     };
 }

@@ -1,11 +1,11 @@
-//! Confinement : aucun agent ne doit sortir de l'arène.
+//! Containment: no agent must leave the arena.
 //!
-//! Garde-fou des murs en **demi-espaces** (plans infinis) : on fait tourner un
-//! vrai monde de sim — déplacements *et* reproduction (qui pose des nouveau-nés
-//! près des bords) — et on vérifie qu'aucun agent ne franchit la frontière. Ce
-//! test attrape les deux régressions possibles : un retour à des murs fins (où
-//! un agent peut tunneler ou naître dehors) **et** une normale inversée (qui
-//! éjecterait au contraire tout le monde *hors* de l'arène).
+//! Guardrail of the **half-space** walls (infinite planes): we run a real sim
+//! world — movement *and* reproduction (which places newborns near the edges) —
+//! and check that no agent crosses the boundary. This test catches the two
+//! possible regressions: a return to thin walls (where an agent can tunnel or be
+//! born outside) **and** an inverted normal (which would conversely eject everyone
+//! *out of* the arena).
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -15,24 +15,24 @@ mod common;
 
 #[test]
 fn agents_stay_within_arena() {
-    // Le scénario d'évolution : ça bouge à pleine vitesse et ça se reproduit, donc
-    // ça presse les bords de toutes les façons utiles.
+    // The evolution scenario: it moves at full speed and reproduces, so it presses
+    // the edges in every useful way.
     let config = SimConfig::from_ron_file("scenarios/evolution.ron")
-        .expect("scénario evolution.ron chargeable");
+        .expect("scenario evolution.ron loadable");
 
-    // Chaque `update()` avance d'un tick fixe pile (cf. `common::stepping_app`).
+    // Each `update()` advances by exactly one fixed tick (cf. `common::stepping_app`).
     let mut app = common::stepping_app(&config);
 
-    // ~30 s de temps simulé : largement de quoi atteindre les murs et enchaîner
-    // des générations près des bords.
+    // ~30 s of simulated time: plenty to reach the walls and chain generations near
+    // the edges.
     for _ in 0..2000 {
         app.update();
     }
 
     let h = config.arena_half_extent;
-    // Tolérance : un agent peut s'enfoncer de quelques pixels dans le demi-espace
-    // avant que le solveur ne le repousse. Une évasion réelle, elle, se chiffre en
-    // dizaines/centaines d'unités — donc cette marge serrée suffit à la détecter.
+    // Tolerance: an agent may sink a few pixels into the half-space before the
+    // solver pushes it back. A real escape, by contrast, is measured in
+    // tens/hundreds of units — so this tight margin suffices to detect it.
     let margin = config.agent_radius_of(0) + 2.0;
 
     let world = app.world_mut();
@@ -47,11 +47,11 @@ fn agents_stay_within_arena() {
     let population = query.iter(world).count();
     assert!(
         population > 0,
-        "la population s'est éteinte — test non concluant"
+        "the population went extinct — inconclusive test"
     );
     assert!(
         escaped.is_empty(),
-        "{} agent(s) hors de l'arène (|x|,|y| ≤ {:.0} attendu) : {:?}",
+        "{} agent(s) outside the arena (|x|,|y| ≤ {:.0} expected): {:?}",
         escaped.len(),
         h + margin,
         escaped,

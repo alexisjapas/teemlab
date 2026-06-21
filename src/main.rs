@@ -1,10 +1,10 @@
-//! Point d'entrée **fenêtré** (direct).
+//! **Windowed** entry point (direct).
 //!
-//! `DefaultPlugins` pilote la fenêtre, le rendu et la présentation. Tout ce
-//! qu'on ajoute ici vit dans `Update` et ne touche QUE le rendu / l'UI — jamais
-//! l'état de simulation, qui appartient à [`teemlab::SimPlugin`].
+//! `DefaultPlugins` drives the window, rendering and presentation. Everything we
+//! add here lives in `Update` and touches ONLY rendering / UI — never the
+//! simulation state, which belongs to [`teemlab::SimPlugin`].
 
-// Cf. `lib.rs` : les requêtes Bevy déclenchent `type_complexity` par nature.
+// Cf. `lib.rs`: Bevy queries trigger `type_complexity` by their very nature.
 #![allow(clippy::type_complexity)]
 
 mod controls;
@@ -32,28 +32,30 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
-        // Sans argument, le fenêtré démarre sur une **arène vide** (la toile de
-        // l'éditeur) ; un scénario explicite l'emporte. Le headless, lui, garde le
-        // défaut peuplé (`from_cli`).
+        // With no argument, the windowed build starts on an **empty arena** (the
+        // editor's canvas); an explicit scenario wins. The headless build keeps the
+        // populated default (`from_cli`).
         .add_plugins(SimPlugin::new(SimConfig::from_cli_or(SimConfig::empty())))
-        // Rendu de la sim partagé avec l'enregistreur vidéo (item 14) — y compris les
-        // **fonds** (aire de jeu + hors-jeu) : `VisualsPlugin::draw_play_area` lit leurs
-        // couleurs dans le scénario et pilote `ClearColor`, donc l'aperçu live et la vidéo
-        // rendent les mêmes teintes (cf. cette fonction).
+        // Sim rendering shared with the video recorder (item 14) — including the
+        // **backgrounds** (play area + off-game): `VisualsPlugin::draw_play_area`
+        // reads their colors in the scenario and drives `ClearColor`, so the live
+        // preview and the video render the same tints (cf. that function).
         .add_plugins(VisualsPlugin)
-        // Surbrillance + rayons de l'agent sélectionné — rendu **partagé** avec
-        // l'enregistreur (qui, lui, pilote la sélection automatiquement). Ici la cible
-        // vient du picking souris (cf. `inspector`). Fournit aussi la ressource `Selection`.
+        // Highlight + rays of the selected agent — rendering **shared** with the
+        // recorder (which drives the selection automatically). Here the target
+        // comes from mouse picking (cf. `inspector`). Also provides the `Selection`
+        // resource.
         .add_plugins(SelectionRenderPlugin)
-        // Échantillonnage des courbes (ressource `History` + `sample_history`), partagé
-        // avec l'enregistreur vidéo : l'aperçu live et la vidéo tracent la même donnée.
+        // Curve sampling (`History` resource + `sample_history`), shared with the
+        // video recorder: the live preview and the video plot the same data.
         .add_plugins(MetricsPlugin)
-        // NB : le **visualiseur natif Bevy** ([`teemlab::dataviz`]) n'est PAS monté ici. Il
-        // n'existe que pour le rendu **vidéo** (`bin/record`) : dans le fenêtré, bevy_egui rend
-        // egui via la caméra de sim, donc recomposer la vue casserait l'UI (cf. mémoire).
+        // NB: the **native Bevy visualizer** ([`teemlab::dataviz`]) is NOT mounted
+        // here. It exists only for **video** rendering (`bin/record`): in the
+        // windowed build, bevy_egui renders egui through the sim camera, so
+        // recomposing the view would break the UI (cf. memory).
         .init_resource::<controls::SimControls>()
         .init_resource::<recorder::RecorderPanel>()
-        // La sim démarre **en pause** (on prépare la run avant de la lancer).
+        // The sim starts **paused** (we prepare the run before launching it).
         .add_systems(
             Startup,
             (
@@ -63,11 +65,11 @@ fn main() {
                 controls::pause_at_launch,
             ),
         )
-        // PILOTAGE DU TEMPS / RESET / RUNS (items 11, 13) — pas de logique de sim :
-        // on règle l'horloge, recharge un scénario, sauve/restaure une run, ou
-        // reconstruit le monde, le tout avant la boucle fixe de la frame.
-        // `apply_scenario_load` précède `apply_reset` : il pose le drapeau que ce
-        // dernier consomme pour reconstruire le monde avec le nouveau scénario.
+        // TIME CONTROL / RESET / RUNS (items 11, 13) — no sim logic: we set the
+        // clock, reload a scenario, save/restore a run, or rebuild the world, all
+        // before the frame's fixed loop. `apply_scenario_load` precedes
+        // `apply_reset`: it sets the flag the latter consumes to rebuild the world
+        // with the new scenario.
         .add_systems(
             PreUpdate,
             (
@@ -77,18 +79,18 @@ fn main() {
             )
                 .chain(),
         )
-        // RENDU / OBSERVATION UNIQUEMENT — jamais de logique de sim ici.
-        // Le rendu de la sim (mesh, arène, vision) vit dans `VisualsPlugin` ;
-        // l'échantillonnage des courbes dans `MetricsPlugin` (lib, partagé) ; ici, le
-        // seul observateur propre au binaire est le pilote d'enregistrement vidéo.
+        // RENDERING / OBSERVATION ONLY — never any sim logic here.
+        // Sim rendering (mesh, arena, vision) lives in `VisualsPlugin`; curve
+        // sampling in `MetricsPlugin` (lib, shared); here, the only observer
+        // specific to the binary is the video-recording driver.
         .add_systems(Update, recorder::drive_recorder)
-        // UI egui — **panneaux dockés fixes** autour de la zone de simulation
-        // centrale (cf. `panels`). L'ordre est **chaîné** et compte : les panneaux
-        // d'abord (ils réservent les bords), puis les interactions APRÈS — sinon
-        // `is_pointer_over_area` lit un état périmé (un clic sur un panneau
-        // désélectionnerait l'agent, un dépôt au-dessus poserait une entité cachée).
-        // `set_sim_camera` clôt le pass : `available_rect` reflète alors tous les
-        // panneaux, donc la sim est cadrée pile dans la zone centrale.
+        // egui UI — **fixed docked panels** around the central simulation area
+        // (cf. `panels`). The order is **chained** and matters: the panels first
+        // (they reserve the edges), then the interactions AFTER — otherwise
+        // `is_pointer_over_area` reads a stale state (a click on a panel would
+        // deselect the agent, a drop above it would place a hidden entity).
+        // `set_sim_camera` closes the pass: `available_rect` then reflects all the
+        // panels, so the sim is framed exactly within the central area.
         .add_systems(
             EguiPrimaryContextPass,
             (
@@ -108,9 +110,9 @@ fn main() {
         .run();
 }
 
-/// Raccourci **Espace** : play/pause de la simulation (pilote `Time<Virtual>`, comme le
-/// bouton des contrôles). On respecte le focus clavier d'egui : si une saisie texte (chemin
-/// RON, etc.) a le focus, l'espace lui revient et ne déclenche pas la pause.
+/// **Space** shortcut: play/pause the simulation (drives `Time<Virtual>`, like
+/// the controls button). We respect egui's keyboard focus: if a text input (RON
+/// path, etc.) has focus, space goes to it and does not trigger the pause.
 fn toggle_pause_key(
     mut contexts: EguiContexts,
     keys: Res<ButtonInput<KeyCode>>,
@@ -134,26 +136,26 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-/// Cadre la simulation dans la zone centrale laissée libre par les **panneaux
-/// dockés** (cf. `panels`) : l'arène **entière** est visible et centrée (cadrage
-/// « tout voir », petite marge), quelle que soit la fenêtre. Les panneaux réservent
-/// les bords, donc `available_rect` se réduit à ce centre et la sim s'y ajuste. Le
-/// hors-jeu autour de l'arène (sur le côté le plus long) est grisé par `ClearColor`
-/// + `draw_play_area`, donc ne paraît pas vide.
+/// Frames the simulation in the central area left free by the **docked panels**
+/// (cf. `panels`): the **whole** arena is visible and centered ("see everything"
+/// framing, small margin), whatever the window. The panels reserve the edges, so
+/// `available_rect` shrinks to that center and the sim fits within it. The
+/// off-game area around the arena (on the longer side) is grayed by `ClearColor`
+/// + `draw_play_area`, so it does not look empty.
 ///
-/// On **zoome et déplace la caméra** plutôt que de redimensionner son viewport :
-/// sous bevy_egui la surface egui est calée sur le viewport de la caméra, donc le
-/// rétrécir relancerait une mise en page → vibration. En gardant le viewport plein
-/// écran, la surface egui est stable. Rendu uniquement — ne touche jamais l'état de
-/// sim. Tourne en dernier du pass egui : `available_rect` reflète alors le bandeau.
-/// Le picking reste correct (`viewport_to_world_2d` lit l'échelle et la translation).
+/// We **zoom and move the camera** rather than resizing its viewport: under
+/// bevy_egui the egui surface is keyed to the camera's viewport, so shrinking it
+/// would relaunch a layout → vibration. By keeping the viewport full-screen, the
+/// egui surface is stable. Rendering only — never touches the sim state. Runs last
+/// in the egui pass: `available_rect` then reflects the bars. Picking stays
+/// correct (`viewport_to_world_2d` reads the scale and the translation).
 fn set_sim_camera(
     mut contexts: EguiContexts,
     config: Res<SimConfig>,
     windows: Query<&Window>,
     mut cameras: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
 ) -> Result {
-    /// Marge de respiration autour de l'arène (1.0 = collée aux bords).
+    /// Breathing margin around the arena (1.0 = flush with the edges).
     const VIEW_MARGIN: f32 = 1.06;
 
     let ctx = contexts.ctx_mut()?;
@@ -165,22 +167,22 @@ fn set_sim_camera(
     };
 
     let (wc, hc) = (rect.width(), rect.height());
-    let arena = 2.0 * config.arena_half_extent; // côté de l'arène carrée, en unités monde
+    let arena = 2.0 * config.arena_half_extent; // side of the square arena, in world units
     if wc < 1.0 || hc < 1.0 || arena <= 0.0 {
         return Ok(());
     }
 
-    // Échelle = unités monde par pixel. Prendre le plus PETIT côté de la zone donne
-    // la plus grande échelle qui fait **entrer l'arène entière** (le grand côté
-    // garde des marges, grisées en hors-jeu) ; la marge ajoute un peu d'air autour.
-    // Projection par défaut de Camera2d : ScalingMode::WindowSize, origine au centre.
+    // Scale = world units per pixel. Taking the SMALLEST side of the area gives
+    // the largest scale that makes **the whole arena fit** (the long side keeps
+    // margins, grayed as off-game); the margin adds a little air around it.
+    // Default Camera2d projection: ScalingMode::WindowSize, origin at the center.
     let s = arena / wc.min(hc) * VIEW_MARGIN;
     if let Projection::Orthographic(ortho) = &mut *projection {
         ortho.scale = s;
     }
 
-    // Déplacement : l'origine monde (centre de l'arène) se projette au centre `c`
-    // de la zone (Y écran vers le bas ↔ Y monde vers le haut), à l'échelle `s`.
+    // Move: the world origin (arena center) projects to the area's center `c`
+    // (screen Y down ↔ world Y up), at scale `s`.
     let c = rect.center();
     transform.translation.x = (window.width() * 0.5 - c.x) * s;
     transform.translation.y = (c.y - window.height() * 0.5) * s;
