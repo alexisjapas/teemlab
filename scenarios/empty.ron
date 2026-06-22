@@ -79,7 +79,7 @@
         max: 20.0,
     ),
     vision_rays_bounds: (
-        min: 1.0,
+        min: 0.0,
         max: 21.0,
     ),
     photosynthesis_bounds: (

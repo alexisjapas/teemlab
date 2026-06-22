@@ -70,6 +70,23 @@ pub struct Genotype {
     /// (radius × 2.5, fauna behavior, unchanged). A flora increases it to scatter
     /// its seeds instead of clustering.
     pub seed_dispersal: f32,
+    /// **Brain cost**: energy drained **per second and per decision neuron** of the
+    /// MLP (hidden + output, cf. [`crate::brain::Brain::neuron_count`]) — the cost
+    /// coupling of the *decision system* (§2), the counterpart for the brain of
+    /// what [`Vision::metabolic_cost`] is for the sensor. `0` for a hand-written
+    /// brain (no network) and `0` by default (inert). Per-species, **not mutable by
+    /// default** (like `base_metabolism`/`move_cost`): evolvable, it would be
+    /// whittled down to 0 and the pressure would vanish. Added at the **end** to
+    /// preserve [`mutate`](Genotype::mutate)'s draw stream.
+    pub brain_cost: f32,
+    /// **Agility cost**: energy drained per unit of *maneuvering effort* — the
+    /// magnitude `|Δv|` of the velocity change `act` applies each tick (cf.
+    /// [`crate::components::Maneuver`]). The transient counterpart of `move_cost`
+    /// (which prices steady-state cruising): turning and accelerating do work
+    /// against inertia, cruising in a straight line is nearly free. Per-species,
+    /// **not mutable by default** like the other costs (evolvable, it would fall to
+    /// 0). `0` by default (inert). Appended at the **end** (draw stream).
+    pub agility_cost: f32,
 }
 
 impl Default for Genotype {
@@ -93,6 +110,11 @@ impl Default for Genotype {
             // seeding by default.
             photosynthesis: 0.0,
             seed_dispersal: 0.0,
+            // Decision-system cost inactive by default: the brain is free until a
+            // scenario opts in (like base_metabolism/move_cost).
+            brain_cost: 0.0,
+            // Maneuvering is free until a scenario opts in (like the other costs).
+            agility_cost: 0.0,
         }
     }
 }
@@ -107,10 +129,12 @@ impl Genotype {
     }
 
     /// *Effective* ray count: the `vision_rays` gene rounded to the nearest
-    /// integer, at least 1. The only point where visual precision (an f32 gene)
-    /// becomes a discrete shape (number of channels).
+    /// integer (**≥ 0** — `0` is a legitimate *blind* agent; the MLP then receives
+    /// an empty input vector, cf. [`crate::brain::MlpBrain`]). The float→int cast
+    /// saturates at 0, so a negative gene value cannot underflow. The only point
+    /// where visual precision (an f32 gene) becomes a discrete shape (channels).
     pub fn ray_count(&self) -> usize {
-        (self.vision_rays.round() as usize).max(1)
+        self.vision_rays.round() as usize
     }
 
     /// Compiles the vision genes into their phenotype. The *shape* (number of
@@ -202,7 +226,7 @@ pub struct TraitSpec {
 /// seeded config — whence the addition at the **end** of the table, which leaves
 /// the pre-existing traits' stream intact). A constant table shared by all
 /// agents.
-pub const TRAITS: [TraitSpec; 12] = [
+pub const TRAITS: [TraitSpec; 14] = [
     TraitSpec {
         name: "Max speed",
         get: |g| g.max_speed,
@@ -347,6 +371,32 @@ pub const TRAITS: [TraitSpec; 12] = [
         // Seeding distance: this is a (sessile) flora's dispersal — relevant.
         inert_when_immobile: false,
     },
+    TraitSpec {
+        name: "Brain cost/neuron",
+        get: |g| g.brain_cost,
+        set: |g, v| g.brain_cost = v,
+        bounds: |c| c.brain_cost_bounds,
+        bounds_mut: |c| &mut c.brain_cost_bounds,
+        mutable: |m| m.brain_cost,
+        set_mutable: |m, b| m.brain_cost = b,
+        decimals: 2,
+        // A metabolic cost of the brain tissue (like base metabolism): paid
+        // whatever the mobility — a non-MLP brain simply counts zero neurons.
+        inert_when_immobile: false,
+    },
+    TraitSpec {
+        name: "Agility cost",
+        get: |g| g.agility_cost,
+        set: |g, v| g.agility_cost = v,
+        bounds: |c| c.agility_cost_bounds,
+        bounds_mut: |c| &mut c.agility_cost_bounds,
+        mutable: |m| m.agility_cost,
+        set_mutable: |m, b| m.agility_cost = b,
+        decimals: 3,
+        // Cost of maneuvering: like locomotion cost and agility, it has no effect on
+        // an entity that does not move (a sessile body never maneuvers).
+        inert_when_immobile: true,
+    },
 ];
 
 #[cfg(test)]
@@ -367,6 +417,9 @@ mod tests {
         assert_eq!(g.vision_fov_deg, 120.0);
         assert_eq!(g.vision_rays, 7.0);
         assert_eq!(g.ray_count(), 7);
+        // The decision-system and maneuvering costs are inert by default.
+        assert_eq!(g.brain_cost, 0.0);
+        assert_eq!(g.agility_cost, 0.0);
     }
 
     /// Immobility is read from the locomotion phenotype (zero max speed): it is
@@ -404,6 +457,7 @@ mod tests {
                 "Vision FOV (°)",
                 "Locomotion cost",
                 "Rays (precision)",
+                "Agility cost",
             ]
         );
     }

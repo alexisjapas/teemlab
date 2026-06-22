@@ -3,7 +3,7 @@
 
 use crate::brain::{Brain, MlpBrain};
 use crate::components::{
-    Action, Age, Agent, Generation, Perception, Radius, Reserve, Species, Wall,
+    Action, Age, Agent, Generation, Maneuver, Perception, Radius, Reserve, Species, Wall,
 };
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
@@ -187,7 +187,10 @@ pub fn spawn_agent_with_brain(
             ray_dirs: vec![Vec2::ZERO; vision.ray_count].into_boxed_slice(),
             ..default()
         },
-        Action::default(),
+        // Motor command + the steering effort `act` realizes from it (consumed by
+        // the agility cost in `metabolize`). Grouped to stay under Bevy's bundle
+        // arity bound.
+        (Action::default(), Maneuver::default()),
         brain,
         // A **solid** body (not a *sensor*) including for a sessile entity (flora,
         // food source — Phase 3b): physical exclusion between bodies is the

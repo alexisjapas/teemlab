@@ -5,7 +5,7 @@
 //! Avian.
 
 use crate::brain::Brain;
-use crate::components::{Action, Agent, Locomotion, Perception, Species, Vision};
+use crate::components::{Action, Agent, Locomotion, Maneuver, Perception, Species, Vision};
 use crate::config::SimConfig;
 use avian2d::prelude::*;
 use bevy::prelude::*;
@@ -135,9 +135,65 @@ pub fn decide(mut agents: Query<(&mut Brain, &Perception, &mut Action)>) {
 /// We steer the velocity toward the desired velocity (lerp), instead of forcing
 /// it: Avian's collision impulses then visibly perturb the trajectory before the
 /// brain re-corrects.
-pub fn act(mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity)>) {
-    for (action, loco, mut velocity) in &mut agents {
+pub fn act(mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity, &mut Maneuver)>) {
+    for (action, loco, mut velocity, mut maneuver) in &mut agents {
         let desired = action.dir.normalize_or_zero() * loco.max_speed * action.throttle;
-        velocity.0 = velocity.0.lerp(desired, loco.agility);
+        let before = velocity.0;
+        velocity.0 = before.lerp(desired, loco.agility);
+        // Voluntary steering effort = magnitude of the velocity change we just
+        // applied (the agility cost reads it in `metabolize`). Computed here, where
+        // both ends of the lerp are known; collision impulses from the solver land
+        // afterwards and are deliberately **not** attributed to maneuvering.
+        maneuver.0 = (velocity.0 - before).length();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `act` records the **voluntary steering effort**: the magnitude of the
+    /// velocity change it applies (the agility cost in `metabolize` reads it). From
+    /// rest toward a desired `(100, 0)` with agility `0.5`, the lerp jumps the
+    /// velocity to `(50, 0)` → effort `50`; the next tick covers half the remaining
+    /// gap → effort `25`. Once already at the desired velocity, steering is a no-op
+    /// → zero effort: cruising in a straight line is free.
+    #[test]
+    fn act_records_voluntary_steering_effort() {
+        let mut world = World::new();
+        let e = world
+            .spawn((
+                Action {
+                    dir: Vec2::X,
+                    throttle: 1.0,
+                },
+                Locomotion {
+                    max_speed: 100.0,
+                    agility: 0.5,
+                },
+                LinearVelocity(Vec2::ZERO),
+                Maneuver::default(),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(act);
+
+        schedule.run(&mut world);
+        assert_eq!(
+            world.get::<LinearVelocity>(e).unwrap().0,
+            Vec2::new(50.0, 0.0)
+        );
+        assert!((world.get::<Maneuver>(e).unwrap().0 - 50.0).abs() < 1e-3);
+
+        schedule.run(&mut world);
+        assert!((world.get::<Maneuver>(e).unwrap().0 - 25.0).abs() < 1e-3);
+
+        // Already cruising at the desired velocity: nothing to steer → free.
+        world.get_mut::<LinearVelocity>(e).unwrap().0 = Vec2::new(100.0, 0.0);
+        schedule.run(&mut world);
+        assert!(
+            world.get::<Maneuver>(e).unwrap().0.abs() < 1e-3,
+            "a straight cruise costs no maneuvering effort"
+        );
     }
 }

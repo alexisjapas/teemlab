@@ -61,6 +61,18 @@ impl Brain {
         }
     }
 
+    /// Size of the **decision system** for the metabolic cost (the energy economy,
+    /// cf. [`crate::ecology::metabolize`]): the number of decision neurons of an
+    /// MLP, `0` for the hand-written brains (Wander/Hunter/Sessile), which carry no
+    /// evolvable network and therefore pay nothing. Exhaustive `match` so a new
+    /// variant forces a decision here, like [`Brain::think`].
+    pub fn neuron_count(&self) -> usize {
+        match self {
+            Brain::Wander(_) | Brain::Hunter(_) | Brain::Sessile(_) => 0,
+            Brain::Mlp(m) => m.neuron_count(),
+        }
+    }
+
     /// A child's brain from **the parent's** (and not from a global [`BrainKind`]):
     /// the seam through which a *learned* behavior is transmitted (item 18a). This
     /// is where **neuroevolution** lives (item 18b):
@@ -589,6 +601,16 @@ impl MlpBrain {
         sizes
     }
 
+    /// Number of **decision neurons**: hidden + output units. The input layer is
+    /// excluded — it is the sensory afferent vector (`CHANNELS × rays`), already
+    /// taxed by the vision cost ([`crate::components::Vision::metabolic_cost`]);
+    /// counting it here would double-charge it. Each [`Layer`]'s `outputs()` is one
+    /// such neuron, and the input is the output of no layer, so the sum is exactly
+    /// hidden + output. Drives the brain's metabolic cost (gene `brain_cost`).
+    pub fn neuron_count(&self) -> usize {
+        self.layers.iter().map(Layer::outputs).sum()
+    }
+
     /// Number of weight layers (= number of edge inter-columns to draw).
     pub fn weight_layers(&self) -> usize {
         self.layers.len()
@@ -883,6 +905,37 @@ mod tests {
         assert_eq!(m.layer_biases(0).len(), 5, "one bias per hidden neuron");
         assert_eq!(m.layer_biases(1).len(), MlpBrain::OUTPUTS);
         assert!(m.layer_biases(0).iter().all(|&b| b == 0.0));
+    }
+
+    /// The decision-neuron count (which drives the brain's metabolic cost) is
+    /// hidden + output, input **excluded** (afferents already taxed by vision); and
+    /// the hand-written brains, having no network, count zero.
+    #[test]
+    fn neuron_count_is_hidden_plus_output() {
+        let n_inputs = MlpBrain::input_size(7); // 21 inputs — must NOT be counted
+        let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![8] }).build(42, 0.0, n_inputs) else {
+            panic!("expected an MLP");
+        };
+        assert_eq!(
+            m.neuron_count(),
+            8 + MlpBrain::OUTPUTS,
+            "hidden + output only"
+        );
+
+        // A bare perceptron (no hidden layer): just the output neurons.
+        let Brain::Mlp(p) = (BrainKind::Mlp { hidden: vec![] }).build(1, 0.0, n_inputs) else {
+            panic!("expected an MLP");
+        };
+        assert_eq!(p.neuron_count(), MlpBrain::OUTPUTS);
+
+        // The wrapper exposes the same count, and the hand-written brains pay nothing.
+        assert_eq!(Brain::Mlp(m).neuron_count(), 8 + MlpBrain::OUTPUTS);
+        assert_eq!(Brain::Hunter(HunterBrain).neuron_count(), 0);
+        assert_eq!(Brain::Sessile(SessileBrain).neuron_count(), 0);
+        assert_eq!(
+            Brain::Wander(WanderBrain::new(0, 0.0, 0.25)).neuron_count(),
+            0
+        );
     }
 
     /// The MLP is deterministic (same weights + same perception → same action) and

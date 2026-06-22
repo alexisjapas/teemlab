@@ -68,6 +68,13 @@ pub struct SimConfig {
     pub photosynthesis_bounds: Bounds,
     /// Bounds of the dispersal gene (flora's seeding distance, Phase 3).
     pub seed_dispersal_bounds: Bounds,
+    /// Bounds of the brain-cost gene (energy/s per decision neuron). Drives the
+    /// editor slider; the gene is non-mutable by default, so these bounds rarely
+    /// clamp anything.
+    pub brain_cost_bounds: Bounds,
+    /// Bounds of the agility-cost gene (energy per unit of maneuvering effort
+    /// `|Δv|`). Drives the editor slider; non-mutable by default.
+    pub agility_cost_bounds: Bounds,
     /// Background color of the **play area** (inside of the arena), sRGB `[r, g, b]`
     /// in `[0, 1]`. A **presentation** setting (windowed rendering only, cf.
     /// `main::draw_play_area`); lives in the scenario to be saved/loaded with it.
@@ -313,6 +320,8 @@ pub struct Mutability {
     pub vision_rays: bool,
     pub photosynthesis: bool,
     pub seed_dispersal: bool,
+    pub brain_cost: bool,
+    pub agility_cost: bool,
 }
 
 impl Mutability {
@@ -332,6 +341,8 @@ impl Mutability {
             vision_rays: false,
             photosynthesis: false,
             seed_dispersal: false,
+            brain_cost: false,
+            agility_cost: false,
         }
     }
 }
@@ -362,6 +373,11 @@ impl Default for Mutability {
             // scenario enables them.
             photosynthesis: false,
             seed_dispersal: false,
+            // Decision-system and maneuvering costs: like the other costs,
+            // non-mutable by default (evolvable, they would be driven to 0) and
+            // absent from the draw stream.
+            brain_cost: false,
+            agility_cost: false,
         }
     }
 }
@@ -387,7 +403,10 @@ pub struct Relation {
     pub transfer: bool,
     /// Amount of reserve transferred/destroyed **per second** of simulated time.
     pub rate: f32,
-    /// Action range, in world units (center-to-center distance).
+    /// Action range as a **surface-to-surface clearance**, in world units: the
+    /// actor acts on a target while the gap between their bodies is `≤ range`, so
+    /// `0` (the default for a new relation) means **contact**. Effective reach =
+    /// `range + actor_radius (+ target_radius)`, cf. [`crate::interaction`].
     pub range: f32,
 }
 
@@ -431,8 +450,9 @@ impl Default for SimConfig {
                 min: 0.0,
                 max: 20.0,
             },
+            // Min 0: a blind agent (0 rays) is legitimate (cf. `Genotype::ray_count`).
             vision_rays_bounds: Bounds {
-                min: 1.0,
+                min: 0.0,
                 max: 21.0,
             },
             photosynthesis_bounds: Bounds {
@@ -443,6 +463,13 @@ impl Default for SimConfig {
                 min: 0.0,
                 max: 200.0,
             },
+            // Per-neuron scale: a typical MLP has ~10 decision neurons, so a max of
+            // 2.0 ≈ 20 energy/s, of the same order as base_metabolism.
+            brain_cost_bounds: Bounds { min: 0.0, max: 2.0 },
+            // Per-effort scale: the per-second cost is roughly agility_cost × the
+            // mean |Δv| an agent applies while tracking; a small coefficient already
+            // bites, so a modest ceiling.
+            agility_cost_bounds: Bounds { min: 0.0, max: 2.0 },
             // Default backgrounds: dark play area, off-game one notch lighter —
             // enough to delimit the arena without any zone looking empty. (Reuses
             // the tints previously hard-coded in `main`.)

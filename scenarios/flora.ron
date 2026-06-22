@@ -60,7 +60,7 @@
             target: 0,
             transfer: false,
             rate: 8.0,
-            range: 32.0,
+            range: 26.0,
         ),
     ],
     seed: 12648430,

@@ -931,9 +931,10 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     ui.strong("Relations (who acts on whom)");
     ui.small(
-        "An actor reduces a target's reserve within range. This is what makes an \
-         archetype a TARGET (what Brain::Hunter pursues). transfer = predation (the \
-         actor gains the energy); otherwise plain destruction.",
+        "An actor reduces a target's reserve within range — the gap between their \
+         bodies, so range = 0 means contact. This is what makes an archetype a \
+         TARGET (what Brain::Hunter pursues). transfer = predation (the actor gains \
+         the energy); otherwise plain destruction.",
     );
     // Snapshot (name, color) of the archetypes for the menus — captured before
     // borrowing `config.relations` mutably.
@@ -963,7 +964,7 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
         });
         ui.checkbox(&mut rel.transfer, "transfer (predation)");
         ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("rate/s"));
-        ui.add(egui::Slider::new(&mut rel.range, 1.0..=100.0).text("range"));
+        ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0).text("range (0 = contact)"));
     }
     if let Some(i) = to_remove {
         config.relations.remove(i);
@@ -985,7 +986,7 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             target,
             transfer: true,
             rate: 100.0,
-            range: 20.0,
+            range: 0.0, // contact by default (surface-to-surface clearance).
         });
     }
 }

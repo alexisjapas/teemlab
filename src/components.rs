@@ -188,6 +188,18 @@ pub struct Action {
     pub throttle: f32,
 }
 
+/// **Voluntary steering effort** of the last tick: the magnitude `|Δv|` of the
+/// velocity change that `act` applied while steering toward the desired velocity
+/// (`movement::act`). Written by `act`, read by [`crate::ecology::metabolize`] to
+/// charge the **agility cost** (gene `agility_cost`): maneuvering — turning,
+/// accelerating — does mechanical work against inertia, whereas cruising in a
+/// straight line (already at the desired velocity) is nearly free. Collision
+/// impulses from the physics solver are **not** counted here (only the
+/// brain-driven steering is), so the cost taxes deliberate maneuvering, not being
+/// shoved. Transient per-tick state (recomputed every `act`), not serialized.
+#[derive(Component, Default, Clone, Copy, Debug)]
+pub struct Maneuver(pub f32);
+
 #[cfg(test)]
 mod tests {
     use super::*;

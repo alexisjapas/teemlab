@@ -4,9 +4,10 @@
 //! This is where, per §7, the whole balance of natural selection plays out — a
 //! matter of **tuning**, not of the algorithm. Three systems:
 //!
-//! - [`metabolize`] computes the energy balance: **expenses** (base, locomotion,
-//!   and **vision cost** — the coupling quantified in item 6 finally finding its
-//!   consumer) minus the **gain** from photosynthesis (a flora gene);
+//! - [`metabolize`] computes the energy balance: **expenses** (base, locomotion
+//!   cruising, **agility** maneuvering, **vision cost** — the coupling quantified
+//!   in item 6 finally finding its consumer — and **brain cost**, per decision
+//!   neuron) minus the **gain** from photosynthesis (a flora gene);
 //! - [`reap`] removes agents that have run out of energy;
 //! - [`reproduce`] closes the evolutionary loop.
 //!
@@ -18,7 +19,7 @@
 //! target to the actor. The engine has only one verb.
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Age, Agent, Generation, Reserve, Species, Vision};
+use crate::components::{Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::rng::Rng;
@@ -42,22 +43,36 @@ impl SimRng {
 }
 
 /// METABOLISM: each agent's per-second energy balance. **Expenses** — base +
-/// speed surcharge + vision sensor cost; **gain** — photosynthesis (a flora gene,
-/// passive gain). Bounded to `[0, max]`; death at zero is left to [`reap`].
+/// speed surcharge (cruising) + agility surcharge (maneuvering) + vision sensor
+/// cost + brain cost (per decision neuron); **gain** — photosynthesis (a flora
+/// gene, passive gain). Bounded to `[0, max]`; death at zero is left to [`reap`].
 pub fn metabolize(
     time: Res<Time>,
     config: Res<SimConfig>,
-    mut agents: Query<(&mut Reserve, &Genotype, &Species, &Vision, &LinearVelocity), With<Agent>>,
+    mut agents: Query<
+        (
+            &mut Reserve,
+            &Genotype,
+            &Species,
+            &Vision,
+            &LinearVelocity,
+            &Brain,
+            &Maneuver,
+        ),
+        With<Agent>,
+    >,
 ) {
     let dt = time.delta_secs();
-    for (mut reserve, genotype, species, vision, velocity) in &mut agents {
-        // Metabolism, locomotion cost and photosynthesis are genes (per-species).
-        // An agent with no energy item at all (all three zero) is in an inert
-        // world (pre-item-8 scenarios): neither drain nor gain, not even the
-        // vision cost.
+    for (mut reserve, genotype, species, vision, velocity, brain, maneuver) in &mut agents {
+        // Metabolism, locomotion, agility, photosynthesis and brain cost are genes
+        // (per-species). An agent with no energy item at all (all five zero) is in
+        // an inert world (pre-item-8 scenarios): neither drain nor gain, not even
+        // the vision or brain cost.
         if genotype.base_metabolism == 0.0
             && genotype.move_cost == 0.0
+            && genotype.agility_cost == 0.0
             && genotype.photosynthesis == 0.0
+            && genotype.brain_cost == 0.0
         {
             continue;
         }
@@ -68,8 +83,21 @@ pub fn metabolize(
         // reference.
         let reference_speed = config.founder_max_speed_of(species.0).max(1e-3);
         let speed_ratio = velocity.0.length() / reference_speed;
-        let drain =
-            genotype.base_metabolism + genotype.move_cost * speed_ratio + vision.metabolic_cost();
+        // Agility cost: the energy of *maneuvering*. `maneuver.0` is the magnitude
+        // of the velocity change `act` applied this tick (cf. `Maneuver`), i.e. the
+        // work done against inertia to turn/accelerate — the transient counterpart
+        // of `move_cost`, which prices steady-state cruising. Cruising in a straight
+        // line (already at the desired velocity) costs nothing here.
+        //
+        // Brain cost: energy/s per decision neuron (hidden + output). A hand-written
+        // brain counts zero neurons (cf. `Brain::neuron_count`) → no cost, so
+        // non-MLP scenarios are unaffected. The counterpart, for the *decision
+        // system*, of the vision sensor's cost.
+        let drain = genotype.base_metabolism
+            + genotype.move_cost * speed_ratio
+            + genotype.agility_cost * maneuver.0
+            + vision.metabolic_cost()
+            + genotype.brain_cost * brain.neuron_count() as f32;
         // Net balance = passive gain − expenses. For fauna (photosynthesis 0)
         // this is the old pure drain, and the cap at `max` is then a no-op (eating
         // already caps at `max`, cf. `interaction`) → unchanged behavior.

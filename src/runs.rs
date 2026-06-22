@@ -41,6 +41,15 @@ pub struct RunsPanel {
     status: String,
     /// Action pending application in `PreUpdate`.
     pending: Option<RunAction>,
+    /// Path of the **currently loaded** scenario — the launch argument, or the last
+    /// reload/load through this panel. `Some` → 💾 **overwrites** it silently;
+    /// `None` (fresh editor canvas) → 💾 opens the "save as" dialog. This is the
+    /// intuitive save model.
+    loaded_path: Option<String>,
+    /// Whether the "save as" dialog is open (no scenario loaded → ask for a name).
+    save_dialog_open: bool,
+    /// Working buffer for the "save as" dialog's file name.
+    save_dialog_name: String,
 }
 
 /// Lists the RON scenarios present in `scenarios/`, sorted.
@@ -62,13 +71,36 @@ fn scan_scenarios() -> Vec<String> {
 
 /// Builds the panel at `Startup`.
 pub fn build_runs_panel(mut commands: Commands) {
+    // A scenario passed on the CLI (cf. `SimConfig::from_cli_or`, which reads
+    // `args().nth(1)`) is the loaded file at launch → 💾 overwrites it. With no
+    // argument (the empty editor canvas) the first save asks for a name.
+    let loaded_path = std::env::args().nth(1);
     commands.insert_resource(RunsPanel {
         scenarios: scan_scenarios(),
         selected: None,
         scenario_path: "scenarios/edited.ron".to_string(),
         status: String::new(),
         pending: None,
+        loaded_path,
+        save_dialog_open: false,
+        save_dialog_name: String::new(),
     });
+}
+
+/// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension
+/// and, if no folder is given, places the file under `scenarios/`.
+fn normalize_scenario_path(name: &str) -> String {
+    let mut p = name.trim().to_string();
+    if p.is_empty() {
+        p.push_str("scenario");
+    }
+    if !p.ends_with(".ron") {
+        p.push_str(".ron");
+    }
+    if !p.contains('/') {
+        p = format!("scenarios/{p}");
+    }
+    p
 }
 
 /// The "Scenario" section, rendered in the top strip (dock item). Reads/writes
@@ -111,19 +143,38 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
     }
 
     ui.separator();
-    ui.label("RON:");
-    ui.add(egui::TextEdit::singleline(&mut scenario_path).desired_width(140.0))
-        .on_hover_text("Scenario file (.ron)");
+
+    // SAVE — the intuitive model: a **loaded** scenario is overwritten silently;
+    // with none loaded, a "save as" dialog asks for a name (`save_dialog_open`).
     if ui
-        .button("💾")
-        .on_hover_text("Save the current scenario")
+        .button("💾 Save")
+        .on_hover_text("Overwrites the loaded scenario; if none is loaded, asks for a name.")
         .clicked()
     {
-        panel.status = match config.save_ron_file(&scenario_path) {
-            Ok(()) => format!("Saved → {scenario_path}"),
-            Err(e) => format!("Failed: {e}"),
-        };
+        match panel.loaded_path.clone() {
+            Some(path) => {
+                panel.status = match config.save_ron_file(&path) {
+                    Ok(()) => format!("Saved → {path}"),
+                    Err(e) => format!("Failed: {e}"),
+                };
+            }
+            None => {
+                if panel.save_dialog_name.is_empty() {
+                    panel.save_dialog_name = "scenarios/new_scenario.ron".to_string();
+                }
+                panel.save_dialog_open = true;
+            }
+        }
     }
+    ui.weak(format!(
+        "file: {}",
+        panel.loaded_path.as_deref().unwrap_or("(unsaved)")
+    ));
+
+    ui.separator();
+    ui.label("Load:");
+    ui.add(egui::TextEdit::singleline(&mut scenario_path).desired_width(140.0))
+        .on_hover_text("Scenario file to load (.ron)");
     if ui
         .button("📂")
         .on_hover_text("Load this file and restart the run")
@@ -136,12 +187,48 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
         ui.weak(&panel.status);
     }
 
+    // "Save as" dialog, shown only when no scenario is loaded. A floating window
+    // over the docked panels; driven through locals, then copied back.
+    if panel.save_dialog_open {
+        let mut name = panel.save_dialog_name.clone();
+        let mut window_open = true; // the window's [x] close button
+        let mut do_save = false;
+        let mut cancel = false;
+        egui::Window::new("Save scenario as…")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .open(&mut window_open)
+            .show(ui.ctx(), |ui| {
+                ui.label("File name (.ron — placed in scenarios/ if no folder given):");
+                ui.text_edit_singleline(&mut name);
+                ui.horizontal(|ui| {
+                    do_save = ui.button("Save").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        panel.save_dialog_name = name;
+        if do_save {
+            let path = normalize_scenario_path(&panel.save_dialog_name);
+            match config.save_ron_file(&path) {
+                Ok(()) => {
+                    panel.status = format!("Saved → {path}");
+                    panel.loaded_path = Some(path);
+                    panel.save_dialog_open = false;
+                    rescan = true;
+                }
+                Err(e) => panel.status = format!("Failed: {e}"),
+            }
+        } else if cancel || !window_open {
+            panel.save_dialog_open = false;
+        }
+    }
+
     // Copy the local copies back to the resource.
     panel.selected = selected;
     panel.scenario_path = scenario_path;
     if rescan {
         panel.scenarios = scan_scenarios();
-        panel.selected = None;
     }
     if pending.is_some() {
         panel.pending = pending;
@@ -169,7 +256,9 @@ pub fn apply_scenario_load(
     let Some(RunAction::LoadScenario(path)) = panel.pending.take() else {
         return;
     };
-    panel.status = match SimConfig::from_ron_file(&path) {
+    // Computed first, then assigned, to avoid overlapping borrows of `panel`
+    // (the success arm also records `loaded_path`).
+    let result = match SimConfig::from_ron_file(&path) {
         Ok(loaded) => {
             *config = loaded;
             palette.selected = None;
@@ -177,8 +266,11 @@ pub fn apply_scenario_load(
             // Pause before the rebuild: the new world is born frozen.
             vtime.pause();
             controls.reset_requested = true;
+            // This is now the loaded file → a later 💾 overwrites it (item: save UX).
+            panel.loaded_path = Some(path.clone());
             format!("Scenario reloaded (paused) ← {path}")
         }
         Err(e) => format!("Failed: {e}"),
     };
+    panel.status = result;
 }

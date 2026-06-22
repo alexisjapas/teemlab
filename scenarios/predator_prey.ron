@@ -96,14 +96,14 @@
             target: 1,
             transfer: true,
             rate: 26.0,
-            range: 20.0,
+            range: 12.0,
         ),
         (
             actor: 1,
             target: 2,
             transfer: true,
             rate: 220.0,
-            range: 26.0,
+            range: 18.0,
         ),
     ],
     speed_bounds: (

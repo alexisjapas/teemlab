@@ -16,9 +16,16 @@ use bevy::prelude::*;
 /// ACT (continued): resolve the tick's directed interactions.
 ///
 /// For each actor and each relation in which it is the actor, we look for
-/// targets of the right species in a disk of radius `range` (Avian's
-/// broad-phase): each one takes a demand of `rate · dt`, and if the relation
-/// transfers, the actor gains its share of what is *actually* drawn.
+/// targets of the right species **within reach** (Avian's broad-phase): each one
+/// takes a demand of `rate · dt`, and if the relation transfers, the actor gains
+/// its share of what is *actually* drawn.
+///
+/// **Reach = a surface-to-surface clearance.** The relation's `range` is the gap
+/// between the two bodies' edges: the actor reaches a target while that gap is
+/// `≤ range`, so `range = 0` means *touching* (contact). Concretely the query uses
+/// a disk of radius `range + actor_radius` (the actor's species radius, fixed per
+/// relation), and `shape_intersections` already accounts for the target's radius —
+/// so contact happens at center distance `range + actor_radius + target_radius`.
 ///
 /// **Conservation under contention.** When several actors target the **same**
 /// target in the same tick (e.g. foragers clustered on a single patch), we
@@ -72,12 +79,14 @@ pub fn interact(
     deltas.clear();
 
     // One reach collider per relation, built **only once**: the shape depends
-    // only on the relation, not on the actor. Building a parry collider is not
-    // free; doing it per (actor × relation × tick) was wasteful.
+    // only on the relation (the actor's species radius is fixed per relation), not
+    // on the individual actor. Building a parry collider is not free; doing it per
+    // (actor × relation × tick) was wasteful. The radius is `range + actor_radius`
+    // so the configured `range` is a surface-to-surface clearance (0 = contact).
     let reaches: Vec<Collider> = config
         .relations
         .iter()
-        .map(|r| Collider::circle(r.range))
+        .map(|r| Collider::circle(r.range + config.agent_radius_of(r.actor)))
         .collect();
 
     // Pass 1: tally the draws (actor, target, amount, transfer) and the total
