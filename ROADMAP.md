@@ -2,6 +2,12 @@
 
 > Reference document. Top-down 2D view, entities = circles. **One single engine**;
 > each simulation (natural selection, battle, …) is a *scenario file*.
+>
+> This document **evolves** (status, plan, implementation order). The parts that
+> are *inviolable* are distilled into two stable constitutions, which override this
+> document where they overlap: [`CONSTITUTION-SIM.md`](CONSTITUTION-SIM.md) (laws of
+> the simulated world — the binding form of §1–§4) and
+> [`CONSTITUTION-DEV.md`](CONSTITUTION-DEV.md) (rules of development).
 
 ---
 
@@ -772,3 +778,42 @@ seam (§4), without touching any core system.
     above) — and the recalibration of `cohabitation`/`mlp_brain` (sparse-and-slow food
     → competitive exclusion holds without the disappearance-reappearance of the old
     model).
+- **Harden the two constitutions** (governance, **next up** — drafted 2026-06-22):
+  [`CONSTITUTION-SIM.md`](CONSTITUTION-SIM.md) (the inviolable laws of the simulated
+  world) and [`CONSTITUTION-DEV.md`](CONSTITUTION-DEV.md) (the rules of development)
+  distil the binding core of §1–§8 into two short, stable, citable documents (form:
+  `Law/Rule N — statement / Why / Anchored in`), surfaced to every session through
+  `CLAUDE.md`. They are a **first cut**; before the codebase grows much further they
+  need a deliberate review pass to be *solid for the long term*, so the project does
+  not drift: (a) confirm each article is truly inviolable and that its `Anchored in:`
+  still holds — a law whose anchor no longer obeys it is a constitutional bug; (b)
+  close gaps — open decisions that currently live only here in §9 (the A/B regime
+  seam, founder-per-species) are *not yet* law and may deserve to be; (c) settle the
+  **single-source** question: trim §1–§4 above to *point* to `CONSTITUTION-SIM.md`
+  rather than restate it, so the two can never diverge. **Deferred** until the
+  current development work is done (priority is back on features).
+- **Cross-scenario archetype library** (future, builds on item 4): today a species
+  is reused by **copy at import** (`species/*.ron`, with an `Archetype.source`
+  provenance link + resync that preserves the local `count`) — each scenario stays
+  self-contained. A later step is a true **shared library** browsable and usable
+  across scenarios from inside the editor: a catalog of archetypes one picks from,
+  with tracking of which library entries a scenario uses and a way to propagate
+  updates. The copy-vs-reference fork (item 4 chose **copy** for self-containment)
+  is revisited here **deliberately**, weighing reproducibility against single-source
+  upkeep — not flipped by default.
+- **Grazed plants cannot die (renewable-trickle artifact)** (open decision): a
+  sessile food/plant grazed to `0` in `interact` is topped up by photosynthesis in
+  `metabolize` **before** `reap` runs (order `interact → metabolize → reap`), so it
+  never disappears — it keeps delivering ~`photosynthesis` per tick, its throughput
+  capped at the regrowth rate. This was the **deliberate Phase-3b choice** (persistent
+  renewable food → clean competitive exclusion, no "disappear/reappear" faucet), but
+  it forbids over-grazing → local extinction (boom-bust). Making plants killable is
+  mechanically small (don't let photosynthesis rescue a `0` reserve, or reorder
+  `interact → reap`) — the real work is **re-calibration**: the tuned forager
+  scenarios (`mlp_brain`, `cohabitation`, `predator_prey`) assume immortal food and
+  would collapse, so they need re-tuning + updating their chaos-sensitive tests. Three
+  coherent end-states to pick from: (1) **consumable + reproduction** — grazed-to-0
+  dies but the population regrows by reseeding (Lotka-Volterra, the `flora.ron` model;
+  most realistic); (2) **per-species `renewable` flag** — showcase scenarios stay
+  immortal (byte-identical), new plants consumable; (3) **consumable terminal** — dies
+  for good, no safety net (simplest, most disruptive). Deferred pending a decision.
