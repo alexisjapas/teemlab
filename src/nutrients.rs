@@ -112,6 +112,17 @@ impl NutrientField {
         self.cells.iter().sum()
     }
 
+    /// Cells per side (for the heatmap layer / diagnostics).
+    pub fn resolution(&self) -> usize {
+        self.res
+    }
+
+    /// Read-only view of the row-major concentrations (`index = y * resolution() +
+    /// x`) — for the heatmap rendering layer and diagnostics.
+    pub fn cells(&self) -> &[f32] {
+        &self.cells
+    }
+
     /// One relaxation step toward the neighbour average, using a 4-neighbour
     /// graph-Laplacian stencil with **reflecting (Neumann) boundaries**:
     ///

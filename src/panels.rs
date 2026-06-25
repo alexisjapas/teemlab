@@ -26,6 +26,7 @@ use teemlab::config::Archetype;
 use teemlab::genotype::Genotype;
 use teemlab::metrics::History;
 use teemlab::selection::Selection;
+use teemlab::visuals::Layers;
 
 use crate::controls::{self, SimControls};
 use crate::editor::{self, Palette};
@@ -64,14 +65,22 @@ pub fn top_bar(
     Ok(())
 }
 
-/// Left column, resizable: the **world** — global scenario parameters (arena,
-/// rate, seed, backgrounds), gene bounds and relation table.
-pub fn left_tools(mut contexts: EguiContexts, mut config: ResMut<SimConfig>) -> Result {
+/// Left column, resizable: the **world** — view **layers** (calques) on top, then
+/// the global scenario parameters (arena, rate, seed, backgrounds), gene bounds and
+/// relation table.
+pub fn left_tools(
+    mut contexts: EguiContexts,
+    mut config: ResMut<SimConfig>,
+    mut layers: ResMut<Layers>,
+) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::SidePanel::left("left_tools")
         .resizable(true)
         .default_width(280.0)
         .show(ctx, |ui| {
+            egui::CollapsingHeader::new("Layers")
+                .default_open(true)
+                .show(ui, |ui| editor::layers_section(ui, &mut layers));
             ui.heading("World");
             egui::ScrollArea::vertical().show(ui, |ui| editor::world_section(ui, &mut config));
         });

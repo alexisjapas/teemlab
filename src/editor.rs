@@ -20,6 +20,7 @@ use teemlab::config::{Archetype, Relation};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
+use teemlab::visuals::Layers;
 
 /// The palette / the editor's state. The **archetype list** now lives in
 /// [`SimConfig::archetypes`] (the central data); the palette only keeps the
@@ -835,6 +836,22 @@ pub(crate) fn draw_mlp_graph(
             font.clone(),
             ink,
         );
+    }
+}
+
+/// "Layers" section: toggle the view **calques** — the agents (main layer) and the
+/// nutrient concentration **heatmaps** (background, off by default). Purely a
+/// rendering concern ([`Layers`]), it never touches the scenario or the sim. The
+/// nutrient layers share an opacity budget (`N` active ⇒ `1/N` each), so the label
+/// states it for the user.
+pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
+    ui.checkbox(&mut layers.agents, "Agents (main)");
+    if !layers.nutrients.is_empty() {
+        ui.separator();
+        ui.small("Nutrient maps — background, shared opacity:");
+        for (i, on) in layers.nutrients.iter_mut().enumerate() {
+            ui.checkbox(on, format!("Nutrient {i}"));
+        }
     }
 }
 
