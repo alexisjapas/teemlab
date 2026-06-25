@@ -143,11 +143,16 @@ open work in §9.
 
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
-- **Nutrients — closing the loop (T2 follow-ups + T3, §9)**: **recycling** (a dead
-  body returns its nutrient to the field → conserving loop + a real standing-crop
-  carrying capacity), per-species absorption + **multiple nutrients** (T3, the 2nd
-  nutrient layer makes the shared-opacity 50/50 real), GUI editing of sources, and
-  re-balancing the 4 parked grazed-food tests via the nutrient layer.
+- **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
+  **trophic nutrient transfer** — eating carries *nutrient* (not just energy) from prey
+  to predator, the prerequisite to both the emergent targeting (Law 8) and a meaningful
+  recycling; (2) **recycling** — a dead body returns its nutrient to the field (a
+  *conserving* loop), worthwhile only once the nutrient is conserved in biomass (1),
+  whereas with a renewable source it is not needed before; per-species absorption +
+  **multiple nutrients** (T3 — a 2nd nutrient layer makes the shared-opacity 50/50
+  real); GUI editing of sources; and re-balancing the 4 parked grazed-food tests via the
+  nutrient layer. NB: recycling ≠ a population **cap** — a flat standing crop is set by
+  **turnover** (mortality / a portable `crush`), an independent lever.
 
 ---
 
@@ -764,9 +769,18 @@ seam (§4), without touching any core system.
     - a **per-plant nutrient store** (a component, set up now to prepare Phase 3): the
       plant **absorbs** from the local field into its store and **pays the store** to
       reproduce (no nutrient = no child, but it lives on the sun → no death spiral).
-    - **deferred to a later sub-phase — recycling / closed loop**: a dead body returns its
-      nutrients to the field at its cell (the realistic cycle, enabled by the Law-11
-      mortal flora). Needs **per-species absorption** first, so worked after the core.
+    - **deferred — recycling / closed loop**: a dead body returns its nutrients to the
+      field at its cell (the realistic biogeochemical cycle, enabled by the Law-11 mortal
+      flora). **Decision (2026-06-25): recycling comes *after* the trophic nutrient
+      transfer** ("eating carries nutrient", Phase 3 below), not before. *Why:* with a
+      **renewable source** the nutrient is a self-sustaining **faucet + drain** (source →
+      field → store → spent at reproduction), so nothing needs recycling yet; recycling
+      earns its keep only once the nutrient is **conserved in biomass** and flows up the
+      chain — a dying body then **leaks** the nutrient it accumulated, and recycling
+      closes that leak. **Nuance:** recycling ≠ the population **cap** — a flat standing
+      crop is set by **turnover** (mortality / a portable `crush`), an *independent*
+      lever; recycling only closes the conservation loop. (Also needs per-species
+      absorption first.)
     - **Detailed step-by-step implementation plan:
       [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md)** — the binding reference
       (records the implementation decisions, incl. the corrections below).
@@ -781,9 +795,18 @@ seam (§4), without touching any core system.
       `offspring_nutrient` — endowing it lets the nutrient circulate down the lineage so
       it stops limiting → explosion. **Finding:** with immortal plants the nutrient
       bounds the growth *rate* (≈ emission / `offspring_nutrient`), **not** the standing
-      crop; a true carrying capacity (a flat equilibrium) needs **turnover** — the
-      recycling sub-phase above and/or a portable density death (`crush`). The 4 parked
+      crop; a true carrying capacity (a flat equilibrium) needs **turnover** — mortality
+      or a portable density death (`crush`), **independent of recycling**. The 4 parked
       grazed-food tests stay `#[ignore]` until re-balanced via this layer.
+    - **Decision (2026-06-25) — conservation invariant (to honour eventually):** the T2
+      "nutrient is a **consumable destroyed at reproduction**" is an explicit **interim
+      simplification**, justified only while the source is a renewable faucet. To term, a
+      nutrient must **never be destroyed** at reproduction — the amount paid for a child
+      is **conserved**: carried by the child and/or **transformed** into another nutrient,
+      but **not annihilated**. Combined with recycling (dead body → field) and the trophic
+      transfer (eating → up the chain), this closes a fully **conservative** loop (Law 9
+      in spirit: matter is moved or transformed, never created or destroyed). Revisit the
+      "child born empty / spent" choice at that point.
   - **Phase 3 — full generic nutrient web** (long-term vision): elementary nutrients
     exist; some species need them, **metabolize and transform** them; downstream species
     need those products (and possibly others). Targeting then becomes **emergent** — an
