@@ -22,6 +22,7 @@ use crate::brain::{Brain, MlpBrain};
 use crate::components::{Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
+use crate::nutrients::Nutrients;
 use crate::rng::Rng;
 use crate::spawn::spawn_agent_with_brain;
 use avian2d::prelude::*;
@@ -144,6 +145,13 @@ pub fn age_agents(time: Res<Time>, mut agents: Query<&mut Age, With<Agent>>) {
 /// rather than being rebuilt from the `config`: this is what lets a deterministic
 /// control and a learned brain coexist durably (§4), and the seam that 18b will
 /// extend to mutate the weights.
+///
+/// **Nutrient axis (T2):** reproduction is *also* gated on the nutrient store
+/// ([`Nutrients`]) — `offspring_nutrient` is paid from the parent and carried by the
+/// child (conservation), exactly like `offspring_energy`. With the nutrient genes at
+/// 0 (every pre-T2 scenario) the gate passes paying nothing → unchanged. This is the
+/// second axis of ROADMAP §9's two-axis design: a missing nutrient stops
+/// reproduction but, unlike energy, never causes death (no spiral).
 pub fn reproduce(
     mut commands: Commands,
     config: Res<SimConfig>,
@@ -156,11 +164,14 @@ pub fn reproduce(
             &Species,
             &Brain,
             &Generation,
+            &mut Nutrients,
         ),
         With<Agent>,
     >,
 ) {
-    for (transform, mut reserve, genotype, species, brain, generation) in &mut parents {
+    for (transform, mut reserve, genotype, species, brain, generation, mut nutrients) in
+        &mut parents
+    {
         // Threshold and cost are **genes** (per-entity, evolvable): a zero
         // threshold = this agent does not reproduce.
         //
@@ -174,10 +185,14 @@ pub fn reproduce(
         if genotype.reproduction_threshold <= 0.0
             || reserve.current < genotype.reproduction_threshold
             || reserve.current < genotype.offspring_energy
+            || nutrients.current < genotype.offspring_nutrient
         {
             continue;
         }
         reserve.current -= genotype.offspring_energy;
+        // Pay the child's nutrient from the parent's store (conservation; `0` for a
+        // pre-T2 scenario → no-op).
+        nutrients.current -= genotype.offspring_nutrient;
         let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
         // The child is born offset. The distance is the **seed-dispersal** gene
         // (flora) if non-zero, otherwise the default close offset (radius × 2.5) —
@@ -227,6 +242,7 @@ pub fn reproduce(
             pos,
             child_brain,
             genotype.offspring_energy,
+            genotype.offspring_nutrient, // the child's nutrient endowment (T2).
             generation.0 + 1,
             0.0, // a newborn is born at age 0.
         );

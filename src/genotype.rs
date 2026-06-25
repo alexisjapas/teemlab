@@ -87,6 +87,25 @@ pub struct Genotype {
     /// **not mutable by default** like the other costs (evolvable, it would fall to
     /// 0). `0` by default (inert). Appended at the **end** (draw stream).
     pub agility_cost: f32,
+    /// **Nutrient gene** (T2): rate at which the entity **absorbs** nutrient from
+    /// the local field ([`crate::nutrients::NutrientField`]) into its store
+    /// ([`crate::nutrients::Nutrients`]), per second. `0` → no absorption (fauna,
+    /// and every pre-T2 scenario). The nutrient axis gates *reproduction* only, not
+    /// survival (the two-axis design, ROADMAP §9). Appended at the **end** and
+    /// **not mutable by default** → [`mutate`](Genotype::mutate)'s draw stream and
+    /// the sim stay byte-identical.
+    pub nutrient_absorption: f32,
+    /// **Nutrient gene** (T2): the **capacity** of the per-entity nutrient store.
+    /// `0` (default) → an inert store. Appended at the **end**, not mutable by
+    /// default (draw stream preserved).
+    pub nutrient_capacity: f32,
+    /// **Nutrient gene** (T2): nutrient **paid per child** at reproduction (the
+    /// analogue of [`offspring_energy`](Self::offspring_energy)). Reproduction is
+    /// gated on `nutrients.current >= offspring_nutrient`; on success it is deducted
+    /// from the parent and carried by the child (conservation). `0` (default) → the
+    /// gate always passes paying nothing → pre-T2 reproduction unchanged. Appended
+    /// at the **end**, not mutable by default (draw stream preserved).
+    pub offspring_nutrient: f32,
 }
 
 impl Default for Genotype {
@@ -115,6 +134,11 @@ impl Default for Genotype {
             brain_cost: 0.0,
             // Maneuvering is free until a scenario opts in (like the other costs).
             agility_cost: 0.0,
+            // Nutrient genes (T2) inert by default: no absorption, no store, no
+            // nutrient cost per child → the reproduction gate always passes.
+            nutrient_absorption: 0.0,
+            nutrient_capacity: 0.0,
+            offspring_nutrient: 0.0,
         }
     }
 }
@@ -226,7 +250,7 @@ pub struct TraitSpec {
 /// seeded config — whence the addition at the **end** of the table, which leaves
 /// the pre-existing traits' stream intact). A constant table shared by all
 /// agents.
-pub const TRAITS: [TraitSpec; 14] = [
+pub const TRAITS: [TraitSpec; 17] = [
     TraitSpec {
         name: "Max speed",
         get: |g| g.max_speed,
@@ -396,6 +420,43 @@ pub const TRAITS: [TraitSpec; 14] = [
         // Cost of maneuvering: like locomotion cost and agility, it has no effect on
         // an entity that does not move (a sessile body never maneuvers).
         inert_when_immobile: true,
+    },
+    TraitSpec {
+        name: "Nutrient absorb/s",
+        get: |g| g.nutrient_absorption,
+        set: |g, v| g.nutrient_absorption = v,
+        bounds: |c| c.nutrient_absorption_bounds,
+        bounds_mut: |c| &mut c.nutrient_absorption_bounds,
+        mutable: |m| m.nutrient_absorption,
+        set_mutable: |m, b| m.nutrient_absorption = b,
+        decimals: 2,
+        // Absorbing nutrient from the substrate: precisely a (sessile) plant's
+        // behavior — relevant on an immobile entity.
+        inert_when_immobile: false,
+    },
+    TraitSpec {
+        name: "Nutrient capacity",
+        get: |g| g.nutrient_capacity,
+        set: |g, v| g.nutrient_capacity = v,
+        bounds: |c| c.nutrient_capacity_bounds,
+        bounds_mut: |c| &mut c.nutrient_capacity_bounds,
+        mutable: |m| m.nutrient_capacity,
+        set_mutable: |m, b| m.nutrient_capacity = b,
+        decimals: 0,
+        // The store's size: relevant for a plant.
+        inert_when_immobile: false,
+    },
+    TraitSpec {
+        name: "Nutrient/child",
+        get: |g| g.offspring_nutrient,
+        set: |g, v| g.offspring_nutrient = v,
+        bounds: |c| c.offspring_nutrient_bounds,
+        bounds_mut: |c| &mut c.offspring_nutrient_bounds,
+        mutable: |m| m.offspring_nutrient,
+        set_mutable: |m, b| m.offspring_nutrient = b,
+        decimals: 0,
+        // Nutrient endowment of a seed: relevant for flora reproduction.
+        inert_when_immobile: false,
     },
 ];
 

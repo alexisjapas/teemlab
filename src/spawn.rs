@@ -7,6 +7,7 @@ use crate::components::{
 };
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
+use crate::nutrients::{Emits, Nutrients};
 use crate::rng::Rng;
 use avian2d::prelude::*;
 use bevy::prelude::*;
@@ -21,6 +22,7 @@ pub fn setup_world(mut commands: Commands, config: Res<SimConfig>) {
 pub fn populate(commands: &mut Commands, config: &SimConfig) {
     spawn_arena(commands, config);
     spawn_agents(commands, config);
+    spawn_sources(commands, config);
 }
 
 /// Four **half-spaces** (infinite planes) forming a closed box around the arena.
@@ -96,6 +98,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 pos,
                 brain.clone(),
                 config.reserve_max_of(species),
+                0.0, // founder: born with no nutrient (T2).
                 0,   // founder: generation 0.
                 0.0, // ...born at age 0.
             ),
@@ -140,9 +143,10 @@ pub fn spawn_agent(
     let brain = config
         .brain_of(species.0)
         .build(brain_seed, heading, n_inputs);
-    // A freshly compiled agent is born at age 0.
+    // A freshly compiled agent is born at age 0, and (as a founder) with no
+    // nutrient — only reproduction endows a child with `offspring_nutrient` (T2).
     spawn_agent_with_brain(
-        commands, config, genotype, species, pos, brain, energy, generation, 0.0,
+        commands, config, genotype, species, pos, brain, energy, 0.0, generation, 0.0,
     );
 }
 
@@ -160,6 +164,7 @@ pub fn spawn_agent_with_brain(
     pos: Vec2,
     brain: Brain,
     energy: f32,
+    nutrients: f32,
     generation: u32,
     age: f32,
 ) {
@@ -175,9 +180,18 @@ pub fn spawn_agent_with_brain(
             max: config.reserve_max_of(species.0),
         },
         Radius(r),
-        // Genealogy: depth (fixed) and age (grows per tick). Grouped in a
-        // sub-tuple to stay under Bevy's bundle arity bound.
-        (Generation(generation), Age(age)),
+        // Genealogy (depth fixed, age grows per tick) + the **nutrient store** (T2,
+        // filled by `absorb_nutrients`, spent at reproduction). Grouped in a
+        // sub-tuple to stay under Bevy's bundle arity bound. With the nutrient genes
+        // at 0 the store is inert (`max == 0`) → byte-identical.
+        (
+            Generation(generation),
+            Age(age),
+            Nutrients {
+                current: nutrients,
+                max: genotype.nutrient_capacity,
+            },
+        ),
         genotype.locomotion(),
         vision,
         Perception {
@@ -205,4 +219,28 @@ pub fn spawn_agent_with_brain(
         LinearVelocity::default(),
         Transform::from_translation(pos.extend(0.0)),
     ));
+}
+
+/// Spawns the scenario's substrate **sources** (T2): for each [`crate::config::Source`],
+/// a **non-`Agent`** entity carrying [`Emits`] at a fixed position. It has **no**
+/// `Agent` / `Reserve` / `Genotype` / `Brain` / `Collider` — so every life system
+/// (all `With<Agent>`) ignores it *by construction* (no metabolism, death,
+/// reproduction or decision), and it is intangible. Only [`emit_nutrients`] reads
+/// it. The visual (color, radius) lives in the config and is drawn by a dedicated
+/// render path (rendering is a later step); the sources never move, so nothing needs
+/// to be stored on the entity for that. Uses **no** RNG → adding sources leaves the
+/// agent RNG stream of [`spawn_agents`] untouched (and an empty `sources` list is a
+/// no-op → existing scenarios byte-identical).
+///
+/// [`emit_nutrients`]: crate::nutrients::emit_nutrients
+fn spawn_sources(commands: &mut Commands, config: &SimConfig) {
+    for source in &config.sources {
+        commands.spawn((
+            Emits {
+                nutrient: source.nutrient,
+                rate: source.rate,
+            },
+            Transform::from_translation(Vec2::from(source.pos).extend(0.0)),
+        ));
+    }
 }

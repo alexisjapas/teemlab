@@ -22,6 +22,7 @@ pub mod genotype;
 pub mod interaction;
 pub mod metrics;
 pub mod movement;
+pub mod nutrients;
 pub mod rng;
 pub mod selection;
 pub mod spawn;
@@ -62,6 +63,14 @@ impl Plugin for SimPlugin {
             // The sim's random stream (seeding, mutations, …), seeded separately
             // from population so the two are not correlated.
             .insert_resource(ecology::SimRng::from_config(&self.config))
+            // The nutrient field (T2 substrate): a concentration grid over the
+            // arena, sized from the scenario. Inert (never touched) when no source
+            // emits and diffusion is 0 → existing scenarios byte-identical.
+            .insert_resource(nutrients::NutrientField::new(
+                self.config.nutrient.resolution,
+                self.config.arena_half_extent,
+                self.config.nutrient.diffusion,
+            ))
             .add_systems(Startup, spawn::setup_world)
             // perceive → decide → act, strictly within FixedUpdate.
             // `interact` extends "act" (eat/attack); then the energy economy:
@@ -73,6 +82,12 @@ impl Plugin for SimPlugin {
             // (Pre-Phase-3b this was interact → metabolize → reap, which let a
             // photosynthetic source regain `photosynthesis·dt` before the death
             // check and thus never die — the immortal-patch behavior we dropped.)
+            //
+            // The **nutrient** sub-pipeline (T2) sits after metabolize and before
+            // reproduce, so the store is filled before reproduction reads it: sources
+            // emit → the field diffuses → agents absorb into their store; reproduce
+            // then gates a child on `offspring_nutrient`. All three early-return when
+            // inert (no source / diffusion 0 / no absorber) → byte-identical.
             .add_systems(
                 FixedUpdate,
                 (
@@ -82,6 +97,9 @@ impl Plugin for SimPlugin {
                     interaction::interact,
                     ecology::reap,
                     ecology::metabolize,
+                    nutrients::emit_nutrients,
+                    nutrients::diffuse_nutrients,
+                    nutrients::absorb_nutrients,
                     ecology::age_agents,
                     ecology::reproduce,
                 )

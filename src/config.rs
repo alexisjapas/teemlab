@@ -43,6 +43,17 @@ pub struct SimConfig {
     /// **archetype indices**. Empty by default → no interaction (inert world, as
     /// before item 7).
     pub relations: Vec<Relation>,
+    /// **Nutrient field** parameters (the substrate, T2): grid resolution and
+    /// diffusion. Default = inert (diffusion 0) → existing scenarios unchanged. The
+    /// field bounds plant *reproduction* by Liebig's law (ROADMAP §9,
+    /// `docs/nutrients-t2-plan.md`), the second axis next to energy.
+    pub nutrient: NutrientConfig,
+    /// **Substrate sources** (e.g. volcanic vents) that emit a nutrient into the
+    /// field; diffusion then makes gradients. A *distinct category*, **not**
+    /// archetypes: spawned as **non-`Agent`** entities ignored by the life
+    /// machinery. Empty by default → no source (inert), existing scenarios
+    /// unchanged.
+    pub sources: Vec<Source>,
     /// Bounds of the maximum-speed gene.
     pub speed_bounds: Bounds,
     /// Bounds of the agility gene.
@@ -75,6 +86,14 @@ pub struct SimConfig {
     /// Bounds of the agility-cost gene (energy per unit of maneuvering effort
     /// `|Δv|`). Drives the editor slider; non-mutable by default.
     pub agility_cost_bounds: Bounds,
+    /// Bounds of the nutrient-absorption gene (field → store rate per second, T2).
+    /// Drives the editor slider; non-mutable by default.
+    pub nutrient_absorption_bounds: Bounds,
+    /// Bounds of the nutrient-capacity gene (the per-plant store's max, T2).
+    pub nutrient_capacity_bounds: Bounds,
+    /// Bounds of the nutrient-per-child gene (nutrient paid per offspring, the
+    /// analogue of `offspring_energy`, T2).
+    pub offspring_nutrient_bounds: Bounds,
     /// Background color of the **play area** (inside of the arena), sRGB `[r, g, b]`
     /// in `[0, 1]`. A **presentation** setting (windowed rendering only, cf.
     /// `main::draw_play_area`); lives in the scenario to be saved/loaded with it.
@@ -322,6 +341,9 @@ pub struct Mutability {
     pub seed_dispersal: bool,
     pub brain_cost: bool,
     pub agility_cost: bool,
+    pub nutrient_absorption: bool,
+    pub nutrient_capacity: bool,
+    pub offspring_nutrient: bool,
 }
 
 impl Mutability {
@@ -343,6 +365,9 @@ impl Mutability {
             seed_dispersal: false,
             brain_cost: false,
             agility_cost: false,
+            nutrient_absorption: false,
+            nutrient_capacity: false,
+            offspring_nutrient: false,
         }
     }
 }
@@ -378,6 +403,14 @@ impl Default for Mutability {
             // absent from the draw stream.
             brain_cost: false,
             agility_cost: false,
+            // Nutrient genes (T2), non-mutable by default: they preserve the RNG
+            // stream of existing scenarios (a non-mutable gene does not draw in
+            // [`Genotype::mutate`]), and like the other "economy" genes they have no
+            // cost coupling that would bound an upward drift. A nutrient scenario
+            // enables them.
+            nutrient_absorption: false,
+            nutrient_capacity: false,
+            offspring_nutrient: false,
         }
     }
 }
@@ -410,6 +443,49 @@ pub struct Relation {
     pub range: f32,
 }
 
+/// Parameters of the [`NutrientField`](crate::nutrients::NutrientField): grid
+/// resolution and diffusion rate. The substrate (the "T2" layer): not a life form,
+/// not a spatial-query structure — pure environment. `Default` is **inert**
+/// (`diffusion: 0.0`), so a scenario that does not mention it changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NutrientConfig {
+    /// Cells per side of the square field over the arena.
+    pub resolution: usize,
+    /// Rebalance fraction per tick, in `[0, 1]` — the *local vs global* limitation
+    /// knob (`0` → the field never spreads).
+    pub diffusion: f32,
+}
+
+impl Default for NutrientConfig {
+    fn default() -> Self {
+        Self {
+            resolution: 48,
+            diffusion: 0.0,
+        }
+    }
+}
+
+/// A substrate **source**: a fixed point that emits a nutrient into the field. A
+/// *distinct category* from [`Archetype`] (it is not a life form): spawned as a
+/// **non-`Agent`** entity ([`crate::spawn::spawn_sources`]) carrying
+/// [`Emits`](crate::nutrients::Emits), with no collider (intangible) but a visual.
+/// In T2, sources are hand-edited in the RON (GUI editing of sources is roadmapped).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Source {
+    /// World position (the cell it emits into).
+    pub pos: [f32; 2],
+    /// Nutrient index (T2: always `0`).
+    pub nutrient: usize,
+    /// Emission per second of simulated time.
+    pub rate: f32,
+    /// Visual color (linear sRGB, `[r, g, b]` in `[0, 1]`).
+    pub color: [f32; 3],
+    /// Visual radius (no collider — purely for rendering).
+    pub radius: f32,
+}
+
 impl Default for SimConfig {
     fn default() -> Self {
         Self {
@@ -417,6 +493,8 @@ impl Default for SimConfig {
             arena_half_extent: 400.0,
             archetypes: vec![Archetype::new_agent(0)],
             relations: Vec::new(),
+            nutrient: NutrientConfig::default(),
+            sources: Vec::new(),
             speed_bounds: Bounds {
                 min: 40.0,
                 max: 260.0,
@@ -470,6 +548,21 @@ impl Default for SimConfig {
             // mean |Δv| an agent applies while tracking; a small coefficient already
             // bites, so a modest ceiling.
             agility_cost_bounds: Bounds { min: 0.0, max: 2.0 },
+            // Nutrient genes (T2), non-mutable by default: min 0 (the default gene
+            // is 0 → inert). Editor-slider ranges, of the same order as the energy
+            // analogues (capacity ~ a reserve, per-child ~ offspring_energy).
+            nutrient_absorption_bounds: Bounds {
+                min: 0.0,
+                max: 20.0,
+            },
+            nutrient_capacity_bounds: Bounds {
+                min: 0.0,
+                max: 200.0,
+            },
+            offspring_nutrient_bounds: Bounds {
+                min: 0.0,
+                max: 120.0,
+            },
             // Default backgrounds: dark play area, off-game one notch lighter —
             // enough to delimit the arena without any zone looking empty. (Reuses
             // the tints previously hard-coded in `main`.)
