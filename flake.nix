@@ -41,6 +41,18 @@
         done
         cargo build "''${profile[@]}" && exec cargo run "''${profile[@]}" --bin teemlab -- "''${forward[@]}"
       '';
+
+      # `flame`: flamegraph of the headless sim (cargo-flamegraph + perf) — the
+      # "where does runtime go" tool that guides optimization, complementing
+      # `cargo bench` (which measures the gain). Uses the `profiling` profile
+      # (optimized + debug symbols, Cargo.toml) and a long run for enough samples.
+      # perf may need: sudo sysctl -w kernel.perf_event_paranoid=-1
+      flame = pkgs.writeShellScriptBin "flame" ''
+        scenario="''${1:-scenarios/evolution.ron}"
+        export TEEMLAB_TICKS="''${TEEMLAB_TICKS:-20000}"
+        exec cargo flamegraph --profile profiling -o outputs/flamegraph.svg \
+          --bin headless -- "$scenario"
+      '';
     in
     {
       devShells.${system}.default = pkgs.mkShell {
@@ -61,6 +73,11 @@
           # `play [--release] [scenario.ron]`: builds the workshop + launches the
           # windowed build (record included). Defined in the `let` above.
           play
+          # Performance work: `cargo bench` (throughput A/B between versions) and
+          # `flame` (flamegraph of the headless sim, defined in the `let` above).
+          cargo-flamegraph
+          perf
+          flame
         ];
 
         # Things pkg-config must find at build time (the wayland feature links
@@ -78,6 +95,8 @@
         shellHook = ''
           echo "teemlab dev shell — $(rustc --version)"
           echo "  play [--release] [scenario.ron]  # build the workshop + launch the windowed build (record included)"
+          echo "  cargo bench                      # throughput benchmark (ticks/sec; A/B via --save-baseline/--baseline)"
+          echo "  flame [scenario.ron]             # flamegraph of the headless sim (cargo-flamegraph + perf)"
         '';
       };
     };

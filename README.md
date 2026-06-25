@@ -144,7 +144,23 @@ cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4
 cargo test                            # unit tests + multi-seed drivers + snapshot/containment
 cargo fmt                             # formatting — default rustfmt is authoritative
 cargo clippy --all-targets            # lint — the tree is kept at zero warnings
+
+cargo bench                           # throughput benchmark — ticks/sec per scenario
+#   compare two versions on the SAME machine (the deterministic sim makes it sound):
+#     git checkout <old> && cargo bench -- --save-baseline old
+#     git checkout <new> && cargo bench -- --baseline old    # prints the % change
+flame [scenario.ron]                  # flamegraph of the headless sim → outputs/flamegraph.svg
+#   TEEMLAB_TICKS=N sets run length; perf may need:
+#     sudo sysctl -w kernel.perf_event_paranoid=-1
 ```
+
+> **Measuring performance.** `cargo bench` (`benches/throughput.rs`) is the
+> version-to-version **comparator**: it steps representative scenarios headless and
+> reports ticks/sec. Because the sim is deterministic (seed + tick count ⇒ identical
+> work), a Criterion baseline diff is a *real* perf delta, not run-to-run noise —
+> the right way to confirm a `perf:` change actually paid off. `flame` is the
+> complementary **profiler** (cargo-flamegraph + perf on the headless binary): it
+> shows *where* the time goes, to decide what to optimize next.
 
 > **Format convention.** We follow **cargo's formatter** (`cargo fmt`, default
 > rustfmt): no `rustfmt.toml`, the tool decides. Every commit must leave

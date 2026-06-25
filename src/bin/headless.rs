@@ -12,17 +12,30 @@ use teemlab::components::{Agent, Perception, Reserve};
 use teemlab::genotype::Genotype;
 use teemlab::{SimConfig, SimPlugin};
 
-/// End condition (P0): number of fixed ticks to simulate. ~10 s at 64 Hz.
-const TICKS: u64 = 640;
+/// Default end condition (P0): number of fixed ticks to simulate. ~10 s at 64 Hz.
+/// Override with the `TEEMLAB_TICKS` env var to run longer — e.g. under a profiler
+/// (`flame` / cargo-flamegraph), where a short run yields too few samples. Only the
+/// iteration *count* changes; per-tick work and the RNG stream are untouched (DEV
+/// Rule 3), so the default run stays byte-identical.
+const DEFAULT_TICKS: u64 = 640;
+
+/// Fixed ticks to run before exiting (default [`DEFAULT_TICKS`], or `TEEMLAB_TICKS`).
+#[derive(Resource)]
+struct TickTarget(u64);
 
 #[derive(Resource, Default)]
 struct TickCounter(u64);
 
 fn main() -> AppExit {
+    let target = std::env::var("TEEMLAB_TICKS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_TICKS);
     App::new()
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::ZERO)))
         .add_plugins(SimPlugin::new(SimConfig::from_cli()))
         .init_resource::<TickCounter>()
+        .insert_resource(TickTarget(target))
         // Counting in the FIXED schedule → exact, after the tick's physics.
         .add_systems(FixedLast, tick_and_maybe_exit)
         .run()
@@ -30,12 +43,13 @@ fn main() -> AppExit {
 
 fn tick_and_maybe_exit(
     mut counter: ResMut<TickCounter>,
+    target: Res<TickTarget>,
     // Bevy 0.18: buffered events are "messages".
     mut exit: MessageWriter<AppExit>,
     agents: Query<(&Perception, &Reserve, &Genotype), With<Agent>>,
 ) {
     counter.0 += 1;
-    if counter.0 >= TICKS {
+    if counter.0 >= target.0 {
         let population = agents.iter().count();
         let n = population.max(1) as f32;
         // Raycast smoke test without a window: proportion of rays that see
