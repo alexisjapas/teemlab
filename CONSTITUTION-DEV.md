@@ -158,17 +158,27 @@ import-by-copy).
 
 ---
 
-## Rule 11 — The GitHub version follows `Cargo.toml`; tag minors, not patches
+## Rule 11 — Version is semver of the shipped artifact; tag minors
 
-`Cargo.toml`'s `version` is the single source of truth. Every release **tag** is
-`v<that exact version>` (e.g. `Cargo.toml = 0.2.0` → tag `v0.2.0`); the release CI
-**fails** the run if they disagree. To avoid flooding the repo with tags, cut a tag
-only on a **minor** (or major) bump — `feat:`/breaking work. A **patch** (`fix:`,
-`chore:`) still **increments the patch field in `Cargo.toml`** (so the version
-always identifies the build), but ships **without** a tag; it rides along in the
-next tagged minor. Pushing a `vX.Y.Z` tag is the *only* trigger for a release —
-build → archive (Linux / Windows / macOS, `dist` profile, runtime-perf tuned) →
-GitHub Release.
+`Cargo.toml`'s `version` is the single source of truth, and it is **semver of the
+shipped artifact** (the released binaries) — not a commit counter:
+
+- `fix:` → **patch** (`x.y.Z`): a backwards-compatible bug fix.
+- `feat:` → **minor** (`x.Y.0`): new backwards-compatible capability.
+- a breaking change → **major** (`X.0.0`).
+- `chore:` / `docs:` / `test:` / `ci:` / `refactor:` that do **not** change the
+  shipped binaries → **no bump** (dev-only tooling — benches, CI, the dev shell —
+  is not part of what is versioned).
+
+Every release **tag** is `v<that exact version>` (e.g. `Cargo.toml = 0.2.0` → tag
+`v0.2.0`); the release CI **fails** the run if they disagree. To avoid flooding the
+repo with tags, cut a tag only on a **minor** (or major) bump — `feat:`/breaking
+work; a `fix:` patch lands in `Cargo.toml` untagged and rides along in the next
+tagged minor. Pushing a `vX.Y.Z` tag is the *only* trigger for a release — build →
+archive (Linux / Windows / macOS, `dist` profile, runtime-perf tuned) → GitHub
+Release. To pin an arbitrary build to its commit, use the **git SHA** (optionally as
+semver build metadata, `0.2.0+a1b2c3d`, ignored for precedence) — the version field
+tracks *behavior*, not every commit.
 
 The tag is **annotated** (`git tag -a`), and its message **is the changelog**: a
 hand-written description of the evolutions since the previous tag. The release CI
@@ -176,10 +186,12 @@ lifts that message into the release notes (and appends GitHub's auto "Full
 Changelog" link), so a lightweight tag — or an annotated tag with an empty message
 — is a defect, not a shortcut.
 
-**Why.** A version that can't be matched to a commit makes a bug report
-unactionable; tagging every patch buries the meaningful milestones under noise; and
-an auto-generated commit list is not a changelog — the human "what changed and why"
-is the part a reader actually needs.
+**Why.** Semver keyed to the *artifact's behavior* — not the repo's activity — is
+what lets a reader map a release to what actually changed; bumping the patch on
+every chore turns the version into a meaningless commit counter. The git SHA, not an
+inflated patch number, is what pins an arbitrary build. Tagging only minors keeps the
+milestones legible, and an auto-generated commit list is not a changelog — the human
+"what changed and why" is the part a reader actually needs.
 
 **Anchored in.** `Cargo.toml` (`version`); `.github/workflows/release.yml`
 (`version-check` guard, the `dist` build matrix); `Cargo.toml` `[profile.dist]`.
