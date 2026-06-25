@@ -58,10 +58,10 @@ debug = true
 strip = false
 
 [dev-dependencies]
-# Throughput benchmark harness (benches/throughput.rs). Already resolved in
-# Cargo.lock (transitively, 0.5.1), so this adds nothing new to the graph; it does
-# NOT affect release binaries (dev-deps aren't compiled by `cargo build --bin`).
-criterion = "0.5"
+# Throughput benchmark harness (benches/throughput.rs). A dev-dependency: it does
+# NOT affect release binaries (dev-deps aren't compiled by `cargo build --bin`)
+# nor the simulation — only the bench target links it.
+criterion = "0.8"
 
 [[bench]]
 name = "throughput"
