@@ -16,7 +16,7 @@ use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{Archetype, Relation};
+use teemlab::config::{Archetype, Relation, Source};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
@@ -901,7 +901,87 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     gene_bounds_section(ui, config);
 
     ui.separator();
+    nutrient_section(ui, config);
+
+    ui.separator();
     relations_section(ui, config);
+}
+
+/// The **nutrients** (T2 substrate): the concentration-field parameters and the
+/// emission **sources**. Sources are a *separate category* (not archetypes, not
+/// agents), so they live here in the World editor rather than in the archetype
+/// palette. Everything here is **"(reset)"**: the field is rebuilt and the sources
+/// respawned at the world (re)generation (⟲ of the bar, or "Reload into the world"),
+/// the single passage point that also re-applies the field's resolution/diffusion
+/// (cf. [`crate::controls::apply_reset`]). Collapsed by default (off for most
+/// scenarios — no source ⇒ inert layer).
+fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+    egui::CollapsingHeader::new("Nutrients")
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.small(
+                "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
+                 survival (the sun). The field is fed by the sources below and spread \
+                 by diffusion into gradients. All (reset): applied at ⟲.",
+            );
+            ui.add(
+                egui::DragValue::new(&mut config.nutrient.resolution)
+                    .range(8..=256)
+                    .speed(1.0)
+                    .prefix("grid resolution (reset): "),
+            )
+            .on_hover_text("Cells per side of the nutrient field over the arena.");
+            ui.add(
+                egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0)
+                    .text("diffusion (reset)"),
+            )
+            .on_hover_text(
+                "Per-tick spread toward neighbours (the local↔global knob); 0 = no spread.",
+            );
+
+            ui.separator();
+            ui.strong("Sources (emit nutrient into the field)");
+            ui.small("A fixed point emitting `rate`/s of nutrient at its position.");
+            let mut to_remove = None;
+            for (i, src) in config.sources.iter_mut().enumerate() {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_rgb(&mut src.color);
+                    ui.label(format!("source {i}"));
+                    if ui.button("🗑").on_hover_text("Remove this source").clicked() {
+                        to_remove = Some(i);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("pos");
+                    ui.add(
+                        egui::DragValue::new(&mut src.pos[0])
+                            .speed(1.0)
+                            .prefix("x: "),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut src.pos[1])
+                            .speed(1.0)
+                            .prefix("y: "),
+                    );
+                });
+                ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0).text("rate/s"));
+                ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0).text("visual radius"));
+            }
+            if let Some(i) = to_remove {
+                config.sources.remove(i);
+            }
+            if ui.button("＋ Add a source").clicked() {
+                // T2: a single nutrient (index 0). Sensible defaults at the center.
+                config.sources.push(Source {
+                    pos: [0.0, 0.0],
+                    nutrient: 0,
+                    rate: 10.0,
+                    color: [1.0, 0.6, 0.2],
+                    radius: 12.0,
+                });
+            }
+        });
 }
 
 /// The **gene bounds** (`*_bounds` of the scenario), edited globally: min/max of

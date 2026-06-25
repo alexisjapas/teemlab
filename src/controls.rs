@@ -18,6 +18,7 @@ use teemlab::SimConfig;
 use teemlab::components::{Agent, Wall};
 use teemlab::ecology::SimRng;
 use teemlab::metrics::History;
+use teemlab::nutrients::{Emits, NutrientField};
 use teemlab::spawn;
 
 /// Controls state: chosen speed, pending steps, requested reset. The buttons (in
@@ -125,9 +126,11 @@ pub fn drive_steps(
 }
 
 /// Hot reset: rebuild the world from the `SimConfig`. Despawn everything that is
-/// simulated (agents, food, walls), re-populate, and reset the sim resources
-/// (RNG, regrowth remainder) and the HUD. In `PreUpdate`: the commands apply
-/// before the fixed loop, so the frame already restarts on the new world.
+/// simulated (agents, walls, **and the nutrient sources** — non-`Agent` substrate
+/// entities, which `populate` would otherwise re-add on top, duplicating them),
+/// re-populate, and reset the sim resources (RNG, **the nutrient field**) and the
+/// HUD. In `PreUpdate`: the commands apply before the fixed loop, so the frame
+/// already restarts on the new world.
 ///
 /// This is also **the single passage point** where we re-apply the sim rate
 /// `tick_hz` (cf. [`SimPlugin`](teemlab::SimPlugin), which only sets it at
@@ -141,9 +144,10 @@ pub fn apply_reset(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut sim_rng: ResMut<SimRng>,
+    mut nutrient_field: ResMut<NutrientField>,
     mut history: ResMut<History>,
     mut fixed: ResMut<Time<Fixed>>,
-    simulated: Query<Entity, Or<(With<Agent>, With<Wall>)>>,
+    simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>)>>,
 ) {
     if !controls.reset_requested {
         return;
@@ -159,5 +163,13 @@ pub fn apply_reset(
     fixed.set_timestep_hz(config.tick_hz);
 
     *sim_rng = SimRng::from_config(&config);
+    // Rebuild the nutrient field from the (possibly edited) config: this clears the
+    // accumulated concentrations and re-applies the resolution and diffusion — the
+    // "(reset)" counterpart of editing them in the World panel.
+    *nutrient_field = NutrientField::new(
+        config.nutrient.resolution,
+        config.arena_half_extent,
+        config.nutrient.diffusion,
+    );
     history.clear();
 }
