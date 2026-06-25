@@ -108,14 +108,46 @@ open work in §9.
   strip, *controls + stats* then *curves + inspector* at the bottom; **Space**
   shortcut = play/pause. **Run snapshots removed** (item 13, unused): UI, systems,
   `src/snapshot.rs` and `tests/snapshot.rs` removed entirely.
+- **Generic `nutrients` layer — T2 (the principled population bound, §9)**: the
+  *resource-limitation* answer to density (Liebig's law of the minimum). A second
+  axis, **decoupled** from energy: a per-cell **concentration field**
+  (`src/nutrients.rs`, a grid `Resource` outside Law 11) fed by **sources** (a
+  separate `sources` category, spawned as **non-`Agent`** entities) and spread by
+  **diffusion** into gradients; agents **absorb** it into a per-entity store and
+  **spend** it to reproduce. Three genes appended (`nutrient_absorption`,
+  `nutrient_capacity`, `offspring_nutrient`), non-mutable by default → RNG-safe,
+  pre-T2 scenarios **byte-identical**. **Decoupling**: energy (sun) governs
+  *survival*, the nutrient governs *reproduction* only → a missing nutrient stops
+  breeding but never kills (the fix to the T1 death-spiral of `minerals.ron`).
+  **Design correction** (vs the plan): the child is born with an **empty** store, the
+  nutrient is a **consumable** removed from the pool (endowing the child would make it
+  circulate down the lineage → unbounded). **Finding**: with immortal plants the
+  nutrient bounds the growth *rate*, not the standing crop — a true carrying capacity
+  awaits **turnover** (recycling/mortality, deferred). Driver
+  `tests/nutrients.rs`/`scenarios/nutrients.ron` (multi-seed: grows ≫ founders,
+  bounded, persists; **and** the falsifiable contrast — no sources ⇒ no growth, no
+  collapse).
+- **Rendering in toggleable layers ("calques")**: everything is a layer (`Layers`
+  resource in `visuals.rs`, an egui "Layers" panel). The **agents** are the main
+  layer; each **nutrient field** is a *background* heatmap layer (a linear-sampled
+  texture, alpha ∝ concentration, behind the agents at `z = -5`), **off by default**.
+  All toggleable; the nutrient layers **share** an opacity budget (`N` active ⇒ `1/N`
+  each, so 2 ⇒ 50 %). In the **video** too (`record --nutrients`), off by default →
+  existing videos unchanged. (The roadmapped "Nutrient-field visualization — layers"
+  of §9, done.)
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
-  …), clean `clippy`/`fmt`.
+  `nutrients`, …), clean `clippy`/`fmt`.
 
 **Remaining.**
 
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
+- **Nutrients — closing the loop (T2 follow-ups + T3, §9)**: **recycling** (a dead
+  body returns its nutrient to the field → conserving loop + a real standing-crop
+  carrying capacity), per-species absorption + **multiple nutrients** (T3, the 2nd
+  nutrient layer makes the shared-opacity 50/50 real), GUI editing of sources, and
+  re-balancing the 4 parked grazed-food tests via the nutrient layer.
 
 ---
 
@@ -713,7 +745,8 @@ seam (§4), without touching any core system.
     carpet) but **fragile** (2/3 seeds collapse): lacking the mineral = *death* (energy
     starvation) → spiral. Lesson → the Phase-2 design below: **decouple survival from
     reproduction** (two axes), so a missing nutrient stops reproduction but does not kill.
-  - **Phase 2 — a real `nutrients` engine layer, plant food only** (designed). Two axes:
+  - **Phase 2 — a real `nutrients` engine layer, plant food only** (**done, on `main`**;
+    `src/nutrients.rs`, `scenarios/nutrients.ron`, `tests/nutrients.rs`). Two axes:
     per-entity **energy** (the existing `Reserve`, sun-fed, governs survival) + a
     **nutrient** axis governing **reproduction**. Pieces:
     - a **concentration field** per nutrient (a grid `Resource`, *not* an entity → the
@@ -736,7 +769,21 @@ seam (§4), without touching any core system.
       mortal flora). Needs **per-species absorption** first, so worked after the core.
     - **Detailed step-by-step implementation plan:
       [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md)** — the binding reference
-      for resuming this work.
+      (records the implementation decisions, incl. the corrections below).
+    - **Built (2026-06-25):** `NutrientField` (grid `Resource` + conservative
+      `add`/`take` + mass-conserving `diffuse`), `emit → diffuse → absorb` systems
+      between `metabolize` and `reproduce`, the 3 genes appended non-mutable (RNG-safe,
+      pre-T2 scenarios byte-identical), sources spawned as non-`Agent` entities, and a
+      **toggleable heatmap layer** (windowed + `record --nutrients`, cf. §0). Driver
+      green multi-seed, with the *no-sources* falsifiable contrast.
+    - **Correction vs the plan:** the child is born with an **empty** nutrient store
+      (the nutrient is a **consumable** removed from the pool), not endowed with
+      `offspring_nutrient` — endowing it lets the nutrient circulate down the lineage so
+      it stops limiting → explosion. **Finding:** with immortal plants the nutrient
+      bounds the growth *rate* (≈ emission / `offspring_nutrient`), **not** the standing
+      crop; a true carrying capacity (a flat equilibrium) needs **turnover** — the
+      recycling sub-phase above and/or a portable density death (`crush`). The 4 parked
+      grazed-food tests stay `#[ignore]` until re-balanced via this layer.
   - **Phase 3 — full generic nutrient web** (long-term vision): elementary nutrients
     exist; some species need them, **metabolize and transform** them; downstream species
     need those products (and possibly others). Targeting then becomes **emergent** — an
@@ -747,10 +794,14 @@ seam (§4), without touching any core system.
     is worth building: it must stay **conservative** (the new body is *built from* the
     consumed nutrients, never free — Law 9), and it **dilutes natural selection** (cheap
     re-emergence lowers the cost of extinction — the project's core pressure), so dose it.
-- **Nutrient-field visualization — layers (planned)**: a windowed tool to view each
-  nutrient's concentration field as a toggleable **heatmap layer** (one "calque" per
-  nutrient), so the invisible substrate is observable (gradients, sources, depletion
-  around clusters). Render-only, off by default; pairs with the `nutrients` layer above.
+- **Nutrient-field visualization — layers (done)**: a toggleable **heatmap layer** per
+  nutrient (the invisible substrate made observable — gradients, sources, depletion
+  around clusters), render-only and off by default. Generalized into a small **layer
+  system** (`Layers` resource): the agents are the main layer, the nutrient fields are
+  background heatmaps, all toggleable, the nutrient layers sharing an opacity budget
+  (`N` ⇒ `1/N`). In the windowed build (egui "Layers" panel) **and** the video
+  (`record --nutrients`). The 50/50 two-layer case becomes real once T3 adds a 2nd
+  nutrient.
 - **GUI editing of sources (planned)**: extend the editor to **place and edit the
   `sources` list** (position, nutrient, emission rate, color) like it already edits
   archetypes — sources being a *separate category*, the editor does not see them yet, so
