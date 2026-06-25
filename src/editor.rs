@@ -101,7 +101,7 @@ pub fn resolve_drag(
     if ctx.input(|input| input.pointer.any_released()) {
         // Dropped outside any egui panel = above the play area.
         // `let` chain (edition 2024): camera, window, cursor, world.
-        if !ctx.is_pointer_over_area()
+        if !ctx.is_pointer_over_egui()
             && let Ok((camera, cam_tf)) = cameras.single()
             && let Ok(window) = windows.single()
             && let Some(cursor) = window.cursor_position()

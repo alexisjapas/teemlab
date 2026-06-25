@@ -119,7 +119,7 @@ fn toggle_pause_key(
     mut vtime: ResMut<Time<Virtual>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    if ctx.wants_keyboard_input() {
+    if ctx.egui_wants_keyboard_input() {
         return Ok(());
     }
     if keys.just_pressed(KeyCode::Space) {
@@ -147,7 +147,7 @@ fn setup_camera(mut commands: Commands) {
 /// bevy_egui the egui surface is keyed to the camera's viewport, so shrinking it
 /// would relaunch a layout → vibration. By keeping the viewport full-screen, the
 /// egui surface is stable. Rendering only — never touches the sim state. Runs last
-/// in the egui pass: `available_rect` then reflects the bars. Picking stays
+/// in the egui pass: `content_rect` then reflects the bars. Picking stays
 /// correct (`viewport_to_world_2d` reads the scale and the translation).
 fn set_sim_camera(
     mut contexts: EguiContexts,
@@ -159,7 +159,7 @@ fn set_sim_camera(
     const VIEW_MARGIN: f32 = 1.06;
 
     let ctx = contexts.ctx_mut()?;
-    let rect = ctx.available_rect();
+    let rect = ctx.content_rect();
     let (Ok(window), Ok((mut transform, mut projection))) =
         (windows.single(), cameras.single_mut())
     else {

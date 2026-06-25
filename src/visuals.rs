@@ -143,7 +143,7 @@ fn shade_by_reserve(
     agents: Query<(&MeshMaterial2d<ColorMaterial>, &Species, &Reserve)>,
 ) {
     for (handle, species, reserve) in &agents {
-        if let Some(material) = materials.get_mut(&handle.0) {
+        if let Some(mut material) = materials.get_mut(&handle.0) {
             let dim = 0.25 + 0.75 * reserve.fraction();
             let base = entity_color(&config, *species);
             material.color = Color::srgb(base.red * dim, base.green * dim, base.blue * dim);
@@ -232,7 +232,7 @@ fn draw_play_area(
     let play_color = srgb3(config.play_area_color);
     if let Ok((mut tf, material)) = existing.single_mut() {
         tf.scale = Vec3::new(side, side, 1.0);
-        if let Some(mat) = materials.get_mut(&material.0) {
+        if let Some(mut mat) = materials.get_mut(&material.0) {
             mat.color = play_color;
         }
     } else {
@@ -354,8 +354,8 @@ fn render_nutrient_layers(
         sprite.custom_size = Some(Vec2::splat(side));
         tf.translation.z = -5.0 - index as f32 * 0.1;
         if layer.res == field.resolution() {
-            if let Some(img) = images.get_mut(&sprite.image) {
-                paint_nutrient_image(img, &field, color);
+            if let Some(mut img) = images.get_mut(&sprite.image) {
+                paint_nutrient_image(&mut img, &field, color);
             }
         } else {
             // The grid changed (scenario reload): rebuild the texture to fit.

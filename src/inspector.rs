@@ -69,7 +69,7 @@ pub fn pick_agent(
     // click targets an egui panel, nor if there is no click at all.
     if palette.dragging.is_some()
         || !ctx.input(|i| i.pointer.any_click())
-        || ctx.is_pointer_over_area()
+        || ctx.is_pointer_over_egui()
     {
         return Ok(());
     }
@@ -107,7 +107,7 @@ pub fn delete_under_cursor(
     }
     let ctx = contexts.ctx_mut()?;
     // Not during an archetype drag, nor when the cursor targets an egui panel.
-    if palette.dragging.is_some() || ctx.is_pointer_over_area() {
+    if palette.dragging.is_some() || ctx.is_pointer_over_egui() {
         return Ok(());
     }
     let Some(world) = pointer_world(&cameras, &windows) else {

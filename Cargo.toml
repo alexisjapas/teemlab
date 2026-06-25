@@ -5,12 +5,12 @@ edition = "2024"
 description = "Evolutionary simulation engine — one engine, many scenarios."
 
 [dependencies]
-bevy = { version = "0.18", features = ["wayland"] }
+bevy = { version = "0.19", features = ["wayland"] }
 # Minimal, headless-safe feature set. Avian's defaults pull in bevy_picking /
 # bevy_scene / debug-plugin integrations whose systems require resources that
 # only exist under DefaultPlugins — they panic under MinimalPlugins (headless).
 # We only need 2D, f32 colliders (parry) and the parallel solver.
-avian2d = { version = "0.6", default-features = false, features = [
+avian2d = { version = "0.7", default-features = false, features = [
     "2d",
     "f32",
     "parry-f32",
@@ -22,7 +22,7 @@ avian2d = { version = "0.6", default-features = false, features = [
 # ron are already pulled in transitively by Bevy (no new resolution).
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
-bevy_egui = "0.39"
+bevy_egui = "0.40"
 
 # Build ergonomics (standard Bevy advice): our crate at -O1 for fast rebuilds,
 # dependencies fully optimized so the simulation runs at a usable speed even in
