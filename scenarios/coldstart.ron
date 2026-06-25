@@ -1,6 +1,6 @@
 (
     tick_hz: 64.0,
-    arena_half_extent: 400.0,
+    arena_half_extent: 600.0,
     archetypes: [
         (
             name: "wanderer",
@@ -15,7 +15,7 @@
                 vision_fov_deg: 120.0,
                 reproduction_threshold: 70.0,
                 offspring_energy: 30.0,
-                mutation_rate: 0.05,
+                mutation_rate: 0.10,
                 base_metabolism: 3.0,
                 move_cost: 3.0,
                 vision_rays: 7.0,
@@ -47,7 +47,7 @@
         (
             name: "hunter",
             color: (1.0, 0.90052843, 0.3),
-            count: 0,
+            count: 25,
             radius: 8.0,
             reserve_max: 100.0,
             genotype: (
@@ -57,7 +57,7 @@
                 vision_fov_deg: 120.0,
                 reproduction_threshold: 70.0,
                 offspring_energy: 30.0,
-                mutation_rate: 0.05,
+                mutation_rate: 0.10,
                 base_metabolism: 3.0,
                 move_cost: 3.0,
                 vision_rays: 7.0,
@@ -86,14 +86,13 @@
         ),
         // Mortal flora (ex-"Food"): a sessile plant that photosynthesizes,
         // reproduces by local seeding (seed_dispersal) and DIES by being GRAZED to
-        // zero (reap). The supply therefore turns over and regrows *from survivors*,
-        // instead of being an immortal fixed faucet. NB: there is no population-
-        // pressure mechanism (deferred, see ROADMAP §9), so an under-grazed flora is
-        // bounded only by grazing — it can carpet if the fauna does not crop it.
+        // zero (reap). The supply turns over and regrows *from survivors*. NB: no
+        // population-pressure mechanism (deferred, ROADMAP §9) → an under-grazed
+        // flora is bounded only by grazing and can carpet if the fauna underuses it.
         (
             name: "Flora",
             color: (0.54999983, 0.9, 0.45),
-            count: 240,
+            count: 800,
             radius: 6.0,
             reserve_max: 80.0,
             genotype: (
@@ -138,7 +137,7 @@
         (
             name: "mlp",
             color: (0.77606, 0.3, 1.0),
-            count: 40,
+            count: 300,
             radius: 8.0,
             reserve_max: 100.0,
             genotype: (
@@ -148,7 +147,7 @@
                 vision_fov_deg: 120.0,
                 reproduction_threshold: 70.0,
                 offspring_energy: 30.0,
-                mutation_rate: 0.05,
+                mutation_rate: 0.10,
                 base_metabolism: 3.0,
                 move_cost: 3.0,
                 vision_rays: 7.0,

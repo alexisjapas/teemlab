@@ -65,10 +65,14 @@ impl Plugin for SimPlugin {
             .add_systems(Startup, spawn::setup_world)
             // perceive → decide → act, strictly within FixedUpdate.
             // `interact` extends "act" (eat/attack); then the energy economy:
-            // metabolize (photosynthesis included), die, age, reproduce. The
-            // order interact → metabolize → reap means a photosynthetic source
-            // grazed to zero regains `photosynthesis·dt` before reaping: a
-            // renewable patch therefore does not die (Phase 3b).
+            // die, metabolize (photosynthesis included), age, reproduce. The order
+            // interact → **reap** → metabolize means an entity drained to zero by
+            // grazing dies *before* its metabolism could refill it — so a flora
+            // grazed empty dies like a fauna starved empty, the **uniform** death
+            // rule of SIM Law 11 (no schedule ordering tuned to exempt a kind).
+            // (Pre-Phase-3b this was interact → metabolize → reap, which let a
+            // photosynthetic source regain `photosynthesis·dt` before the death
+            // check and thus never die — the immortal-patch behavior we dropped.)
             .add_systems(
                 FixedUpdate,
                 (
@@ -76,8 +80,8 @@ impl Plugin for SimPlugin {
                     movement::decide,
                     movement::act,
                     interaction::interact,
-                    ecology::metabolize,
                     ecology::reap,
+                    ecology::metabolize,
                     ecology::age_agents,
                     ecology::reproduce,
                 )

@@ -106,7 +106,10 @@ pub fn metabolize(
     }
 }
 
-/// DIE: remove from the world the agents whose energy is depleted.
+/// DIE: remove from the world the agents whose energy is depleted. Runs **before**
+/// [`metabolize`] (cf. the `lib.rs` schedule): an entity grazed to zero by `interact`
+/// dies before photosynthesis could refill it, so a flora grazed empty dies like a
+/// fauna starved empty (SIM Law 11 — one uniform death rule, no kind exempted).
 pub fn reap(mut commands: Commands, agents: Query<(Entity, &Reserve), With<Agent>>) {
     for (entity, reserve) in &agents {
         if reserve.current <= 0.0 {
@@ -187,7 +190,16 @@ pub fn reproduce(
         };
         let offset =
             Vec2::new(rng.0.next_signed(), rng.0.next_signed()).normalize_or_zero() * spread;
-        let pos = transform.translation.truncate() + offset;
+        // Born **inside** the arena. A parent that has drifted a little past the wall
+        // (the solver pushes it back, but not within one tick) would otherwise place
+        // its child even further out — and that child, born outside, reproduces again
+        // before returning: an outward escape via reproduction. Clamping the spawn to
+        // `[-h+r, h-r]` keeps every birth in the world. (The two RNG draws above are
+        // untouched, so scenarios with no edge births stay bit-identical.)
+        let h = config.arena_half_extent;
+        let r = config.agent_radius_of(species.0);
+        let pos = (transform.translation.truncate() + offset)
+            .clamp(Vec2::splat(-h + r), Vec2::splat(h - r));
         // Same draws (heading then seed) as before inheritance: the child brain
         // consumes them via `reproduce` instead of `config.brain.build` → RNG
         // stream unchanged for non-MLP scenarios. The MLP additionally draws from

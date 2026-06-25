@@ -169,3 +169,28 @@ requires.
 **Anchored in.** `rng.rs` (seeded `SplitMix64`), `lib.rs` (fixed-timestep
 schedule). See the operational corollary in
 [`CONSTITUTION-DEV.md`](CONSTITUTION-DEV.md) Rule 3.
+
+---
+
+## Law 11 — Every life form runs the same systems
+
+Every living entity — fauna or flora, predator or prey, mover or source — is an
+`Agent` driven by the **same** base systems: the *perceive → decide → act* loop, the
+interaction primitive, and the life economy (`metabolize`, `reap` for death,
+`reproduce` for birth). What distinguishes one life form from another is **only its
+data** — its **genes** (configuration), its **brain and body** (capabilities), and
+the **relation table** (relations). There is **no per-kind code path**: no
+`if is_flora`, no privileged death, reproduction, or feeding rule, and no schedule
+ordering tuned to exempt one kind. A "plant" is just an agent with a sessile brain and
+photosynthesis; any difference in its behavior must be an *emergent consequence of its
+genes and relations*, never of a special-cased system.
+
+**Why.** The day one life form earns its own rule in the engine, the "one engine,
+scenarios as data" abstraction (Law 1) has leaked into the biology: a privileged kind,
+and two code paths to keep in sync. Uniform base behavior is what lets a new life form
+exist purely as data — and what keeps comparisons between life forms honest, since they
+then differ only by their genes.
+
+**Anchored in.** `spawn` (one agent bundle), `ecology` (`metabolize` / `reap` /
+`reproduce`, no per-species branch), `movement` (one loop), `interaction` (one
+primitive). Phase 3b dissolved the `Food` type into exactly this principle.

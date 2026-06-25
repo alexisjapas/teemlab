@@ -1,22 +1,18 @@
-// Evolutionary flora (Phase 3) — a population of SESSILE plants that self-regulates.
-//
-// Each plant: `Sessile` brain (neither decides nor moves), gains energy through
-// `photosynthesis` (passive gain), and reproduces by LOCAL SEEDING (item 9's
-// reproduction already places the child near the parent; `seed_dispersal` sets the
-// distance). The carrying capacity emerges from intraspecific COMPETITION — a
-// Plant→Plant relation without transfer (the §3 interaction primitive: contested
-// light/space) that drains the energy of nearby neighbors. High density → drain >
-// photosynthesis → energy drops, seeding stops (and the most crowded die) → a stable
-// logistic equilibrium. Since Phase 3b, a *food source* is the degenerate case of
-// this flora (sessile brain, but reproduction off) — no special `Food` type.
+// Evolutionary flora — a SESSILE plant population that self-regulates by intraspecific
+// COMPETITION (the Plant→Plant non-transfer relation below, §3: contested light/space).
+// High density → drain > photosynthesis → the most crowded plants DIE (Law 11), giving a
+// bounded logistic equilibrium. Recalibrated for the mortal-flora economy (the
+// interact→reap→metabolize order): photosynthesis 7, competition range 32.
+// Driver: tests/flora.rs (peak in [200, 2000], sustained over the 2nd half).
+// NB: the GUI editor strips comments on save — re-add this header after an editor round-trip.
 (
     tick_hz: 64.0,
     arena_half_extent: 360.0,
     archetypes: [
         (
             name: "Plant",
-            color: (0.55, 0.9, 0.45),
-            count: 20,
+            color: (0.54999983, 0.9, 0.45),
+            count: 54,
             radius: 6.0,
             reserve_max: 80.0,
             genotype: (
@@ -30,8 +26,10 @@
                 base_metabolism: 1.0,
                 move_cost: 0.0,
                 vision_rays: 1.0,
-                photosynthesis: 8.0,
+                photosynthesis: 7.0,
                 seed_dispersal: 50.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
             ),
             brain: Sessile,
             mutable: (
@@ -39,8 +37,6 @@
                 agility: false,
                 vision_range: false,
                 vision_fov: false,
-                // The reproduction strategy and the dispersal, for their part, EVOLVE
-                // under competition pressure (the "evolutionary flora" part).
                 reproduction_threshold: true,
                 offspring_energy: false,
                 mutation_rate: false,
@@ -49,19 +45,77 @@
                 vision_rays: false,
                 photosynthesis: false,
                 seed_dispersal: true,
+                brain_cost: false,
+                agility_cost: false,
             ),
         ),
     ],
     relations: [
-        // Intraspecific competition (light / space): each plant drains its nearby
-        // neighbors, WITHOUT transfer (destruction) → spatial carrying capacity.
         (
             actor: 0,
             target: 0,
             transfer: false,
             rate: 8.0,
-            range: 26.0,
+            range: 32.0,
         ),
     ],
+    speed_bounds: (
+        min: 40.0,
+        max: 260.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 40.0,
+        max: 300.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 0.0,
+        max: 21.0,
+    ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    play_area_color: (0.07000001, 0.07, 0.09),
+    off_game_color: (0.17000002, 0.17, 0.19),
     seed: 12648430,
 )

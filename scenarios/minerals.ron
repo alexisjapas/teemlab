@@ -1,0 +1,69 @@
+// T1 — nutrient/mineral PROTOTYPE (pure scenario data, no engine change).
+//
+// Tests the hypothesis (ROADMAP §9 nutrients): a finite **mineral** resource bounds
+// the plant population by resource limitation (Liebig's law), where the unlimited sun
+// alone makes plants carpet. Plants here have photosynthesis (0.6) BELOW their base
+// metabolism (1.0) → net negative on sunlight alone → they survive ONLY by eating a
+// mineral (the Plant->Mineral relation). The mineral is finite and weathers back
+// slowly (its `photosynthesis` = a cycling rate), so each deposit feeds a bounded
+// cluster of plants; surplus plants starve (and, since the Law-11 reorder, die).
+// Expectation: the Plant count self-limits around the minerals instead of exploding.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 300.0,
+    archetypes: [
+        // Mineral deposits — the limiting resource. Sessile, finite, slowly renewing
+        // (weathering / cycling), never reproduces.
+        (
+            name: "Mineral",
+            color: (0.55, 0.55, 0.7),
+            count: 12,
+            radius: 10.0,
+            reserve_max: 300.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 0.0,
+                base_metabolism: 0.0,
+                photosynthesis: 8.0,
+                seed_dispersal: 0.0,
+            ),
+            brain: Sessile,
+            mutable: (),
+        ),
+        // Plants — sun-starved (photosynthesis 0.6 < base_metabolism 1.0), so they
+        // DEPEND on minerals to live and reproduce. Local seeding (dispersal 30).
+        (
+            name: "Plant",
+            color: (0.40, 0.85, 0.40),
+            count: 8,
+            radius: 6.0,
+            reserve_max: 60.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 40.0,
+                offspring_energy: 15.0,
+                mutation_rate: 0.0,
+                base_metabolism: 1.0,
+                photosynthesis: 0.6,
+                seed_dispersal: 30.0,
+            ),
+            brain: Sessile,
+            mutable: (),
+        ),
+    ],
+    relations: [
+        // Plants consume the mineral (species 0): its reserve transfers into the plant.
+        (
+            actor: 1,
+            target: 0,
+            transfer: true,
+            rate: 2.5,
+            range: 24.0,
+        ),
+    ],
+    seed: 12648430,
+)

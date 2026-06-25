@@ -677,6 +677,94 @@ seam (§4), without touching any core system.
   (`ecology::reproduce`, `FixedUpdate`) with implicit fitness; the generational adds
   an outside-sim orchestrator without the continuous system depending on it. No closed
   `enum Regime`.
+- **Toroidal arena — deferred until Bevy/Avian support it natively**: a borderless,
+  wrapping arena (a local crowd disperses across an edge instead of piling against a
+  wall — closer to nature than a hard box) is **wanted but postponed**. A position-only
+  wrap was prototyped and **reverted**: Avian's collisions, vision raycasts and
+  interaction queries are not seam-aware, so a band at the seam still behaves as an
+  edge, and a hand-rolled seam-aware version (periodic boundaries / edge ghost bodies)
+  would shadow Avian's broad-phase against §5 ("no homemade spatial structure"). **We
+  resume the full toroidal form once a Bevy/Avian release exposes periodic/wrapping
+  boundaries correctly and completely.**
+- **Population-pressure (density-dependent mortality) — deferred**: a way to bound a
+  population by **crowding** (so a flora cannot carpet, and a predator cannot overshoot),
+  *without* draining the energy reserve (unlike an intraspecific competition relation,
+  which makes a dense flora worthless food). A **`crush`** prototype was built —
+  per-species `crush_threshold`, a `FixedLast` system reading Avian's summed contact
+  impulse — and **reverted**: the *concept* (physical crowding death) is sound and
+  general, but tying the threshold to the **raw contact impulse** makes its meaning
+  **non-portable across body sizes** (impulse ∝ mass ∝ radius²; the same value calibrated
+  for a r=6 flora is wrong for a r=8 hunter). **We resume it in a portable formulation**
+  — e.g. a count of overlapping neighbours, or summed overlap depth — when a stable
+  ecosystem actually needs the bound (the predator-prey overshoot that motivates it is
+  itself a known wall; cf. the natural-selection work). Until then, mortal flora is
+  bounded by **grazing alone**.
+- **Generic nutrients layer — the principled population bound (planned, 3 phases)**.
+  The *resource-limitation* answer to the density problem above: a population is bounded
+  by its **most limiting resource** (Liebig's law of the minimum), not by an artificial
+  crowding death. Plants are only sun-limited today (photosynthesis = infinite) → they
+  carpet; make them depend on a **finite mineral** and the carrying capacity emerges
+  naturally — and, if the mineral **cycles** (dead bodies decompose back into it), a
+  closed nutrient loop. More principled than `crush`, and the bottom of the food chain.
+  Staged:
+  - **Phase 1 — scenario-only prototype (done, `scenarios/minerals.ron`)**: a `Mineral`
+    archetype + a `Plant→Mineral` relation, photosynthesis below base metabolism so the
+    plant *depends* on the mineral. **Validated** the bound (plants self-limit, ~7 not a
+    carpet) but **fragile** (2/3 seeds collapse): lacking the mineral = *death* (energy
+    starvation) → spiral. Lesson → the Phase-2 design below: **decouple survival from
+    reproduction** (two axes), so a missing nutrient stops reproduction but does not kill.
+  - **Phase 2 — a real `nutrients` engine layer, plant food only** (designed). Two axes:
+    per-entity **energy** (the existing `Reserve`, sun-fed, governs survival) + a
+    **nutrient** axis governing **reproduction**. Pieces:
+    - a **concentration field** per nutrient (a grid `Resource`, *not* an entity → the
+      "substrate" category, outside Law 11; not a spatial-query structure, so no §5
+      conflict), with **diffusion** (it rebalances — the rate is the *local vs global*
+      limitation knob);
+    - **local sources** (e.g. a submarine volcanic vent) that emit a nutrient into the
+      field at their cell → diffusion makes **gradients**, life clusters around sources
+      (vent ecosystems / oases — spatial structure for free). **Locked representation**:
+      a source is declared in a **separate `sources` config list** (a *distinct category*,
+      **not** an archetype) and spawned as a **non-`Agent` entity** — so the whole life
+      machinery (every system queries `With<Agent>`) ignores it *by construction*: no
+      death, no metabolism, no reproduction, no decision. Intangible (no collider) but
+      renderable;
+    - a **per-plant nutrient store** (a component, set up now to prepare Phase 3): the
+      plant **absorbs** from the local field into its store and **pays the store** to
+      reproduce (no nutrient = no child, but it lives on the sun → no death spiral).
+    - **deferred to a later sub-phase — recycling / closed loop**: a dead body returns its
+      nutrients to the field at its cell (the realistic cycle, enabled by the Law-11
+      mortal flora). Needs **per-species absorption** first, so worked after the core.
+    - **Detailed step-by-step implementation plan:
+      [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md)** — the binding reference
+      for resuming this work.
+  - **Phase 3 — full generic nutrient web** (long-term vision): elementary nutrients
+    exist; some species need them, **metabolize and transform** them; downstream species
+    need those products (and possibly others). Targeting then becomes **emergent** — an
+    entity eats *what contains the nutrients it needs*, replacing the explicit hunt
+    `relations` table (a real change to **SIM Law 8**, hence deferred).
+  - **Idea — nutrient-driven spontaneous generation**: an archetype could *appear* where
+    a nutrient is concentrated (origin-of-life / colonization). Two guardrails before it
+    is worth building: it must stay **conservative** (the new body is *built from* the
+    consumed nutrients, never free — Law 9), and it **dilutes natural selection** (cheap
+    re-emergence lowers the cost of extinction — the project's core pressure), so dose it.
+- **Nutrient-field visualization — layers (planned)**: a windowed tool to view each
+  nutrient's concentration field as a toggleable **heatmap layer** (one "calque" per
+  nutrient), so the invisible substrate is observable (gradients, sources, depletion
+  around clusters). Render-only, off by default; pairs with the `nutrients` layer above.
+- **GUI editing of sources (planned)**: extend the editor to **place and edit the
+  `sources` list** (position, nutrient, emission rate, color) like it already edits
+  archetypes — sources being a *separate category*, the editor does not see them yet, so
+  in T2 they are hand-edited in the RON. A later editor pass adds a sources panel +
+  click-to-place, alongside the field-layer visualization above.
+- **Eating / attacking as a *deliberate, costed* action — not automatic on contact
+  (planned, touches Law 8)**: today `interaction::interact` fires on *every* actor that
+  has a valid target in range — predation is a reflex. The richer model: the **brain
+  decides** whether to act (an output of `Action`), and the act **costs** something
+  (energy/effort), so attacking/eating becomes a strategic choice weighed against its
+  cost — and, with the `nutrients` web, *what* to eat follows from *which nutrients are
+  needed*. A real change to the one-primitive semantics (Law 8: the primitive stays, its
+  *triggering* moves from automatic-in-range to brain-driven), hence flagged for a
+  deliberate decision.
 - **Manual headless stepping**: `app.update()` in a tight loop requires `app.finish()`
   then `app.cleanup()` beforehand (Avian inserts resources in `Plugin::finish()`).
   Proven in `tests/containment.rs`.
