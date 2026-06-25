@@ -10,12 +10,21 @@
 //! recording* in the top strip, *controls + stats* then *curves + inspector* at
 //! the bottom.
 //!
-//! This is what makes the central area self-fitting: the
-//! `SidePanel`/`TopBottomPanel`s *reserve* their space, so `ctx.available_rect()`
-//! shrinks to the center, and `main::set_sim_camera` (which runs last in the egui
-//! pass) frames the sim there — hence a simulation always **centered and fully
-//! visible**, whatever the panels' size. No `CentralPanel`: the center stays
-//! "transparent" and lets the Bevy rendering show through.
+//! This is what makes the central area self-fitting: the top-level `Panel`s
+//! *reserve* their space, so `ctx.available_rect()` shrinks to the center, and
+//! `main::set_sim_camera` (which runs last in the egui pass) frames the sim there
+//! — hence a simulation always **centered and fully visible**, whatever the
+//! panels' size. No `CentralPanel`: the center stays "transparent" and lets the
+//! Bevy rendering show through.
+//!
+//! egui 0.34 deprecates the top-level `Panel::show(ctx, …)` in favour of
+//! `show_inside(ui, …)`, which expects a single root viewport `Ui` shared by every
+//! panel (cf. bevy_egui 0.40 `examples/ui.rs`). teemlab spreads its panels across
+//! five independent systems, so moving to `show_inside` is a layout
+//! rearchitecture (one merged system), not a rename — deferred. The
+//! `#[allow(deprecated)]` on each system (and on `main::set_sim_camera`, whose
+//! `ctx.available_rect()` is the same deprecated top-level API — egui 0.34 offers
+//! no replacement for "the area left after panels") keeps it working until then.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -39,6 +48,7 @@ use crate::runs::{self, RunsPanel};
 /// pinned left, video **recording** pinned **right** — all of a run's
 /// "input/output" IO. Recording is right-aligned via a `right_to_left` layout; a
 /// nested `left_to_right` preserves the reading order of its widgets.
+#[allow(deprecated)]
 pub fn top_bar(
     mut contexts: EguiContexts,
     mut runs_panel: ResMut<RunsPanel>,
@@ -46,7 +56,7 @@ pub fn top_bar(
     mut recorder_panel: ResMut<RecorderPanel>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
+    egui::Panel::top("top_bar").show(ctx, |ui| {
         // Bar **forced to full width**: otherwise the `right_to_left` has no space
         // to push recording to the right. Scenario on the left (normal order),
         // recording pinned right (emitted in reverse order, cf. `recorder_section`).
@@ -55,9 +65,20 @@ pub fn top_bar(
             egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                runs::scenario_section(ui, &mut runs_panel, &mut config);
+                // Stable id salt per section: egui 0.34's multipass re-runs the UI
+                // (sizing then render) and assigns auto-ids by emission order.
+                // `scenario_section` emits a variable widget count (conditional status
+                // label, save dialog), so without a salt the recorder's auto-ids —
+                // emitted right after it — shift between passes, which egui flags as
+                // "widget rect changed id between passes". A fixed salt per subtree
+                // makes each section's ids independent of the other's widget count.
+                ui.push_id("scenario_bar", |ui| {
+                    runs::scenario_section(ui, &mut runs_panel, &mut config);
+                });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    recorder::recorder_section(ui, &mut recorder_panel);
+                    ui.push_id("recorder_bar", |ui| {
+                        recorder::recorder_section(ui, &mut recorder_panel);
+                    });
                 });
             },
         );
@@ -68,15 +89,16 @@ pub fn top_bar(
 /// Left column, resizable: the **world** — view **layers** (calques) on top, then
 /// the global scenario parameters (arena, rate, seed, backgrounds), gene bounds and
 /// relation table.
+#[allow(deprecated)]
 pub fn left_tools(
     mut contexts: EguiContexts,
     mut config: ResMut<SimConfig>,
     mut layers: ResMut<Layers>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::left("left_tools")
+    egui::Panel::left("left_tools")
         .resizable(true)
-        .default_width(280.0)
+        .default_size(280.0)
         .show(ctx, |ui| {
             egui::CollapsingHeader::new("Layers")
                 .default_open(true)
@@ -89,15 +111,16 @@ pub fn left_tools(
 
 /// Right column, resizable: the **entities** — archetype palette (selector +
 /// species library) and editor of the selected archetype.
+#[allow(deprecated)]
 pub fn right_panel(
     mut contexts: EguiContexts,
     mut palette: ResMut<Palette>,
     mut config: ResMut<SimConfig>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::SidePanel::right("right_panel")
+    egui::Panel::right("right_panel")
         .resizable(true)
-        .default_width(320.0)
+        .default_size(320.0)
         .show(ctx, |ui| {
             ui.heading("Entities");
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -119,6 +142,7 @@ pub fn right_panel(
 /// Bottom bar (just below the sim): **controls** (pause/step/speed/reset) on the
 /// left, **global stats** on the right, same line. (The native Bevy visualizer
 /// exists only for the video, cf. `bin/record`; there is no toggle here.)
+#[allow(deprecated)]
 pub fn bottom_bar(
     mut contexts: EguiContexts,
     mut sim_controls: ResMut<SimControls>,
@@ -126,7 +150,7 @@ pub fn bottom_bar(
     agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
+    egui::Panel::bottom("bottom_bar").show(ctx, |ui| {
         ui.horizontal_wrapped(|ui| {
             controls::controls_section(ui, &mut sim_controls, &mut vtime);
             ui.separator();
@@ -138,6 +162,7 @@ pub fn bottom_bar(
 
 /// Bottom panel, resizable: evolution curves (left) and agent inspector (right),
 /// in two columns.
+#[allow(deprecated)]
 pub fn bottom_panel(
     mut contexts: EguiContexts,
     mut history: ResMut<History>,
@@ -169,9 +194,9 @@ pub fn bottom_panel(
     const MIN_TWO_COLUMN_WIDTH: f32 = 160.0;
 
     let ctx = contexts.ctx_mut()?;
-    egui::TopBottomPanel::bottom("bottom_panel")
+    egui::Panel::bottom("bottom_panel")
         .resizable(true)
-        .default_height(220.0)
+        .default_size(220.0)
         .show(ctx, |ui| {
             // Curves: we wrap them in a scroll area (they have none).
             let mut curves = |ui: &mut egui::Ui| {

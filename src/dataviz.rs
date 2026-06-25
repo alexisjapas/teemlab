@@ -339,8 +339,8 @@ fn text(
     commands.spawn((
         Text2d::new(s.into()),
         TextFont {
-            font: font.clone(),
-            font_size: size,
+            font: font.clone().into(),
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),
