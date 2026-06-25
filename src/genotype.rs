@@ -99,12 +99,15 @@ pub struct Genotype {
     /// `0` (default) → an inert store. Appended at the **end**, not mutable by
     /// default (draw stream preserved).
     pub nutrient_capacity: f32,
-    /// **Nutrient gene** (T2): nutrient **paid per child** at reproduction (the
-    /// analogue of [`offspring_energy`](Self::offspring_energy)). Reproduction is
-    /// gated on `nutrients.current >= offspring_nutrient`; on success it is deducted
-    /// from the parent and carried by the child (conservation). `0` (default) → the
-    /// gate always passes paying nothing → pre-T2 reproduction unchanged. Appended
-    /// at the **end**, not mutable by default (draw stream preserved).
+    /// **Nutrient gene** (T2): nutrient **spent per child** at reproduction.
+    /// Reproduction is gated on `nutrients.current >= offspring_nutrient`; on success
+    /// it is deducted from the parent and **consumed** — the child is born with an
+    /// **empty** store and must absorb its own (unlike
+    /// [`offspring_energy`](Self::offspring_energy), which is carried over). This is
+    /// what makes the nutrient a genuine *limiting* resource rather than a self-
+    /// perpetuating endowment (cf. [`crate::ecology::reproduce`]). `0` (default) →
+    /// the gate always passes spending nothing → pre-T2 reproduction unchanged.
+    /// Appended at the **end**, not mutable by default (draw stream preserved).
     pub offspring_nutrient: f32,
 }
 

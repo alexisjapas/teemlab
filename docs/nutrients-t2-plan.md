@@ -148,8 +148,21 @@ is filled before reproduction reads it):
   to the store. Conservation via `take`.
 - **`reproduce` (extended)** — add `&mut Nutrients` to its query; extend the guard with
   `|| nutrients.current < genotype.offspring_nutrient`; on success
-  `nutrients.current -= genotype.offspring_nutrient`; the child is spawned with
-  `offspring_nutrient` in its store (conservation: parent → child).
+  `nutrients.current -= genotype.offspring_nutrient`; the child is spawned with an
+  **empty** store.
+
+  > **Implementation correction (step 7):** the child must be born **empty**, *not*
+  > endowed with `offspring_nutrient`. The originally-planned "born with
+  > `offspring_nutrient` (conservation: parent → child)" was found, in
+  > `tests/nutrients.rs`, to make the nutrient **circulate** down a lineage: a seed
+  > endowed with exactly the gate amount meets the gate immediately, so the nutrient
+  > never limits anything and the abundant solar-energy axis sets the pace → the
+  > population **explodes** (~6400, past saturation, across all seeds). Spending the
+  > nutrient (consumable, removed from the pool) makes it a genuine *limiting*
+  > resource: each new plant must absorb its **own** fresh nutrient to reproduce, so
+  > the growth is throttled by the field's supply (≈ emission / `offspring_nutrient`).
+  > The conserving closed loop returns with **recycling** (deferred): a dead body
+  > returns its nutrient to the field.
 
 Each new system early-returns cheaply when inert (no sources / no absorbers / diffusion 0).
 
@@ -182,6 +195,16 @@ Each new system early-returns cheaply when inert (no sources / no absorbers / di
   founders, (b) **stays bounded** (no carpet), (c) **persists** (no collapse) — i.e. the
   T1 fragility is **resolved** by the two-axis decoupling. This test is the falsification
   of the whole T2 design.
+
+  > **Done (step 7).** Calibrated and green across the 4 seeds: ~40 founders → ~515 with
+  > sources (bounded, no carpet, persists), and a **falsifiable contrast** — with the
+  > `sources` removed the *same* plants stay flat at the founder count (no nutrient → no
+  > reproduction, but sun-fed → no collapse), proving the nutrient gates **only**
+  > reproduction. **Finding:** with immortal plants the nutrient bounds the growth
+  > **rate** (≈ emission / `offspring_nutrient`), not the standing crop — the population
+  > grows slowly and is bounded *within the run*. A true carrying capacity (a flat
+  > equilibrium) needs **turnover** (recycling / mortality), the deferred sub-phases. T2
+  > delivers the gating + spiral-free persistence, not yet the closed loop.
 
 ## 8. Implementation step order (each independently testable)
 

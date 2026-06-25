@@ -147,11 +147,23 @@ pub fn age_agents(time: Res<Time>, mut agents: Query<&mut Age, With<Agent>>) {
 /// extend to mutate the weights.
 ///
 /// **Nutrient axis (T2):** reproduction is *also* gated on the nutrient store
-/// ([`Nutrients`]) — `offspring_nutrient` is paid from the parent and carried by the
-/// child (conservation), exactly like `offspring_energy`. With the nutrient genes at
-/// 0 (every pre-T2 scenario) the gate passes paying nothing → unchanged. This is the
-/// second axis of ROADMAP §9's two-axis design: a missing nutrient stops
+/// ([`Nutrients`]) — a parent needs `offspring_nutrient` in store to reproduce, and
+/// **spends** it (the child is born with an **empty** store). With the nutrient
+/// genes at 0 (every pre-T2 scenario) the gate passes spending nothing → unchanged.
+/// This is the second axis of ROADMAP §9's two-axis design: a missing nutrient stops
 /// reproduction but, unlike energy, never causes death (no spiral).
+///
+/// **Why the child is born empty (and not endowed like `offspring_energy`):** a seed
+/// endowed with `offspring_nutrient` would meet the gate *immediately*, so the
+/// nutrient would merely **circulate** down a lineage and never limit anything
+/// (energy, the abundant solar axis, would set the pace → unbounded growth). Making
+/// the nutrient a **consumable** removed from the pool makes it a genuine limiting
+/// resource (Liebig): each new plant must absorb its **own** fresh nutrient from the
+/// field to reproduce, so the population's growth is throttled by the field's supply.
+/// This deviates from the originally-planned "born with `offspring_nutrient`
+/// (conservation)" — the conserving, closed loop returns with **recycling**
+/// (deferred: a dead body returns its nutrient to the field), cf.
+/// `docs/nutrients-t2-plan.md`.
 pub fn reproduce(
     mut commands: Commands,
     config: Res<SimConfig>,
@@ -190,8 +202,9 @@ pub fn reproduce(
             continue;
         }
         reserve.current -= genotype.offspring_energy;
-        // Pay the child's nutrient from the parent's store (conservation; `0` for a
-        // pre-T2 scenario → no-op).
+        // Spend the nutrient cost from the parent's store — it is **consumed**, not
+        // handed to the child (which is born empty, see below): this is what makes
+        // the nutrient a true limiting resource. `0` for a pre-T2 scenario → no-op.
         nutrients.current -= genotype.offspring_nutrient;
         let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
         // The child is born offset. The distance is the **seed-dispersal** gene
@@ -242,7 +255,7 @@ pub fn reproduce(
             pos,
             child_brain,
             genotype.offspring_energy,
-            genotype.offspring_nutrient, // the child's nutrient endowment (T2).
+            0.0, // born with an **empty** nutrient store (T2): must absorb its own.
             generation.0 + 1,
             0.0, // a newborn is born at age 0.
         );
