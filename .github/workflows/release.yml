@@ -27,7 +27,7 @@ jobs:
   version-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match Cargo.toml version
         run: |
           version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
@@ -68,7 +68,7 @@ jobs:
             archive: tar
             rustflags: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build dependencies (Linux)
         if: runner.os == 'Linux'
@@ -121,7 +121,7 @@ jobs:
             echo "ASSET=$dist.tar.gz" >> "$GITHUB_ENV"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: ${{ env.ASSET }}
@@ -133,7 +133,7 @@ jobs:
     permissions:
       contents: write # create the release & upload assets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # need the annotated tag object for its message
       - name: Release notes from the annotated tag
@@ -144,7 +144,7 @@ jobs:
           # underneath it.
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
