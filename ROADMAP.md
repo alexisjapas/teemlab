@@ -825,11 +825,21 @@ seam (§4), without touching any core system.
   (`N` ⇒ `1/N`). In the windowed build (egui "Layers" panel) **and** the video
   (`record --nutrients`). The 50/50 two-layer case becomes real once T3 adds a 2nd
   nutrient.
-- **GUI editing of sources (planned)**: extend the editor to **place and edit the
-  `sources` list** (position, nutrient, emission rate, color) like it already edits
-  archetypes — sources being a *separate category*, the editor does not see them yet, so
-  in T2 they are hand-edited in the RON. A later editor pass adds a sources panel +
-  click-to-place, alongside the field-layer visualization above.
+- **GUI editing of sources (basic editing done; click-to-place + markers remain)**: the
+  World editor now has a **"Nutrients" section** (`editor::nutrient_section`) editing the
+  field (resolution, diffusion — "(reset)") and the `sources` list (color, position,
+  rate, visual radius) with add/remove, mirroring the relations editor — so sources are
+  no longer hand-edited in the RON. **Remaining (polish):** placing a source by
+  **click** in the arena (like the archetype drag-and-drop), **discrete source markers**
+  (today a source is only visible through its heatmap halo, cf. the layer above), and a
+  global **opacity slider** for the nutrient layers (today the budget is split 1/N
+  automatically). All render-only niceties, lower priority.
+- **Known bug — `record --select off --no-hud` crashes (low priority)**: with the HUD
+  disabled *and* selection off, `dataviz::draw_viz` still runs and reads
+  `Res<Selection>`, which only `SelectionRenderPlugin` inserts (added solely when
+  `--select != off`) → "Resource does not exist" panic. Any other combination is fine
+  (default `--select eldest` provides it). Fix: gate `draw_viz` on the HUD being enabled,
+  or take `Option<Res<Selection>>`. Found while rendering nutrient videos; not yet fixed.
 - **Eating / attacking as a *deliberate, costed* action — not automatic on contact
   (planned, touches Law 8)**: today `interaction::interact` fires on *every* actor that
   has a valid target in range — predation is a reflex. The richer model: the **brain
