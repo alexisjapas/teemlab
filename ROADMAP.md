@@ -270,7 +270,7 @@ of these pieces, never a special case.
 |---|---|---|
 | ECS / engine | **Bevy 0.19** | suited to heavy simulations |
 | Physics | **Avian 0.7** | Bevy-native; collisions **and** occlusion raycasting |
-| HUD / curves | **bevy_egui** | population, trait drift in real time — *to be retired for native `bevy_ui`/feathers (§9)* |
+| HUD / curves | **bevy_egui** | population, trait drift in real time — *native `bevy_ui`/feathers migration attempted & shelved, see §9* |
 | Serialization | **serde + RON** | readable archetypes; binary for the snapshots |
 | Brain | **homemade** (MLP + mutation/crossover) | ML libs aim at the big GPU network, the opposite of the need |
 | Video | **ffmpeg** | fed by re-render (§7) |
@@ -834,38 +834,45 @@ seam (§4), without touching any core system.
   (today a source is only visible through its heatmap halo, cf. the layer above), and a
   global **opacity slider** for the nutrient layers (today the budget is split 1/N
   automatically). All render-only niceties, lower priority.
-- **GUI — migrate the windowed UI to native Bevy (`bevy_ui` + feathers), retire
-  `bevy_egui` (decided 2026-06-25; sequenced after the Bevy 0.19 merge)**: the whole
-  windowed interface is `bevy_egui` (immediate-mode grafted onto Bevy's retained
-  ECS). Move it to **native Bevy retained UI** — `bevy_ui` + `bevy_ui_widgets` /
-  **feathers** (both left `experimental_` in Bevy 0.19) — and drop the `bevy_egui`
-  dependency. *Three reasons:* (1) it removes the **third-party version-lockstep
-  churn** — the 0.18→0.19 bump alone cost the egui-0.34 deprecation sweep, the
-  `available_rect`→centering regression, the multipass widget-id warnings, and a
-  deferred `Panel::show`→`show_inside` rearchitecture; native UI moves with Bevy
-  itself. (2) **One ECS/render model**: panels become entities, no
-  immediate-in-retained impedance (the camera/viewport coupling in
-  `main::set_sim_camera`, the per-frame `EguiContexts`). (3) **Unification** — the
-  *display* half **already exists natively** in `dataviz.rs` (stats / curves /
-  inspector via `Text2d` + `Sprite` + gizmo polylines in `plot()`), reads the shared
-  `metrics` layer, and is proven in both the video pipeline and the windowed
-  "presentation" (F1) mode; egui only maintains a **parallel copy** of those same
-  views, so a native UI lets one renderer serve both. *The hard part* is the
-  **interactive editing** surface `dataviz` does not cover (it is read-only): the
-  editor (world params, gene bounds, relation table, archetype palette +
-  drag-and-drop), controls, scenario IO, recorder, layer toggles, capture. egui's
-  immediate mode binds widgets straight to live `SimConfig`/component state; retained
-  `bevy_ui` reintroduces state↔widget sync, and feathers is **young**
-  (buttons/sliders/checkboxes/theme — no ready-made table or drag-and-drop). This is
-  the **largest single piece of work in the repo** → **not a big-bang**. *Sequencing:*
-  merge the 0.19 branch first; meanwhile the egui deprecations are carried behind
-  documented `#[allow(deprecated)]` (top-level `Panel::show(ctx, …)` in `panels`,
-  `ctx.available_rect()` in `main::set_sim_camera` — egui 0.34 offers no replacement
-  for "the area left after panels"). Before committing, run a **spike** on the weak
-  point — a *data-bound editor row* (label + slider/field wired to a `SimConfig` field
-  with write-back) plus a resizable dock in `bevy_ui`/feathers: if it carries
-  ergonomically, the migration is a coherent project (unify display+edit on the ECS,
-  delete the egui duplication); if not, keep egui for the dense editor and reassess.
+- **GUI — native-Bevy UI migration: ATTEMPTED & SHELVED (2026-06-26).** The plan was
+  to move the whole windowed `bevy_egui` interface to **native Bevy retained UI**
+  (`bevy_ui` + `bevy_ui_widgets` / **feathers**, both `experimental_` in 0.19) and drop
+  `bevy_egui` — for three reasons still valid: kill the third-party version-lockstep
+  churn, get **one ECS/render model** (panels as entities), and **unify** with the
+  display half that already exists natively in `dataviz.rs`. A real, panel-by-panel
+  attempt was carried out on branch **`native-ui-migration`** (spike + panels ported,
+  coexisting with egui): **#1** bottom bar → native transport bar + corner stats HUD;
+  **#2** top bar → native top toolbar (scenario dropdown *pick = load* + Save/New/Delete,
+  recorder Record + collapsible settings), egui `top_bar` removed; **#4** left → native
+  **World editor** (layers, world scalars + colors, 16-gene bounds grid, nutrient
+  sources, relation table) on one `number_input` pipeline, egui `left_tools` removed; a
+  new `scenarios/example.ron` became the windowed default. **Verdict: the native
+  feathers/`bevy_ui` windowed UI is not usable in practice** (judged on the running
+  build) → the branch was **deleted** and `main` keeps the egui UI. The work is
+  recoverable by hash via the reflog: base **`35ddd2f`** (spike + `docs/native-ui-migration-plan.md`,
+  which holds the detailed findings), tip **`32983ef`** (shelved #4) — `git checkout <hash>`
+  to inspect.
+  - **Lessons for the eventual rework** (so it isn't re-derived): (a) **feathers is
+    young** — buttons/sliders/checkboxes/number_input/text_input/theme work, but there
+    is **no table/grid and no drag-and-drop**, and the BSN scene API (`spawn_scene` +
+    `bsn!`, `@SceneComponent`) is the real (raw) idiom (the `*_bundle` ctors are
+    deprecated/half-broken). (b) A **docked egui panel is all-or-nothing** — it anchors
+    at the screen edge, so a native panel can't coexist beside it; each side panel must
+    be migrated wholesale. (c) The **display half (curves + MLP graph) needs polylines
+    → a 2nd camera** (as `dataviz` does), which **breaks egui's primary context while
+    any egui panel remains** (cf. the single-`Camera2d` constraint) — so the curves can
+    only go native **after** egui is fully gone; do the read-only `bottom_panel` **last**.
+    (d) The **central-area coupling** (`set_sim_camera` framing the sim in the space left
+    by panels) must be recomputed from the native panels' rects, not `ctx.available_rect()`.
+    (e) Binding worked via **external state management** (`SimConfig` the single source of
+    truth; forward = entity-scoped `ValueChange`/`Activate` observers, reverse = a system
+    pushing values back) — clean, but the dense editor (~40 live-bound fields + color +
+    dynamic lists) is the **bulk of the cost**, and the result's ergonomics did not carry.
+  - Meanwhile the egui deprecations stay carried behind documented `#[allow(deprecated)]`
+    (top-level `Panel::show(ctx, …)` in `panels`, `ctx.available_rect()` in
+    `main::set_sim_camera` — egui 0.34 offers no replacement for "the area left after
+    panels"). Revisit the whole direction later (perhaps once feathers matures, or with a
+    different layout that sidesteps the all-or-nothing docked-panel constraint).
 - **Known bug — `record --select off --no-hud` crashes (low priority)**: with the HUD
   disabled *and* selection off, `dataviz::draw_viz` still runs and reads
   `Res<Selection>`, which only `SelectionRenderPlugin` inserts (added solely when
