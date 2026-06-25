@@ -22,7 +22,10 @@
 //!
 //! Usage: `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
 //! [--width W] [--height H] [--select MODE] [--select-interval S] [--no-hud]
-//! [--hud-interval S]`.
+//! [--hud-interval S] [--nutrients]`.
+//!
+//! `--nutrients` overlays the nutrient **heatmap** layer in the arena (the
+//! background "calque"); off by default, so existing videos are unchanged.
 //!
 //! `--hud` (default) overlays the native visualizer (stats / curves / inspector)
 //! in a **9:16** composition — square arena on top, visualizer at the bottom —
@@ -52,7 +55,7 @@ use std::time::Duration;
 use teemlab::dataviz::DataVizPlugin;
 use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
-use teemlab::visuals::{VisualsPlugin, srgb3};
+use teemlab::visuals::{Layers, VisualsPlugin, srgb3};
 use teemlab::{SimConfig, SimPlugin};
 
 /// Recording parameters, read from the command line.
@@ -73,6 +76,9 @@ struct Settings {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
+    /// Overlay the nutrient **heatmap** layer(s) in the arena (the background
+    /// "calque", cf. [`Layers`]). Off by default → videos unchanged.
+    nutrients: bool,
 }
 
 impl Settings {
@@ -92,6 +98,8 @@ impl Settings {
             // Visualizer overlaid **by default** (§ video); `--no-hud` turns it off.
             hud: true,
             hud_interval: 6.0,
+            // Nutrient heatmap off by default → existing videos unchanged.
+            nutrients: false,
         };
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
@@ -116,6 +124,8 @@ impl Settings {
                 // Overlaid visualizer (stats / curves / inspector), 9:16 composition.
                 "--hud" => s.hud = true,
                 "--no-hud" => s.hud = false,
+                // Overlay the nutrient heatmap layer (background "calque").
+                "--nutrients" => s.nutrients = true,
                 "--hud-interval" => {
                     s.hud_interval = next()
                         .parse()
@@ -267,6 +277,14 @@ fn main() -> AppExit {
     .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::ZERO))
     .add_plugins(SimPlugin::new(config))
     .add_plugins(VisualsPlugin)
+    // View layers ("calques"): the recorder defaults to agents-only (videos
+    // unchanged); `--nutrients` overlays the nutrient heatmap layer. Replaces the
+    // default `Layers` that `VisualsPlugin` just inserted. T2 has a single nutrient
+    // field → a one-element flag vector.
+    .insert_resource(Layers {
+        agents: true,
+        nutrients: vec![settings.nutrients],
+    })
     // Curve sampling (shared with the windowed build) + overlaid native visualizer.
     // With HUD, `DataVizPlugin` recomposes the target in 9:16 (arena on top, viz at bottom).
     .add_plugins(MetricsPlugin)
@@ -299,13 +317,18 @@ fn main() -> AppExit {
     }
 
     eprintln!(
-        "record: {} frames at {} fps ({:.1}s), {}×{}{} → {}",
+        "record: {} frames at {} fps ({:.1}s), {}×{}{}{} → {}",
         frames,
         settings.fps,
         settings.seconds,
         width,
         height,
         if settings.hud { " +HUD" } else { "" },
+        if settings.nutrients {
+            " +nutrients"
+        } else {
+            ""
+        },
         settings.out
     );
     let exit = app.run();
