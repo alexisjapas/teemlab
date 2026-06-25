@@ -53,8 +53,21 @@ photosynthetic** patch without reproduction — renewable in place, no more
 energy under contention** (N foragers on a single patch share its reserve, instead
 of duplicating it).
 
+**Generic `nutrients` layer + layered visualization (done — T2).** A second,
+**decoupled** resource axis bounds *reproduction* (energy from the sun still governs
+*survival*): a per-cell **concentration field** (the "substrate", outside the agents
+and outside Law 11) fed by emission **sources** and spread by **diffusion** into
+gradients; a plant **absorbs** it and **spends** it to breed — no nutrient ⇒ no
+offspring, but it does **not** die (no death spiral, the fix to the T1 prototype).
+The renderer becomes a set of toggleable **layers** ("calques"): the agents (main
+layer) over the nutrient **heatmaps** (background, off by default, sharing an opacity
+budget) — in the windowed build (a "Layers" panel) **and** in the video
+(`record --nutrients`). Cf. [`ROADMAP.md`](ROADMAP.md) §9 and
+[`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md).
+
 **Remaining.** **P5 — battle** (generational regime, the final test of the
-abstraction along a clean *A/B seam*).
+abstraction along a clean *A/B seam*); and, on the nutrient axis, the **food web**
+(eating carries nutrient) then the **closed loop** (recycling) — cf. §9.
 
 > **Cardinal invariant**: no simulation logic in `Update`. Agency lives in
 > `FixedUpdate`, Avian physics in `FixedPostUpdate`; `Update` is reserved for the
@@ -69,23 +82,26 @@ src/
   components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat channels) / Action = the brain's contract; genealogy (Generation/Age).
   brain.rs        Brain (enum, static dispatch): Wander (wandering) · Hunter (hunt + flight) · Sessile (flora) · Mlp (learned, neuroevolution); BrainKind = scenario choice.
   genotype.rs     Heritable Genotype (generic TRAITS table) + mutation; genotype→phenotype compilation (§2).
-  snapshot.rs     A run snapshot (serializable living state): config + RNG + agents (sessile sources included).
+  nutrients.rs    NutrientField (the substrate: a concentration grid + diffusion, outside Law 11) + Nutrients/Emits + emit/diffuse/absorb systems: the T2 second axis (gates reproduction, not survival).
   movement.rs     perceive / decide / act systems (FixedUpdate, chained).
   interaction.rs  Single interaction primitive (predation / combat / competition), conserved under contention, + relation table.
   ecology.rs      Economy: metabolize (expenses + photosynthesis), die, age, reproduce (local seeding).
   rng.rs          Minimal deterministic PRNG (SplitMix64) + Gaussian draw.
   spawn.rs        Population: arena + agents; spawn_agent (compiles a genotype into a living phenotype).
   main.rs         Windowed binary → `teemlab`: wires the docked panels + frames the sim in the central area (set_sim_camera).
-  panels.rs       DOCKED layout of the windowed build: 4 fixed egui panels (top: controls + stats · left: runs/world/archetypes/editor · right: recording · bottom: curves + inspector), each calling its tool module's *_section.
-  editor.rs       egui UI (windowed only): palette (create / duplicate / reorder / delete, drag-and-drop placement, Delete removes), species library (species/*.ron), World editor (arena, tick_hz, gene bounds, relations).
+  panels.rs       DOCKED layout of the windowed build: fixed egui panels (top: scenario + recording · left: Layers + World · right: archetypes + editor · bottom: controls/stats then curves/inspector), each calling its tool module's *_section.
+  editor.rs       egui UI (windowed only): Layers toggles, palette (create / duplicate / reorder / delete, drag-and-drop placement, Delete removes), species library (species/*.ron), World editor (arena, tick_hz, gene bounds, relations, nutrient field + sources).
   hud.rs          egui HUD (windowed only): population curves + gene drift (read-only).
-  controls.rs     egui controls (windowed only): pause / speed / step / reset (time control, re-applies tick_hz).
+  controls.rs     egui controls (windowed only): pause / speed / step / reset (time control; reset rebuilds the world — agents, sources, the nutrient field — and re-applies tick_hz).
   inspector.rs    egui inspector (windowed only): click → genotype / energy / perception / action / MLP graph / genealogy (read-only).
   runs.rs         egui management (windowed only): scenario selector, hot reload, run save/load.
   recorder.rs     egui menu (windowed only): configures and launches the `record` binary as a subprocess.
-  visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder.
+  metrics.rs      MetricsPlugin: shared metrics (History + sampling) — population / trait curves, live stats; one source for the egui HUD and the native visualizer.
+  visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder; toggleable Layers (agents + nutrient heatmaps, shared opacity).
+  dataviz.rs      DataVizPlugin: the NATIVE Bevy visualizer (Text2d / Sprite / gizmos) for the VIDEO (stats / curves / inspector, 9:16) — reserved to `record`.
+  selection.rs    Selection (the inspected / highlighted agent) + its rendering (ring + vision rays), shared windowed ⇄ recorder (auto-select drives the video).
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
-  bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg.
+  bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
 scenarios/
   default.ron     Default scenario, all fields documented.
   empty.ron       Empty arena: the editor's canvas (no-argument fallback of the windowed build).
@@ -96,6 +112,8 @@ scenarios/
   predator_prey.ron    3-level trophic chain (plants → prey → predators): pyramid
                   by counts, Hunter brains, prey that flee (items 17, 18e).
   flora.ron       Self-limited sessile flora: photosynthesis + local seeding + competition (item 5, Phase 3a).
+  nutrients.ron   T2 nutrient layer: sun-fed plants whose REPRODUCTION is gated by a finite nutrient emitted by sources (Liebig); grows around the sources, no death spiral.
+  minerals.ron    T1 nutrient prototype (scenario-only): plants depend on a finite mineral — validated the bound but fragile (kept for reference).
 species/
   hunter.ron      Reusable species (library): a generic hunter, importable into a scenario.
 outputs/          Simulation outputs (videos, images…); contents ignored by git.
@@ -119,8 +137,9 @@ cargo run --bin headless scenarios/default.ron    # explicit scenario (1st arg =
 
 # Record a run to video (headless render → ffmpeg); output in outputs/:
 cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4
-#   options: --out F  --fps N  --seconds S  --width W  --height H
+#   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
 #   (defaults: 30 fps, 61 s, 1080×1080 — the arena is square)
+#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/nutrients.ron)
 
 cargo test                            # unit tests + multi-seed drivers + snapshot/containment
 cargo fmt                             # formatting — default rustfmt is authoritative
@@ -143,11 +162,12 @@ cargo clippy --all-targets            # lint — the tree is kept at zero warnin
 > follows `teemlab`, debug as well as release.
 
 The windowed build adds, on top of the sim, the egui tooling as **docked panels**
-that frame the central simulation area (cf. `panels.rs`): a **controls** strip +
-stats on top; a **left** column with runs & scenarios, the **World** editor (arena,
-rate, gene bounds, relation table) and the **archetype** editor + palette
-(drag-and-drop to place, **Delete** to remove the entity under the cursor); a
-**right** **recording** column; a **bottom** strip with HUD curves and the agent
-inspector. The panels *reserve* the edges, so the sim is always framed and fully
-visible in the center. All this tooling lives outside `FixedUpdate` (rendering /
-UI); the headless build embeds none of it.
+that frame the central simulation area (cf. `panels.rs`): **scenario + recording** in
+the top strip; a **left** column with the **Layers** toggles (agents + nutrient
+heatmaps) and the **World** editor (arena, rate, seed, gene bounds, relation table,
+**nutrient field + sources**); a **right** column with the **archetype** palette
+(drag-and-drop to place, **Delete** to remove the entity under the cursor) and the
+editor of the selected archetype; a **bottom** strip with controls + stats, then the
+HUD curves and the agent inspector. The panels *reserve* the edges, so the sim is
+always framed and fully visible in the center. All this tooling lives outside
+`FixedUpdate` (rendering / UI); the headless build embeds none of it.
