@@ -2,7 +2,7 @@
 
 Evolutionary simulation engine: **one engine interprets data**, each simulation is
 a *scenario* (RON). Single agent loop: **perceive → decide → act**. Top-down 2D,
-entities are circles. Rust, Bevy 0.18 + Avian 0.6.
+entities are circles. Rust, Bevy 0.19 + Avian 0.7.
 
 ## Read these first — they are binding
 
