@@ -65,9 +65,20 @@ pub fn top_bar(
             egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                runs::scenario_section(ui, &mut runs_panel, &mut config);
+                // Stable id salt per section: egui 0.34's multipass re-runs the UI
+                // (sizing then render) and assigns auto-ids by emission order.
+                // `scenario_section` emits a variable widget count (conditional status
+                // label, save dialog), so without a salt the recorder's auto-ids —
+                // emitted right after it — shift between passes, which egui flags as
+                // "widget rect changed id between passes". A fixed salt per subtree
+                // makes each section's ids independent of the other's widget count.
+                ui.push_id("scenario_bar", |ui| {
+                    runs::scenario_section(ui, &mut runs_panel, &mut config);
+                });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    recorder::recorder_section(ui, &mut recorder_panel);
+                    ui.push_id("recorder_bar", |ui| {
+                        recorder::recorder_section(ui, &mut recorder_panel);
+                    });
                 });
             },
         );
