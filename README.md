@@ -152,6 +152,19 @@ cargo clippy --all-targets            # lint — the tree is kept at zero warnin
 > therefore format *before* committing rather than aligning by hand — layout is not
 > a review battleground.
 
+> **Releases (CI).** Pushing a `v<major>.<minor>.<patch>` tag (matching the
+> `Cargo.toml` version — cf. CONSTITUTION-DEV Rule 11) triggers
+> `.github/workflows/release.yml`: it builds the whole workshop (`teemlab`,
+> `record`, `headless`, `sweep`) under the `dist` profile (fat LTO, single codegen
+> unit — runtime-perf tuned) for **Linux x86_64**, **Windows x86_64** (both with an
+> `x86-64-v3` CPU floor) and **macOS arm64**, archives each with the data read at
+> launch (`assets/`, `scenarios/`, `species/`), and publishes them as a GitHub
+> Release. Tags are cut on **minor** bumps only; patches still increment
+> `Cargo.toml` but ship untagged. The tag is **annotated** and its message is the
+> changelog (the description of what changed since the previous tag), which becomes
+> the release notes. To run a release: bump `Cargo.toml`, commit, then
+> `git tag -a vX.Y.0 -m "…what changed…" && git push origin vX.Y.0`.
+
 > **Launching the windowed build: the `play` command** (provided by the Nix dev
 > shell — `flake.nix`, `writeShellScriptBin`, no versioned script). The recording
 > menu launches `record` as a subprocess, looked up *next to* the current

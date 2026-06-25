@@ -32,3 +32,18 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Distribution profile — what the release CI (`.github/workflows/release.yml`)
+# builds. Tuned for maximum *runtime* performance (the project's priority), at the
+# cost of slow link times. Kept separate from `release` on purpose: `play
+# --release` and local `cargo build --release` stay quick to link, while only the
+# tagged release pays for fat LTO + a single codegen unit. The portable CPU floor
+# (x86-64-v3 on x86_64) is set via RUSTFLAGS in the workflow, not here, so it never
+# leaks into a developer's native build.
+[profile.dist]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

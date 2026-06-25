@@ -1,0 +1,157 @@
+# Release build & publish.
+#
+# Trigger: pushing a v-prefixed semver tag (e.g. `v0.2.0`). Per CONSTITUTION-DEV
+# Rule 11, tags are cut only on minor (and major) version bumps; the tag must equal
+# the `Cargo.toml` version — `version-check` below fails the run otherwise.
+#
+# Each platform builds the whole workshop (teemlab + record + headless + sweep)
+# with the `dist` profile (fat LTO, codegen-units = 1 — see Cargo.toml) for maximum
+# runtime performance, then archives the binaries together with the on-disk data
+# the app reads at launch (assets/, scenarios/, species/). A final job attaches the
+# three archives to a single GitHub Release for the tag.
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+# `bash` everywhere — including the Windows runner (Git Bash) — so one staging
+# script serves all three platforms.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Guard: the GitHub tag must follow the Cargo.toml version (Rule 11).
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match Cargo.toml version
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          tag="${GITHUB_REF_NAME#v}"
+          echo "Cargo.toml = $version   tag = $GITHUB_REF_NAME"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version (CONSTITUTION-DEV Rule 11)"
+            exit 1
+          fi
+
+  build:
+    needs: version-check
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86_64 floor = x86-64-v3 (AVX2/FMA/BMI, ~2013+ CPUs): strong runtime
+          # perf while still running on virtually every machine from the last
+          # decade. `target-cpu=native` is deliberately NOT used — it would tie the
+          # binary to the runner's CPU and fault on users' hardware.
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar
+            rustflags: "-C target-cpu=x86-64-v3"
+          - name: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            rustflags: "-C target-cpu=x86-64-v3"
+          # macOS is Apple Silicon only; the aarch64-apple-darwin default CPU
+          # baseline already targets Apple Silicon, so no extra RUSTFLAGS.
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar
+            rustflags: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # alsa (audio), udev (input enumeration), and the wayland feature's
+          # libwayland-client / libxkbcommon must be present at *build* time. The
+          # vulkan loader, X11, etc. are dlopen'd on the user's machine at runtime.
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Build the workshop (dist profile)
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: |
+          cargo build --locked --profile dist --target ${{ matrix.target }} \
+            --bin teemlab --bin record --bin headless --bin sweep
+
+      - name: Stage and archive the release
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          dist="teemlab-${version}-${{ matrix.name }}"
+          bin="target/${{ matrix.target }}/dist"
+          ext=""
+          [ "${{ matrix.archive }}" = "zip" ] && ext=".exe"
+
+          mkdir -p "$dist"
+          for b in teemlab record headless sweep; do
+            cp "$bin/$b$ext" "$dist/"
+          done
+          # Data the app reads from the working directory at launch: the font
+          # (assets/), the scenario selector (scenarios/) and the species library
+          # (species/). outputs/ is where the recorder writes — ship it empty.
+          cp -r assets scenarios species README.md "$dist/"
+          mkdir -p "$dist/outputs"
+
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a -tzip "$dist.zip" "$dist" >/dev/null
+            echo "ASSET=$dist.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$dist.tar.gz" "$dist"
+            echo "ASSET=$dist.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release & upload assets
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the annotated tag object for its message
+      - name: Release notes from the annotated tag
+        run: |
+          # The annotated tag's message IS the changelog — a hand-written
+          # description of the evolutions since the previous tag (CONSTITUTION-DEV
+          # Rule 11). `append_body` below adds GitHub's auto "Full Changelog" link
+          # underneath it.
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**
+          body_path: RELEASE_NOTES.md
+          append_body: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
