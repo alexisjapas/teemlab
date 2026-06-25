@@ -194,6 +194,14 @@ impl Genotype {
     ///
     /// The rate comes **from the genotype** (`self.mutation_rate`), not from a
     /// global setting: each lineage carries its own evolution speed.
+    ///
+    /// **Zero drift is a faithful clone — even out of bounds.** We clamp to the
+    /// gene's `[min, max]` **only when the gene actually drifted**: a value
+    /// deliberately set *outside* its bounds (e.g. a sessile plant's `max_speed = 0`,
+    /// below `speed_bounds.min`) must survive reproduction unchanged. Clamping it
+    /// unconditionally would, with zero mutation, silently lift it to the bound —
+    /// turning an immobile plant **mobile** at its first child. The `next_gaussian`
+    /// draw is still consumed for every mutable gene (RNG stream unchanged).
     pub fn mutate(&self, rng: &mut Rng, mutable: &Mutability, config: &SimConfig) -> Self {
         let rate = self.mutation_rate;
         let mut child = *self;
@@ -205,7 +213,17 @@ impl Genotype {
             }
             let bounds = (t.bounds)(config);
             let drift = rng.next_gaussian() * rate * bounds.span();
-            (t.set)(&mut child, bounds.clamp((t.get)(self) + drift));
+            let value = (t.get)(self) + drift;
+            // Only enforce the bounds when the gene moved (drift ≠ 0): no drift ⇒
+            // faithful clone, preserving a deliberately out-of-bounds founder value.
+            (t.set)(
+                &mut child,
+                if drift == 0.0 {
+                    value
+                } else {
+                    bounds.clamp(value)
+                },
+            );
         }
         child
     }
@@ -574,6 +592,33 @@ mod tests {
         let mut rng = Rng::new(1);
         let g = Genotype::default(); // mutation_rate = 0
         assert_eq!(g.mutate(&mut rng, &mutable, &c), g);
+    }
+
+    /// Zero mutation stays a faithful clone **even for a founder value deliberately
+    /// outside the gene's bounds** — a sessile plant's `max_speed = 0` (below
+    /// `speed_bounds.min`) must NOT be clamped up at reproduction (which made the
+    /// children mobile, growing a ray). Regression for that bug; the gene is
+    /// mutable, so only the *absence of drift* protects it.
+    #[test]
+    fn zero_mutation_preserves_out_of_bounds_value() {
+        let c = config(); // speed_bounds.min = 40
+        let mutable = Mutability::default(); // max_speed IS mutable
+        assert!(
+            mutable.max_speed,
+            "the regression assumes max_speed is mutable"
+        );
+        let mut rng = Rng::new(5);
+        let plant = Genotype {
+            max_speed: 0.0,     // sessile: deliberately below [40, 260]
+            mutation_rate: 0.0, // no mutation
+            ..Genotype::default()
+        };
+        let child = plant.mutate(&mut rng, &mutable, &c);
+        assert_eq!(child.max_speed, 0.0, "a sessile plant stays immobile");
+        assert_eq!(
+            child, plant,
+            "zero mutation = faithful clone, out of bounds included"
+        );
     }
 
     /// The "mutable?" facet (per species): a trait marked non-mutable stays frozen

@@ -1,55 +1,161 @@
-// T2 — nutrients engine layer: a plant population whose REPRODUCTION is gated by a
-// finite nutrient (Liebig's law of the minimum), DECOUPLED from survival. Plants
-// live on photosynthesis (sun → they never starve), but only reproduce where they
-// can absorb nutrient from the field. The nutrient is emitted by point SOURCES and
-// spread by diffusion into halos ("oases"), so life grows AROUND the sources and
-// PERSISTS — without the T1 death spiral (cf. scenarios/minerals.ron, where lacking
-// the resource meant death).
-//
-// Driver: tests/nutrients.rs — across seeds: (a) grows ≫ founders, (b) stays
-// bounded (no carpet), (c) persists (no collapse); AND the falsifiable contrast:
-// with the sources removed, the plants do NOT grow (no nutrient → no reproduction)
-// yet still do NOT collapse (sun-fed survival) — proof the nutrient gates *only*
-// reproduction.
-//
-// NB: the GUI editor strips comments on save — re-add this header after a round-trip.
 (
     tick_hz: 64.0,
     arena_half_extent: 300.0,
-    nutrient: (
-        resolution: 48,
-        diffusion: 0.3,
-    ),
-    sources: [
-        (pos: (-140.0, 140.0), nutrient: 0, rate: 10.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (140.0, 140.0), nutrient: 0, rate: 10.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-140.0, -140.0), nutrient: 0, rate: 10.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (140.0, -140.0), nutrient: 0, rate: 10.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-    ],
     archetypes: [
         (
             name: "Plant",
-            color: (0.4, 0.85, 0.4),
+            color: (0.39999998, 0.85, 0.4000001),
             count: 40,
             radius: 6.0,
             reserve_max: 50.0,
             genotype: (
                 max_speed: 0.0,
+                agility: 0.12,
                 vision_range: 30.0,
-                vision_rays: 1.0,
+                vision_fov_deg: 120.0,
                 reproduction_threshold: 30.0,
                 offspring_energy: 15.0,
                 mutation_rate: 0.0,
                 base_metabolism: 1.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
                 photosynthesis: 5.0,
                 seed_dispersal: 25.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
                 nutrient_absorption: 1.5,
                 nutrient_capacity: 8.0,
                 offspring_nutrient: 8.0,
             ),
             brain: Sessile,
-            mutable: (),
+            // A sessile plant: the locomotion/vision genes are FROZEN (their founder
+            // values, e.g. max_speed 0, sit outside the gene bounds — leaving them
+            // mutable would let reproduction clamp them up, turning the plant mobile).
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
+            ),
         ),
     ],
+    relations: [],
+    nutrient: (
+        resolution: 256,
+        diffusion: 0.3,
+    ),
+    sources: [
+        (
+            pos: (-140.0, 140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.54999983, 0.19999999),
+            radius: 12.0,
+        ),
+        (
+            pos: (140.0, 140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.54999983, 0.19999999),
+            radius: 12.0,
+        ),
+        (
+            pos: (-140.0, -140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.54999983, 0.19999999),
+            radius: 12.0,
+        ),
+        (
+            pos: (140.0, -140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.54999983, 0.19999999),
+            radius: 12.0,
+        ),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 260.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 40.0,
+        max: 300.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 0.0,
+        max: 21.0,
+    ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    nutrient_absorption_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    nutrient_capacity_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_nutrient_bounds: (
+        min: 0.0,
+        max: 120.0,
+    ),
+    play_area_color: (0.07000001, 0.07, 0.09),
+    off_game_color: (0.17000002, 0.17, 0.19),
     seed: 12648430,
 )
