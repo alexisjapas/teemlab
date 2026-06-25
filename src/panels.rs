@@ -11,7 +11,7 @@
 //! the bottom.
 //!
 //! This is what makes the central area self-fitting: the top-level `Panel`s
-//! *reserve* their space, so `ctx.content_rect()` shrinks to the center, and
+//! *reserve* their space, so `ctx.available_rect()` shrinks to the center, and
 //! `main::set_sim_camera` (which runs last in the egui pass) frames the sim there
 //! — hence a simulation always **centered and fully visible**, whatever the
 //! panels' size. No `CentralPanel`: the center stays "transparent" and lets the
@@ -22,8 +22,9 @@
 //! panel (cf. bevy_egui 0.40 `examples/ui.rs`). teemlab spreads its panels across
 //! five independent systems, so moving to `show_inside` is a layout
 //! rearchitecture (one merged system), not a rename — deferred. The
-//! `#[allow(deprecated)]` on each system keeps the top-level `show(ctx, …)` until
-//! then.
+//! `#[allow(deprecated)]` on each system (and on `main::set_sim_camera`, whose
+//! `ctx.available_rect()` is the same deprecated top-level API — egui 0.34 offers
+//! no replacement for "the area left after panels") keeps it working until then.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
