@@ -157,10 +157,10 @@ open work in §9.
   presentation mode, pan/zoom + selection cartouche, per-panel polish.
 - **Scenario management — document model.** The scattered scenario IO (a combo +
   `⟲ Reload`, a free-text Load path, a silent `💾 Save`) becomes a single **Scenario
-  menu** (New / Open ▸ / Revert / Save / Save As) with the current file name and a
+  menu** (New / Open ▸ / Save / Save As) with the current file name and a
   **`*` modified marker** (amber) next to it. *Modified* is derived by comparing the
   config against a `baseline` snapshot (every config type already derives `PartialEq`).
-  Destructive navigation (New / Open / Revert) **confirms** before discarding unsaved
+  Destructive navigation (New / Open) **confirms** before discarding unsaved
   edits, and **Save protects bundled scenarios**: overwriting a file the user did not
   create this session offers *Save a copy* instead of clobbering it (RON serialization
   drops comments / compact form). Fixed a latent bug surfaced by the dirty check:
@@ -169,6 +169,14 @@ open work in §9.
 
 **Remaining.**
 
+- **Editor — next pass (UI).** A further iteration on the windowed editor (cf.
+  [`docs/editor.md`](docs/editor.md)), in three threads: (1) **archetype
+  customization** — rework how a species is edited (Body / Genes / Brain), the gene
+  "wall" and the brain editor; (2) the **archetype library** — `species/*.ron`
+  export / import-by-copy / resync and how reusable species are surfaced and managed;
+  (3) the **overall coherence of the editor** — a consistent typographic system,
+  dismissable help, and the remaining per-panel polish (the UI rework's *next
+  (deferred)* notes above).
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
