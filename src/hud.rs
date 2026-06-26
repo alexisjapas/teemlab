@@ -14,6 +14,7 @@
 
 use bevy_egui::egui;
 use teemlab::SimConfig;
+use teemlab::genotype::TRAITS;
 use teemlab::metrics::{Curve, History, population_curves, trait_curves};
 
 /// Converts an sRGB color `[r, g, b] ∈ [0, 1]` (backend-agnostic) to `Color32`.
@@ -37,8 +38,8 @@ pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &Sim
     ui.strong("Population per species");
     draw_population(ui, history, config);
     ui.add_space(10.0);
-    ui.strong("Gene drift (normalized 0–1)");
-    draw_traits(ui, history);
+    ui.strong("Gene drift — mutable genes (normalized 0–1)");
+    draw_traits(ui, history, config);
 }
 
 fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
@@ -55,13 +56,25 @@ fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
     legend(ui, &curves);
 }
 
-fn draw_traits(ui: &mut egui::Ui, history: &History) {
+fn draw_traits(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
     if history.is_empty() {
         ui.weak("(waiting for data…)");
         return;
     }
+    // Only the genes that actually evolve: a frozen (non-mutable) gene stays flat and
+    // would just clutter the plot. `trait_curves` is 1:1 with `TRAITS` (same order), so
+    // we keep a curve iff its gene is mutable in **at least one** archetype.
+    let curves: Vec<Curve> = trait_curves(history)
+        .into_iter()
+        .zip(TRAITS.iter())
+        .filter(|(_, t)| config.archetypes.iter().any(|a| (t.mutable)(&a.mutable)))
+        .map(|(curve, _)| curve)
+        .collect();
+    if curves.is_empty() {
+        ui.weak("(no mutable genes)");
+        return;
+    }
     // Fixed bounds [0, 1]: drift is read against the gene's possible span.
-    let curves = trait_curves(history);
     plot(ui, 110.0, &curves, 0.0, 1.0);
     legend(ui, &curves);
 }

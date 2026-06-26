@@ -6,10 +6,12 @@
 //! `editor`, `runs`, `hud`, `recorder`, `inspector`). The role of this system is
 //! purely **layout** — reserving the edges of the egui screen.
 //!
-//! **Semantic** split: *world* (scenario data) on the left, *entities* on the right,
-//! *scenario IO + transport controls + View menu + Export* in the top strip (controls
-//! centered), *stats + status* then *curves + inspector* at the bottom. View layers
-//! live in the top-bar **View** menu and video export in a floating window opened from
+//! **Semantic** split: **Edit** on the left (the *world* scenario params + the
+//! *entities* archetype palette/editor, stacked) — everything you author; **Analysis**
+//! on the right (live *stats* + the agent *inspector*) — the current state you read;
+//! the evolution *curves* (a time series) full-width at the bottom; *scenario IO +
+//! transport controls + View menu + Export* in the top strip (controls centered). View
+//! layers live in the top-bar **View** menu and video export in a floating window from
 //! the **Export** button — both out of the always-on panels.
 //!
 //! **One root viewport `Ui`, `show_inside`.** Following bevy_egui 0.40
@@ -23,18 +25,15 @@
 //!
 //! No `CentralPanel`: the center stays "transparent" and lets the Bevy rendering
 //! show through, so the simulation is always **centered and fully visible**, whatever
-//! the panels' size.
-//!
-//! Panel **creation order matters**: the two bottom panels are added
-//! `bottom_panel` *then* `bottom_bar`, so the curves/inspector panel takes the very
-//! bottom edge and the controls/stats bar sits just under the sim.
+//! the panels' size. With the curves moved to the lone bottom panel and stats/inspector
+//! to the right, the central sim now gets the **full height** between the top strip and
+//! the bottom curves.
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
-use teemlab::config::Archetype;
 use teemlab::genotype::Genotype;
 use teemlab::metrics::History;
 use teemlab::selection::Selection;
@@ -122,13 +121,6 @@ pub fn dock(
         With<Agent>,
     >,
 ) -> Result {
-    /// Minimum width of the central panel below which we no longer try to split it
-    /// into two columns. `egui::Ui::columns` computes a negative column width — and
-    /// **panics** — when the available space is nearly zero, which happens as soon as
-    /// the side columns eat almost the whole window. Below it, we stack the two
-    /// sections instead of crashing (and taking down the whole egui pass).
-    const MIN_TWO_COLUMN_WIDTH: f32 = 160.0;
-
     let ctx = contexts.ctx_mut()?;
     // A single root viewport `Ui` on the background layer, shared by every panel
     // (bevy_egui 0.40 `examples/ui.rs`). `show_inside` then docks each panel into it.
@@ -207,86 +199,55 @@ pub fn dock(
         }
     }
 
-    // Left column, resizable: the **world** — the global scenario parameters (arena,
-    // rate, seed, backgrounds), gene bounds, nutrients and relations. Purely scenario
-    // data now (the view layers moved to the top-bar "View" menu), so its scroll area
-    // wraps the whole content, heading included.
+    // Left column, resizable: **Edit** — everything you author, stacked. *World* (the
+    // scenario parameters) then *Entities* (the archetype palette + editor), each a
+    // top-level collapsible card.
     egui::Panel::left("left_tools")
-        .resizable(true)
-        .default_size(280.0)
+        .exact_size(320.0)
         .show_inside(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("World");
-                editor::world_section(ui, &mut config);
+                egui::CollapsingHeader::new("World")
+                    .default_open(true)
+                    .show(ui, |ui| editor::world_section(ui, &mut config));
+                egui::CollapsingHeader::new("Entities")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        egui::CollapsingHeader::new("Archetypes")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                editor::selector_section(
+                                    ui,
+                                    &mut palette,
+                                    &mut config,
+                                    &mut ui_status,
+                                )
+                            });
+                        egui::CollapsingHeader::new("Archetype editor")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                editor::editor_section(ui, &mut palette, &mut config)
+                            });
+                    });
             });
         });
 
-    // Right column, resizable: the **entities** — archetype palette (selector +
-    // species library) and editor of the selected archetype.
+    // Right column, resizable: **Analysis** of the current state — live *stats*
+    // (means) on top, then the agent *inspector*. (The evolution curves — a time
+    // series — stay at the bottom.)
     egui::Panel::right("right_panel")
-        .resizable(true)
-        .default_size(320.0)
+        .exact_size(320.0)
         .show_inside(&mut root, |ui| {
-            ui.heading("Entities");
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::CollapsingHeader::new("Archetypes")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        editor::selector_section(ui, &mut palette, &mut config, &mut ui_status)
-                    });
-                egui::CollapsingHeader::new("Archetype editor")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        editor::editor_section(ui, &mut palette, &mut config)
-                    });
-            });
-        });
-
-    // Bottom panel, resizable: evolution curves (left) and agent inspector (right),
-    // in two columns. **Created before `bottom_bar`** so it takes the very bottom edge.
-    egui::Panel::bottom("bottom_panel")
-        .resizable(true)
-        .default_size(220.0)
-        .show_inside(&mut root, |ui| {
-            // Curves: we wrap them in a scroll area (they have none).
-            let mut curves = |ui: &mut egui::Ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("curves")
-                    .show(ui, |ui| {
-                        ui.strong("Evolution — curves");
-                        hud::hud_section(ui, &mut history, &config);
-                    });
-            };
-            // Inspector: `inspector_section` already carries its own `ScrollArea`. If
-            // there is a capture request, it **returns** the derived archetype, which
-            // we add to the config after the closures (so as not to borrow `config`
-            // mutably while the curves read it).
-            let mut capture_request: Option<Archetype> = None;
-            let mut inspector = |ui: &mut egui::Ui| {
-                ui.strong("Agent inspector");
-                if let Some(arch) =
-                    inspector::inspector_section(ui, &selection, &config, &inspector_agents)
-                {
-                    capture_request = Some(arch);
-                }
-            };
-
-            if ui.available_width() >= MIN_TWO_COLUMN_WIDTH {
-                ui.columns(2, |cols| {
-                    curves(&mut cols[0]);
-                    inspector(&mut cols[1]);
-                });
-            } else {
-                // Central panel too narrow: stacked, each keeping its scroll area.
-                curves(ui);
-                ui.separator();
-                inspector(ui);
-            }
-
-            // Capture confirmed: the derived archetype joins the config and becomes
-            // the editor's selection (the closures above, which borrowed `config`
-            // shared, are no longer used here → mutable borrow allowed).
-            if let Some(arch) = capture_request {
+            egui::CollapsingHeader::new("Live stats")
+                .default_open(false)
+                .show(ui, |ui| editor::stats_section(ui, &stats_agents));
+            ui.separator();
+            ui.strong("Agent inspector");
+            // `inspector_section` carries its own `ScrollArea` and **returns** any
+            // capture request (a derived archetype): we add it to the config *after*
+            // the call (it borrows `config` shared) → mutable borrow then allowed.
+            if let Some(arch) =
+                inspector::inspector_section(ui, &selection, &config, &inspector_agents)
+            {
                 let from = arch.captured_from.clone().unwrap_or_default();
                 config.archetypes.push(arch);
                 palette.selected = Some(config.archetypes.len() - 1);
@@ -294,17 +255,17 @@ pub fn dock(
             }
         });
 
-    // Bottom bar (just below the sim): **global stats** (the transport controls now
-    // live centered in the top bar), then the **unified status line** (scenario /
-    // species / capture / recording feedback, cf. `crate::status`).
-    egui::Panel::bottom("bottom_bar").show_inside(&mut root, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            editor::stats_section(ui, &stats_agents);
-        });
+    // Bottom panel: the evolution **curves** (a time series), full width, with the
+    // unified **status line** folded in just under the sim. **Non-resizable and not
+    // wrapped in a `ScrollArea`**, so the panel sizes itself to exactly the content's
+    // height — it always stretches to take just the room the curves need.
+    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
         if !ui_status.message.is_empty() {
-            ui.separator();
             ui.weak(&ui_status.message);
+            ui.separator();
         }
+        ui.strong("Evolution — curves");
+        hud::hud_section(ui, &mut history, &config);
     });
 
     // The region left free by the panels: the central area where the sim is framed.

@@ -1127,33 +1127,40 @@ fn archetype_combo(
         });
 }
 
-/// Live statistics, rendered **on the right of the top bar** (fixed dock) by
-/// [`crate::panels::top_bar`]. Read-only over the world: observation for display,
-/// not sim logic. In `horizontal_wrapped` to wrap rather than overflow when the
-/// window is narrow.
+/// Live statistics, rendered in the **Analysis** (right) panel by
+/// [`crate::panels::dock`]. Read-only over the world: observation for display, not sim
+/// logic. A two-column `name : value` grid suited to the narrow side panel.
 pub(crate) fn stats_section(
     ui: &mut egui::Ui,
     agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
 ) {
     // Computation shared with the native Bevy visualizer
-    // ([`teemlab::metrics::live_stats`]) → same numbers in the egui bar and in the
+    // ([`teemlab::metrics::live_stats`]) → same numbers in the egui panel and in the
     // video. Population and gene means cover only the mobile fauna; sessile sources
     // count only in `food` (otherwise their frozen genes would swamp the fauna's
     // drift).
     let stats = metrics::live_stats(agents);
-    ui.horizontal_wrapped(|ui| {
-        ui.label(format!("Population: {}", stats.population));
-        ui.separator();
-        ui.label(format!("Food: {}", stats.food));
-        ui.separator();
-        ui.label(format!("Mean reserve: {:.0}", stats.mean_reserve));
-        ui.separator();
-        ui.label("Mean genes —");
-        // One mean per TRAITS characteristic, without a hard-coded field.
-        for (t, mean) in TRAITS.iter().zip(&stats.mean_traits) {
-            ui.label(format!("{} {:.*}", t.name, t.decimals as usize, mean));
-        }
-    });
+    egui::Grid::new("live_stats")
+        .num_columns(2)
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label("Population");
+            ui.label(stats.population.to_string());
+            ui.end_row();
+            ui.label("Food");
+            ui.label(stats.food.to_string());
+            ui.end_row();
+            ui.label("Mean reserve");
+            ui.label(format!("{:.0}", stats.mean_reserve));
+            ui.end_row();
+            // One row per TRAITS characteristic (the gene means), without a hard-coded
+            // field — adding a gene shows up here automatically.
+            for (t, mean) in TRAITS.iter().zip(&stats.mean_traits) {
+                ui.label(t.name);
+                ui.label(format!("{:.*}", t.decimals as usize, mean));
+                ui.end_row();
+            }
+        });
 }
 
 /// Compiles archetype `i` into a living entity, placed at `world` (the archetype's
