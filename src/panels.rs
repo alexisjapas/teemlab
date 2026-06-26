@@ -7,10 +7,10 @@
 //! purely **layout** — reserving the edges of the egui screen.
 //!
 //! **Semantic** split: *world* (scenario data) on the left, *entities* on the right,
-//! *scenario IO + View menu + Export* in the top strip, *controls + stats + status*
-//! then *curves + inspector* at the bottom. View layers live in the top-bar **View**
-//! menu and video export in a floating window opened from the **Export** button — both
-//! out of the always-on panels.
+//! *scenario IO + transport controls + View menu + Export* in the top strip (controls
+//! centered), *stats + status* then *curves + inspector* at the bottom. View layers
+//! live in the top-bar **View** menu and video export in a floating window opened from
+//! the **Export** button — both out of the always-on panels.
 //!
 //! **One root viewport `Ui`, `show_inside`.** Following bevy_egui 0.40
 //! (`examples/ui.rs`): we build a single background-layer `Ui` covering
@@ -103,6 +103,8 @@ pub fn dock(
     mut vtime: ResMut<Time<Virtual>>,
     mut history: ResMut<History>,
     mut ui_status: ResMut<UiStatus>,
+    // Last frame's measured width of the centered transport controls (for centering).
+    mut ctrl_width: Local<f32>,
     selection: Res<Selection>,
     stats_agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
     inspector_agents: Query<
@@ -138,22 +140,37 @@ pub fn dock(
             .max_rect(ctx.viewport_rect()),
     );
 
-    // Top strip, **a single line** — the app's command strip: scenario IO (choose /
-    // reload / save-load) pinned left; the **View** menu (view layers) and the
-    // **Export** toggle pinned right. Video recording is no longer crammed here — it
-    // lives in a floating window opened by the Export button (below), so the old
-    // reverse-order `right_to_left` recorder hack is gone.
+    // Top strip, **a single line** — the app's command strip: scenario IO (the
+    // Scenario menu) pinned **left**; the **transport controls** (play / step / speed /
+    // reset) **centered**; the **View** menu and the **Export** toggle pinned **right**.
+    // Video recording lives in a floating window opened by the Export button (below).
     egui::Panel::top("top_bar").show_inside(&mut root, |ui| {
         let row_h = ui.spacing().interact_size.y;
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                let full_w = ui.available_width();
+                // LEFT: scenario IO.
                 ui.push_id("scenario_bar", |ui| {
                     runs::scenario_section(ui, &mut runs_panel, &mut config, &mut ui_status);
                 });
-                // Pinned right (emitted right→left): Export first (rightmost), then the
-                // View menu to its left, so reading order is View · Export.
+                // CENTER: the transport controls, centered on the **whole bar**. egui
+                // can't center a *group* along the main axis in immediate mode (it only
+                // learns the group's width after laying it out), so we pad by the width
+                // measured last frame (`ctrl_width`, 1-frame lag, clamped so it never
+                // collides with the scenario group). `scope` measures this frame's width.
+                let left_w = full_w - ui.available_width();
+                let pad = (full_w * 0.5 - *ctrl_width * 0.5 - left_w).max(8.0);
+                ui.add_space(pad);
+                let measured = ui
+                    .scope(|ui| controls::controls_section(ui, &mut sim_controls, &mut vtime))
+                    .response
+                    .rect
+                    .width();
+                *ctrl_width = measured;
+                // RIGHT (emitted right→left): Export rightmost, then the View menu, so
+                // reading order is View · Export.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .button("⏺ Export…")
@@ -277,13 +294,11 @@ pub fn dock(
             }
         });
 
-    // Bottom bar (just below the sim): controls (pause/step/speed/reset) on the left,
-    // global stats on the right, same line — then the **unified status line** (scenario
-    // / species / capture / recording feedback, cf. `crate::status`).
+    // Bottom bar (just below the sim): **global stats** (the transport controls now
+    // live centered in the top bar), then the **unified status line** (scenario /
+    // species / capture / recording feedback, cf. `crate::status`).
     egui::Panel::bottom("bottom_bar").show_inside(&mut root, |ui| {
         ui.horizontal_wrapped(|ui| {
-            controls::controls_section(ui, &mut sim_controls, &mut vtime);
-            ui.separator();
             editor::stats_section(ui, &stats_agents);
         });
         if !ui_status.message.is_empty() {

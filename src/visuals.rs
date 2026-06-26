@@ -71,8 +71,10 @@ impl Default for Layers {
     fn default() -> Self {
         Self {
             agents: true,
-            // T2 has one nutrient field; the map is off by default (ROADMAP §9).
-            nutrients: vec![false],
+            // T2 has one nutrient field; its heatmap is shown by default (the windowed
+            // build). The video recorder sets its own `Layers` from `--nutrients`
+            // (off), so existing videos are unchanged (cf. `bin/record`).
+            nutrients: vec![true],
         }
     }
 }

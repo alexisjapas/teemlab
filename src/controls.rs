@@ -53,9 +53,9 @@ pub fn pause_at_launch(mut vtime: ResMut<Time<Virtual>>) {
 }
 
 /// The simulation controls — pause / step / speed / reset. Only acts on
-/// `Time<Virtual>` (pause/speed) or sets a flag (step, reset). Rendered **on the
-/// left of the top bar** (fixed dock) by [`crate::panels::top_bar`], which
-/// handles the panel; this section only draws the button row.
+/// `Time<Virtual>` (pause/speed) or sets a flag (step, reset). Rendered **centered in
+/// the top bar** (fixed dock) by [`crate::panels::dock`], which handles the panel;
+/// this section only draws the button row.
 pub(crate) fn controls_section(
     ui: &mut egui::Ui,
     controls: &mut SimControls,
@@ -80,10 +80,10 @@ pub(crate) fn controls_section(
     });
 
     ui.separator();
-    // Logarithmic-scale slider: fine tuning from x0.1 to x100 on a single handle.
+    // Logarithmic-scale slider: fine tuning from x0.1 to x10 on a single handle.
     if ui
         .add(
-            egui::Slider::new(&mut controls.speed, 0.1..=100.0)
+            egui::Slider::new(&mut controls.speed, 0.1..=10.0)
                 .logarithmic(true)
                 .text("Speed ×"),
         )
