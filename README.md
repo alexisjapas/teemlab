@@ -89,8 +89,8 @@ src/
   rng.rs          Minimal deterministic PRNG (SplitMix64) + Gaussian draw.
   spawn.rs        Population: arena + agents; spawn_agent (compiles a genotype into a living phenotype).
   main.rs         Windowed binary → `teemlab`: wires the docked panels + frames the sim in the central area (set_sim_camera).
-  panels.rs       DOCKED layout of the windowed build: fixed egui panels (top: scenario + recording · left: Layers + World · right: archetypes + editor · bottom: controls/stats then curves/inspector), each calling its tool module's *_section.
-  editor.rs       egui UI (windowed only): Layers toggles, palette (create / duplicate / reorder / delete, drag-and-drop placement, Delete removes), species library (species/*.ron), World editor (arena, tick_hz, gene bounds, relations, nutrient field + sources).
+  panels.rs       DOCKED layout of the windowed build: ONE show_inside dock (top: scenario menu · centered transport controls · View · Export — left "Edit": World + Entities — right "Analysis": live stats + inspector — bottom: curves), each region calling its tool module's *_section. User guide: docs/editor.md.
+  editor.rs       egui UI (windowed only): the View-menu Layers toggles, the palette (create / duplicate / reorder / delete, drag-and-drop placement, Delete removes), species library (species/*.ron), the archetype editor (body / genes / brain), and the World editor (arena, seed, gene bounds, relations, nutrient field + sources, appearance).
   hud.rs          egui HUD (windowed only): population curves + gene drift (read-only).
   controls.rs     egui controls (windowed only): pause / speed / step / reset (time control; reset rebuilds the world — agents, sources, the nutrient field — and re-applies tick_hz).
   inspector.rs    egui inspector (windowed only): click → genotype / energy / perception / action / MLP graph / genealogy (read-only).
