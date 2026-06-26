@@ -21,6 +21,7 @@ use teemlab::SimConfig;
 
 use crate::controls::SimControls;
 use crate::editor::Palette;
+use crate::status::UiStatus;
 
 /// An action requested by the UI, applied at the next `PreUpdate`.
 enum RunAction {
@@ -37,8 +38,6 @@ pub struct RunsPanel {
     selected: Option<usize>,
     /// Free-entry RON save/load path.
     scenario_path: String,
-    /// Last message (success/failure).
-    status: String,
     /// Action pending application in `PreUpdate`.
     pending: Option<RunAction>,
     /// Path of the **currently loaded** scenario — the launch argument, or the last
@@ -79,7 +78,6 @@ pub fn build_runs_panel(mut commands: Commands) {
         scenarios: scan_scenarios(),
         selected: None,
         scenario_path: "scenarios/edited.ron".to_string(),
-        status: String::new(),
         pending: None,
         loaded_path,
         save_dialog_open: false,
@@ -107,7 +105,12 @@ fn normalize_scenario_path(name: &str) -> String {
 /// its own state, **saves** the current scenario directly (a file write, not a
 /// world mutation → in place), and **sets a pending action** for the
 /// (re)loads (which, for their part, rebuild the world in `PreUpdate`).
-pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config: &mut SimConfig) {
+pub(crate) fn scenario_section(
+    ui: &mut egui::Ui,
+    panel: &mut RunsPanel,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
     // We work on local copies so the combo's egui closure does not capture
     // `panel` (avoids cross borrows).
     let scenarios = panel.scenarios.clone();
@@ -153,10 +156,10 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
     {
         match panel.loaded_path.clone() {
             Some(path) => {
-                panel.status = match config.save_ron_file(&path) {
+                status.set(match config.save_ron_file(&path) {
                     Ok(()) => format!("Saved → {path}"),
                     Err(e) => format!("Failed: {e}"),
-                };
+                });
             }
             None => {
                 if panel.save_dialog_name.is_empty() {
@@ -181,10 +184,6 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
         .clicked()
     {
         pending = Some(RunAction::LoadScenario(scenario_path.clone()));
-    }
-
-    if !panel.status.is_empty() {
-        ui.weak(&panel.status);
     }
 
     // "Save as" dialog, shown only when no scenario is loaded. A floating window
@@ -212,12 +211,12 @@ pub(crate) fn scenario_section(ui: &mut egui::Ui, panel: &mut RunsPanel, config:
             let path = normalize_scenario_path(&panel.save_dialog_name);
             match config.save_ron_file(&path) {
                 Ok(()) => {
-                    panel.status = format!("Saved → {path}");
+                    status.set(format!("Saved → {path}"));
                     panel.loaded_path = Some(path);
                     panel.save_dialog_open = false;
                     rescan = true;
                 }
-                Err(e) => panel.status = format!("Failed: {e}"),
+                Err(e) => status.set(format!("Failed: {e}")),
             }
         } else if cancel || !window_open {
             panel.save_dialog_open = false;
@@ -249,6 +248,7 @@ pub fn apply_scenario_load(
     mut palette: ResMut<Palette>,
     mut controls: ResMut<SimControls>,
     mut vtime: ResMut<Time<Virtual>>,
+    mut status: ResMut<UiStatus>,
 ) {
     if !matches!(panel.pending, Some(RunAction::LoadScenario(_))) {
         return;
@@ -272,5 +272,5 @@ pub fn apply_scenario_load(
         }
         Err(e) => format!("Failed: {e}"),
     };
-    panel.status = result;
+    status.set(result);
 }

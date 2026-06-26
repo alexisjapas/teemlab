@@ -18,6 +18,8 @@ use std::process::{Child, Command};
 use teemlab::SimConfig;
 use teemlab::selection::SelectionRoll;
 
+use crate::status::UiStatus;
+
 /// State of the "Recording" panel + the running `record` process, if any.
 #[derive(Resource)]
 pub struct RecorderPanel {
@@ -36,7 +38,8 @@ pub struct RecorderPanel {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
-    status: String,
+    /// Whether the floating "Export video" window is open (toggled from the top bar).
+    pub open: bool,
     /// The `record` subprocess while it runs (otherwise `None`).
     child: Option<Child>,
     /// Launch requested by the UI, handled at the next `Update`.
@@ -61,7 +64,7 @@ impl Default for RecorderPanel {
             // Visualizer overlaid by default (cf. `record --hud`).
             hud: true,
             hud_interval: 6.0,
-            status: String::new(),
+            open: false,
             child: None,
             launch_requested: false,
         }
@@ -86,23 +89,100 @@ fn record_binary() -> PathBuf {
     PathBuf::from("record")
 }
 
-/// The "Recording" section, pinned **to the right** of the top bar. The caller
-/// ([`crate::panels::top_bar`]) wraps it in a `right_to_left` layout (the only
-/// reliable way to align a group to the right in this version of egui) — we
-/// therefore emit the widgets in **reverse order** (right→left) so the final
-/// reading is left→right. Sliders → compact `DragValue`s, long labels as
-/// tooltips. Only reads/writes its state and sets `launch_requested`; the launch
-/// and the monitoring live in [`drive_recorder`].
+/// The "Export video" section, shown in a **floating window** toggled from the top
+/// bar (cf. [`crate::panels::dock`]). A natural top-to-bottom layout — a labelled
+/// grid of settings then the Record button — now that it no longer has to align
+/// itself to the right of the top bar (the old `right_to_left` reverse-order hack is
+/// gone). Only reads/writes its state and sets `launch_requested`; the launch and the
+/// monitoring (and the status feedback) live in [`drive_recorder`].
 pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     let recording = panel.child.is_some();
 
-    // ⚠ REVERSE order (the parent layout is `right_to_left`). Rightmost first.
-    if !panel.status.is_empty() {
-        ui.weak(&panel.status);
+    ui.label(
+        "Re-runs the current scenario fresh (clean headless render, without this \
+         interface) and encodes it via ffmpeg.",
+    );
+    ui.separator();
+
+    egui::Grid::new("rec_grid")
+        .num_columns(2)
+        .spacing([10.0, 6.0])
+        .show(ui, |ui| {
+            ui.label("Output file");
+            ui.add(egui::TextEdit::singleline(&mut panel.out).desired_width(200.0));
+            ui.end_row();
+
+            ui.label("Duration");
+            ui.add(
+                egui::DragValue::new(&mut panel.seconds)
+                    .range(1.0..=120.0)
+                    .suffix(" s"),
+            );
+            ui.end_row();
+
+            ui.label("Frame rate");
+            ui.add(
+                egui::DragValue::new(&mut panel.fps)
+                    .range(24.0..=60.0)
+                    .suffix(" fps"),
+            );
+            ui.end_row();
+
+            ui.label("Size (px)");
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840));
+                ui.label("×");
+                ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160));
+            });
+            ui.end_row();
+
+            ui.label("Follow agent");
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("rec_select")
+                    .selected_text(panel.select.label())
+                    .show_ui(ui, |ui| {
+                        for m in SelectionRoll::ALL {
+                            ui.selectable_value(&mut panel.select, m, m.label());
+                        }
+                    });
+                // Keeps an agent highlighted (ring + rays) in the video.
+                if panel.select.rolls() {
+                    ui.add(
+                        egui::DragValue::new(&mut panel.select_interval)
+                            .range(0.5..=30.0)
+                            .suffix(" s"),
+                    )
+                    .on_hover_text("Interval between followed-agent changes");
+                }
+            });
+            ui.end_row();
+        });
+
+    // Overlaid native visualizer: composes the video in 9:16 (identical to F1 mode).
+    ui.checkbox(&mut panel.hud, "HUD overlay (9:16 composition)")
+        .on_hover_text(
+            "Composes the video in 9:16: arena on top, native visualizer (stats / curves / \
+         inspector) at the bottom — identical to the F1 presentation mode. Unchecked: video of \
+         the arena alone (then choose 1080×1080).",
+        );
+    if panel.hud {
+        ui.horizontal(|ui| {
+            ui.label("Section rotation");
+            ui.add(
+                egui::DragValue::new(&mut panel.hud_interval)
+                    .range(1.0..=30.0)
+                    .suffix(" s"),
+            )
+            .on_hover_text("Interval to rotate the visualizer's sections (curves ↔ inspector)");
+        });
     }
+
+    ui.separator();
     if recording {
-        ui.spinner();
-        ui.add_enabled(false, egui::Button::new("⏺ Recording…"));
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.add_enabled(false, egui::Button::new("⏺ Recording…"));
+        });
     } else if ui
         .button("⏺ Record")
         .on_hover_text("Launches the headless `record` binary as a subprocess.")
@@ -110,84 +190,31 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     {
         panel.launch_requested = true;
     }
-
-    // Overlaid native visualizer: composes the video in 9:16 (identical to F1 mode).
-    if panel.hud {
-        ui.add(
-            egui::DragValue::new(&mut panel.hud_interval)
-                .range(1.0..=30.0)
-                .suffix(" s"),
-        )
-        .on_hover_text("Section rotation (curves ↔ inspector)");
-    }
-    ui.checkbox(&mut panel.hud, "HUD").on_hover_text(
-        "Composes the video in 9:16: arena on top, native visualizer (stats / curves / \
-         inspector) at the bottom — identical to the F1 presentation mode. Unchecked: video of \
-         the arena alone (then choose 1080×1080).",
-    );
-
-    // Automatic selection: keeps an agent highlighted (ring + rays) in the video.
-    if panel.select.rolls() {
-        ui.add(
-            egui::DragValue::new(&mut panel.select_interval)
-                .range(0.5..=30.0)
-                .suffix(" s"),
-        )
-        .on_hover_text("Interval between followed-agent changes");
-    }
-    egui::ComboBox::from_id_salt("rec_select")
-        .selected_text(panel.select.label())
-        .show_ui(ui, |ui| {
-            for m in SelectionRoll::ALL {
-                ui.selectable_value(&mut panel.select, m, m.label());
-            }
-        });
-    ui.label("Follow:");
-
-    ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160))
-        .on_hover_text("Height (px)");
-    ui.label("×");
-    ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840))
-        .on_hover_text("Width (px)");
-    ui.add(
-        egui::DragValue::new(&mut panel.fps)
-            .range(24.0..=60.0)
-            .suffix(" fps"),
-    )
-    .on_hover_text("Frames per second");
-    ui.add(
-        egui::DragValue::new(&mut panel.seconds)
-            .range(1.0..=120.0)
-            .suffix(" s"),
-    )
-    .on_hover_text("Duration");
-    ui.add(egui::TextEdit::singleline(&mut panel.out).desired_width(140.0))
-        .on_hover_text("Output file");
-    ui.strong("Video:").on_hover_text(
-        "Re-runs the current scenario fresh (clean headless render, without this \
-         interface) and encodes it via ffmpeg.",
-    );
 }
 
 /// `Update`: watches for the `record` process to finish and, if the UI requested
 /// it, writes the current `SimConfig` to a temporary file then launches `record`
 /// on it. No sim logic — process orchestration.
-pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) {
+pub fn drive_recorder(
+    mut panel: ResMut<RecorderPanel>,
+    mut status: ResMut<UiStatus>,
+    config: Res<SimConfig>,
+) {
     // Monitoring the running process: we detect its end without blocking (`try_wait`).
     if panel.child.is_some() {
         match panel.child.as_mut().unwrap().try_wait() {
-            Ok(Some(status)) => {
+            Ok(Some(exit)) => {
                 panel.child = None;
-                panel.status = if status.success() {
+                status.set(if exit.success() {
                     format!("Video written → {}", panel.out)
                 } else {
-                    format!("record failed ({status}). See the console.")
-                };
+                    format!("record failed ({exit}). See the console.")
+                });
             }
             Ok(None) => {} // still running
             Err(e) => {
                 panel.child = None;
-                panel.status = format!("Cannot monitor the process: {e}");
+                status.set(format!("Cannot monitor the process: {e}"));
             }
         }
     }
@@ -203,7 +230,7 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
     // so that `record` re-renders exactly what is seen configured.
     let scenario = std::env::temp_dir().join("teemlab_record_scenario.ron");
     if let Err(e) = config.save_ron_file(&scenario) {
-        panel.status = format!("Failed to write the temporary scenario: {e}");
+        status.set(format!("Failed to write the temporary scenario: {e}"));
         return;
     }
 
@@ -244,10 +271,12 @@ pub fn drive_recorder(mut panel: ResMut<RecorderPanel>, config: Res<SimConfig>) 
     match cmd.spawn() {
         Ok(child) => {
             panel.child = Some(child);
-            panel.status = format!("Recording in progress → {out}");
+            status.set(format!("Recording in progress → {out}"));
         }
         Err(e) => {
-            panel.status = format!("Cannot launch ({e}). Are `record` and `ffmpeg` present?");
+            status.set(format!(
+                "Cannot launch ({e}). Are `record` and `ffmpeg` present?"
+            ));
         }
     }
 }

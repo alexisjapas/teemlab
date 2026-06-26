@@ -22,6 +22,8 @@ use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
+use crate::status::UiStatus;
+
 /// The palette / the editor's state. The **archetype list** now lives in
 /// [`SimConfig::archetypes`] (the central data); the palette only keeps the
 /// interaction state. Editing an archetype therefore writes *directly* into the
@@ -34,8 +36,6 @@ pub struct Palette {
     pub selected: Option<usize>,
     /// Rolling seed to give a distinct stream to the brain of each hand-placed agent.
     pub next_seed: u64,
-    /// Last status message (archetype capture, species import/export).
-    pub status: String,
     /// Species library: `species/*.ron` files found at the last scan.
     pub species_files: Vec<String>,
     /// Index, in [`species_files`](Self::species_files), of the species chosen for import.
@@ -55,7 +55,6 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         dragging: None,
         selected: None,
         next_seed: config.seed ^ 0xED17,
-        status: String::new(),
         species_files: scan_species(),
         species_selected: None,
     });
@@ -80,13 +79,14 @@ fn scan_species() -> Vec<String> {
 }
 
 /// Resolution of an archetype's drag-and-drop into the play area. A **distinct**
-/// system, ordered after all the egui panels: `is_pointer_over_area` then knows
-/// all the edges, otherwise a drop over a panel (bottom or left) would place an
-/// entity hidden under the UI. `viewport_to_world_2d` accounts for the viewport's
-/// offset (centered sim, cf. `set_sim_camera`) → the window cursor remains the
-/// correct input.
+/// system, ordered after `panels::dock`: the central rect feeding
+/// [`crate::panels::pointer_over_ui`] is then current, otherwise a drop over a panel
+/// (bottom or left) would place an entity hidden under the UI. `viewport_to_world_2d`
+/// accounts for the viewport's offset (centered sim, cf. `set_sim_camera`) → the
+/// window cursor remains the correct input.
 pub fn resolve_drag(
     mut contexts: EguiContexts,
+    central: Res<crate::panels::CentralRect>,
     mut palette: ResMut<Palette>,
     mut commands: Commands,
     config: Res<SimConfig>,
@@ -101,7 +101,7 @@ pub fn resolve_drag(
     if ctx.input(|input| input.pointer.any_released()) {
         // Dropped outside any egui panel = above the play area.
         // `let` chain (edition 2024): camera, window, cursor, world.
-        if !ctx.is_pointer_over_egui()
+        if !crate::panels::pointer_over_ui(ctx, central.0)
             && let Ok((camera, cam_tf)) = cameras.single()
             && let Ok(window) = windows.single()
             && let Some(cursor) = window.cursor_position()
@@ -119,7 +119,12 @@ pub fn resolve_drag(
 /// click to edit), plus creation (agent / food) and deletion. The list *is*
 /// [`SimConfig::archetypes`] — creating or deleting here therefore modifies the
 /// scenario directly.
-pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
+pub(crate) fn selector_section(
+    ui: &mut egui::Ui,
+    palette: &mut Palette,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
     ui.label("Drag into the area to place; click to edit; Delete (cursor on an entity) to remove.");
     ui.separator();
     let mut started = None;
@@ -225,7 +230,7 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
     }
 
     ui.separator();
-    species_library_section(ui, palette, config);
+    species_library_section(ui, palette, config, status);
 
     if palette.dragging.is_some() {
         ui.separator();
@@ -241,7 +246,12 @@ pub(crate) fn selector_section(ui: &mut egui::Ui, palette: &mut Palette, config:
 ///   self-contained, §9), retaining the file as `source`.
 /// - **Sync** an imported archetype: reloads its definition from `source`, keeping
 ///   the local count. The "copy + resync link" choice of item 4.
-fn species_library_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
+fn species_library_section(
+    ui: &mut egui::Ui,
+    palette: &mut Palette,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
     egui::CollapsingHeader::new("Species library")
         .default_open(false)
         .show(ui, |ui| {
@@ -252,7 +262,7 @@ fn species_library_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mu
                     .on_hover_text("Saves the archetype as a reusable species.")
                     .clicked()
                 {
-                    palette.status = export_species(&config.archetypes[i]);
+                    status.set(export_species(&config.archetypes[i]));
                     palette.species_files = scan_species();
                 }
                 if let Some(src) = config.archetypes[i].source.clone()
@@ -263,7 +273,7 @@ fn species_library_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mu
                         ))
                         .clicked()
                 {
-                    palette.status = sync_species(config, i);
+                    status.set(sync_species(config, i));
                 }
             } else {
                 ui.weak("Select an archetype to export / sync it.");
@@ -308,12 +318,8 @@ fn species_library_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mu
                 palette.species_selected = None;
             }
             if let Some(path) = to_import {
-                palette.status = import_species(config, &path);
+                status.set(import_species(config, &path));
                 palette.selected = Some(config.archetypes.len().saturating_sub(1));
-            }
-
-            if !palette.status.is_empty() {
-                ui.weak(&palette.status);
             }
         });
 }
@@ -455,14 +461,8 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
             ui.label("Click an archetype in the palette to edit it (or create one).");
         }
     }
-
-    // Editor messages (archetype capture, species import/export); scenario IO
-    // (save/load a .ron) now lives in the "Scenario" strip ([`crate::runs`]), not
-    // here.
-    if !palette.status.is_empty() {
-        ui.separator();
-        ui.weak(&palette.status);
-    }
+    // Editor feedback (archetype capture, species import/export) now funnels into the
+    // unified status line in the bottom bar (cf. `crate::status`), not here.
 }
 
 /// Editor of **archetype `i`**: common properties (name, color, count, size,

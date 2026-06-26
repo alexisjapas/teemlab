@@ -58,6 +58,7 @@ fn body_at<'a>(
 /// ignored (the editor handles the latter).
 pub fn pick_agent(
     mut contexts: EguiContexts,
+    central: Res<crate::panels::CentralRect>,
     mut selection: ResMut<Selection>,
     palette: Res<Palette>,
     cameras: Query<(&Camera, &GlobalTransform)>,
@@ -69,7 +70,7 @@ pub fn pick_agent(
     // click targets an egui panel, nor if there is no click at all.
     if palette.dragging.is_some()
         || !ctx.input(|i| i.pointer.any_click())
-        || ctx.is_pointer_over_egui()
+        || crate::panels::pointer_over_ui(ctx, central.0)
     {
         return Ok(());
     }
@@ -88,12 +89,13 @@ pub fn pick_agent(
 /// consistency with placement. No undo in v1: an entity is re-placed from the
 /// palette (the world is an experiment sandbox, not precious data).
 ///
-/// Like [`pick_agent`] and `resolve_drag`, it must run **after** the egui windows
-/// so that `is_pointer_over_area` is up to date (otherwise a Delete over a panel
-/// would target the entity hidden beneath it).
+/// Like [`pick_agent`] and `resolve_drag`, it must run **after** `panels::dock` so
+/// that the central rect it feeds [`crate::panels::pointer_over_ui`] is current
+/// (otherwise a Delete over a panel would target the entity hidden beneath it).
 #[allow(clippy::too_many_arguments)]
 pub fn delete_under_cursor(
     mut contexts: EguiContexts,
+    central: Res<crate::panels::CentralRect>,
     keys: Res<ButtonInput<KeyCode>>,
     palette: Res<Palette>,
     mut selection: ResMut<Selection>,
@@ -107,7 +109,7 @@ pub fn delete_under_cursor(
     }
     let ctx = contexts.ctx_mut()?;
     // Not during an archetype drag, nor when the cursor targets an egui panel.
-    if palette.dragging.is_some() || ctx.is_pointer_over_egui() {
+    if palette.dragging.is_some() || crate::panels::pointer_over_ui(ctx, central.0) {
         return Ok(());
     }
     let Some(world) = pointer_world(&cameras, &windows) else {

@@ -138,6 +138,23 @@ open work in §9.
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
   `nutrients`, …), clean `clippy`/`fmt`.
+- **UI rework — foundation + semantic reorg** (windowed build, sim untouched). The
+  five independent docked-panel systems are **merged into one** `panels::dock` that
+  builds a single background-layer root `Ui` and adds each panel with
+  `Panel::show_inside` (bevy_egui 0.40 `examples/ui.rs`) — clearing the egui-0.34
+  **deprecation debt** (`Panel::show(ctx, …)` and `ctx.available_rect()` are gone). The
+  central area left free is read once via `available_rect_before_wrap()` into a
+  `CentralRect` resource, the **single source of truth** for "where the sim is": the
+  camera frames the sim there *and* the picking/drag/delete systems read it (via
+  `panels::pointer_over_ui`) to tell a click on the sim from one on a panel — the
+  built-in `is_pointer_over_egui()` no longer works under bevy_egui + `show_inside`
+  (it needs `root_ui_available_rect`, only set by egui's own `run_ui`, unsettable from
+  user code). **Semantic reorg**: video **Export** left the top bar for a floating
+  window opened by an Export button (the fragile reverse-order `right_to_left` recorder
+  hack is gone); the view **Layers** left the World panel for a top-bar **View** menu
+  (view ≠ scenario data); and the three scattered per-panel status strings funnel into
+  one `UiStatus` shown once in the bottom bar. *Next (deferred):* collapsible panels +
+  presentation mode, pan/zoom + selection cartouche, per-panel polish.
 
 **Remaining.**
 

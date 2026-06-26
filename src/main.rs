@@ -14,6 +14,7 @@ mod inspector;
 mod panels;
 mod recorder;
 mod runs;
+mod status;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
@@ -55,6 +56,12 @@ fn main() {
         // recomposing the view would break the UI (cf. memory).
         .init_resource::<controls::SimControls>()
         .init_resource::<recorder::RecorderPanel>()
+        // Central region left free by the docked panels (cf. `panels::dock`), read by
+        // `set_sim_camera` to frame the sim — the non-deprecated `available_rect`.
+        .init_resource::<panels::CentralRect>()
+        // Single status line shown in the bottom bar (scenario / species / capture /
+        // recording feedback), written from across the UI (cf. `status`).
+        .init_resource::<status::UiStatus>()
         // The sim starts **paused** (we prepare the run before launching it).
         .add_systems(
             Startup,
@@ -84,21 +91,19 @@ fn main() {
         // sampling in `MetricsPlugin` (lib, shared); here, the only observer
         // specific to the binary is the video-recording driver.
         .add_systems(Update, recorder::drive_recorder)
-        // egui UI — **fixed docked panels** around the central simulation area
-        // (cf. `panels`). The order is **chained** and matters: the panels first
-        // (they reserve the edges), then the interactions AFTER — otherwise
-        // `is_pointer_over_area` reads a stale state (a click on a panel would
-        // deselect the agent, a drop above it would place a hidden entity).
-        // `set_sim_camera` closes the pass: `available_rect` then reflects all the
-        // panels, so the sim is framed exactly within the central area.
+        // egui UI — **fixed docked panels** around the central simulation area, all
+        // assembled by the single `panels::dock` system (one root `Ui`,
+        // `show_inside`). The order is **chained** and matters: `dock` first (it
+        // reserves the edges and records the free central rect in `panels::CentralRect`),
+        // then the interactions AFTER — they read that rect via `panels::pointer_over_ui`
+        // to tell a click on the sim from one on a panel; were they to run first, a
+        // stale rect would let a click on a panel deselect the agent or a drop above it
+        // place a hidden entity. `set_sim_camera` closes the pass: it reads the same
+        // `CentralRect`, so the sim is framed exactly within the central area.
         .add_systems(
             EguiPrimaryContextPass,
             (
-                panels::top_bar,
-                panels::left_tools,
-                panels::right_panel,
-                panels::bottom_panel,
-                panels::bottom_bar,
+                panels::dock,
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,
@@ -139,23 +144,20 @@ fn setup_camera(mut commands: Commands) {
 /// Frames the simulation in the central area left free by the **docked panels**
 /// (cf. `panels`): the **whole** arena is visible and centered ("see everything"
 /// framing, small margin), whatever the window. The panels reserve the edges, so
-/// `available_rect` shrinks to that center and the sim fits within it. The
-/// off-game area around the arena (on the longer side) is grayed by `ClearColor`
-/// + `draw_play_area`, so it does not look empty.
+/// the central rect shrinks to that center and the sim fits within it. The off-game
+/// area around the arena (on the longer side) is grayed by `ClearColor` +
+/// `draw_play_area`, so it does not look empty.
 ///
 /// We **zoom and move the camera** rather than resizing its viewport: under
 /// bevy_egui the egui surface is keyed to the camera's viewport, so shrinking it
 /// would relaunch a layout → vibration. By keeping the viewport full-screen, the
 /// egui surface is stable. Rendering only — never touches the sim state. Runs last
-/// in the egui pass: `available_rect` then reflects the bars — the central region
-/// the panels leave free. egui 0.34 deprecates it with no equivalent for that
-/// "space after panels" (`content_rect`/`viewport_rect` both ignore the panels and
-/// return the whole viewport), so it stays under `#[allow(deprecated)]` alongside
-/// the panels' top-level `show` (see `panels`). Picking stays correct
+/// in the egui pass and reads [`panels::CentralRect`] (the region the panels leave
+/// free, recorded by `panels::dock` via `available_rect_before_wrap` — the
+/// non-deprecated successor of `ctx.available_rect()`). Picking stays correct
 /// (`viewport_to_world_2d` reads the scale and the translation).
-#[allow(deprecated)]
 fn set_sim_camera(
-    mut contexts: EguiContexts,
+    central: Res<panels::CentralRect>,
     config: Res<SimConfig>,
     windows: Query<&Window>,
     mut cameras: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
@@ -163,8 +165,7 @@ fn set_sim_camera(
     /// Breathing margin around the arena (1.0 = flush with the edges).
     const VIEW_MARGIN: f32 = 1.06;
 
-    let ctx = contexts.ctx_mut()?;
-    let rect = ctx.available_rect();
+    let rect = central.0;
     let (Ok(window), Ok((mut transform, mut projection))) =
         (windows.single(), cameras.single_mut())
     else {
