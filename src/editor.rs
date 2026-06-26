@@ -870,56 +870,54 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
     }
 }
 
-/// "World" section: the **scenario** parameters — arena, population, food economy,
-/// interaction table — as opposed to the **archetype** editor (a species'
-/// genotype). Direct read/write of the [`SimConfig`], hence persisted by "Save".
-/// Some fields only take effect at the world (re)generation (annotated *reset*);
-/// the others — maintained food, relations — are read continuously by the sim and
-/// act **live**.
+/// "World" section: the **scenario** parameters (everything but the per-species
+/// archetypes), as collapsible cards ordered by how often they're touched —
+/// *Arena & generation* and *Relations* open, the rest (Nutrients, Gene bounds,
+/// Appearance) collapsed. Direct read/write of the [`SimConfig`], hence persisted by
+/// "Save". Some fields only take effect at the next Reset (⟲); relations act **live**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    ui.small(
-        "Global parameters. (reset) = at the world (re)generation (⟲ of the bar); \
-         the relations act live. Population, bodies and brains live in the archetypes \
-         (\"Archetypes\" panel).",
-    );
+    // ARENA & GENERATION — size and RNG. Open by default. (The sim rate is a scenario
+    // file parameter, not exposed here.)
+    egui::CollapsingHeader::new("Arena & generation")
+        .default_open(true)
+        .show(ui, |ui| {
+            ui.add(
+                egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("half-arena"),
+            );
+            ui.add(
+                egui::DragValue::new(&mut config.seed)
+                    .speed(1.0)
+                    .prefix("seed: "),
+            );
+            ui.small(
+                "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
+                 brains live in the \"Archetypes\" panel.",
+            );
+        });
 
-    ui.separator();
-    ui.strong("World");
-    ui.add(egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("half-arena"));
-    ui.add(
-        egui::DragValue::new(&mut config.tick_hz)
-            .range(8.0..=240.0)
-            .speed(1.0)
-            .prefix("sim rate (Hz, reset): "),
-    )
-    .on_hover_text("Fixed step of the simulation. Takes effect at the world (re)generation (⟲).");
-    ui.add(
-        egui::DragValue::new(&mut config.seed)
-            .speed(1.0)
-            .prefix("seed (reset): "),
-    );
+    // RELATIONS — the interaction table (acts live). Open by default.
+    egui::CollapsingHeader::new("Relations")
+        .default_open(true)
+        .show(ui, |ui| relations_section(ui, config));
 
-    // Windowed-render backgrounds: the color of the play area (inside of the arena)
-    // and that of the off-game area (beyond the walls). Presentation settings, read
-    // continuously by `main::draw_play_area` → immediate preview, and saved with the
-    // scenario.
-    ui.horizontal(|ui| {
-        color_button(ui, &mut config.play_area_color);
-        ui.label("inner background (play area)");
-    });
-    ui.horizontal(|ui| {
-        color_button(ui, &mut config.off_game_color);
-        ui.label("outer background (off-game)");
-    });
-
-    ui.separator();
+    // The advanced cards, collapsed by default (each carries its own header).
+    nutrient_section(ui, config);
     gene_bounds_section(ui, config);
 
-    ui.separator();
-    nutrient_section(ui, config);
-
-    ui.separator();
-    relations_section(ui, config);
+    // APPEARANCE — windowed-render backgrounds (read continuously by
+    // `main::draw_play_area` → immediate preview, saved with the scenario).
+    egui::CollapsingHeader::new("Appearance")
+        .default_open(false)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                color_button(ui, &mut config.play_area_color);
+                ui.label("inner background (play area)");
+            });
+            ui.horizontal(|ui| {
+                color_button(ui, &mut config.off_game_color);
+                ui.label("outer background (off-game)");
+            });
+        });
 }
 
 /// The **nutrients** (T2 substrate): the concentration-field parameters and the
@@ -1042,7 +1040,6 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// an archetype menu (name + color). No more bare numbers nor possible collision
 /// with the food — which is a full-fledged archetype, with its index.
 fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    ui.strong("Relations (who acts on whom)");
     ui.small(
         "An actor reduces a target's reserve within range — the gap between their \
          bodies, so range = 0 means contact. This is what makes an archetype a \
