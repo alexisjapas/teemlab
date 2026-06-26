@@ -490,99 +490,101 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     // weights had been captured, those weights no longer match → we clear them (cf.
     // end of function).
     let brain_before = config.archetypes[i].brain.clone();
-    let arch = &mut config.archetypes[i];
 
-    ui.horizontal(|ui| {
-        ui.label("name:");
-        ui.text_edit_singleline(&mut arch.name);
+    // BODY — name, color, population and physical size, in a framed card.
+    ui.group(|ui| {
+        let arch = &mut config.archetypes[i];
+        ui.strong("Body");
+        ui.horizontal(|ui| {
+            ui.label("name:");
+            ui.text_edit_singleline(&mut arch.name);
+        });
+        ui.horizontal(|ui| {
+            ui.label("color:");
+            color_button(ui, &mut arch.color);
+        });
+        ui.add(
+            egui::DragValue::new(&mut arch.count)
+                .range(0..=5000)
+                .prefix("count at spawn (reset): "),
+        );
+        ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0).text("body radius"));
+        ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0).text("max reserve"));
     });
-    ui.horizontal(|ui| {
-        ui.label("color:");
-        color_button(ui, &mut arch.color);
+
+    // GENES — the founding genotype + per-species mutability, in a framed card. Every
+    // archetype is an agent (Phase 3b); a *food source* is just one with a Sessile
+    // brain, editable through these same controls.
+    ui.group(|ui| {
+        let arch = &mut config.archetypes[i];
+        ui.strong("Genes (the archetype)");
+        ui.small(
+            "Each placed agent receives a COPY of these genes — its genome — which then \
+             mutates on its own. The \"mutable\" checkbox governs, PER SPECIES, the right \
+             to mutate.",
+        );
+        // An immobile entity (zero max speed, e.g. a flora / sessile source) neither
+        // moves nor exploits vision: its locomotion and vision genes are inert, so we
+        // do not expose them (cf. `TraitSpec::inert_when_immobile`). `max_speed`, for
+        // its part, stays shown — it is the mobility switch.
+        let immobile = arch.genotype.locomotion().is_immobile();
+        if immobile {
+            ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
+        }
+        // A single loop over TRAITS: slider (value, bounds) + "mutable" checkbox per
+        // gene. Adding a trait does not add a line here (item 15).
+        for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
+            if immobile && t.inert_when_immobile {
+                continue;
+            }
+            let mut value = (t.get)(&arch.genotype);
+            if ui
+                .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
+                .changed()
+            {
+                (t.set)(&mut arch.genotype, value);
+            }
+            let mut m = (t.mutable)(&arch.mutable);
+            if ui
+                .checkbox(&mut m, "mutable")
+                .on_hover_text(
+                    "Checked: this gene mutates at reproduction (it drifts and is passed \
+                     on with variation). Unchecked: it is still transmitted, but frozen \
+                     at the founder's value.",
+                )
+                .changed()
+            {
+                (t.set_mutable)(&mut arch.mutable, m);
+            }
+        }
     });
-    ui.add(
-        egui::DragValue::new(&mut arch.count)
-            .range(0..=5000)
-            .prefix("count at spawn (reset): "),
-    );
-    ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0).text("body radius"));
-    ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0).text("max reserve"));
 
-    // Every archetype is an agent (Phase 3b): genes + brain, no type branch. A *food
-    // source* is just an archetype with a Sessile brain, living on photosynthesis —
-    // editable like any other via these same controls.
-    let Archetype {
-        genotype,
-        brain,
-        mutable,
-        ..
-    } = arch;
-    ui.separator();
-    ui.strong("Genes (the archetype)");
-    ui.small(
-        "Each placed agent receives a COPY of these genes — its genome — which then \
-         mutates on its own. The \"mutable\" checkbox governs, PER SPECIES, the right \
-         to mutate.",
-    );
-    // An immobile entity (zero max speed, e.g. a flora / sessile source) neither
-    // moves nor exploits vision: its locomotion and vision genes are inert, so we do
-    // not expose them (cf. `TraitSpec::inert_when_immobile`). `max_speed`, for its
-    // part, stays shown — it is the mobility switch.
-    let immobile = genotype.locomotion().is_immobile();
-    if immobile {
-        ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
-    }
-    // A single loop over TRAITS: slider (value, bounds) + "mutable" checkbox per
-    // gene. Adding a trait does not add a line here (item 15).
-    for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
-        if immobile && t.inert_when_immobile {
-            continue;
-        }
-        let mut value = (t.get)(genotype);
-        if ui
-            .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
-            .changed()
-        {
-            (t.set)(genotype, value);
-        }
-        let mut m = (t.mutable)(mutable);
-        if ui
-            .checkbox(&mut m, "mutable")
-            .on_hover_text(
-                "Checked: this gene mutates at reproduction (it drifts and is passed \
-                 on with variation). Unchecked: it is still transmitted, but frozen \
-                 at the founder's value.",
-            )
-            .changed()
-        {
-            (t.set_mutable)(mutable, m);
-        }
-    }
-    ui.separator();
-    ui.strong("Brain (the decision's author)");
-    brain_kind_editor(ui, brain, genotype.ray_count());
+    // BRAIN — the decision's author + any captured weights, in a framed card.
+    ui.group(|ui| {
+        let arch = &mut config.archetypes[i];
+        ui.strong("Brain (the decision's author)");
+        let rays = arch.genotype.ray_count();
+        brain_kind_editor(ui, &mut arch.brain, rays);
 
-    // Captured weights ("capture as archetype" item): status + removal. Re-borrow of
-    // the archetype after the brain editor (the re-borrows above are no longer used).
-    let arch = &mut config.archetypes[i];
-    // Topology/type changed while weights were captured → they have become
-    // inconsistent (fan-in/shape), we clear them rather than spawning mute brains.
-    if arch.brain != brain_before && arch.captured_brain.is_some() {
-        arch.captured_brain = None;
-        arch.captured_from = None;
-    }
-    if let Some(from) = arch.captured_from.clone() {
-        ui.separator();
-        ui.weak(format!("Weights captured from {from}"));
-        if ui
-            .button("Clear the captured weights")
-            .on_hover_text("The founders will restart from fresh weights (the brain recipe).")
-            .clicked()
-        {
+        // Topology/type changed while weights were captured → they have become
+        // inconsistent (fan-in/shape), we clear them rather than spawning mute brains.
+        if arch.brain != brain_before && arch.captured_brain.is_some() {
             arch.captured_brain = None;
             arch.captured_from = None;
         }
-    }
+        if let Some(from) = arch.captured_from.clone() {
+            ui.separator();
+            ui.weak(format!("Weights captured from {from}"));
+            if ui
+                .button("Clear the captured weights")
+                .on_hover_text("The founders will restart from fresh weights (the brain recipe).")
+                .clicked()
+            {
+                arch.captured_brain = None;
+                arch.captured_from = None;
+            }
+        }
+    });
 }
 
 /// Edits **a** [`BrainKind`]: type combo (selection by *kind*, so as not to reset
@@ -957,29 +959,30 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             ui.small("A fixed point emitting `rate`/s of nutrient at its position.");
             let mut to_remove = None;
             for (i, src) in config.sources.iter_mut().enumerate() {
-                ui.separator();
-                ui.horizontal(|ui| {
-                    color_button(ui, &mut src.color);
-                    ui.label(format!("source {i}"));
-                    if ui.button("🗑").on_hover_text("Remove this source").clicked() {
-                        to_remove = Some(i);
-                    }
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        color_button(ui, &mut src.color);
+                        ui.label(format!("source {i}"));
+                        if ui.button("🗑").on_hover_text("Remove this source").clicked() {
+                            to_remove = Some(i);
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("pos");
+                        ui.add(
+                            egui::DragValue::new(&mut src.pos[0])
+                                .speed(1.0)
+                                .prefix("x: "),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut src.pos[1])
+                                .speed(1.0)
+                                .prefix("y: "),
+                        );
+                    });
+                    ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0).text("rate/s"));
+                    ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0).text("visual radius"));
                 });
-                ui.horizontal(|ui| {
-                    ui.label("pos");
-                    ui.add(
-                        egui::DragValue::new(&mut src.pos[0])
-                            .speed(1.0)
-                            .prefix("x: "),
-                    );
-                    ui.add(
-                        egui::DragValue::new(&mut src.pos[1])
-                            .speed(1.0)
-                            .prefix("y: "),
-                    );
-                });
-                ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0).text("rate/s"));
-                ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0).text("visual radius"));
             }
             if let Some(i) = to_remove {
                 config.sources.remove(i);
@@ -1059,22 +1062,23 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     }
     let mut to_remove = None;
     for (i, rel) in config.relations.iter_mut().enumerate() {
-        ui.separator();
-        ui.horizontal(|ui| {
-            archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
-            ui.label("→");
-            archetype_combo(ui, ("rel_target", i), &mut rel.target, &archs);
-            if ui
-                .button("🗑")
-                .on_hover_text("Remove this relation")
-                .clicked()
-            {
-                to_remove = Some(i);
-            }
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
+                ui.label("→");
+                archetype_combo(ui, ("rel_target", i), &mut rel.target, &archs);
+                if ui
+                    .button("🗑")
+                    .on_hover_text("Remove this relation")
+                    .clicked()
+                {
+                    to_remove = Some(i);
+                }
+            });
+            ui.checkbox(&mut rel.transfer, "transfer (predation)");
+            ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("rate/s"));
+            ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0).text("range (0 = contact)"));
         });
-        ui.checkbox(&mut rel.transfer, "transfer (predation)");
-        ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("rate/s"));
-        ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0).text("range (0 = contact)"));
     }
     if let Some(i) = to_remove {
         config.relations.remove(i);

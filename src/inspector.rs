@@ -179,59 +179,68 @@ pub(crate) fn inspector_section(
     // A scroll area avoids clipping the list of vision rays when the panel is
     // reduced.
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.label(format!("Species: {}", species.0));
-        ui.label(format!("Brain: {}", brain.name()));
-        ui.label(format!("Generation: {}", generation.0));
-        ui.label(format!("Age: {:.1} s", age.0));
-
-        ui.separator();
-        ui.strong("Energy / reserve");
-        ui.add(
-            egui::ProgressBar::new(reserve.fraction())
-                .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
-        );
-
-        ui.separator();
-        ui.strong("Genotype (inherited genes)");
-        if immobile {
-            ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
-        }
-        egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-            // One row per TRAITS characteristic: adding a trait displays it here
-            // without touching the inspector. On an immobile entity, we skip the
-            // inert genes (locomotion, vision).
-            for t in &TRAITS {
-                if immobile && t.inert_when_immobile {
-                    continue;
-                }
-                ui.label(t.name);
-                ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
-                ui.end_row();
-            }
-            // The vision cost only makes sense for an entity that sees (rays > 0).
-            if !immobile {
-                ui.label("vision cost/s");
-                ui.label(format!("{:.3}", vision.metabolic_cost()));
-                ui.end_row();
-            }
+        // IDENTITY.
+        ui.group(|ui| {
+            ui.strong("Identity");
+            ui.label(format!("Species: {}", species.0));
+            ui.label(format!("Brain: {}", brain.name()));
+            ui.label(format!("Generation: {}", generation.0));
+            ui.label(format!("Age: {:.1} s", age.0));
         });
 
-        ui.separator();
-        ui.strong("Action (brain output)");
-        let throttle = action.throttle;
-        let heading_deg = if action.dir.length_squared() > 1e-6 {
-            action.dir.to_angle().to_degrees()
-        } else {
-            0.0
-        };
-        ui.label(format!("desired heading: {heading_deg:+.0}°"));
-        ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
+        // ENERGY.
+        ui.group(|ui| {
+            ui.strong("Energy / reserve");
+            ui.add(
+                egui::ProgressBar::new(reserve.fraction())
+                    .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
+            );
+        });
 
-        // CAPTURE: freeze this agent (evolved genome + concrete weights) into a new
-        // reusable archetype. We do not touch the sim: we build the derived
-        // archetype (a clone of the original species, cf. `Archetype::capture`) and
-        // return it — the caller will add it to the config.
-        ui.separator();
+        // GENOTYPE.
+        ui.group(|ui| {
+            ui.strong("Genotype (inherited genes)");
+            if immobile {
+                ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
+            }
+            egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
+                // One row per TRAITS characteristic: adding a trait displays it here
+                // without touching the inspector. On an immobile entity, we skip the
+                // inert genes (locomotion, vision).
+                for t in &TRAITS {
+                    if immobile && t.inert_when_immobile {
+                        continue;
+                    }
+                    ui.label(t.name);
+                    ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
+                    ui.end_row();
+                }
+                // The vision cost only makes sense for an entity that sees (rays > 0).
+                if !immobile {
+                    ui.label("vision cost/s");
+                    ui.label(format!("{:.3}", vision.metabolic_cost()));
+                    ui.end_row();
+                }
+            });
+        });
+
+        // ACTION.
+        ui.group(|ui| {
+            ui.strong("Action (brain output)");
+            let throttle = action.throttle;
+            let heading_deg = if action.dir.length_squared() > 1e-6 {
+                action.dir.to_angle().to_degrees()
+            } else {
+                0.0
+            };
+            ui.label(format!("desired heading: {heading_deg:+.0}°"));
+            ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
+        });
+
+        // CAPTURE (a standalone action): freeze this agent (evolved genome + concrete
+        // weights) into a new reusable archetype. We do not touch the sim: we build the
+        // derived archetype (a clone of the original species, cf. `Archetype::capture`)
+        // and return it — the caller will add it to the config.
         if ui
             .button("💾 Capture as archetype")
             .on_hover_text(
@@ -250,48 +259,50 @@ pub(crate) fn inspector_section(
         // current activation (the last `think`), edges by sign/weight — the learned
         // decision made readable. The other brains have no graph.
         if let Brain::Mlp(mlp) = brain {
-            ui.separator();
-            ui.strong("MLP brain (activations)");
-            ui.weak(
-                "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
-            );
-            // The activations are recomputed here, on demand, for the single
-            // inspected agent (the sim core's `think` no longer memorizes them).
-            let activations = mlp.forward_activations(perception);
-            draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
+            ui.group(|ui| {
+                ui.strong("MLP brain (activations)");
+                ui.weak(
+                    "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
+                );
+                // The activations are recomputed here, on demand, for the single
+                // inspected agent (the sim core's `think` no longer memorizes them).
+                let activations = mlp.forward_activations(perception);
+                draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
+            });
         }
 
         // Perception section reserved for entities that see: a flora (immobile,
         // without a ray) has no channel to show.
         if !immobile {
-            ui.separator();
-            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
-            ui.weak(
-                "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
-            );
-            for (i, &proximity) in perception.vision.iter().enumerate() {
-                let target = perception.target.get(i).copied().unwrap_or(0.0);
-                let threat = perception.threat.get(i).copied().unwrap_or(0.0);
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::ProgressBar::new(proximity)
-                            .desired_width(95.0)
-                            .text(format!("r{i} · {proximity:.2}")),
-                    );
-                    ui.add(
-                        egui::ProgressBar::new(target)
-                            .desired_width(85.0)
-                            .fill(egui::Color32::from_rgb(220, 130, 40))
-                            .text(format!("{target:.2}")),
-                    );
-                    ui.add(
-                        egui::ProgressBar::new(threat)
-                            .desired_width(85.0)
-                            .fill(egui::Color32::from_rgb(210, 60, 60))
-                            .text(format!("{threat:.2}")),
-                    );
-                });
-            }
+            ui.group(|ui| {
+                ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
+                ui.weak(
+                    "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
+                );
+                for (i, &proximity) in perception.vision.iter().enumerate() {
+                    let target = perception.target.get(i).copied().unwrap_or(0.0);
+                    let threat = perception.threat.get(i).copied().unwrap_or(0.0);
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::ProgressBar::new(proximity)
+                                .desired_width(95.0)
+                                .text(format!("r{i} · {proximity:.2}")),
+                        );
+                        ui.add(
+                            egui::ProgressBar::new(target)
+                                .desired_width(85.0)
+                                .fill(egui::Color32::from_rgb(220, 130, 40))
+                                .text(format!("{target:.2}")),
+                        );
+                        ui.add(
+                            egui::ProgressBar::new(threat)
+                                .desired_width(85.0)
+                                .fill(egui::Color32::from_rgb(210, 60, 60))
+                                .text(format!("{threat:.2}")),
+                        );
+                    });
+                }
+            });
         }
     });
 
