@@ -48,6 +48,19 @@ fn archetype_color32(a: &Archetype) -> egui::Color32 {
     egui::Color32::from_rgb(q(a.color[0]), q(a.color[1]), q(a.color[2]))
 }
 
+/// A color button that writes back **only on a real edit**. egui's
+/// `color_edit_button_rgb` round-trips the `[f32; 3]` through HSVA *every frame*, so
+/// binding it directly to the config drifts the stored color by sub-LSB amounts each
+/// frame — saved as such, and (since the scenario document model) read forever as
+/// "modified". Gating on `response.changed()` keeps the value byte-stable until the
+/// user actually picks a color.
+fn color_button(ui: &mut egui::Ui, value: &mut [f32; 3]) {
+    let mut local = *value;
+    if ui.color_edit_button_rgb(&mut local).changed() {
+        *value = local;
+    }
+}
+
 /// Builds the palette at `Startup`, after [`SimConfig`] is inserted by the sim
 /// plugin.
 pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
@@ -485,7 +498,7 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
     });
     ui.horizontal(|ui| {
         ui.label("color:");
-        ui.color_edit_button_rgb(&mut arch.color);
+        color_button(ui, &mut arch.color);
     });
     ui.add(
         egui::DragValue::new(&mut arch.count)
@@ -889,11 +902,11 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // continuously by `main::draw_play_area` → immediate preview, and saved with the
     // scenario.
     ui.horizontal(|ui| {
-        ui.color_edit_button_rgb(&mut config.play_area_color);
+        color_button(ui, &mut config.play_area_color);
         ui.label("inner background (play area)");
     });
     ui.horizontal(|ui| {
-        ui.color_edit_button_rgb(&mut config.off_game_color);
+        color_button(ui, &mut config.off_game_color);
         ui.label("outer background (off-game)");
     });
 
@@ -946,7 +959,7 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             for (i, src) in config.sources.iter_mut().enumerate() {
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.color_edit_button_rgb(&mut src.color);
+                    color_button(ui, &mut src.color);
                     ui.label(format!("source {i}"));
                     if ui.button("🗑").on_hover_text("Remove this source").clicked() {
                         to_remove = Some(i);

@@ -1,19 +1,28 @@
 //! Hot **scenario** management, windowed build (item 13).
 //!
-//! A module of the windowed *binary* only (like [`crate::editor`], …). All
-//! scenario IO is gathered here:
+//! A module of the windowed *binary* only (like [`crate::editor`], …). It owns the
+//! whole **document model** of a scenario, made explicit because three states coexist
+//! and used to diverge silently:
 //!
-//! - **scenario selector**: the list of `scenarios/*.ron`, to choose and
-//!   **reload into the living world** without restarting the binary;
-//! - **save / load by path**: write the current `SimConfig` to a `.ron`, or
-//!   reload one into the living world.
+//! - the **file on disk** (`scenarios/*.ron`);
+//! - the **config in memory** ([`SimConfig`]) — edited live by the panels;
+//! - the **running world** — rebuilt from the config only on a reset.
 //!
-//! Like the editor and the reset (item 11), reloading is hand-triggered editing
-//! (outside `FixedUpdate`): the button only sets a *pending action*; it is the
-//! `PreUpdate` system [`apply_scenario_load`] that applies it **before** the
-//! frame's fixed loop, reusing the reset (item 11) to rebuild the world — no
-//! duplicated population logic. The *save* (a plain file write, without mutating
-//! the world) is done in place in the UI section.
+//! The top-bar **Scenario menu** (New / Open / Revert / Save / Save As) drives the
+//! first two; the bottom-bar **Reset** rebuilds the third. A **`●` marker** next to
+//! the file name shows when the config differs from the last load/save (`dirty`,
+//! derived by comparing against a [`RunsPanel::baseline`] snapshot — every config type
+//! derives `PartialEq`). Destructive navigation (New / Open / Revert) **confirms**
+//! before discarding unsaved edits, and **Save** refuses to silently overwrite a file
+//! the user did not create this session (a bundled scenario): it offers *Save a copy*
+//! instead — so hand-curated `scenarios/*.ron` (comments and compact form, dropped by
+//! RON serialization) are never clobbered by accident.
+//!
+//! Like the editor and the reset (item 11), (re)loading is hand-triggered editing
+//! (outside `FixedUpdate`): the menu only sets a *pending action*; it is the
+//! `PreUpdate` system [`apply_scenario_load`] that applies it **before** the frame's
+//! fixed loop, reusing the reset to rebuild the world — no duplicated population
+//! logic. *Saving* (a plain file write, no world mutation) is done in place in the UI.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -23,32 +32,67 @@ use crate::controls::SimControls;
 use crate::editor::Palette;
 use crate::status::UiStatus;
 
-/// An action requested by the UI, applied at the next `PreUpdate`.
+/// An action requested by the UI, applied at the next `PreUpdate`. Both rebuild the
+/// world (via the reset); they differ only in the config they install.
+#[derive(Clone)]
 enum RunAction {
-    /// Reload this scenario into the living world (config + reset).
+    /// Load this scenario file into the living world (config + reset).
     LoadScenario(String),
+    /// Start over from an empty editor canvas ([`SimConfig::empty`]).
+    NewEmpty,
 }
 
-/// State of the "Scenario" panel.
+/// A pending confirmation, shown as a modal until the user resolves it.
+enum Confirm {
+    /// Unsaved edits exist; confirm before this destructive navigation.
+    DiscardThen(RunAction),
+    /// Save would overwrite an existing file the user did not create this session
+    /// (likely a bundled scenario) — offer *Save a copy* instead of clobbering it.
+    OverwriteExternal(String),
+    /// Save As names a file that already exists on disk — confirm before overwriting.
+    OverwriteExisting(String),
+}
+
+/// The user's choice in the confirmation modal, collected inside the egui closure and
+/// applied after it (so the borrow of the pending [`Confirm`] does not alias `panel`).
+enum Choice {
+    /// No button pressed this frame (keep the modal open).
+    Pending,
+    /// Primary action confirmed (Discard / Overwrite).
+    Proceed,
+    /// Dismissed.
+    Cancel,
+    /// "Save a copy…" — route to the Save As dialog with a suggested name.
+    SaveCopy,
+}
+
+/// State of the "Scenario" panel — the document model (cf. module docs).
 #[derive(Resource)]
 pub struct RunsPanel {
-    /// Paths of the `scenarios/*.ron` found at launch.
+    /// Paths of the `scenarios/*.ron` found at the last scan.
     scenarios: Vec<String>,
-    /// Index of the selected scenario in the list.
-    selected: Option<usize>,
-    /// Free-entry RON save/load path.
+    /// Free-entry RON path for "Open from path".
     scenario_path: String,
     /// Action pending application in `PreUpdate`.
     pending: Option<RunAction>,
-    /// Path of the **currently loaded** scenario — the launch argument, or the last
-    /// reload/load through this panel. `Some` → 💾 **overwrites** it silently;
-    /// `None` (fresh editor canvas) → 💾 opens the "save as" dialog. This is the
-    /// intuitive save model.
+    /// Pending confirmation modal, if any.
+    confirm: Option<Confirm>,
+    /// Path of the **currently loaded** scenario (the launch argument, or the last
+    /// load/save through this panel). `None` = the fresh editor canvas.
     loaded_path: Option<String>,
-    /// Whether the "save as" dialog is open (no scenario loaded → ask for a name).
+    /// Whether the loaded file was **created or claimed** by the user this session
+    /// (Save As, or an explicit Overwrite). `false` for a file opened from disk → Save
+    /// protects it (offers a copy). Moot when `loaded_path` is `None`.
+    owns_loaded: bool,
+    /// Snapshot of the config at the last load/save; `dirty = config != baseline`.
+    baseline: SimConfig,
+    /// Whether the "save as" dialog is open.
     save_dialog_open: bool,
     /// Working buffer for the "save as" dialog's file name.
     save_dialog_name: String,
+    /// Whether the Scenario menu was open last frame — to rescan `scenarios/` once on
+    /// the closed→open transition (no manual rescan button).
+    menu_was_open: bool,
 }
 
 /// Lists the RON scenarios present in `scenarios/`, sorted.
@@ -68,25 +112,29 @@ fn scan_scenarios() -> Vec<String> {
     found
 }
 
-/// Builds the panel at `Startup`.
-pub fn build_runs_panel(mut commands: Commands) {
+/// Builds the panel at `Startup`, seeding the `baseline` from the launch config.
+pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
     // A scenario passed on the CLI (cf. `SimConfig::from_cli_or`, which reads
-    // `args().nth(1)`) is the loaded file at launch → 💾 overwrites it. With no
-    // argument (the empty editor canvas) the first save asks for a name.
+    // `args().nth(1)`) is the loaded file at launch — opened from disk, so `owns_loaded`
+    // is false and a later Save protects it. With no argument (the empty canvas)
+    // `loaded_path` is None and the first Save asks for a name.
     let loaded_path = std::env::args().nth(1);
     commands.insert_resource(RunsPanel {
         scenarios: scan_scenarios(),
-        selected: None,
         scenario_path: "scenarios/edited.ron".to_string(),
         pending: None,
+        confirm: None,
         loaded_path,
+        owns_loaded: false,
+        baseline: config.clone(),
         save_dialog_open: false,
         save_dialog_name: String::new(),
+        menu_was_open: false,
     });
 }
 
-/// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension
-/// and, if no folder is given, places the file under `scenarios/`.
+/// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension and,
+/// if no folder is given, places the file under `scenarios/`.
 fn normalize_scenario_path(name: &str) -> String {
     let mut p = name.trim().to_string();
     if p.is_empty() {
@@ -101,147 +149,305 @@ fn normalize_scenario_path(name: &str) -> String {
     p
 }
 
-/// The "Scenario" section, rendered in the top strip (dock item). Reads/writes
-/// its own state, **saves** the current scenario directly (a file write, not a
-/// world mutation → in place), and **sets a pending action** for the
-/// (re)loads (which, for their part, rebuild the world in `PreUpdate`).
+/// Suggests a copy name for `path`: `scenarios/minerals.ron` → `scenarios/minerals copy.ron`.
+fn suggest_copy_name(path: &str) -> String {
+    let stem = path.strip_suffix(".ron").unwrap_or(path);
+    format!("{stem} copy.ron")
+}
+
+/// The display name of the loaded file (basename), or `(unsaved)`.
+fn loaded_name(loaded_path: Option<&str>) -> &str {
+    match loaded_path {
+        Some(p) => p.rsplit('/').next().unwrap_or(p),
+        None => "(unsaved)",
+    }
+}
+
+/// Writes the config to `path`, reporting through the status line. Returns whether it
+/// succeeded (the caller then re-baselines and records the path).
+fn write_scenario(path: &str, config: &SimConfig, status: &mut UiStatus) -> bool {
+    match config.save_ron_file(path) {
+        Ok(()) => {
+            status.set(format!("Saved → {path}"));
+            true
+        }
+        Err(e) => {
+            status.set(format!("Failed: {e}"));
+            false
+        }
+    }
+}
+
+/// Saves to `path`; on success, **claims** the file (owned) and re-baselines (so the
+/// `●` modified marker clears). Returns whether it succeeded.
+fn save_and_claim(
+    panel: &mut RunsPanel,
+    config: &SimConfig,
+    status: &mut UiStatus,
+    path: String,
+) -> bool {
+    if !write_scenario(&path, config, status) {
+        return false;
+    }
+    panel.loaded_path = Some(path);
+    panel.owns_loaded = true;
+    panel.baseline = config.clone();
+    true
+}
+
+/// The "Scenario" section, rendered in the top strip (dock item): the **Scenario
+/// menu** plus the current file name with a `*` *modified* marker. It only reads/writes
+/// its own state, **saves** directly (a file write), and **sets a pending action** for
+/// the (re)loads (which rebuild the world in `PreUpdate`).
 pub(crate) fn scenario_section(
     ui: &mut egui::Ui,
     panel: &mut RunsPanel,
     config: &mut SimConfig,
     status: &mut UiStatus,
 ) {
-    // We work on local copies so the combo's egui closure does not capture
-    // `panel` (avoids cross borrows).
+    let dirty = *config != panel.baseline;
+    // Local copies so the menu closures don't capture `panel` (avoids cross borrows);
+    // intents collected here, then resolved against `dirty`/`owns_loaded` below.
     let scenarios = panel.scenarios.clone();
-    let mut selected = panel.selected;
     let mut scenario_path = panel.scenario_path.clone();
-    let mut pending = None;
-    let mut rescan = false;
+    let loaded_path = panel.loaded_path.clone();
+    let mut want: Option<RunAction> = None;
+    let mut want_save = false;
+    let mut want_save_as = false;
+    let mut menu_open = false;
 
-    // Emitted **inline** (no dedicated `ui.horizontal`): `top_bar` wraps scenario
-    // + recording in a single `horizontal_wrapped` → one line at the top.
-    ui.strong("Scenario:");
-    let label = selected
-        .and_then(|i| scenarios.get(i))
-        .map(String::as_str)
-        .unwrap_or("(choose…)");
-    egui::ComboBox::from_id_salt("scenario_combo")
-        .selected_text(label)
-        .show_ui(ui, |ui| {
-            for (i, path) in scenarios.iter().enumerate() {
-                ui.selectable_value(&mut selected, Some(i), path);
-            }
-        });
-    if ui.button("↻").on_hover_text("Rescan scenarios/").clicked() {
-        rescan = true;
-    }
-    if ui
-        .add_enabled(selected.is_some(), egui::Button::new("⟲ Reload"))
-        .on_hover_text("Loads the selected scenario and restarts the run.")
-        .clicked()
-        && let Some(path) = selected.and_then(|i| scenarios.get(i))
-    {
-        pending = Some(RunAction::LoadScenario(path.clone()));
-    }
-
-    ui.separator();
-
-    // SAVE — the intuitive model: a **loaded** scenario is overwritten silently;
-    // with none loaded, a "save as" dialog asks for a name (`save_dialog_open`).
-    if ui
-        .button("💾 Save")
-        .on_hover_text("Overwrites the loaded scenario; if none is loaded, asks for a name.")
-        .clicked()
-    {
-        match panel.loaded_path.clone() {
-            Some(path) => {
-                status.set(match config.save_ron_file(&path) {
-                    Ok(()) => format!("Saved → {path}"),
-                    Err(e) => format!("Failed: {e}"),
-                });
-            }
-            None => {
-                if panel.save_dialog_name.is_empty() {
-                    panel.save_dialog_name = "scenarios/new_scenario.ron".to_string();
-                }
-                panel.save_dialog_open = true;
-            }
+    ui.menu_button("Scenario ▾", |ui| {
+        menu_open = true;
+        if ui.button("✚ New (empty)").clicked() {
+            want = Some(RunAction::NewEmpty);
         }
-    }
-    ui.weak(format!(
-        "file: {}",
-        panel.loaded_path.as_deref().unwrap_or("(unsaved)")
-    ));
-
-    ui.separator();
-    ui.label("Load:");
-    ui.add(egui::TextEdit::singleline(&mut scenario_path).desired_width(140.0))
-        .on_hover_text("Scenario file to load (.ron)");
-    if ui
-        .button("📂")
-        .on_hover_text("Load this file and restart the run")
-        .clicked()
-    {
-        pending = Some(RunAction::LoadScenario(scenario_path.clone()));
-    }
-
-    // "Save as" dialog, shown only when no scenario is loaded. A floating window
-    // over the docked panels; driven through locals, then copied back.
-    if panel.save_dialog_open {
-        let mut name = panel.save_dialog_name.clone();
-        let mut window_open = true; // the window's [x] close button
-        let mut do_save = false;
-        let mut cancel = false;
-        egui::Window::new("Save scenario as…")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .open(&mut window_open)
-            .show(ui.ctx(), |ui| {
-                ui.label("File name (.ron — placed in scenarios/ if no folder given):");
-                ui.text_edit_singleline(&mut name);
-                ui.horizontal(|ui| {
-                    do_save = ui.button("Save").clicked();
-                    cancel = ui.button("Cancel").clicked();
-                });
+        ui.menu_button("📂 Open ▸", |ui| {
+            for path in &scenarios {
+                if ui.button(path).clicked() {
+                    want = Some(RunAction::LoadScenario(path.clone()));
+                }
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut scenario_path)
+                        .desired_width(170.0)
+                        .hint_text("path/to.ron"),
+                );
+                if ui.button("Open path").clicked() {
+                    want = Some(RunAction::LoadScenario(scenario_path.clone()));
+                }
             });
-        panel.save_dialog_name = name;
-        if do_save {
-            let path = normalize_scenario_path(&panel.save_dialog_name);
-            match config.save_ron_file(&path) {
-                Ok(()) => {
-                    status.set(format!("Saved → {path}"));
-                    panel.loaded_path = Some(path);
-                    panel.save_dialog_open = false;
-                    rescan = true;
-                }
-                Err(e) => status.set(format!("Failed: {e}")),
-            }
-        } else if cancel || !window_open {
-            panel.save_dialog_open = false;
+        });
+        ui.separator();
+        if ui.button("💾 Save").clicked() {
+            want_save = true;
         }
-    }
+        if ui.button("💾 Save As…").clicked() {
+            want_save_as = true;
+        }
+    });
+    // The scenario list refreshes itself **when the menu opens** (no manual rescan):
+    // we detect the closed→open transition and rescan once.
+    let rescan = menu_open && !panel.menu_was_open;
+    panel.menu_was_open = menu_open;
 
-    // Copy the local copies back to the resource.
-    panel.selected = selected;
+    // Current document name + a *modified* marker (amber name + "*"). We avoid a glyph
+    // marker (e.g. "●"): the embedded DejaVu subset renders some symbols as tofu.
+    let name = loaded_name(loaded_path.as_deref());
+    let text = if dirty {
+        egui::RichText::new(format!("{name} *")).color(egui::Color32::from_rgb(240, 180, 80))
+    } else {
+        egui::RichText::new(name)
+    };
+    ui.label(text).on_hover_text(match &loaded_path {
+        Some(p) if dirty => format!("{p} — unsaved edits"),
+        Some(p) => p.clone(),
+        None => "Not saved yet".to_string(),
+    });
+
+    // Resolve intents (full &mut access here, no egui closure borrow in flight).
     panel.scenario_path = scenario_path;
     if rescan {
         panel.scenarios = scan_scenarios();
     }
-    if pending.is_some() {
-        panel.pending = pending;
+    // Destructive navigation guards on unsaved edits.
+    if let Some(action) = want {
+        if dirty {
+            panel.confirm = Some(Confirm::DiscardThen(action));
+        } else {
+            panel.pending = Some(action);
+        }
+    }
+    if want_save_as {
+        open_save_as(panel);
+    }
+    if want_save {
+        match panel.loaded_path.clone() {
+            None => open_save_as(panel),
+            Some(path) if panel.owns_loaded => {
+                save_and_claim(panel, config, status, path);
+            }
+            // External / bundled file: protect it (offer a copy) instead of clobbering.
+            Some(path) => panel.confirm = Some(Confirm::OverwriteExternal(path)),
+        }
+    }
+
+    confirm_modal(ui, panel, config, status);
+    save_as_dialog(ui, panel, config, status);
+}
+
+/// Primes and opens the "Save As" dialog (suggesting a name from the loaded file).
+fn open_save_as(panel: &mut RunsPanel) {
+    if panel.save_dialog_name.is_empty() {
+        panel.save_dialog_name = panel
+            .loaded_path
+            .clone()
+            .unwrap_or_else(|| "scenarios/untitled.ron".to_string());
+    }
+    panel.save_dialog_open = true;
+}
+
+/// The pending confirmation modal (discard-edits, overwrite-external, or
+/// overwrite-existing). The choice is collected inside the closure, then applied after
+/// it so the borrow of the pending [`Confirm`] does not alias `panel`.
+fn confirm_modal(
+    ui: &mut egui::Ui,
+    panel: &mut RunsPanel,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
+    let Some(confirm) = panel.confirm.take() else {
+        return;
+    };
+    let mut window_open = true;
+    let mut choice = Choice::Pending;
+    egui::Window::new("Scenario")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .open(&mut window_open)
+        .show(ui.ctx(), |ui| match &confirm {
+            Confirm::DiscardThen(_) => {
+                ui.label("You have unsaved edits. Discard them?");
+                ui.horizontal(|ui| {
+                    if ui.button("Discard").clicked() {
+                        choice = Choice::Proceed;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Choice::Cancel;
+                    }
+                });
+            }
+            Confirm::OverwriteExternal(path) => {
+                ui.label(format!(
+                    "“{path}” wasn't created here (it may be a bundled scenario).\n\
+                     Overwriting rewrites the file and drops its comments."
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Save a copy…").clicked() {
+                        choice = Choice::SaveCopy;
+                    }
+                    if ui.button("Overwrite").clicked() {
+                        choice = Choice::Proceed;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Choice::Cancel;
+                    }
+                });
+            }
+            Confirm::OverwriteExisting(path) => {
+                ui.label(format!("“{path}” already exists. Overwrite it?"));
+                ui.horizontal(|ui| {
+                    if ui.button("Overwrite").clicked() {
+                        choice = Choice::Proceed;
+                    }
+                    // Back to naming, keeping the typed name.
+                    if ui.button("Rename…").clicked() {
+                        choice = Choice::SaveCopy;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Choice::Cancel;
+                    }
+                });
+            }
+        });
+
+    match (choice, confirm) {
+        (Choice::Proceed, Confirm::DiscardThen(action)) => panel.pending = Some(action),
+        (Choice::Proceed, Confirm::OverwriteExternal(path) | Confirm::OverwriteExisting(path)) => {
+            save_and_claim(panel, config, status, path);
+        }
+        (Choice::SaveCopy, Confirm::OverwriteExternal(path)) => {
+            panel.save_dialog_name = suggest_copy_name(&path);
+            panel.save_dialog_open = true;
+        }
+        // "Rename…" on an existing target → reopen Save As with the same name.
+        (Choice::SaveCopy, Confirm::OverwriteExisting(_)) => panel.save_dialog_open = true,
+        // No button yet and not closed via [x] → keep the modal up.
+        (Choice::Pending, c) if window_open => panel.confirm = Some(c),
+        // Cancelled, dismissed, or an impossible pairing → drop it.
+        _ => {}
     }
 }
 
-/// Reloads a scenario into the living world: replaces the `SimConfig`, resyncs
-/// the editor's palette, **pauses the sim**, then **delegates the rebuild to the
-/// reset** (item 11) by raising its flag. Must run before `controls::apply_reset`
-/// (chained).
+/// The "Save As" dialog (name entry). On success: writes, records the path as
+/// **owned**, and re-baselines (dirty cleared).
+fn save_as_dialog(
+    ui: &mut egui::Ui,
+    panel: &mut RunsPanel,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
+    if !panel.save_dialog_open {
+        return;
+    }
+    let mut name = panel.save_dialog_name.clone();
+    let mut window_open = true;
+    let mut do_save = false;
+    let mut cancel = false;
+    egui::Window::new("Save scenario as…")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .open(&mut window_open)
+        .show(ui.ctx(), |ui| {
+            ui.label("File name (.ron — placed in scenarios/ if no folder given):");
+            ui.text_edit_singleline(&mut name);
+            ui.horizontal(|ui| {
+                do_save = ui.button("Save").clicked();
+                cancel = ui.button("Cancel").clicked();
+            });
+        });
+    panel.save_dialog_name = name;
+    if do_save {
+        let path = normalize_scenario_path(&panel.save_dialog_name);
+        // Naming an **existing** file (other than the one already loaded) → confirm
+        // before clobbering it, so a stray default name can't silently overwrite a
+        // bundled scenario.
+        let collides =
+            std::path::Path::new(&path).exists() && panel.loaded_path.as_deref() != Some(&path);
+        if collides {
+            panel.confirm = Some(Confirm::OverwriteExisting(path));
+            panel.save_dialog_open = false;
+        } else if save_and_claim(panel, config, status, path) {
+            panel.save_dialog_open = false;
+            panel.scenarios = scan_scenarios(); // a new file may have appeared
+        }
+    } else if cancel || !window_open {
+        panel.save_dialog_open = false;
+    }
+}
+
+/// Applies a pending scenario action into the living world: replaces the `SimConfig`
+/// (from a file, or empty), resyncs the editor's palette, **pauses the sim**, then
+/// **delegates the rebuild to the reset** (item 11) by raising its flag. Re-baselines
+/// the document (dirty cleared) and marks an opened file as **not owned** (external →
+/// Save protects it). Must run before `controls::apply_reset` (chained).
 ///
 /// The pause (on `Time<Virtual>`, like [`crate::controls`]) before the reset: we
-/// restart on a **frozen** new world, to place/edit/inspect it before launching
-/// — modeled on the paused start (`controls::pause_at_launch`).
+/// restart on a **frozen** new world, to place/edit/inspect it before launching —
+/// modeled on the paused start (`controls::pause_at_launch`).
 pub fn apply_scenario_load(
     mut panel: ResMut<RunsPanel>,
     mut config: ResMut<SimConfig>,
@@ -250,27 +456,34 @@ pub fn apply_scenario_load(
     mut vtime: ResMut<Time<Virtual>>,
     mut status: ResMut<UiStatus>,
 ) {
-    if !matches!(panel.pending, Some(RunAction::LoadScenario(_))) {
-        return;
-    }
-    let Some(RunAction::LoadScenario(path)) = panel.pending.take() else {
+    let Some(action) = panel.pending.take() else {
         return;
     };
-    // Computed first, then assigned, to avoid overlapping borrows of `panel`
-    // (the success arm also records `loaded_path`).
-    let result = match SimConfig::from_ron_file(&path) {
-        Ok(loaded) => {
-            *config = loaded;
-            palette.selected = None;
-            palette.dragging = None;
-            // Pause before the rebuild: the new world is born frozen.
-            vtime.pause();
-            controls.reset_requested = true;
-            // This is now the loaded file → a later 💾 overwrites it (item: save UX).
-            panel.loaded_path = Some(path.clone());
-            format!("Scenario reloaded (paused) ← {path}")
+    // Shared epilogue: pause, rebuild, resync the editor, re-baseline.
+    let mut install = |panel: &mut RunsPanel, config: &SimConfig| {
+        palette.selected = None;
+        palette.dragging = None;
+        vtime.pause();
+        controls.reset_requested = true;
+        panel.baseline = config.clone();
+    };
+    match action {
+        RunAction::LoadScenario(path) => match SimConfig::from_ron_file(&path) {
+            Ok(loaded) => {
+                *config = loaded;
+                install(&mut panel, &config);
+                panel.loaded_path = Some(path.clone());
+                panel.owns_loaded = false; // opened from disk → protected on Save
+                status.set(format!("Scenario loaded (paused) ← {path}"));
+            }
+            Err(e) => status.set(format!("Failed: {e}")),
+        },
+        RunAction::NewEmpty => {
+            *config = SimConfig::empty();
+            install(&mut panel, &config);
+            panel.loaded_path = None;
+            panel.owns_loaded = false;
+            status.set("New empty scenario (paused).".to_string());
         }
-        Err(e) => format!("Failed: {e}"),
-    };
-    status.set(result);
+    }
 }

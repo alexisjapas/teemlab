@@ -155,6 +155,17 @@ open work in §9.
   (view ≠ scenario data); and the three scattered per-panel status strings funnel into
   one `UiStatus` shown once in the bottom bar. *Next (deferred):* collapsible panels +
   presentation mode, pan/zoom + selection cartouche, per-panel polish.
+- **Scenario management — document model.** The scattered scenario IO (a combo +
+  `⟲ Reload`, a free-text Load path, a silent `💾 Save`) becomes a single **Scenario
+  menu** (New / Open ▸ / Revert / Save / Save As) with the current file name and a
+  **`*` modified marker** (amber) next to it. *Modified* is derived by comparing the
+  config against a `baseline` snapshot (every config type already derives `PartialEq`).
+  Destructive navigation (New / Open / Revert) **confirms** before discarding unsaved
+  edits, and **Save protects bundled scenarios**: overwriting a file the user did not
+  create this session offers *Save a copy* instead of clobbering it (RON serialization
+  drops comments / compact form). Fixed a latent bug surfaced by the dirty check:
+  `color_edit_button_rgb` round-trips its `[f32; 3]` through HSVA every frame, drifting
+  (and persisting) the stored colors — now gated on `response.changed()` (`color_button`).
 
 **Remaining.**
 
