@@ -64,6 +64,7 @@ pub(crate) fn controls_section(
     let paused = vtime.is_paused();
     if ui
         .button(if paused { "▶ Play" } else { "⏸ Pause" })
+        .on_hover_text("Play / pause  ·  Space")
         .clicked()
     {
         if paused {
@@ -74,7 +75,11 @@ pub(crate) fn controls_section(
     }
     // Single-stepping only makes sense when stopped.
     ui.add_enabled_ui(paused, |ui| {
-        if ui.button("⏭ Step").clicked() {
+        if ui
+            .button("⏭ Step")
+            .on_hover_text("Advance one tick  ·  → (when paused)")
+            .clicked()
+        {
             controls.steps_pending += 1;
         }
     });
@@ -91,14 +96,24 @@ pub(crate) fn controls_section(
     {
         vtime.set_relative_speed(controls.speed);
     }
+    // Quick presets next to the slider — the active one stays highlighted.
+    for s in [1.0_f32, 2.0, 5.0, 10.0] {
+        if ui
+            .selectable_label((controls.speed - s).abs() < 1e-3, format!("×{s:.0}"))
+            .clicked()
+        {
+            controls.speed = s;
+            vtime.set_relative_speed(s);
+        }
+    }
 
     ui.separator();
-    if ui.button("⟲ Reset").clicked() {
+    if ui
+        .button("⟲ Reset")
+        .on_hover_text("Rebuild the world from the current config  ·  R")
+        .clicked()
+    {
         controls.reset_requested = true;
-    }
-    if paused {
-        ui.separator();
-        ui.weak("paused");
     }
 }
 

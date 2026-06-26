@@ -88,6 +88,13 @@ impl History {
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
+
+    /// Simulated time of the latest sample (seconds), or `0.0` if none. Read-only
+    /// observation — the windowed HUD uses it for the run-time readout; it resets with
+    /// the history (and hence with the world).
+    pub fn latest_time(&self) -> f32 {
+        self.samples.back().map(|s| s.t).unwrap_or(0.0)
+    }
 }
 
 /// Normalizes a gene value within its bounds, to `[0, 1]`.

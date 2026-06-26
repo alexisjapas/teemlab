@@ -107,7 +107,7 @@ fn main() {
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,
-                toggle_pause_key,
+                keyboard_shortcuts,
                 set_sim_camera,
             )
                 .chain(),
@@ -115,13 +115,15 @@ fn main() {
         .run();
 }
 
-/// **Space** shortcut: play/pause the simulation (drives `Time<Virtual>`, like
-/// the controls button). We respect egui's keyboard focus: if a text input (RON
-/// path, etc.) has focus, space goes to it and does not trigger the pause.
-fn toggle_pause_key(
+/// Keyboard shortcuts mirroring the transport controls: **Space** play/pause, **→**
+/// single-step (when paused), **R** reset. They only set `Time<Virtual>` / the
+/// `SimControls` flags (the same paths as the buttons). We respect egui's keyboard
+/// focus: when a text input (a RON path, a name…) has focus we let it keep the keys.
+fn keyboard_shortcuts(
     mut contexts: EguiContexts,
     keys: Res<ButtonInput<KeyCode>>,
     mut vtime: ResMut<Time<Virtual>>,
+    mut controls: ResMut<controls::SimControls>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if ctx.egui_wants_keyboard_input() {
@@ -133,6 +135,13 @@ fn toggle_pause_key(
         } else {
             vtime.pause();
         }
+    }
+    // Single-step only makes sense while paused (mirrors the disabled Step button).
+    if keys.just_pressed(KeyCode::ArrowRight) && vtime.is_paused() {
+        controls.steps_pending += 1;
+    }
+    if keys.just_pressed(KeyCode::KeyR) {
+        controls.reset_requested = true;
     }
     Ok(())
 }

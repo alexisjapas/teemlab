@@ -271,5 +271,28 @@ pub fn dock(
     // The region left free by the panels: the central area where the sim is framed.
     // Non-deprecated successor of `ctx.available_rect()`.
     central.0 = root.available_rect_before_wrap();
+
+    // Sim-state overlay over that central area (egui composites over the Bevy sim):
+    // the run time and speed always, a prominent PAUSED banner when frozen. The run
+    // time comes from the history's latest sample (so it resets with the world).
+    let painter = root.painter().with_clip_rect(central.0);
+    let cx = central.0.center().x;
+    let run_time = history.latest_time();
+    painter.text(
+        egui::pos2(cx, central.0.top() + 6.0),
+        egui::Align2::CENTER_TOP,
+        format!("t = {run_time:.1} s   ·   ×{:.1}", sim_controls.speed),
+        egui::FontId::monospace(12.0),
+        egui::Color32::from_gray(140),
+    );
+    if vtime.is_paused() {
+        painter.text(
+            egui::pos2(cx, central.0.top() + 24.0),
+            egui::Align2::CENTER_TOP,
+            "PAUSED",
+            egui::FontId::proportional(20.0),
+            egui::Color32::from_rgb(240, 180, 80),
+        );
+    }
     Ok(())
 }
