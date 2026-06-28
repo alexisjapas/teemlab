@@ -503,25 +503,38 @@ fn archetype_editor(
     // end of function).
     let brain_before = config.archetypes[i].brain.clone();
 
-    // BODY — name, color, population and physical size, in a framed card.
+    // BODY — identity (name, colour) then the spawn / physical parameters, in a framed
+    // card. Laid out in a two-column grid so the labels line up.
     ui.group(|ui| {
         let arch = &mut config.archetypes[i];
         ui.strong("Body");
-        ui.horizontal(|ui| {
-            ui.label("name:");
-            ui.text_edit_singleline(&mut arch.name);
-        });
-        ui.horizontal(|ui| {
-            ui.label("color:");
-            color_button(ui, &mut arch.color);
-        });
-        ui.add(
-            egui::DragValue::new(&mut arch.count)
-                .range(0..=5000)
-                .prefix("count at spawn (reset): "),
-        );
-        ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0).text("body radius"));
-        ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0).text("max reserve"));
+        egui::Grid::new("body_fields")
+            .num_columns(2)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("name");
+                ui.add(egui::TextEdit::singleline(&mut arch.name).desired_width(f32::INFINITY));
+                ui.end_row();
+
+                ui.label("colour");
+                color_button(ui, &mut arch.color);
+                ui.end_row();
+
+                ui.label("count");
+                ui.add(egui::DragValue::new(&mut arch.count).range(0..=5000))
+                    .on_hover_text("How many to spawn (applied on the next reset).");
+                ui.end_row();
+
+                ui.label("body radius");
+                ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0));
+                ui.end_row();
+
+                ui.label("max reserve");
+                ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0))
+                    .on_hover_text("Energy ceiling: the reserve is clamped to it.");
+                ui.end_row();
+            });
+        ui.small("Count, radius and reserve are baked at spawn, applied on the next reset (⟲).");
     });
 
     // GENES — the founding genotype + per-species mutability, in a framed card. Every
@@ -622,6 +635,25 @@ fn archetype_editor(
         let rays = arch.genotype.ray_count();
         brain_kind_editor(ui, &mut arch.brain, rays);
 
+        // Body ↔ brain coherence: a moving decider on an immobile body (or a Sessile
+        // brain on a mobile body) is almost always a mistake — surface it (the
+        // plant-aware theme of the gene editor) without forbidding it.
+        let immobile = arch.genotype.locomotion().is_immobile();
+        let moves = !matches!(arch.brain, BrainKind::Sessile);
+        let warn = ui.visuals().warn_fg_color;
+        if immobile && moves {
+            ui.colored_label(
+                warn,
+                "The body can't move (max speed 0) — this decider won't move it. \
+                 Pick Sessile, or give the body some speed.",
+            );
+        } else if !immobile && !moves {
+            ui.colored_label(
+                warn,
+                "Sessile never acts — this mobile body will just sit still.",
+            );
+        }
+
         // Topology/type changed while weights were captured → they have become
         // inconsistent (fan-in/shape), we clear them rather than spawning mute brains.
         if arch.brain != brain_before && arch.captured_brain.is_some() {
@@ -652,26 +684,29 @@ fn archetype_editor(
 /// `vision_rays` only serves the MLP, to display the (constrained) size of its
 /// input layer.
 fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize) {
-    egui::ComboBox::from_label("type")
-        .selected_text(kind.name())
-        .show_ui(ui, |ui| {
-            let is_wander = matches!(kind, BrainKind::Wander { .. });
-            if ui.selectable_label(is_wander, "Wander").clicked() && !is_wander {
-                *kind = BrainKind::default();
-            }
-            let is_hunter = matches!(kind, BrainKind::Hunter);
-            if ui.selectable_label(is_hunter, "Hunter").clicked() && !is_hunter {
-                *kind = BrainKind::Hunter;
-            }
-            let is_sessile = matches!(kind, BrainKind::Sessile);
-            if ui.selectable_label(is_sessile, "Sessile").clicked() && !is_sessile {
-                *kind = BrainKind::Sessile;
-            }
-            let is_mlp = matches!(kind, BrainKind::Mlp { .. });
-            if ui.selectable_label(is_mlp, "Network (MLP)").clicked() && !is_mlp {
-                *kind = BrainKind::Mlp { hidden: vec![8] };
-            }
-        });
+    ui.horizontal(|ui| {
+        ui.label("decider");
+        egui::ComboBox::from_id_salt("brain_kind")
+            .selected_text(kind.name())
+            .show_ui(ui, |ui| {
+                let is_wander = matches!(kind, BrainKind::Wander { .. });
+                if ui.selectable_label(is_wander, "Wander").clicked() && !is_wander {
+                    *kind = BrainKind::default();
+                }
+                let is_hunter = matches!(kind, BrainKind::Hunter);
+                if ui.selectable_label(is_hunter, "Hunter").clicked() && !is_hunter {
+                    *kind = BrainKind::Hunter;
+                }
+                let is_sessile = matches!(kind, BrainKind::Sessile);
+                if ui.selectable_label(is_sessile, "Sessile").clicked() && !is_sessile {
+                    *kind = BrainKind::Sessile;
+                }
+                let is_mlp = matches!(kind, BrainKind::Mlp { .. });
+                if ui.selectable_label(is_mlp, "Network (MLP)").clicked() && !is_mlp {
+                    *kind = BrainKind::Mlp { hidden: vec![8] };
+                }
+            });
+    });
     match kind {
         BrainKind::Wander { turn_rate } => {
             ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("turn responsiveness"))
@@ -688,7 +723,7 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
 /// threat) and the output (2) are *constrained* by the contract and only displayed.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
     ui.small(format!(
-        "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) → \
+        "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
          output {} (contract). The input layer then adapts to each individual's \
          visual precision (gene \"Rays\").",
         MlpBrain::input_size(vision_rays),
@@ -697,11 +732,11 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     let mut remove = None;
     for (i, n) in hidden.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            ui.label(format!("hidden {i}"));
-            ui.add(egui::DragValue::new(n));
+            ui.label(format!("hidden layer {}", i + 1));
+            ui.add(egui::DragValue::new(n).suffix(" neurons"));
             *n = (*n).clamp(1, 64); // at least one neuron, reasonable ceiling.
             if ui
-                .small_button("✕")
+                .small_button("×") // U+00D7 (✕ U+2715 tofus in egui's default font)
                 .on_hover_text("remove this layer")
                 .clicked()
             {
@@ -712,7 +747,8 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     if let Some(i) = remove {
         hidden.remove(i); // 0 hidden layers = a simple perceptron, valid.
     }
-    if ui.button("+ hidden layer").clicked() {
+    // ASCII "+" (the fullwidth "＋" used elsewhere tofus in egui's default font).
+    if ui.button("+ Hidden layer").clicked() {
         hidden.push(8);
     }
 

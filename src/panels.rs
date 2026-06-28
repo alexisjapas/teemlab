@@ -291,7 +291,7 @@ pub fn dock(
                     ui.strong("Archetype editor");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .button("✕")
+                            .button("×") // U+00D7 (✕ U+2715 tofus in egui's default font)
                             .on_hover_text("Close (deselect the archetype)")
                             .clicked()
                         {
