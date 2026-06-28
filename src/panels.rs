@@ -56,9 +56,15 @@ use crate::status::UiStatus;
 /// **non-resizable**: an egui side panel cannot shrink-wrap its content's width
 /// (sliders and scroll areas fill whatever width they are given — there is no natural
 /// width to collapse to, unlike the bottom panel's content-driven *height*), so we
-/// pick a width that comfortably fits the densest content (the gene editor) rather
-/// than offering a drag handle. Kept **equal** left and right so the centered sim
-/// stays centered.
+/// pick a width that comfortably fits the densest content (the gene editor). Kept
+/// **equal** left and right so the centered sim stays centered.
+///
+/// Every docked panel also sets `.resizable(false)` explicitly: an egui `Panel`
+/// defaults to *resizable*, and `exact_size` only pins the width range to a point — it
+/// does **not** clear that flag. Left resizable, the panel still runs the resize
+/// interaction, flipping the pointer to a resize cursor and highlighting the separator
+/// on hover, while a drag changes nothing (the range is a point). Disabling it removes
+/// that dead affordance and leaves only the dim, static separator line.
 const SIDE_PANEL_WIDTH: f32 = 370.0;
 
 /// **Observation** state of the right panel, bundled into one [`SystemParam`] so
@@ -172,52 +178,54 @@ pub fn dock(
     // Scenario menu) pinned **left**; the **transport controls** (play / step / speed /
     // reset) **centered**; the **View** menu and the **Export** toggle pinned **right**.
     // Video recording lives in a floating window opened by the Export button (below).
-    egui::Panel::top("top_bar").show_inside(&mut root, |ui| {
-        let row_h = ui.spacing().interact_size.y;
-        ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), row_h),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                let full_w = ui.available_width();
-                // LEFT: scenario IO.
-                ui.push_id("scenario_bar", |ui| {
-                    runs::scenario_section(ui, &mut runs_panel, &mut config, &mut ui_status);
-                });
-                // CENTER: the transport controls, centered on the **whole bar**. egui
-                // can't center a *group* along the main axis in immediate mode (it only
-                // learns the group's width after laying it out), so we pad by the width
-                // measured last frame (`ctrl_width`, 1-frame lag, clamped so it never
-                // collides with the scenario group). `scope` measures this frame's width.
-                let left_w = full_w - ui.available_width();
-                let pad = (full_w * 0.5 - *ctrl_width * 0.5 - left_w).max(8.0);
-                ui.add_space(pad);
-                let measured = ui
-                    .scope(|ui| controls::controls_section(ui, &mut sim_controls, &mut vtime))
-                    .response
-                    .rect
-                    .width();
-                *ctrl_width = measured;
-                // RIGHT (emitted right→left): Export rightmost, then the View menu, so
-                // reading order is View · Export.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .button(fonts::icon_label(icons::RECORD, "Export…"))
-                        .on_hover_text(
-                            "Render the current scenario to a video (opens the export panel).",
-                        )
-                        .clicked()
-                    {
-                        recorder_panel.open = !recorder_panel.open;
-                    }
-                    ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
-                        editor::layers_section(ui, &mut layers)
-                    })
-                    .response
-                    .on_hover_text("Toggle view layers (agents, nutrient maps).");
-                });
-            },
-        );
-    });
+    egui::Panel::top("top_bar")
+        .resizable(false)
+        .show_inside(&mut root, |ui| {
+            let row_h = ui.spacing().interact_size.y;
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), row_h),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    let full_w = ui.available_width();
+                    // LEFT: scenario IO.
+                    ui.push_id("scenario_bar", |ui| {
+                        runs::scenario_section(ui, &mut runs_panel, &mut config, &mut ui_status);
+                    });
+                    // CENTER: the transport controls, centered on the **whole bar**. egui
+                    // can't center a *group* along the main axis in immediate mode (it only
+                    // learns the group's width after laying it out), so we pad by the width
+                    // measured last frame (`ctrl_width`, 1-frame lag, clamped so it never
+                    // collides with the scenario group). `scope` measures this frame's width.
+                    let left_w = full_w - ui.available_width();
+                    let pad = (full_w * 0.5 - *ctrl_width * 0.5 - left_w).max(8.0);
+                    ui.add_space(pad);
+                    let measured = ui
+                        .scope(|ui| controls::controls_section(ui, &mut sim_controls, &mut vtime))
+                        .response
+                        .rect
+                        .width();
+                    *ctrl_width = measured;
+                    // RIGHT (emitted right→left): Export rightmost, then the View menu, so
+                    // reading order is View · Export.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(fonts::icon_label(icons::RECORD, "Export…"))
+                            .on_hover_text(
+                                "Render the current scenario to a video (opens the export panel).",
+                            )
+                            .clicked()
+                        {
+                            recorder_panel.open = !recorder_panel.open;
+                        }
+                        ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
+                            editor::layers_section(ui, &mut layers)
+                        })
+                        .response
+                        .on_hover_text("Toggle view layers (agents, nutrient maps).");
+                    });
+                },
+            );
+        });
 
     // Floating "Export video" window, toggled by the Export button. Driven through a
     // local `open` (the window's [x]) so it does not alias the `&mut recorder_panel`
@@ -244,6 +252,7 @@ pub fn dock(
     // click — a master/detail split that keeps this panel about the scenario as a whole.
     egui::Panel::left("left_tools")
         .exact_size(SIDE_PANEL_WIDTH)
+        .resizable(false)
         .show_inside(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::CollapsingHeader::new("World")
@@ -263,6 +272,7 @@ pub fn dock(
     // time series — stay at the bottom.)
     egui::Panel::right("right_panel")
         .exact_size(SIDE_PANEL_WIDTH)
+        .resizable(false)
         .show_inside(&mut root, |ui| {
             // Three collapsible sections, uniform with the left panel (no bare `strong`
             // title sitting among collapsibles): Observation — how the highlight follows
@@ -326,14 +336,16 @@ pub fn dock(
     // *above* these curves — so the curves keep the full central width, the editor sitting
     // over them rather than narrowing them. Non-resizable and not wrapped in a
     // `ScrollArea`, so it sizes to exactly the content's height.
-    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
-        if !ui_status.message.is_empty() {
-            ui.weak(&ui_status.message);
-            ui.separator();
-        }
-        ui.strong("Evolution — curves");
-        hud::hud_section(ui, &mut history, &config);
-    });
+    egui::Panel::bottom("bottom_panel")
+        .resizable(false)
+        .show_inside(&mut root, |ui| {
+            if !ui_status.message.is_empty() {
+                ui.weak(&ui_status.message);
+                ui.separator();
+            }
+            ui.strong("Evolution — curves");
+            hud::hud_section(ui, &mut history, &config);
+        });
 
     // Archetype editor — the **detail** half: a second left column that docks to the
     // left of the central area (i.e. right of the world panel, above the central-width
@@ -352,6 +364,7 @@ pub fn dock(
     {
         egui::Panel::left("archetype_editor")
             .exact_size(SIDE_PANEL_WIDTH)
+            .resizable(false)
             .show_inside(&mut root, |ui| {
                 ui.horizontal(|ui| {
                     ui.strong("Archetype editor");
