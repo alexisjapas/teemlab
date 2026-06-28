@@ -276,11 +276,19 @@ impl GeneCategory {
         }
     }
 
-    /// Whether the section starts **expanded**. The advanced, usually-zero axes
-    /// (flora, nutrients) start collapsed to keep the common fauna case uncluttered;
-    /// the core ones start open.
-    pub fn default_open(self) -> bool {
-        !matches!(self, GeneCategory::Flora | GeneCategory::Nutrients)
+    /// Whether the section starts **expanded**, given whether the edited entity is
+    /// `immobile` (a sessile plant — zero max speed). The open sections follow the
+    /// entity's *kind*: the **flora / nutrient** axes are the sessile ones (open for a
+    /// plant, collapsed for fauna); the **locomotion / vision** axes are the mobile
+    /// ones (open for fauna, collapsed for a plant — only a residual gene survives the
+    /// immobile filter, the max-speed switch / brain cost, so it stays reachable but
+    /// out of focus); **metabolism / reproduction** are always relevant.
+    pub fn default_open(self, immobile: bool) -> bool {
+        match self {
+            GeneCategory::Flora | GeneCategory::Nutrients => immobile,
+            GeneCategory::Locomotion | GeneCategory::Vision => !immobile,
+            GeneCategory::Metabolism | GeneCategory::Reproduction => true,
+        }
     }
 }
 
@@ -611,6 +619,27 @@ mod tests {
                 c.label()
             );
         }
+    }
+
+    /// The gene editor opens the flora / nutrient sections by default for a sessile
+    /// **plant** (the relevant axes) but keeps them collapsed for **fauna**; the core
+    /// sections open in both cases (locomotion / vision are hidden, not collapsed, on a
+    /// plant).
+    #[test]
+    fn default_open_follows_mobility() {
+        // Fauna (mobile): the mobile axes open, the sessile axes collapsed.
+        assert!(GeneCategory::Locomotion.default_open(false));
+        assert!(GeneCategory::Vision.default_open(false));
+        assert!(!GeneCategory::Flora.default_open(false));
+        assert!(!GeneCategory::Nutrients.default_open(false));
+        // Plant (immobile): the sessile axes open, the mobile axes collapsed.
+        assert!(GeneCategory::Flora.default_open(true));
+        assert!(GeneCategory::Nutrients.default_open(true));
+        assert!(!GeneCategory::Locomotion.default_open(true));
+        assert!(!GeneCategory::Vision.default_open(true));
+        // Metabolism / reproduction are always open.
+        assert!(GeneCategory::Metabolism.default_open(true));
+        assert!(GeneCategory::Reproduction.default_open(false));
     }
 
     /// The cost genes (priced characteristics, §2/Law 7) are flagged `is_cost` and the

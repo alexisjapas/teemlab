@@ -576,7 +576,7 @@ fn archetype_editor(
             // so it is robust to where a future gene lands in TRAITS).
             visible.sort_by_key(|&idx| TRAITS[idx].is_cost);
             egui::CollapsingHeader::new(cat.label())
-                .default_open(cat.default_open())
+                .default_open(cat.default_open(immobile))
                 .show(ui, |ui| {
                     for &idx in &visible {
                         let t = &TRAITS[idx];
