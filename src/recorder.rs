@@ -158,12 +158,12 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
             ui.end_row();
         });
 
-    // Overlaid native visualizer: composes the video in 9:16 (identical to F1 mode).
+    // Overlaid native visualizer: composes the video in 9:16.
     ui.checkbox(&mut panel.hud, "HUD overlay (9:16 composition)")
         .on_hover_text(
             "Composes the video in 9:16: arena on top, native visualizer (stats / curves / \
-         inspector) at the bottom — identical to the F1 presentation mode. Unchecked: video of \
-         the arena alone (then choose 1080×1080).",
+         inspector) at the bottom. Unchecked: video of the arena alone (then choose \
+         1080×1080).",
         );
     if panel.hud {
         ui.horizontal(|ui| {
