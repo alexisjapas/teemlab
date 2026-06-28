@@ -17,6 +17,8 @@ use teemlab::SimConfig;
 use teemlab::genotype::TRAITS;
 use teemlab::metrics::{Curve, History, population_curves, trait_curves};
 
+use crate::fonts::{self, icons};
+
 /// Converts an sRGB color `[r, g, b] ∈ [0, 1]` (backend-agnostic) to `Color32`.
 fn rgb(c: [f32; 3]) -> egui::Color32 {
     let q = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -29,7 +31,10 @@ fn rgb(c: [f32; 3]) -> egui::Color32 {
 pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &SimConfig) {
     ui.horizontal(|ui| {
         ui.weak(format!("{} samples", history.sample_count()));
-        if ui.button("↻ Clear").clicked() {
+        if ui
+            .button(fonts::icon_label(icons::RESET, "Clear"))
+            .clicked()
+        {
             history.clear();
         }
     });
@@ -79,11 +84,19 @@ fn draw_traits(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
     legend(ui, &curves);
 }
 
-/// A legend: a colored dot + the name of each curve.
+/// A small filled colour square aligned with the text — the legend marker, matching
+/// the catalog's colour swatch (and avoiding a bare "●" glyph in favour of painted ink).
+fn swatch(ui: &mut egui::Ui, color: [f32; 3]) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, 9.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 2.0, rgb(color));
+}
+
+/// A legend: a colour swatch + the name of each curve.
 fn legend(ui: &mut egui::Ui, curves: &[Curve]) {
     ui.horizontal_wrapped(|ui| {
         for c in curves {
-            ui.colored_label(rgb(c.color), format!("● {}", c.name));
+            swatch(ui, c.color);
+            ui.label(&c.name);
         }
     });
 }
@@ -227,7 +240,10 @@ fn plot(ui: &mut egui::Ui, height: f32, curves: &[Curve], y_min: f32, y_max: f32
         ui.small(format!("t = {t:.0} s"));
         for c in curves {
             if let Some(p) = nearest(&c.pts, t) {
-                ui.colored_label(rgb(c.color), format!("● {}: {:.y_dec$}", c.name, p[1]));
+                ui.horizontal(|ui| {
+                    swatch(ui, c.color);
+                    ui.label(format!("{}: {:.y_dec$}", c.name, p[1]));
+                });
             }
         }
     });

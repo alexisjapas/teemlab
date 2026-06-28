@@ -18,6 +18,7 @@ use std::process::{Child, Command};
 use teemlab::SimConfig;
 use teemlab::selection::SelectionRoll;
 
+use crate::fonts::{self, icons};
 use crate::status::UiStatus;
 
 /// State of the "Recording" panel + the running `record` process, if any.
@@ -181,10 +182,13 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     if recording {
         ui.horizontal(|ui| {
             ui.spinner();
-            ui.add_enabled(false, egui::Button::new("⏺ Recording…"));
+            ui.add_enabled(
+                false,
+                egui::Button::new(fonts::icon_label(icons::RECORD, "Recording…")),
+            );
         });
     } else if ui
-        .button("⏺ Record")
+        .button(fonts::icon_label(icons::RECORD, "Record"))
         .on_hover_text("Launches the headless `record` binary as a subprocess.")
         .clicked()
     {
