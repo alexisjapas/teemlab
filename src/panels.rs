@@ -264,24 +264,36 @@ pub fn dock(
     egui::Panel::right("right_panel")
         .exact_size(SIDE_PANEL_WIDTH)
         .show_inside(&mut root, |ui| {
-            // Observation first: how the highlight follows agents + the view reset.
-            inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
-            ui.separator();
+            // Three collapsible sections, uniform with the left panel (no bare `strong`
+            // title sitting among collapsibles): Observation — how the highlight follows
+            // agents + the view reset — then the live stats, then the agent inspector.
+            egui::CollapsingHeader::new("Observation")
+                .default_open(true)
+                .show(ui, |ui| {
+                    inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view)
+                });
             egui::CollapsingHeader::new("Live stats")
                 .default_open(false)
                 .show(ui, |ui| editor::stats_section(ui, &stats_agents));
-            ui.separator();
-            ui.strong("Agent inspector");
-            // `inspector_section` carries its own `ScrollArea` and **returns** any
-            // capture request (a derived archetype): we add it to the config *after*
-            // the call (it borrows `config` shared) → mutable borrow then allowed.
-            match inspector::inspector_section(
-                ui,
-                &obs.selection,
-                &config,
-                &mut palette.variant_name,
-                &inspector_agents,
-            ) {
+            // `inspector_section` carries its own `ScrollArea` and **returns** any capture
+            // request (a derived archetype); `body_returned` is `Some` only while the
+            // header is expanded, so `flatten` maps the collapsed case to `None`. We apply
+            // it *after* the call (it borrows `config` shared) → the mutable borrow is then
+            // allowed.
+            let inspector_action = egui::CollapsingHeader::new("Agent inspector")
+                .default_open(true)
+                .show(ui, |ui| {
+                    inspector::inspector_section(
+                        ui,
+                        &obs.selection,
+                        &config,
+                        &mut palette.variant_name,
+                        &inspector_agents,
+                    )
+                })
+                .body_returned
+                .flatten();
+            match inspector_action {
                 // Capture → add the derived archetype to the current scenario.
                 Some(inspector::InspectorAction::Capture(arch)) => {
                     let from = arch.captured_from.clone().unwrap_or_default();
