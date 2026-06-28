@@ -112,31 +112,42 @@ pub struct Genotype {
 }
 
 impl Default for Genotype {
-    /// Default founding values (the base "archetype"): reused by
-    /// [`Archetype::new_agent`](crate::config::Archetype::new_agent) and by any
-    /// gene omitted from a partial RON genotype (`#[serde(default)]`). Each gene in
-    /// its storage unit — the fov in degrees.
+    /// Default founding values — a **living, evolving creature**: reused by
+    /// [`Archetype::new_agent`](crate::config::Archetype::new_agent) and by any gene
+    /// omitted from a partial RON genotype (`#[serde(default)]`). Placed in a world
+    /// with food, it metabolizes, reproduces and drifts out of the box (no need to
+    /// hand-wire an economy first). Each gene in its storage unit — the fov in degrees.
+    ///
+    /// **Every cost is priced** (SIM Law 7 — no free beneficial trait): the four cost
+    /// genes default **non-zero**, including `brain_cost` and `agility_cost` (inert in
+    /// effect for a hand-written brain — zero neurons — or an immobile body — no
+    /// maneuver — but present, so a moving / networked entity always pays). The costs
+    /// stay **non-mutable** by default ([`crate::config::Mutability`]), so this change
+    /// does not alter `mutate`'s RNG draws. Scenarios that need other values set the
+    /// genes explicitly (every bundled `.ron` and the in-code chaos drivers do), so the
+    /// new defaults reach *new* entities without shifting existing experiments.
     fn default() -> Self {
         Self {
             max_speed: 140.0,
             agility: 0.12,
             vision_range: 160.0,
             vision_fov_deg: 120.0,
-            reproduction_threshold: 0.0,
-            offspring_energy: 30.0,
-            mutation_rate: 0.0,
-            base_metabolism: 0.0,
-            move_cost: 0.0,
+            // Alive: a reproduction threshold + an endowment for the child, a non-zero
+            // mutation rate (so lineages actually evolve), and the survival costs.
+            reproduction_threshold: 80.0,
+            offspring_energy: 40.0,
+            mutation_rate: 0.05,
+            base_metabolism: 4.0,
+            move_cost: 2.0,
             vision_rays: 7.0,
-            // Flora genes inactive by default (fauna): no passive gain, close
-            // seeding by default.
+            // Flora genes inactive by default (fauna): no passive gain, close seeding.
             photosynthesis: 0.0,
             seed_dispersal: 0.0,
-            // Decision-system cost inactive by default: the brain is free until a
-            // scenario opts in (like base_metabolism/move_cost).
-            brain_cost: 0.0,
-            // Maneuvering is free until a scenario opts in (like the other costs).
-            agility_cost: 0.0,
+            // Decision-system + maneuvering costs priced (Law 7): inert for a 0-neuron
+            // hand-written brain / an immobile body, but a real price for an MLP / a
+            // mover. Small so they don't dominate base metabolism.
+            brain_cost: 0.1,
+            agility_cost: 0.02,
             // Nutrient genes (T2) inert by default: no absorption, no store, no
             // nutrient cost per child → the reproduction gate always passes.
             nutrient_absorption: 0.0,
@@ -686,18 +697,29 @@ mod tests {
         }
     }
 
-    /// The default genotype carries consistent founding values (fov in degrees,
-    /// integer rays stored as `f32`).
+    /// The default genotype is a **living, evolving creature** (fov in degrees,
+    /// integer rays stored as `f32`): it metabolizes, reproduces and drifts, and
+    /// **every cost is priced** (Law 7) — including brain / agility (non-zero, though
+    /// inert for a 0-neuron / immobile entity).
     #[test]
-    fn default_has_founder_values() {
+    fn default_is_a_living_creature() {
         let g = Genotype::default();
         assert_eq!(g.max_speed, 140.0);
         assert_eq!(g.vision_fov_deg, 120.0);
         assert_eq!(g.vision_rays, 7.0);
         assert_eq!(g.ray_count(), 7);
-        // The decision-system and maneuvering costs are inert by default.
-        assert_eq!(g.brain_cost, 0.0);
-        assert_eq!(g.agility_cost, 0.0);
+        // Alive: a survival cost, a reproduction threshold, a non-zero mutation rate.
+        assert!(g.base_metabolism > 0.0);
+        assert!(g.reproduction_threshold > 0.0);
+        assert!(g.mutation_rate > 0.0);
+        // Every cost is priced (SIM Law 7): none defaults to 0.
+        assert!(g.base_metabolism > 0.0);
+        assert!(g.move_cost > 0.0);
+        assert!(g.brain_cost > 0.0);
+        assert!(g.agility_cost > 0.0);
+        // Flora / nutrient genes stay inert (a plant / nutrient scenario opts in).
+        assert_eq!(g.photosynthesis, 0.0);
+        assert_eq!(g.nutrient_absorption, 0.0);
     }
 
     /// Immobility is read from the locomotion phenotype (zero max speed): it is
@@ -780,13 +802,17 @@ mod tests {
         }
     }
 
-    /// Zero mutation = faithful clone (evolution-off regime).
+    /// Zero mutation = faithful clone (evolution-off regime). The default genotype now
+    /// drifts (`mutation_rate` > 0), so we pin the rate to 0 for this regime.
     #[test]
     fn zero_mutation_is_identity() {
         let c = config();
         let mutable = Mutability::default();
         let mut rng = Rng::new(1);
-        let g = Genotype::default(); // mutation_rate = 0
+        let g = Genotype {
+            mutation_rate: 0.0,
+            ..Genotype::default()
+        };
         assert_eq!(g.mutate(&mut rng, &mutable, &c), g);
     }
 

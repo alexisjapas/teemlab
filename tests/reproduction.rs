@@ -29,6 +29,10 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
         mutation_rate: 0.0, // stable genes: we reason on exact values.
         base_metabolism: 0.0,
         move_cost: 0.0,
+        // No drain at all (inert-world shortcut) so the reserve evolves by reproduction
+        // only — the "living" Genotype::default now prices these, so pin them to 0.
+        agility_cost: 0.0,
+        brain_cost: 0.0,
         ..Genotype::default()
     };
     SimConfig {

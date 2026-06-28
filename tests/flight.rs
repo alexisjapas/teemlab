@@ -41,6 +41,15 @@ fn prey_sees_and_flees_its_predator() {
                 genotype: Genotype {
                     vision_fov_deg: 120.0,
                     vision_range: 260.0,
+                    // Inert + non-reproducing + non-mutating: a short determinism
+                    // test, predating the "living" Genotype::default (which now prices
+                    // the costs and breeds), so we pin the changed genes to 0.
+                    base_metabolism: 0.0,
+                    move_cost: 0.0,
+                    agility_cost: 0.0,
+                    brain_cost: 0.0,
+                    reproduction_threshold: 0.0,
+                    mutation_rate: 0.0,
                     ..Genotype::default()
                 },
                 brain: BrainKind::Hunter,
@@ -58,6 +67,13 @@ fn prey_sees_and_flees_its_predator() {
                 reserve_max: 100.0,
                 genotype: Genotype {
                     max_speed: 0.0,
+                    // Inert + non-reproducing (cf. the prey above).
+                    base_metabolism: 0.0,
+                    move_cost: 0.0,
+                    agility_cost: 0.0,
+                    brain_cost: 0.0,
+                    reproduction_threshold: 0.0,
+                    mutation_rate: 0.0,
                     ..Genotype::default()
                 },
                 brain: BrainKind::Hunter,

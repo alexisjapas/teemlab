@@ -20,6 +20,12 @@ fn world(captured: Option<Brain>, count: usize) -> SimConfig {
         mutation_rate: 0.0,
         base_metabolism: 0.0,
         move_cost: 0.0,
+        // Frozen population: no reproduction (the "living" Genotype::default now breeds
+        // at threshold 80) and no costs (inert-world shortcut), so the founders and
+        // their brains stay put at the first tick.
+        reproduction_threshold: 0.0,
+        agility_cost: 0.0,
+        brain_cost: 0.0,
         ..Genotype::default()
     };
     let arch = Archetype {
