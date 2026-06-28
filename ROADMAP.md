@@ -194,6 +194,22 @@ open work in §9.
   The reuse workflow is surfaced, and "is this imported species up to date?" is now
   visible. (The cross-scenario *shared* library — copy-vs-reference revisited — stays
   the §9 horizon.)
+- **Parameter defaults — a deliberate pass (done).** `Genotype::default()` is now a
+  **living, evolving creature** rather than an inert template: `base_metabolism 4`,
+  `move_cost 2`, `reproduction_threshold 80`, `offspring_energy 40`, `mutation_rate
+  0.05` — so a freshly created / placed agent, given food, metabolizes, reproduces and
+  drifts out of the box. And **every cost is priced** (SIM Law 7 — no free trait):
+  `brain_cost 0.1` and `agility_cost 0.02` default non-zero too (inert in effect for a
+  0-neuron brain / immobile body, a real price for an MLP / a mover). The costs stay
+  **non-mutable**, so `mutate`'s RNG draws are unchanged. The change reaches *new*
+  entities without shifting existing experiments — every bundled `.ron` and the active
+  chaos drivers already set these genes explicitly (flora / nutrients verified
+  **byte-identical**); the in-code determinism drivers that leaned on the old all-zero
+  default (flight, hunter, reproduction, captured_brain) were migrated to pin them to 0,
+  and `default.ron` / `empty.ron` regenerated. **Reviewed and kept** (a deliberate
+  no-change): `Mutability::default` (capabilities + reproduction drift, costs + mutation
+  rate frozen — already right, and moving it would churn the RNG stream), the
+  `new_food` preset, the gene bounds, and the world scalars.
 
 **Remaining.**
 
@@ -204,20 +220,6 @@ open work in §9.
   polish** from the UI rework: **pan/zoom + selection cartouche** (camera navigation in
   the sim view) and **collapsible panels + presentation mode** (a clean sim/video view).
   Plus, longer term, the cross-scenario **shared** species library (§9).
-- **Parameter defaults — a deliberate pass.** Rework the **defaults of every
-  parameter** a freshly created entity or scenario starts from — both the **values**
-  *and* the per-gene **mutability** (which genes are allowed to drift) — across the
-  founding [`Genotype`], the default [`Mutability`], `Archetype::new_agent` /
-  `new_food`, the world scalars, and the gene bounds — so that *creating* something
-  gives a sensible, balanced starting point rather than today's mix of founding
-  constants and `0.0` (the cost / flora / nutrient genes default to `0` and to
-  *non-mutable* for RNG-safety — correct for byte-identity, but a poor authoring
-  default). **Constraint to honour:** a default that existing scenarios inherit through
-  `#[serde(default)]` cannot be moved freely — a changed value an existing `.ron` omits
-  would silently shift it, and a changed *mutability* default would shift the RNG
-  stream (the chaos-sensitive drivers must stay byte-identical). So the pass reworks the
-  *new-entity* defaults first, and where it must move a *shared* default it migrates the
-  affected `.ron`s explicitly.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
