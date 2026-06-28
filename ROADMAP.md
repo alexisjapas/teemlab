@@ -166,17 +166,37 @@ open work in §9.
   drops comments / compact form). Fixed a latent bug surfaced by the dirty check:
   `color_edit_button_rgb` round-trips its `[f32; 3]` through HSVA every frame, drifting
   (and persisting) the stored colors — now gated on `response.changed()` (`color_button`).
+- **Editor — next pass: archetype customization + coherence (threads 1 & 3, done).**
+  The windowed editor's authoring half, reworked (sim untouched — all of this lives
+  outside `FixedUpdate`). **Genes**: the 17-gene "wall" becomes collapsible sections by
+  `GeneCategory` (Locomotion, Vision, Metabolism, Reproduction, Flora, Nutrients), with
+  costs sorted to the bottom of each (`TraitSpec.is_cost`), a per-gene **mutability**
+  checkbox beside each slider behind an "Edit mutability" toggle, and the open sections
+  follow the entity's **kind** (a plant opens flora/nutrients and collapses the mobile
+  axes; `GeneCategory`/`is_cost` are presentation-only → RNG stream intact). **Body** is
+  an aligned grid; **Brain** a clearer "decider" selector with a body↔brain coherence
+  warning. Side panels are **fixed-width, non-resizable** (egui can't shrink-wrap a side
+  panel to its content), and the editor split into **master / detail**: a *World* panel
+  (params + the archetypes list / library) and a separate **archetype editor** panel
+  that opens on selection (a 2nd left column above the full-width curves), created
+  **last** so a conditional panel doesn't churn the other panels' egui ids. **Typography**:
+  a real type system on the egui context — **Inter** (text), **Departure Mono** (values,
+  via `fonts::value`), **Phosphor** (icons, a dedicated named family; v2.1 codepoints
+  verified by rendering) — replacing the tofu / emoji glyphs across every panel.
+  **Dismissable inline help** (`help::hint`, one egui-memory flag toggled from View)
+  declutters for the expert. Every bundled font carries its licence (Inter / Departure =
+  OFL, Phosphor = MIT, DejaVu recovered verbatim from the font's `name` table).
 
 **Remaining.**
 
-- **Editor — next pass (UI).** A further iteration on the windowed editor (cf.
-  [`docs/editor.md`](docs/editor.md)), in three threads: (1) **archetype
-  customization** — rework how a species is edited (Body / Genes / Brain), the gene
-  "wall" and the brain editor; (2) the **archetype library** — `species/*.ron`
-  export / import-by-copy / resync and how reusable species are surfaced and managed;
-  (3) the **overall coherence of the editor** — a consistent typographic system,
-  dismissable help, and the remaining per-panel polish (the UI rework's *next
-  (deferred)* notes above).
+- **Editor — finishing the next pass (thread 2 + deferred polish).** Threads 1
+  (archetype customization) and 3 (coherence: typography, dismissable help, per-panel
+  polish) are **done** (cf. §0 above and [`docs/editor.md`](docs/editor.md)). What
+  remains of the editor pass: (2) the **archetype library** — how reusable
+  `species/*.ron` are *surfaced and managed* (export / import-by-copy / resync are
+  wired but buried in a collapsing header; the cross-scenario shared-library idea of §9
+  is the longer horizon); and the **deferred polish** — pan/zoom + selection cartouche,
+  collapsible panels + presentation mode.
 - **Parameter defaults — a deliberate pass.** Rework the **defaults of every
   parameter** a freshly created entity or scenario starts from — both the **values**
   *and* the per-gene **mutability** (which genes are allowed to drift) — across the
