@@ -1487,40 +1487,45 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// each characteristic. They bound the **mutation** (cf. [`Genotype::mutate`]) AND
 /// the archetype editor's sliders. Loops over [`TRAITS`] via `bounds_mut`, so adding
 /// a gene exposes it here without touching this section (item 15/3). A framed card,
-/// like the other World sections (an advanced setting, but in line with the rest).
+/// like the other World sections — but with a **collapsible** header inside it
+/// (default closed): this grid is the one heavy section (one row per gene), rarely
+/// touched, so it folds away while keeping the card frame of its siblings.
 fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
-        ui.strong("Gene bounds");
-        help::hint(
-            ui,
-            "Min/max of each gene: bound the mutation and the archetype editor's \
-                 sliders. Global (shared by all archetypes).",
-        );
-        egui::Grid::new("gene_bounds_grid")
-            .num_columns(3)
-            .striped(true)
+        egui::CollapsingHeader::new("Gene bounds")
+            .default_open(false)
             .show(ui, |ui| {
-                ui.strong("gene");
-                ui.strong("min");
-                ui.strong("max");
-                ui.end_row();
-                for t in &TRAITS {
-                    // Drag step suited to the gene's scale (fine for agility,
-                    // coarse for speed), via its display decimals.
-                    let speed = 10f64.powi(-(t.decimals as i32));
-                    let b = (t.bounds_mut)(config);
-                    ui.label(t.name);
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::DragValue::new(&mut b.min).speed(speed))
+                help::hint(
+                    ui,
+                    "Min/max of each gene: bound the mutation and the archetype editor's \
+                     sliders. Global (shared by all archetypes).",
+                );
+                egui::Grid::new("gene_bounds_grid")
+                    .num_columns(3)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.strong("gene");
+                        ui.strong("min");
+                        ui.strong("max");
+                        ui.end_row();
+                        for t in &TRAITS {
+                            // Drag step suited to the gene's scale (fine for agility,
+                            // coarse for speed), via its display decimals.
+                            let speed = 10f64.powi(-(t.decimals as i32));
+                            let b = (t.bounds_mut)(config);
+                            ui.label(t.name);
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut b.min).speed(speed))
+                            });
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut b.max).speed(speed))
+                            });
+                            // Keep min ≤ max: a negative span would make the mutation's
+                            // clamp panic (`f32::clamp` requires min ≤ max).
+                            b.max = b.max.max(b.min);
+                            ui.end_row();
+                        }
                     });
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::DragValue::new(&mut b.max).speed(speed))
-                    });
-                    // Keep min ≤ max: a negative span would make the mutation's
-                    // clamp panic (`f32::clamp` requires min ≤ max).
-                    b.max = b.max.max(b.min);
-                    ui.end_row();
-                }
             });
     });
 }
