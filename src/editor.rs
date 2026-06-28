@@ -587,7 +587,7 @@ fn archetype_editor(
     // brain, editable through these same controls.
     ui.group(|ui| {
         let arch = &mut config.archetypes[i];
-        ui.strong("Genes (the archetype)");
+        ui.strong("Genes");
         help::hint(
             ui,
             "Each placed agent receives a COPY of these genes — its genome — which then \
@@ -681,7 +681,7 @@ fn archetype_editor(
     // BRAIN — the decision's author + any captured weights, in a framed card.
     ui.group(|ui| {
         let arch = &mut config.archetypes[i];
-        ui.strong("Brain (the decision's author)");
+        ui.strong("Brain");
         let rays = arch.genotype.ray_count();
         brain_kind_editor(ui, &mut arch.brain, rays);
 
