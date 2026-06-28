@@ -82,6 +82,9 @@ impl Plugin for SimPlugin {
             // (Pre-Phase-3b this was interact → metabolize → reap, which let a
             // photosynthetic source regain `photosynthesis·dt` before the death
             // check and thus never die — the immortal-patch behavior we dropped.)
+            // Since T3, `reap` also **recycles**: a dying body returns its accumulated
+            // nutrient to the field (link 2 — the conserving loop), inert (the field
+            // untouched) when the store is empty → existing scenarios byte-identical.
             //
             // The **nutrient** sub-pipeline (T2) sits after metabolize and before
             // reproduce, so the store is filled before reproduction reads it: sources

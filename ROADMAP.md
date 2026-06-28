@@ -155,6 +155,22 @@ open work in §9.
   that **cannot absorb** (no absorption gene, no field) gains nutrient **only** by eating
   a nutrient-rich plant — gain + matching loss + conservation — plus the falsifiable
   contrast (`transfer: false` combat moves **no** nutrient).
+- **Nutrient recycling — the food web, link 2 (T3, §9)**: *a dying body returns its
+  nutrient to the field* — the biogeochemical loop that **closes the leak** link 1
+  opened. Link 1 made the nutrient flow *up* the chain into an agent's `Nutrients` store,
+  so a death without recycling would **destroy** it; `ecology::reap` now deposits a dead
+  body's store into the `NutrientField` at its cell before despawning. **Conservative**:
+  the field gains **exactly** what the body held (Law 9 in spirit — matter moved, not
+  created or destroyed), **100 %** (no decomposition-efficiency loss), **instantaneous**
+  at death (**no persistent corpse entity** — no new core system, §8; a gradual
+  decomposition is a later refinement). Folded into the existing death system (one
+  uniform rule, SIM Law 11), and **inert for free** when the body carries no nutrient
+  (every pre-T3 agent has an empty store → the field is never touched, byte-identical).
+  Driver `tests/recycling.rs`: a starved body returns its whole store to the field
+  (conservation across death), and the contrast — an **empty** body deposits nothing
+  (recycling *returns* the store, it does not conjure nutrient from death). Note —
+  recycling closes the conservation loop but is **not** a population cap: a flat standing
+  crop is set by **turnover**, an independent lever.
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
   `nutrients`, …), clean `clippy`/`fmt`.
@@ -265,17 +281,19 @@ open work in §9.
   portability — all deferred.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
-- **Nutrients — the closed loop (T3, §9)**. Link 1, **trophic nutrient transfer**
-  (eating carries the nutrient up the chain), is **done** (cf. §0 above). What remains, in
-  order: (2) **recycling** — a dead body returns its (now accumulated, link 1) nutrient to
-  the field (a *conserving* loop), worthwhile only once the nutrient is conserved in
-  biomass, whereas with a renewable source it is not needed before; per-species absorption
-  + **multiple nutrients** (a 2nd nutrient layer makes the shared-opacity 50/50 real); GUI
-  editing of sources; and re-balancing the 4 parked grazed-food tests via the nutrient
-  layer. Further out, **emergent targeting** (Law 8 — an entity eats what holds the
-  nutrients it needs, replacing the explicit `relations` table), now unblocked by link 1.
-  NB: recycling ≠ a population **cap** — a flat standing crop is set by **turnover**
-  (mortality / a portable `crush`), an independent lever.
+- **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
+  carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
+  field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
+  forager → (death) → field, conservatively. What remains: **per-species absorption** +
+  **multiple nutrients** (a 2nd nutrient layer makes the shared-opacity 50/50 real); the
+  **conservation invariant at reproduction** (today still an interim *consumable* — a child
+  born empty, the gate amount destroyed; §9); GUI editing of sources; and re-balancing the
+  4 parked grazed-food tests via the nutrient layer — now that turnover **and** a closed
+  loop exist, an actual flat carrying capacity is in reach. Further out, **emergent
+  targeting** (Law 8 — an entity eats what holds the nutrients it needs, replacing the
+  explicit `relations` table), now unblocked by link 1. NB: recycling ≠ a population **cap**
+  — a flat standing crop is set by **turnover** (mortality / a portable `crush`), an
+  independent lever.
 
 ---
 
@@ -904,18 +922,23 @@ seam (§4), without touching any core system.
       `tests/trophic.rs` (gain + matching loss + conservation, and the `transfer: false`
       → no-transfer contrast). This is the **prerequisite** that unblocks both recycling
       (below) and the emergent targeting of Phase 3.
-    - **deferred — recycling / closed loop**: a dead body returns its nutrients to the
-      field at its cell (the realistic biogeochemical cycle, enabled by the Law-11 mortal
-      flora). **Decision (2026-06-25): recycling comes *after* the trophic nutrient
-      transfer** ("eating carries nutrient") — **now done (link 1 above)**, so recycling is
-      next. *Why this order:* with a **renewable source** the nutrient is a self-sustaining
-      **faucet + drain** (source → field → store → spent at reproduction), so nothing needs
-      recycling yet; recycling earns its keep only once the nutrient is **conserved in
-      biomass** and flows up the chain — a dying body then **leaks** the nutrient it
-      accumulated (link 1 made that accumulation possible), and recycling closes that leak.
-      **Nuance:** recycling ≠ the population **cap** — a flat standing crop is set by
+    - **recycling / closed loop — link 2 (done, on `main`)**: a dead body returns its
+      nutrients to the field at its cell (the realistic biogeochemical cycle, enabled by the
+      Law-11 mortal flora). `ecology::reap` now deposits a dying body's `Nutrients` store
+      into the `NutrientField` before despawning — **folded into the uniform death system**
+      (Law 11), **conservative** (the field gains *exactly* the store), **100 %** (no
+      decomposition loss), **instantaneous** (no persistent corpse entity — no new core
+      system, §8), and **inert for free** when the store is empty (every pre-T3 agent →
+      byte-identical). Driver `tests/recycling.rs` (a starved body returns its whole store;
+      an empty body deposits nothing). **Decision (2026-06-25), honoured: recycling came
+      *after* the trophic transfer** ("eating carries nutrient", link 1) — *why this order:*
+      with a renewable source the nutrient is a self-sustaining faucet + drain, so nothing
+      needed recycling until link 1 let the nutrient be **conserved in biomass** and flow up
+      the chain; a dying body then **leaks** what it accumulated, and recycling closes that
+      leak. **Nuance:** recycling ≠ the population **cap** — a flat standing crop is set by
       **turnover** (mortality / a portable `crush`), an *independent* lever; recycling only
-      closes the conservation loop. (Also needs per-species absorption first.)
+      closes the conservation loop. **Still pending:** per-species absorption + multiple
+      nutrients (the rest of T3).
     - **Detailed step-by-step implementation plan:
       [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md)** — the binding reference
       (records the implementation decisions, incl. the corrections below).

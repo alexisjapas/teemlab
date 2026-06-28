@@ -22,7 +22,7 @@ use crate::brain::{Brain, MlpBrain};
 use crate::components::{Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
-use crate::nutrients::Nutrients;
+use crate::nutrients::{NutrientField, Nutrients};
 use crate::rng::Rng;
 use crate::spawn::spawn_agent_with_brain;
 use avian2d::prelude::*;
@@ -111,9 +111,29 @@ pub fn metabolize(
 /// [`metabolize`] (cf. the `lib.rs` schedule): an entity grazed to zero by `interact`
 /// dies before photosynthesis could refill it, so a flora grazed empty dies like a
 /// fauna starved empty (SIM Law 11 — one uniform death rule, no kind exempted).
-pub fn reap(mut commands: Commands, agents: Query<(Entity, &Reserve), With<Agent>>) {
-    for (entity, reserve) in &agents {
+///
+/// **Recycling (T3 link 2):** a dying body returns the nutrient it had accumulated in
+/// its [`Nutrients`] store to the [`NutrientField`] at its cell — the biogeochemical
+/// loop that **closes the leak** the trophic transfer opened. Link 1 made the nutrient
+/// flow *up* the chain into biomass; without recycling a death would then **destroy**
+/// it. The field gains **exactly** what the body held (conservation, Law 9 in spirit:
+/// matter is moved, not created or destroyed). **Inert for free** when the body carries
+/// no nutrient (every pre-T3 agent has an empty store) → the field is never touched,
+/// byte-identical. Instantaneous at death — **no persistent corpse entity** (no new
+/// core system, §8); a gradual decomposition would be a later refinement.
+pub fn reap(
+    mut commands: Commands,
+    mut field: ResMut<NutrientField>,
+    agents: Query<(Entity, &Reserve, &Transform, &Nutrients), With<Agent>>,
+) {
+    for (entity, reserve, transform, nutrients) in &agents {
         if reserve.current <= 0.0 {
+            // Return the accumulated nutrient to the substrate at the body's cell
+            // (the conserving loop). Gated on `> 0` so an inert (pre-T3) store never
+            // touches the field → byte-identical.
+            if nutrients.current > 0.0 {
+                field.add(transform.translation.truncate(), nutrients.current);
+            }
             commands.entity(entity).despawn();
         }
     }
