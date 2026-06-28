@@ -245,6 +245,13 @@ pub fn dock(
         }
     }
 
+    // Whether the archetype editor (the second left column, below) is open. When it is,
+    // the world panel **drops its right separator** so the two left columns read as one
+    // contiguous editing surface rather than being split by a line + doubled side margins.
+    let editor_open = palette
+        .selected
+        .is_some_and(|i| i < config.archetypes.len());
+
     // Left column, **fixed width, non-resizable** (width via [`SIDE_PANEL_WIDTH`] — egui
     // side panels can't fit their width to content, so no drag handle): **the world** —
     // the scenario parameters (*World*) and the entities list (*Archetypes*, with the
@@ -253,6 +260,7 @@ pub fn dock(
     egui::Panel::left("left_tools")
         .exact_size(SIDE_PANEL_WIDTH)
         .resizable(false)
+        .show_separator_line(!editor_open)
         .show_inside(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::CollapsingHeader::new("World")
@@ -358,13 +366,20 @@ pub fn dock(
     // widgets come and go, which is expected. Its left-docking position is unchanged by
     // the order (it takes the left edge of whatever rect the other panels leave free).
     let mut deselect = false;
-    if palette
-        .selected
-        .is_some_and(|i| i < config.archetypes.len())
-    {
+    if editor_open {
+        // Zero left inner margin: the editor's content butts against the world panel's
+        // (separator-less) right edge, so the two columns share a single ~8 px seam — the
+        // world panel's own right padding — instead of the 16 px of doubled side margins.
+        let editor_frame = egui::Frame::side_top_panel(root.style()).inner_margin(egui::Margin {
+            left: 0,
+            right: 8,
+            top: 2,
+            bottom: 2,
+        });
         egui::Panel::left("archetype_editor")
             .exact_size(SIDE_PANEL_WIDTH)
             .resizable(false)
+            .frame(editor_frame)
             .show_inside(&mut root, |ui| {
                 ui.horizontal(|ui| {
                     ui.strong("Archetype editor");
