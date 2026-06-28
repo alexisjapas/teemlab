@@ -1,0 +1,247 @@
+// Nutrient food web (T3) — the closed loop, made playable & observable.
+//
+// The full cycle in one scenario, to watch in the inspector + the nutrient heatmap:
+//   source → field → PLANT absorbs → HERBIVORE eats (trophic transfer, link 1)
+//   → herbivore dies → recycling returns its nutrient to the field (link 2) → …
+//
+// What to look at (click an entity → "Nutrient store" card, and toggle the nutrient
+// heatmap in View ▸ Layers):
+//  - a PLANT near a source fills its store (absorption) and seeds when full;
+//  - a HERBIVORE has NO absorption — its store rises ONLY by eating plants, and it
+//    must hold `offspring_nutrient` to breed → its reproduction is gated by the
+//    nutrient flowing up the chain;
+//  - when a herbivore starves, its accumulated nutrient returns to the field at its
+//    cell (a brighter heatmap spot where it fell).
+//
+// NB: a closed well-mixed system tends to oscillate (Lotka-Volterra overshoot — a
+// known wall, ROADMAP §7/§9); this is an *example* to observe the mechanisms, not a
+// calibrated steady state (that is the parked-tests rebalance). It stays lively for a
+// good while across seeds.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 480.0,
+    archetypes: [
+        // BASE OF THE CHAIN — a sessile plant: lives on the sun, absorbs nutrient from
+        // the field, seeds locally when both its energy threshold and its nutrient
+        // store allow. (Same proven economy as `nutrients.ron`.)
+        (
+            name: "Plant",
+            color: (0.4, 0.85, 0.4),
+            count: 140,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                agility: 0.12,
+                vision_range: 30.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 25.0,
+                offspring_energy: 15.0,
+                mutation_rate: 0.0,
+                base_metabolism: 1.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
+                photosynthesis: 5.0,
+                seed_dispersal: 25.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
+                nutrient_absorption: 1.5,
+                nutrient_capacity: 8.0,
+                offspring_nutrient: 8.0,
+            ),
+            brain: Sessile,
+            // Sessile: locomotion/vision/nutrient genes FROZEN (founder values such as
+            // max_speed 0 sit outside the bounds; mutable, reproduction would clamp them
+            // up and make the plant mobile). Only the reproduction strategy drifts.
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
+            ),
+        ),
+        // SECOND TROPHIC LEVEL — a mobile herbivore (Hunter brain forages toward the
+        // plants via the relation below). It does NOT absorb from the field
+        // (`nutrient_absorption: 0`): its nutrient store rises ONLY by eating plants
+        // (trophic transfer, link 1), and it needs `offspring_nutrient` in store to
+        // breed — so its reproduction is coupled to the nutrient it harvests up the
+        // chain. On death it recycles that store back to the field (link 2).
+        (
+            name: "Herbivore",
+            color: (1.0, 0.45, 0.35),
+            count: 8,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 130.0,
+                agility: 0.12,
+                vision_range: 150.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 40.0,
+                mutation_rate: 0.06,
+                base_metabolism: 4.0,
+                move_cost: 2.0,
+                vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 0.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+                nutrient_absorption: 0.0,
+                nutrient_capacity: 30.0,
+                offspring_nutrient: 14.0,
+            ),
+            brain: Hunter,
+            mutable: (
+                max_speed: true,
+                agility: true,
+                vision_range: true,
+                vision_fov: true,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: true,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
+            ),
+        ),
+    ],
+    // The herbivore (1) eats the plant (0): predation (transfer) — energy AND, since
+    // link 1, the nutrient embodied in the eaten biomass, proportional to the bite.
+    relations: [
+        (
+            actor: 1,
+            target: 0,
+            transfer: true,
+            rate: 45.0,
+            range: 16.0,
+        ),
+    ],
+    nutrient: (
+        resolution: 256,
+        diffusion: 0.3,
+    ),
+    // Four vents seed the field; diffusion makes gradients (oases the plants cluster
+    // around). Toggle the heatmap in View ▸ Layers to see them.
+    sources: [
+        (
+            pos: (-140.0, 140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (140.0, 140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (-140.0, -140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (140.0, -140.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 30.0,
+        max: 320.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    nutrient_absorption_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    nutrient_capacity_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_nutrient_bounds: (
+        min: 0.0,
+        max: 120.0,
+    ),
+    play_area_color: (0.07, 0.07, 0.09),
+    off_game_color: (0.17, 0.17, 0.19),
+    seed: 12648430,
+)

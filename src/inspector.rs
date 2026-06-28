@@ -18,6 +18,7 @@ use teemlab::components::{
 };
 use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
+use teemlab::nutrients::Nutrients;
 use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
 
 use crate::editor::{Palette, card, draw_mlp_graph};
@@ -205,6 +206,7 @@ pub(crate) fn inspector_section(
             &Brain,
             &Generation,
             &Age,
+            &Nutrients,
         ),
         With<Agent>,
     >,
@@ -213,8 +215,18 @@ pub(crate) fn inspector_section(
         ui.weak("Click an agent in the area to inspect it.");
         return None;
     };
-    let Ok((species, reserve, genotype, vision, perception, action, brain, generation, age)) =
-        agents.get(entity)
+    let Ok((
+        species,
+        reserve,
+        genotype,
+        vision,
+        perception,
+        action,
+        brain,
+        generation,
+        age,
+        nutrients,
+    )) = agents.get(entity)
     else {
         ui.colored_label(
             egui::Color32::from_rgb(255, 140, 120),
@@ -253,6 +265,32 @@ pub(crate) fn inspector_section(
                 .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
         );
     });
+
+    // NUTRIENT STORE (T3 — the second reservoir). Energy (sun/food) governs survival,
+    // the nutrient governs reproduction. Shown whenever the **scenario** uses the
+    // nutrient axis (a source emits, or some archetype has a capacity) — so it is
+    // visible in a nutrient world even on an entity that carries none — but hidden in
+    // the scenarios that ignore nutrients entirely (no "0 / 0" noise on plain fauna).
+    let scenario_uses_nutrients = !config.sources.is_empty()
+        || config
+            .archetypes
+            .iter()
+            .any(|a| a.genotype.nutrient_capacity > 0.0);
+    if nutrients.max > 0.0 || scenario_uses_nutrients {
+        card(ui, |ui| {
+            ui.strong("Nutrient store");
+            if nutrients.max > 0.0 {
+                ui.add(
+                    egui::ProgressBar::new(nutrients.fraction())
+                        .text(format!("{:.1} / {:.0}", nutrients.current, nutrients.max)),
+                );
+                help::hint(ui, "Absorbed from the field / eaten; spent to reproduce.");
+            } else {
+                // A nutrient world, but this entity is off the axis (capacity 0).
+                ui.weak("Not on the nutrient axis (capacity 0).");
+            }
+        });
+    }
 
     // GENOTYPE.
     card(ui, |ui| {

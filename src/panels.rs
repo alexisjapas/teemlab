@@ -40,6 +40,7 @@ use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use teemlab::genotype::Genotype;
 use teemlab::metrics::History;
+use teemlab::nutrients::Nutrients;
 use teemlab::selection::{AutoSelect, Selection};
 use teemlab::visuals::Layers;
 
@@ -154,6 +155,7 @@ pub fn dock(
             &Brain,
             &Generation,
             &Age,
+            &Nutrients,
         ),
         With<Agent>,
     >,

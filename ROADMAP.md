@@ -171,6 +171,17 @@ open work in §9.
   (recycling *returns* the store, it does not conjure nutrient from death). Note —
   recycling closes the conservation loop but is **not** a population cap: a flat standing
   crop is set by **turnover**, an independent lever.
+- **Playable food-web example + nutrient in the inspector**: the whole T3 loop, made
+  observable. `scenarios/examples/nutrient_web.ron` adds the first **playable** two-level
+  web (source → field → *Plant* absorbs → mobile *Herbivore* eats = trophic transfer →
+  death → field recycle), where the herbivore has **no** absorption (its store rises only
+  by eating) and breeds gated on `offspring_nutrient` — so its reproduction is coupled to
+  the nutrient it harvests up the chain. Both levels **coexist and oscillate** across
+  seeds (Lotka-Volterra, a known wall — an *example* to watch, not a calibrated steady
+  state, §7). And the **agent inspector** (item 12) now shows each entity's **nutrient
+  store** as a second reservoir bar (shown in any nutrient scenario; "—" off the axis),
+  beside the energy reserve — so the absorb/eat/spend/recycle flow is legible live,
+  alongside the field heatmap layer.
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
   `nutrients`, …), clean `clippy`/`fmt`.
@@ -526,7 +537,8 @@ Observation and control tooling, entirely in the windowed binary (`Update` / egu
     factored into `metrics` and plotted by two backends (egui + native Bevy, cf. §0).
 11. Controls: pause, speed 0.5×–8×, single-step, reset (control of `Time<Virtual>`;
     the reset rebuilds the world from `SimConfig`).
-12. Agent inspector: genotype, reserve, perception, current action (read-only).
+12. Agent inspector: genotype, reserve, **nutrient store** (T3 — a second reservoir
+    bar, shown only on the nutrient axis), perception, current action (read-only).
 13. Hot runs/scenarios: RON selector + save/load by path, reload without restarting
     the binary. *(The run snapshots, once serialized here, were removed — cf. §0.)*
 

@@ -185,6 +185,19 @@ pub struct Nutrients {
     pub max: f32,
 }
 
+impl Nutrients {
+    /// Fill fraction in `[0, 1]` (`0` if `max` is zero — an entity outside the
+    /// nutrient axis). Mirrors [`Reserve::fraction`](crate::components::Reserve::fraction)
+    /// so the inspector can show the nutrient store as a second reservoir bar.
+    pub fn fraction(&self) -> f32 {
+        if self.max > 0.0 {
+            (self.current / self.max).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Emission of a substrate **source** (e.g. a submarine volcanic vent): deposits
 /// `rate` per second of nutrient `nutrient` into the field cell under it (cf.
 /// [`emit_nutrients`]). Carried by a **non-`Agent`** entity (spawned by
