@@ -233,8 +233,11 @@ open work in §9.
   library) and 3 (coherence: typography, dismissable help, per-panel polish) are **done**
   (cf. §0 above and [`docs/editor.md`](docs/editor.md)); the UI-rework deferred polish —
   **pan/zoom + view reset** and the windowed **follow modes** — is **done** too (the
-  observation bullet above). What remains is, longer term, the cross-scenario **shared**
-  species library (§9).
+  observation bullet above). The **cross-scenario species library** is now built on the
+  **copy** model (fork decided): a catalog with **cross-scenario usage** (which scenarios
+  import each species + in-sync/outdated) and **bulk propagation into the open scenario**
+  ("Update all from library"); see §9. What remains there is **propagation out** to other
+  scenario files and library-file **management** (rename / delete) — deferred.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
@@ -1097,15 +1100,22 @@ seam (§4), without touching any core system.
   **single-source** question: trim §1–§4 above to *point* to `CONSTITUTION-SIM.md`
   rather than restate it, so the two can never diverge. **Deferred** until the
   current development work is done (priority is back on features).
-- **Cross-scenario archetype library** (future, builds on item 4): today a species
-  is reused by **copy at import** (`species/*.ron`, with an `Archetype.source`
-  provenance link + resync that preserves the local `count`) — each scenario stays
-  self-contained. A later step is a true **shared library** browsable and usable
-  across scenarios from inside the editor: a catalog of archetypes one picks from,
-  with tracking of which library entries a scenario uses and a way to propagate
-  updates. The copy-vs-reference fork (item 4 chose **copy** for self-containment)
-  is revisited here **deliberately**, weighing reproducibility against single-source
-  upkeep — not flipped by default.
+- **Cross-scenario archetype library** (builds on item 4 — **copy + propagation
+  tooling done**, the rest deferred). The **copy-vs-reference fork was decided
+  deliberately**: **copy kept** (a scenario stays self-contained and reproducible — a
+  core value, §5; reference would make a scenario's meaning depend on a mutable external
+  file). On the copy model, the library grew from a flat import list into a real
+  catalog: each `species/*.ron` shows a **color swatch + brain + Import (copy)** and its
+  **cross-scenario usage** — how many scenarios import it, which (hover), and whether
+  each copy is **in sync / outdated** vs the current definition — all cached by a
+  `scan_library` (one pass over every `species/*.ron` × `scenarios/*.ron`, on a manual
+  rescan, never per frame). Propagation **into the open scenario** is a one-click
+  **"Update all from library"** (bulk resync of every imported species, each local
+  `count` preserved), beside the existing per-species Export / Resync and the
+  `Archetype.source` provenance + sync indicator. **Remaining (deferred):** propagation
+  **out** to *other* scenario files on disk (rewriting their copies — destructive, needs
+  a confirm), and library-file **management** (rename / delete / organize). Reference
+  semantics stay off the table unless the value calculus changes.
 - **Grazed plants cannot die (renewable-trickle artifact)** (open decision): a
   sessile food/plant grazed to `0` in `interact` is topped up by photosynthesis in
   `metabolize` **before** `reap` runs (order `interact → metabolize → reap`), so it
