@@ -18,22 +18,25 @@ command line), so you can place, edit and inspect before launching.
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
 │  Scenario ▾  file *          ▶ Play ⏭ Step  ×1 ×2 …      View ▾   ⏺ Export… │  top strip
-├───────────────┬───────────────────────────────────────┬───────────────────┤
-│   EDIT        │                                       │     ANALYSIS      │
-│               │                                       │                   │
-│  ▾ World      │            the simulation             │  ▸ Live stats     │
-│  ▾ Entities   │         (t = …s · ×…   PAUSED)         │  Agent inspector  │
-│               │                                       │                   │
-├───────────────┴───────────────────────────────────────┴───────────────────┤
+├───────────────┬───────────────────┬───────────────────┬───────────────────┤
+│   WORLD       │  ARCHETYPE EDITOR │                   │     ANALYSIS      │
+│               │  (opens on click) │                   │                   │
+│  ▾ World      │  Body             │   the simulation  │  ▸ Live stats     │
+│  ▾ Archetypes │  Genes · Brain    │  (t = …s   PAUSED)│  Agent inspector  │
+│               │            ✕      │                   │                   │
+├───────────────┴───────────────────┴───────────────────┴───────────────────┤
 │  Evolution — curves  (population per species · gene drift)                  │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Edit** (everything you author) is on the **left**, **Analysis** (the state you
-read) on the **right**, the evolution **curves** full-width at the bottom, and the
-**simulation** fills the centre. The two side panels have a **fixed width** (equal,
-so the sim stays centred) and are **not resizable** — the width is chosen to fit
-their content; the curves panel auto-sizes to its content height.
+A **master / detail** split. The **World** panel (left) holds the scenario as a
+whole — the world parameters and the **Archetypes** list. Clicking an archetype opens
+the **Archetype editor** in a second column (to its right) — the one species you are
+editing; closing it (✕, or deselecting) widens the simulation. **Analysis** (the state
+you read) is on the **right**, the evolution **curves** full-width at the bottom, and
+the **simulation** fills the centre. The side panels have a **fixed width** (equal, so
+the sim stays centred) and are **not resizable** — the width is chosen to fit their
+content; the curves panel auto-sizes to its content height.
 
 ## Top strip
 
@@ -73,7 +76,11 @@ headless `record` binary as a subprocess (a clean fresh re-render, without this 
 encoded via `ffmpeg`. Configure the output file, duration, fps, size, the followed
 agent, and the 9:16 HUD overlay.
 
-## Edit panel (left)
+## World panel (left)
+
+The scenario as a whole: the world parameters and the list of archetypes. Editing a
+single archetype happens in its own panel (next section), which opens when you click
+one.
 
 ### World
 
@@ -93,29 +100,38 @@ Collapsible cards, ordered by how often you touch them:
 - **Appearance** — the play-area and off-game **background colours** (saved with the
   scenario, with a live preview).
 
-### Entities
+### Archetypes
 
-- **Archetypes** — the species list. **Drag** one into the arena to place it,
-  **click** to edit it, **Delete** (cursor on an entity) to remove it. **＋ Agent /
-  ＋ Food** create one; **Duplicate / Move up / Move down / Delete** act on the
-  selection. A **✦** marks an archetype carrying *captured weights*. The **Species
-  library** exports the selection to `species/*.ron`, imports a copy, or resyncs an
-  imported species from its source.
-- **Archetype editor** — the selected archetype, in three cards:
-  - **Body** — name, colour, count at spawn, body radius, max reserve.
-  - **Genes** — the founding genotype, grouped into collapsible sections
-    (Locomotion, Vision, Metabolism, Reproduction, Flora, Nutrients); the advanced
-    flora / nutrient axes start collapsed to keep the common case lean, and within each
-    section the **costs are listed last** (a uniform order). Each gene is a slider; the
-    **Edit mutability** toggle at the top of the panel reveals a per-species
-    **“mutable”** checkbox **beside** each gene (an aligned column on the left):
-    checked ⇒ the gene drifts at reproduction, unchecked ⇒ transmitted but frozen at
-    the founder’s value. Inert genes (locomotion, vision) stay hidden for an immobile
-    entity — a section left with none disappears.
-  - **Brain** — the decider: **Wander**, **Hunter** (hunt + flee), **Sessile**
-    (flora), or **Network (MLP)** (learned by neuroevolution). For the MLP you edit
-    the hidden-layer architecture (input/output are fixed by the contract) and see a
-    structure graph; captured weights can be cleared.
+The species list. **Drag** one into the arena to place it, **click** to **select**
+it — which opens the Archetype editor panel — **Delete** (cursor on an entity) to
+remove it. **＋ Agent / ＋ Food** create one; **Duplicate / Move up / Move down /
+Delete** act on the selection. A **✦** marks an archetype carrying *captured weights*.
+The **Species library** exports the selection to `species/*.ron`, imports a copy, or
+resyncs an imported species from its source.
+
+## Archetype editor (opens on selection)
+
+A second column, to the right of the World panel, that appears **only when an
+archetype is selected** (click one in the list) and closes with its **✕** (or by
+deselecting). The selected archetype, in three cards:
+
+- **Body** — name, colour, count at spawn, body radius, max reserve.
+- **Genes** — the founding genotype, grouped into collapsible sections
+  (Locomotion, Vision, Metabolism, Reproduction, Flora, Nutrients). The sections open
+  by default follow the entity's **kind**: for fauna the mobile axes (locomotion,
+  vision) open and the flora / nutrient axes stay collapsed; for a **sessile plant**
+  the reverse — flora and nutrients open, the mobile axes collapse to their residual
+  switch. Within each section the **costs are listed last** (a uniform order). Each
+  gene is a slider; the
+  **Edit mutability** toggle at the top of the panel reveals a per-species
+  **“mutable”** checkbox **beside** each gene (an aligned column on the left):
+  checked ⇒ the gene drifts at reproduction, unchecked ⇒ transmitted but frozen at
+  the founder’s value. Inert genes (locomotion, vision) stay hidden for an immobile
+  entity — a section left with none disappears.
+- **Brain** — the decider: **Wander**, **Hunter** (hunt + flee), **Sessile**
+  (flora), or **Network (MLP)** (learned by neuroevolution). For the MLP you edit
+  the hidden-layer architecture (input/output are fixed by the contract) and see a
+  structure graph; captured weights can be cleared.
 
 ## Analysis panel (right)
 

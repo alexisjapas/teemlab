@@ -6,13 +6,15 @@
 //! `editor`, `runs`, `hud`, `recorder`, `inspector`). The role of this system is
 //! purely **layout** — reserving the edges of the egui screen.
 //!
-//! **Semantic** split: **Edit** on the left (the *world* scenario params + the
-//! *entities* archetype palette/editor, stacked) — everything you author; **Analysis**
-//! on the right (live *stats* + the agent *inspector*) — the current state you read;
-//! the evolution *curves* (a time series) full-width at the bottom; *scenario IO +
-//! transport controls + View menu + Export* in the top strip (controls centered). View
-//! layers live in the top-bar **View** menu and video export in a floating window from
-//! the **Export** button — both out of the always-on panels.
+//! **Semantic** split (master/detail): the **world** on the left (the *World* scenario
+//! params + the *Archetypes* list / library) — the scenario as a whole; the **archetype
+//! editor** in a second left column that opens only when an archetype is selected — the
+//! one species you are editing; **Analysis** on the right (live *stats* + the agent
+//! *inspector*) — the current state you read; the evolution *curves* (a time series)
+//! full-width at the bottom; *scenario IO + transport controls + View menu + Export* in
+//! the top strip (controls centered). View layers live in the top-bar **View** menu and
+//! video export in a floating window from the **Export** button — both out of the
+//! always-on panels.
 //!
 //! **One root viewport `Ui`, `show_inside`.** Following bevy_egui 0.40
 //! (`examples/ui.rs`): we build a single background-layer `Ui` covering
@@ -208,10 +210,25 @@ pub fn dock(
         }
     }
 
-    // Left column, **fixed width, non-resizable**: **Edit** — everything you author,
-    // stacked. *World* (the scenario parameters) then *Entities* (the archetype palette
-    // + editor), each a top-level collapsible card. (Width via [`SIDE_PANEL_WIDTH`] —
-    // egui side panels can't fit their width to content, so no drag handle.)
+    // Bottom panel reserved **first** so it spans the **full width**: the evolution
+    // **curves** (a time series) with the unified **status line** folded in. Reserving
+    // it before the side columns is what puts them — and the archetype editor — *above*
+    // the curves (the order of `show_inside` is the layout). Non-resizable and not
+    // wrapped in a `ScrollArea`, so it sizes to exactly the content's height.
+    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
+        if !ui_status.message.is_empty() {
+            ui.weak(&ui_status.message);
+            ui.separator();
+        }
+        ui.strong("Evolution — curves");
+        hud::hud_section(ui, &mut history, &config);
+    });
+
+    // Left column, **fixed width, non-resizable** (width via [`SIDE_PANEL_WIDTH`] — egui
+    // side panels can't fit their width to content, so no drag handle): **the world** —
+    // the scenario parameters (*World*) and the entities list (*Archetypes*, with the
+    // species library). Editing *one* archetype lives in its own panel (below), opened on
+    // click — a master/detail split that keeps this panel about the scenario as a whole.
     egui::Panel::left("left_tools")
         .exact_size(SIDE_PANEL_WIDTH)
         .show_inside(&mut root, |ui| {
@@ -219,24 +236,10 @@ pub fn dock(
                 egui::CollapsingHeader::new("World")
                     .default_open(true)
                     .show(ui, |ui| editor::world_section(ui, &mut config));
-                egui::CollapsingHeader::new("Entities")
+                egui::CollapsingHeader::new("Archetypes")
                     .default_open(true)
                     .show(ui, |ui| {
-                        egui::CollapsingHeader::new("Archetypes")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                editor::selector_section(
-                                    ui,
-                                    &mut palette,
-                                    &mut config,
-                                    &mut ui_status,
-                                )
-                            });
-                        egui::CollapsingHeader::new("Archetype editor")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                editor::editor_section(ui, &mut palette, &mut config)
-                            });
+                        editor::selector_section(ui, &mut palette, &mut config, &mut ui_status)
                     });
             });
         });
@@ -266,18 +269,45 @@ pub fn dock(
             }
         });
 
-    // Bottom panel: the evolution **curves** (a time series), full width, with the
-    // unified **status line** folded in just under the sim. **Non-resizable and not
-    // wrapped in a `ScrollArea`**, so the panel sizes itself to exactly the content's
-    // height — it always stretches to take just the room the curves need.
-    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
-        if !ui_status.message.is_empty() {
-            ui.weak(&ui_status.message);
-            ui.separator();
-        }
-        ui.strong("Evolution — curves");
-        hud::hud_section(ui, &mut history, &config);
-    });
+    // Archetype editor — the **detail** half: a second left column that docks to the
+    // left of the central area (i.e. right of the world panel, above the full-width
+    // curves) and opens **only when an archetype is selected** (clicked in the list).
+    // Created **last**, after every unconditional panel: an egui child panel's id mixes
+    // in the parent's running auto-id counter ([`egui::Ui::new_child`]), so a
+    // *conditional* panel inserted earlier would shift the *later* panels' widget ids
+    // each time it toggles → egui's "changed id between passes" warnings (and lost
+    // widget state). Created last, the others keep stable ids; only this panel's own
+    // widgets come and go, which is expected. Its left-docking position is unchanged by
+    // the order (it takes the left edge of whatever rect the other panels leave free).
+    let mut deselect = false;
+    if palette
+        .selected
+        .is_some_and(|i| i < config.archetypes.len())
+    {
+        egui::Panel::left("archetype_editor")
+            .exact_size(SIDE_PANEL_WIDTH)
+            .show_inside(&mut root, |ui| {
+                ui.horizontal(|ui| {
+                    ui.strong("Archetype editor");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button("✕")
+                            .on_hover_text("Close (deselect the archetype)")
+                            .clicked()
+                        {
+                            deselect = true;
+                        }
+                    });
+                });
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    editor::editor_section(ui, &mut palette, &mut config)
+                });
+            });
+    }
+    if deselect {
+        palette.selected = None;
+    }
 
     // The region left free by the panels: the central area where the sim is framed.
     // Non-deprecated successor of `ctx.available_rect()`.
