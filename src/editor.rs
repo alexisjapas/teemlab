@@ -79,6 +79,20 @@ fn color_button(ui: &mut egui::Ui, value: &mut [f32; 3]) {
     }
 }
 
+/// A framed **card** spanning the panel's full available width. `ui.group` otherwise
+/// shrink-wraps its frame to the content, so sibling cards would differ in width by
+/// whatever each happens to hold (a slider vs a progress bar vs a label); pinning the
+/// inner width to `available_width` — already net of the parent's padding and any
+/// scrollbar — keeps cards at the same level aligned to one width. The single card
+/// primitive shared by the archetype editor, the world sub-sections and the inspector.
+pub(crate) fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        add(ui)
+    })
+    .inner
+}
+
 /// Builds the palette at `Startup`, after [`SimConfig`] is inserted by the sim
 /// plugin.
 pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
@@ -797,7 +811,7 @@ fn archetype_editor(
 
     // BODY — identity (name, colour) then the spawn / physical parameters, in a framed
     // card. Laid out in a two-column grid so the labels line up.
-    ui.group(|ui| {
+    card(ui, |ui| {
         let arch = &mut config.archetypes[i];
         ui.strong("Body");
         egui::Grid::new("body_fields")
@@ -841,7 +855,7 @@ fn archetype_editor(
     // GENES — the founding genotype + per-species mutability, in a framed card. Every
     // archetype is an agent (Phase 3b); a *food source* is just one with a Sessile
     // brain, editable through these same controls.
-    ui.group(|ui| {
+    card(ui, |ui| {
         let arch = &mut config.archetypes[i];
         ui.strong("Genes");
         help::hint(
@@ -935,7 +949,7 @@ fn archetype_editor(
     });
 
     // BRAIN — the decision's author + any captured weights, in a framed card.
-    ui.group(|ui| {
+    card(ui, |ui| {
         let arch = &mut config.archetypes[i];
         ui.strong("Brain");
         let rays = arch.genotype.ray_count();
@@ -1386,7 +1400,7 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             );
             let mut to_remove = None;
             for (i, src) in config.sources.iter_mut().enumerate() {
-                ui.group(|ui| {
+                card(ui, |ui| {
                     ui.horizontal(|ui| {
                         color_button(ui, &mut src.color);
                         ui.label(format!("source {i}"));
@@ -1515,7 +1529,7 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     }
     let mut to_remove = None;
     for (i, rel) in config.relations.iter_mut().enumerate() {
-        ui.group(|ui| {
+        card(ui, |ui| {
             ui.horizontal(|ui| {
                 archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
                 ui.label(fonts::icon(icons::ARROW_RIGHT));

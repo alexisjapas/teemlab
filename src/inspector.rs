@@ -20,7 +20,7 @@ use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
 
-use crate::editor::{Palette, draw_mlp_graph};
+use crate::editor::{Palette, card, draw_mlp_graph};
 use crate::fonts::{self, icons};
 use crate::help;
 
@@ -238,7 +238,7 @@ pub(crate) fn inspector_section(
     // reduced.
     egui::ScrollArea::vertical().show(ui, |ui| {
         // IDENTITY.
-        ui.group(|ui| {
+        card(ui, |ui| {
             ui.strong("Identity");
             ui.label(format!("Species: {}", species.0));
             ui.label(format!("Brain: {}", brain.name()));
@@ -247,7 +247,7 @@ pub(crate) fn inspector_section(
         });
 
         // ENERGY.
-        ui.group(|ui| {
+        card(ui, |ui| {
             ui.strong("Energy / reserve");
             ui.add(
                 egui::ProgressBar::new(reserve.fraction())
@@ -256,7 +256,7 @@ pub(crate) fn inspector_section(
         });
 
         // GENOTYPE.
-        ui.group(|ui| {
+        card(ui, |ui| {
             ui.strong("Genotype (inherited genes)");
             if immobile {
                 help::hint(ui, "Immobile: locomotion and vision genes hidden (no effect).");
@@ -290,7 +290,7 @@ pub(crate) fn inspector_section(
         });
 
         // ACTION.
-        ui.group(|ui| {
+        card(ui, |ui| {
             ui.strong("Action (brain output)");
             let throttle = action.throttle;
             let heading_deg = if action.dir.length_squared() > 1e-6 {
@@ -355,7 +355,7 @@ pub(crate) fn inspector_section(
         // current activation (the last `think`), edges by sign/weight — the learned
         // decision made readable. The other brains have no graph.
         if let Brain::Mlp(mlp) = brain {
-            ui.group(|ui| {
+            card(ui, |ui| {
                 ui.strong("MLP brain (activations)");
                 help::hint(
                     ui,
@@ -371,7 +371,7 @@ pub(crate) fn inspector_section(
         // Perception section reserved for entities that see: a flora (immobile,
         // without a ray) has no channel to show.
         if !immobile {
-            ui.group(|ui| {
+            card(ui, |ui| {
                 ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
                 help::hint(
                     ui,
