@@ -323,33 +323,33 @@ pub(crate) fn inspector_section(
         // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
         // but written to the catalog as a NAMED variant of this species (species/saved/),
         // with a "<scenario>-<n>" id — the caller resolves the base + id (cf. editor).
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(variant_name)
-                    .hint_text("variant name")
-                    .desired_width(120.0),
-            );
-            let named = !variant_name.trim().is_empty();
-            if ui
-                .add_enabled(
-                    named,
-                    egui::Button::new(fonts::icon_label(icons::UPLOAD, "Save as variant")),
-                )
-                .on_hover_text(
-                    "Save this evolved agent as a named variant in the species library \
-                     (species/saved/), reusable in any scenario.",
-                )
-                .clicked()
-                && let Some(src) = config.archetypes.get(species.0 as usize)
-            {
-                let mut variant = src.capture(*genotype, brain.clone(), generation.0);
-                variant.name = variant_name.trim().to_string();
-                request = Some(InspectorAction::SaveVariant {
-                    species: species.0,
-                    variant,
-                });
-            }
-        });
+        // Name field on its own line so it fills the fixed-width panel; the button sits
+        // below it (a side-by-side row would crush one or the other in 370 px).
+        ui.add(
+            egui::TextEdit::singleline(variant_name)
+                .hint_text("variant name")
+                .desired_width(f32::INFINITY),
+        );
+        let named = !variant_name.trim().is_empty();
+        if ui
+            .add_enabled(
+                named,
+                egui::Button::new(fonts::icon_label(icons::UPLOAD, "Save as variant")),
+            )
+            .on_hover_text(
+                "Save this evolved agent as a named variant in the species library \
+                 (species/saved/), reusable in any scenario.",
+            )
+            .clicked()
+            && let Some(src) = config.archetypes.get(species.0 as usize)
+        {
+            let mut variant = src.capture(*genotype, brain.clone(), generation.0);
+            variant.name = variant_name.trim().to_string();
+            request = Some(InspectorAction::SaveVariant {
+                species: species.0,
+                variant,
+            });
+        }
 
         // MLP brain: the network in action (item 18b-viz). Nodes colored by their
         // current activation (the last `think`), edges by sign/weight — the learned

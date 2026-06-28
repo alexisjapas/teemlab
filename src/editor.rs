@@ -505,10 +505,12 @@ fn catalog_section(
 ) {
     ui.horizontal(|ui| {
         ui.strong("Catalog");
+        // Fill the rest of the row rather than leaving dead space in the fixed-width
+        // panel (cf. the panel comment on why the side columns can't shrink to content).
         ui.add(
             egui::TextEdit::singleline(&mut palette.catalog_search)
                 .hint_text("search name / id")
-                .desired_width(150.0),
+                .desired_width(f32::INFINITY),
         );
     });
     if palette.catalog.is_empty() {
