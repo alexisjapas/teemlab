@@ -931,7 +931,7 @@ mod tests {
     /// The bundled default scenario stays in sync with [`SimConfig::default`].
     #[test]
     fn bundled_default_matches_default() {
-        let text = include_str!("../scenarios/default.ron");
+        let text = include_str!("../scenarios/examples/default.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid default scenario");
         assert_eq!(cfg, SimConfig::default());
     }
@@ -940,7 +940,7 @@ mod tests {
     /// no entity.
     #[test]
     fn bundled_empty_matches_empty() {
-        let text = include_str!("../scenarios/empty.ron");
+        let text = include_str!("../scenarios/examples/empty.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid empty scenario");
         assert_eq!(cfg, SimConfig::empty());
         assert!(cfg.archetypes.iter().all(|a| a.count == 0));
@@ -1004,7 +1004,7 @@ mod tests {
     /// (another archetype) as a target — otherwise the "target" channel stays zero.
     #[test]
     fn bundled_hunt_scenario_uses_hunter_on_a_target() {
-        let text = include_str!("../scenarios/hunt.ron");
+        let text = include_str!("../scenarios/examples/hunt.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid hunt scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
         let food = cfg
@@ -1022,7 +1022,7 @@ mod tests {
     /// (pyramid by counts, hunter brain, two chained relations).
     #[test]
     fn bundled_predator_prey_is_a_trophic_chain() {
-        let text = include_str!("../scenarios/predator_prey.ron");
+        let text = include_str!("../scenarios/examples/predator_prey.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid predator-prey scenario");
         // Pyramid: strictly fewer predators (species 0) than prey (1).
         assert!(
@@ -1056,7 +1056,7 @@ mod tests {
     /// the food (finite regrowth → carrying capacity).
     #[test]
     fn bundled_evolution_scenario_closes_the_loop() {
-        let text = include_str!("../scenarios/evolution.ron");
+        let text = include_str!("../scenarios/examples/evolution.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid evolution scenario");
         let agent = first_mobile(&cfg);
         let genotype = &agent.genotype;
@@ -1081,7 +1081,7 @@ mod tests {
     /// on the same food (driver `tests/cohabitation`).
     #[test]
     fn bundled_cohabitation_pits_two_brains_on_shared_food() {
-        let text = include_str!("../scenarios/cohabitation.ron");
+        let text = include_str!("../scenarios/examples/cohabitation.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid cohabitation scenario");
         assert_eq!(cfg.archetypes[0].count, cfg.archetypes[1].count);
         assert_eq!(
@@ -1112,7 +1112,7 @@ mod tests {
     /// (species 1) on the same food (driver `tests/mlp`).
     #[test]
     fn bundled_mlp_brain_pits_a_learned_brain_against_wander() {
-        let text = include_str!("../scenarios/mlp_brain.ron");
+        let text = include_str!("../scenarios/examples/mlp_brain.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid MLP scenario");
         assert!(
             matches!(cfg.brain_of(0), BrainKind::Mlp { ref hidden } if !hidden.is_empty()),
@@ -1129,7 +1129,7 @@ mod tests {
     /// relation on itself, without transfer — the §3 interaction primitive).
     #[test]
     fn bundled_flora_is_a_self_competing_sessile_plant() {
-        let text = include_str!("../scenarios/flora.ron");
+        let text = include_str!("../scenarios/examples/flora.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid flora scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
         assert!(

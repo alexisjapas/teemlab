@@ -18,7 +18,7 @@ use teemlab::genotype::Genotype;
 
 mod common;
 
-const SCENARIO: &str = include_str!("../scenarios/mlp_brain.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/mlp_brain.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 const SECONDS: usize = 200;
 

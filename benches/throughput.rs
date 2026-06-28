@@ -25,10 +25,10 @@ use common::stepping_app;
 /// MLP `decide` path, the nutrient field sub-pipeline, and interaction-heavy
 /// predation. Each sustains a population across the measured window.
 const SCENARIOS: &[&str] = &[
-    "scenarios/evolution.ron",
-    "scenarios/mlp_brain.ron",
-    "scenarios/nutrients.ron",
-    "scenarios/predator_prey.ron",
+    "scenarios/examples/evolution.ron",
+    "scenarios/examples/mlp_brain.ron",
+    "scenarios/examples/nutrients.ron",
+    "scenarios/examples/predator_prey.ron",
 ];
 
 /// Untimed warm-up: step past the founding transient so we measure steady-state

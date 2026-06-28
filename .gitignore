@@ -3,8 +3,10 @@
 *.rs.bk
 .DS_Store
 
-# Scratch file written by default from the editor (Save).
-/scenarios/edited.ron
+# User-saved scenarios: only the curated `scenarios/examples/` are committed; the
+# editor's Save / Save As write here. We keep the directory (.gitkeep), not its files.
+/scenarios/saved/*
+!/scenarios/saved/.gitkeep
 
 # Run snapshot written by default from the Runs panel (Save the run).
 /run.ron

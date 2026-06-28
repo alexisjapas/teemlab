@@ -62,7 +62,7 @@ open work in §9.
   `Brain::Sessile` is the trivial brain (no-op). The **carrying capacity emerges**
   from intraspecific competition expressed by the **interaction primitive**
   (Plant→Plant relation without transfer, §3) — no new mechanism. Driver
-  `tests/flora.rs` (`scenarios/flora.ron`, 4 seeds): the flora grows ~20×, stays
+  `tests/flora.rs` (`scenarios/examples/flora.ron`, 4 seeds): the flora grows ~20×, stays
   **bounded far from saturation** and **persists**.
 - **Phase 3b — dissolution of `Food`** (item 18h): the special `Food` type no longer
   exists. `ArchetypeKind` is **flattened** — *every archetype is an agent*
@@ -124,7 +124,7 @@ open work in §9.
   circulate down the lineage → unbounded). **Finding**: with immortal plants the
   nutrient bounds the growth *rate*, not the standing crop — a true carrying capacity
   awaits **turnover** (recycling/mortality, deferred). Driver
-  `tests/nutrients.rs`/`scenarios/nutrients.ron` (multi-seed: grows ≫ founders,
+  `tests/nutrients.rs`/`scenarios/examples/nutrients.ron` (multi-seed: grows ≫ founders,
   bounded, persists; **and** the falsifiable contrast — no sources ⇒ no growth, no
   collapse).
 - **Rendering in toggleable layers ("calques")**: everything is a layer (`Layers`
@@ -471,7 +471,7 @@ of axis A.
 7. Single interaction primitive (predation/combat) + per-species relation table.
 8. Scenario #1 — natural selection: metabolism, feeding, death at zero, reseeding.
 9. Reproduction + mutation of a parametric genotype → continuous evolutionary loop;
-   finite-rate regrowth → carrying capacity (`scenarios/evolution.ron`: stable
+   finite-rate regrowth → carrying capacity (`scenarios/examples/evolution.ron`: stable
    population, gene drift).
 
 ### P2 — Interface (done)
@@ -525,10 +525,10 @@ The inspector, for its part, shows the **MLP in action** (activations), plus the
     perception with a **"target" channel** per ray (is the nearest hit a species
     targeted by the relation table?) — the real driver of the schema extension. Brain
     selection by scenario (`BrainKind`, RON: `Wander(turn_rate: …)`/`Hunter`;
-    `scenarios/hunt.ron`). A competent control group; makes the perceive→decide→act
+    `scenarios/examples/hunt.ron`). A competent control group; makes the perceive→decide→act
     path meaningful and the brain selector falsifiable (2nd `Brain` variant).
     **Remaining**: substitution *per species* (control/learned cohabitation, §4).
-17. Co-evolutionary predator-prey **(done)**: `scenarios/predator_prey.ron`, a
+17. Co-evolutionary predator-prey **(done)**: `scenarios/examples/predator_prey.ron`, a
     **three-level trophic chain** (plants → prey → predators) where the *same* shared
     `Brain::Hunter` makes a prey a herbivore and a predator a carnivore — the "target"
     channel (item 16) resolves **by the perceiving species** via the relation table,
@@ -572,7 +572,7 @@ The inspector, for its part, shows the **MLP in action** (activations), plus the
     selector **per species** as soon as there are several, + a **functional
     description** of each variant (`BrainKind::description`, the heterogeneous
     counterpart of `name`). **Driver** `tests/cohabitation`
-    (`scenarios/cohabitation.ron`, 5 seeds): hunter (competent control) vs wandering
+    (`scenarios/examples/cohabitation.ron`, 5 seeds): hunter (competent control) vs wandering
     (naive control), **same body and same economy**, shared food — only the brain
     differs. A three-part criterion: (a) *inheritance invariant* — every descendant
     of species 0 stays a hunter, of species 1 stays a wanderer; (b) *effective
@@ -594,7 +594,7 @@ The inspector, for its part, shows the **MLP in action** (activations), plus the
     **hidden layers** (number + width); input/output stay *constrained* by the
     contract (hidden topology = a designer choice fixed at the founder, **not
     mutated** — NEAT/variable topology still deferred, §2/item 21). **Driver**
-    `tests/mlp` (`scenarios/mlp_brain.ron`, 5 seeds): MLP vs wandering cohabitation,
+    `tests/mlp` (`scenarios/examples/mlp_brain.ron`, 5 seeds): MLP vs wandering cohabitation,
     **same body and same economy**, shared and limited food — starting from
     **random** weights, the MLP goes from parity (~145/145) to **domination** by
     competitive exclusion (~220 against ~10, wandering nearly extinct) on **each**
@@ -728,7 +728,7 @@ flowchart TB
     Plant→Plant relation *without transfer* (contested light/space) that drains nearby
     neighbors; high density → drain > photosynthesis → seeding stopped / mortality →
     **stable** negative feedback. **Driver** `tests/flora.rs`
-    (`scenarios/flora.ron`, 4 seeds): the flora grows ~20× from its founders, stays
+    (`scenarios/examples/flora.ron`, 4 seeds): the flora grows ~20× from its founders, stays
     **bounded far from the arena's physical saturation** (competition slows it into a
     spatial wave), and **persists** at a sustained count. An *evolutionary* species:
     `reproduction_threshold` and `seed_dispersal` mutate under competition pressure.
@@ -841,14 +841,14 @@ seam (§4), without touching any core system.
   naturally — and, if the mineral **cycles** (dead bodies decompose back into it), a
   closed nutrient loop. More principled than `crush`, and the bottom of the food chain.
   Staged:
-  - **Phase 1 — scenario-only prototype (done, `scenarios/minerals.ron`)**: a `Mineral`
+  - **Phase 1 — scenario-only prototype (done, `scenarios/examples/minerals.ron`)**: a `Mineral`
     archetype + a `Plant→Mineral` relation, photosynthesis below base metabolism so the
     plant *depends* on the mineral. **Validated** the bound (plants self-limit, ~7 not a
     carpet) but **fragile** (2/3 seeds collapse): lacking the mineral = *death* (energy
     starvation) → spiral. Lesson → the Phase-2 design below: **decouple survival from
     reproduction** (two axes), so a missing nutrient stops reproduction but does not kill.
   - **Phase 2 — a real `nutrients` engine layer, plant food only** (**done, on `main`**;
-    `src/nutrients.rs`, `scenarios/nutrients.ron`, `tests/nutrients.rs`). Two axes:
+    `src/nutrients.rs`, `scenarios/examples/nutrients.ron`, `tests/nutrients.rs`). Two axes:
     per-entity **energy** (the existing `Reserve`, sun-fed, governs survival) + a
     **nutrient** axis governing **reproduction**. Pieces:
     - a **concentration field** per nutrient (a grid `Resource`, *not* an entity → the
@@ -943,7 +943,7 @@ seam (§4), without touching any core system.
   recorder Record + collapsible settings), egui `top_bar` removed; **#4** left → native
   **World editor** (layers, world scalars + colors, 16-gene bounds grid, nutrient
   sources, relation table) on one `number_input` pipeline, egui `left_tools` removed; a
-  new `scenarios/example.ron` became the windowed default. **Verdict: the native
+  new `scenarios/examples/example.ron` became the windowed default. **Verdict: the native
   feathers/`bevy_ui` windowed UI is not usable in practice** (judged on the running
   build) → the branch was **deleted** and `main` keeps the egui UI. The work is
   recoverable by hash via the reflog: base **`35ddd2f`** (spike + `docs/native-ui-migration-plan.md`,
@@ -1068,7 +1068,7 @@ seam (§4), without touching any core system.
     ("generality ≠ modularity", §8). An assumed cost: a slightly loose schema (a plant
     carries an inert `max_speed`). RNG-safe (genes not mutable by default → `mutate`
     does not draw them → existing drivers unchanged).
-  - **Driver** born from a real scenario (§8): `scenarios/flora.ron` +
+  - **Driver** born from a real scenario (§8): `scenarios/examples/flora.ron` +
     `tests/flora.rs` (the flora grows ~20×, stays bounded far from saturation,
     persists, across 4 seeds).
   - **Subtlety resolved**: spatial seeding *would* have recalibrated the whole economy

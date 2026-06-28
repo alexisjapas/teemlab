@@ -7,7 +7,7 @@
 //! [`Reserve`](crate::components::Reserve), sun-fed) governs *survival*; this
 //! **nutrient** axis governs *reproduction only* — so a plant with no nutrient
 //! simply does not reproduce (it lives on the sun → no death spiral), the fix to
-//! the T1 fragility (`scenarios/minerals.ron`).
+//! the T1 fragility (`scenarios/examples/minerals.ron`).
 //!
 //! The field is the **environment**, not a life form: it is **outside SIM Law 11**
 //! (it runs none of the agent systems) and it is **not** a spatial-query structure

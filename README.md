@@ -102,18 +102,20 @@ src/
   selection.rs    Selection (the inspected / highlighted agent) + its rendering (ring + vision rays), shared windowed ⇄ recorder (auto-select drives the video).
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
   bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
-scenarios/
-  default.ron     Default scenario, all fields documented.
-  empty.ron       Empty arena: the editor's canvas (no-argument fallback of the windowed build).
-  evolution.ron   Continuous evolutionary loop: reproduction + gene mutation (wandering brains).
-  hunt.ron        Hunter brains on a food source: the competent control group (item 16).
-  cohabitation.ron     Competent control (Hunter) vs naive (wandering), same body: competitive exclusion (item 18a).
-  mlp_brain.ron        LEARNED brain (MLP) vs wandering: dominates starting from random weights (item 18b).
-  predator_prey.ron    3-level trophic chain (plants → prey → predators): pyramid
-                  by counts, Hunter brains, prey that flee (items 17, 18e).
-  flora.ron       Self-limited sessile flora: photosynthesis + local seeding + competition (item 5, Phase 3a).
-  nutrients.ron   T2 nutrient layer: sun-fed plants whose REPRODUCTION is gated by a finite nutrient emitted by sources (Liebig); grows around the sources, no death spiral.
-  minerals.ron    T1 nutrient prototype (scenario-only): plants depend on a finite mineral — validated the bound but fragile (kept for reference).
+scenarios/        Two categories (Open ▸ Examples / Saved); only examples are committed.
+  examples/       Curated, committed example scenarios:
+    default.ron     Default scenario, all fields documented.
+    empty.ron       Empty arena: the editor's canvas (no-argument fallback of the windowed build).
+    evolution.ron   Continuous evolutionary loop: reproduction + gene mutation (wandering brains).
+    hunt.ron        Hunter brains on a food source: the competent control group (item 16).
+    cohabitation.ron   Competent control (Hunter) vs naive (wandering), same body: competitive exclusion (item 18a).
+    mlp_brain.ron      LEARNED brain (MLP) vs wandering: dominates starting from random weights (item 18b).
+    predator_prey.ron  3-level trophic chain (plants → prey → predators): pyramid
+                    by counts, Hunter brains, prey that flee (items 17, 18e).
+    flora.ron       Self-limited sessile flora: photosynthesis + local seeding + competition (item 5, Phase 3a).
+    nutrients.ron   T2 nutrient layer: sun-fed plants whose REPRODUCTION is gated by a finite nutrient emitted by sources (Liebig); grows around the sources, no death spiral.
+    minerals.ron    T1 nutrient prototype (scenario-only): plants depend on a finite mineral — validated the bound but fragile (kept for reference).
+  saved/          Your saved scenarios (editor Save / Save As land here); gitignored — not committed.
 species/
   hunter.ron      Reusable species (library): a generic hunter, importable into a scenario.
 outputs/          Simulation outputs (videos, images…); contents ignored by git.
@@ -127,19 +129,19 @@ The environment (Rust toolchain + Bevy's system dependencies) is provided by Nix
 nix develop            # or: direnv allow  (then automatic)
 
 # Launch the windowed build — the dev shell's `play` command (see the box below):
-play                                  # debug, empty arena (the editor's canvas)
-play scenarios/evolution.ron          # debug, explicit scenario
-play --release                        # release (teemlab AND record in release)
-play --release scenarios/flora.ron    # profile + explicit scenario
+play                                           # debug, empty arena (the editor's canvas)
+play scenarios/examples/evolution.ron          # debug, explicit scenario
+play --release                                 # release (teemlab AND record in release)
+play --release scenarios/examples/flora.ron    # profile + explicit scenario
 
-cargo run --bin headless                          # headless, default scenario
-cargo run --bin headless scenarios/default.ron    # explicit scenario (1st arg = RON)
+cargo run --bin headless                                   # headless, default scenario
+cargo run --bin headless scenarios/examples/default.ron    # explicit scenario (1st arg = RON)
 
 # Record a run to video (headless render → ffmpeg); output in outputs/:
-cargo run --bin record -- scenarios/evolution.ron --out outputs/run.mp4
+cargo run --bin record -- scenarios/examples/evolution.ron --out outputs/run.mp4
 #   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
 #   (defaults: 30 fps, 61 s, 1080×1080 — the arena is square)
-#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/nutrients.ron)
+#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/examples/nutrients.ron)
 
 cargo test                            # unit tests + multi-seed drivers + snapshot/containment
 cargo fmt                             # formatting — default rustfmt is authoritative

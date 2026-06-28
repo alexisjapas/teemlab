@@ -4,7 +4,8 @@
 //! whole **document model** of a scenario, made explicit because three states coexist
 //! and used to diverge silently:
 //!
-//! - the **file on disk** (`scenarios/*.ron`);
+//! - the **file on disk** — curated **examples** in [`EXAMPLES_DIR`] (committed) or
+//!   user **saved** scenarios in [`SAVED_DIR`] (gitignored), the two Open groups;
 //! - the **config in memory** ([`SimConfig`]) — edited live by the panels;
 //! - the **running world** — rebuilt from the config only on a reset.
 //!
@@ -14,9 +15,9 @@
 //! derived by comparing against a [`RunsPanel::baseline`] snapshot — every config type
 //! derives `PartialEq`). Destructive navigation (New / Open / Revert) **confirms**
 //! before discarding unsaved edits, and **Save** refuses to silently overwrite a file
-//! the user did not create this session (a bundled scenario): it offers *Save a copy*
-//! instead — so hand-curated `scenarios/*.ron` (comments and compact form, dropped by
-//! RON serialization) are never clobbered by accident.
+//! the user did not create this session (a bundled example): it offers *Save a copy*
+//! instead — so the hand-curated `scenarios/examples/*.ron` (comments and compact form,
+//! dropped by RON serialization) are never clobbered by accident.
 //!
 //! Like the editor and the reset (item 11), (re)loading is hand-triggered editing
 //! (outside `FixedUpdate`): the menu only sets a *pending action*; it is the
@@ -70,8 +71,10 @@ enum Choice {
 /// State of the "Scenario" panel — the document model (cf. module docs).
 #[derive(Resource)]
 pub struct RunsPanel {
-    /// Paths of the `scenarios/*.ron` found at the last scan.
-    scenarios: Vec<String>,
+    /// Paths of the committed example scenarios (`scenarios/examples/*.ron`), last scan.
+    examples: Vec<String>,
+    /// Paths of the user-saved scenarios (`scenarios/saved/*.ron`), last scan.
+    saved: Vec<String>,
     /// Free-entry RON path for "Open from path".
     scenario_path: String,
     /// Action pending application in `PreUpdate`.
@@ -91,15 +94,21 @@ pub struct RunsPanel {
     save_dialog_open: bool,
     /// Working buffer for the "save as" dialog's file name.
     save_dialog_name: String,
-    /// Whether the Scenario menu was open last frame — to rescan `scenarios/` once on
-    /// the closed→open transition (no manual rescan button).
+    /// Whether the Scenario menu was open last frame — to rescan both scenario dirs once
+    /// on the closed→open transition (no manual rescan button).
     menu_was_open: bool,
 }
 
-/// Lists the RON scenarios present in `scenarios/`, sorted.
-fn scan_scenarios() -> Vec<String> {
+/// Curated **example** scenarios — committed; shown under Open ▸ Examples.
+pub(crate) const EXAMPLES_DIR: &str = "scenarios/examples";
+/// User-**saved** scenarios — gitignored; shown under Open ▸ Saved, and the default
+/// Save target. The two categories live in sibling directories under `scenarios/`.
+pub(crate) const SAVED_DIR: &str = "scenarios/saved";
+
+/// Lists the RON files present in `dir`, sorted; a missing directory → empty list.
+fn scan_dir(dir: &str) -> Vec<String> {
     let mut found = Vec::new();
-    if let Ok(entries) = std::fs::read_dir("scenarios") {
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("ron")
@@ -113,6 +122,14 @@ fn scan_scenarios() -> Vec<String> {
     found
 }
 
+/// Menu label for a scenario path: its file stem (`scenarios/examples/hunt.ron` → `hunt`).
+fn scenario_label(path: &str) -> &str {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+}
+
 /// Builds the panel at `Startup`, seeding the `baseline` from the launch config.
 pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
     // A scenario passed on the CLI (cf. `SimConfig::from_cli_or`, which reads
@@ -121,8 +138,9 @@ pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
     // `loaded_path` is None and the first Save asks for a name.
     let loaded_path = std::env::args().nth(1);
     commands.insert_resource(RunsPanel {
-        scenarios: scan_scenarios(),
-        scenario_path: "scenarios/edited.ron".to_string(),
+        examples: scan_dir(EXAMPLES_DIR),
+        saved: scan_dir(SAVED_DIR),
+        scenario_path: format!("{SAVED_DIR}/edited.ron"),
         pending: None,
         confirm: None,
         loaded_path,
@@ -135,7 +153,8 @@ pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
 }
 
 /// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension and,
-/// if no folder is given, places the file under `scenarios/`.
+/// if no folder is given, places the file under `scenarios/saved/` (saves default to the
+/// gitignored category; an explicit folder still wins, e.g. to overwrite an example).
 fn normalize_scenario_path(name: &str) -> String {
     let mut p = name.trim().to_string();
     if p.is_empty() {
@@ -145,12 +164,12 @@ fn normalize_scenario_path(name: &str) -> String {
         p.push_str(".ron");
     }
     if !p.contains('/') {
-        p = format!("scenarios/{p}");
+        p = format!("{SAVED_DIR}/{p}");
     }
     p
 }
 
-/// Suggests a copy name for `path`: `scenarios/minerals.ron` → `scenarios/minerals copy.ron`.
+/// Suggests a copy name for `path`: `scenarios/saved/run.ron` → `scenarios/saved/run copy.ron`.
 fn suggest_copy_name(path: &str) -> String {
     let stem = path.strip_suffix(".ron").unwrap_or(path);
     format!("{stem} copy.ron")
@@ -165,8 +184,12 @@ fn loaded_name(loaded_path: Option<&str>) -> &str {
 }
 
 /// Writes the config to `path`, reporting through the status line. Returns whether it
-/// succeeded (the caller then re-baselines and records the path).
+/// succeeded (the caller then re-baselines and records the path). Creates the parent
+/// directory if needed (e.g. `scenarios/saved/` on a fresh checkout).
 fn write_scenario(path: &str, config: &SimConfig, status: &mut UiStatus) -> bool {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     match config.save_ron_file(path) {
         Ok(()) => {
             status.set(format!("Saved → {path}"));
@@ -209,7 +232,8 @@ pub(crate) fn scenario_section(
     let dirty = *config != panel.baseline;
     // Local copies so the menu closures don't capture `panel` (avoids cross borrows);
     // intents collected here, then resolved against `dirty`/`owns_loaded` below.
-    let scenarios = panel.scenarios.clone();
+    let examples = panel.examples.clone();
+    let saved = panel.saved.clone();
     let mut scenario_path = panel.scenario_path.clone();
     let loaded_path = panel.loaded_path.clone();
     let mut want: Option<RunAction> = None;
@@ -226,8 +250,20 @@ pub(crate) fn scenario_section(
             want = Some(RunAction::NewEmpty);
         }
         ui.menu_button("Open", |ui| {
-            for path in &scenarios {
-                if ui.button(path).clicked() {
+            // Two categories: curated Examples (committed) then your Saved scenarios.
+            ui.label("Examples");
+            for path in &examples {
+                if ui.button(scenario_label(path)).clicked() {
+                    want = Some(RunAction::LoadScenario(path.clone()));
+                }
+            }
+            ui.separator();
+            ui.label("Saved");
+            if saved.is_empty() {
+                ui.weak("(none yet)");
+            }
+            for path in &saved {
+                if ui.button(scenario_label(path)).clicked() {
                     want = Some(RunAction::LoadScenario(path.clone()));
                 }
             }
@@ -279,7 +315,8 @@ pub(crate) fn scenario_section(
     // Resolve intents (full &mut access here, no egui closure borrow in flight).
     panel.scenario_path = scenario_path;
     if rescan {
-        panel.scenarios = scan_scenarios();
+        panel.examples = scan_dir(EXAMPLES_DIR);
+        panel.saved = scan_dir(SAVED_DIR);
     }
     // Destructive navigation guards on unsaved edits.
     if let Some(action) = want {
@@ -313,7 +350,7 @@ fn open_save_as(panel: &mut RunsPanel) {
         panel.save_dialog_name = panel
             .loaded_path
             .clone()
-            .unwrap_or_else(|| "scenarios/untitled.ron".to_string());
+            .unwrap_or_else(|| format!("{SAVED_DIR}/untitled.ron"));
     }
     panel.save_dialog_open = true;
 }
@@ -422,7 +459,7 @@ fn save_as_dialog(
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .open(&mut window_open)
         .show(ui.ctx(), |ui| {
-            ui.label("File name (.ron — placed in scenarios/ if no folder given):");
+            ui.label("File name (.ron — saved to scenarios/saved/ if no folder given):");
             ui.text_edit_singleline(&mut name);
             ui.horizontal(|ui| {
                 do_save = ui.button("Save").clicked();
@@ -442,7 +479,9 @@ fn save_as_dialog(
             panel.save_dialog_open = false;
         } else if save_and_claim(panel, config, status, path) {
             panel.save_dialog_open = false;
-            panel.scenarios = scan_scenarios(); // a new file may have appeared
+            // A new file may have appeared (usually under saved/; rescan both to be safe).
+            panel.examples = scan_dir(EXAMPLES_DIR);
+            panel.saved = scan_dir(SAVED_DIR);
         }
     } else if cancel || !window_open {
         panel.save_dialog_open = false;

@@ -29,7 +29,7 @@ mod common;
 
 /// The bundled scenario, loaded as-is: the driver measures WHAT the binaries
 /// launch, not a test variant.
-const SCENARIO: &str = include_str!("../scenarios/cohabitation.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/cohabitation.ron");
 
 /// Experiment seeds (cf. §5: we replay a *config*, not bit-for-bit). Five
 /// independent worlds: if the domination holds for all of them, it is not luck but

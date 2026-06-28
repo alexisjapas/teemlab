@@ -117,20 +117,24 @@ pub struct LibraryEntry {
 /// One scenario importing a library species, with whether its copy is up to date
 /// (cf. [`LibraryEntry::usage`]).
 pub struct LibraryUsage {
-    /// Scenario file path, e.g. `scenarios/predator_prey.ron`.
+    /// Scenario file path, e.g. `scenarios/examples/predator_prey.ron`.
     pub scenario: String,
     /// `false` if the scenario's copy is outdated vs the current library definition.
     pub in_sync: bool,
 }
 
 /// Builds the species-library catalog: every `species/*.ron` loaded, cross-referenced
-/// against every `scenarios/*.ron` to find which scenarios import it (and whether each
-/// copy is still in sync). One pass over the scenarios (parsed once), so it scales with
-/// the file count, not their product. A manual rescan — never per frame.
+/// against every scenario — **examples and saved** — to find which import it (and
+/// whether each copy is still in sync). One pass over the scenarios (parsed once), so it
+/// scales with the file count, not their product. A manual rescan — never per frame.
 fn scan_library() -> Vec<LibraryEntry> {
-    // Index every scenario's imported archetypes by their `source` path in one pass.
+    // Index every scenario's imported archetypes by their `source` path in one pass,
+    // across both scenario categories.
     let mut imports: HashMap<String, Vec<(String, Archetype)>> = HashMap::new();
-    for scenario in ron_files("scenarios") {
+    let scenarios = ron_files(crate::runs::EXAMPLES_DIR)
+        .into_iter()
+        .chain(ron_files(crate::runs::SAVED_DIR));
+    for scenario in scenarios {
         let Ok(cfg) = SimConfig::from_ron_file(&scenario) else {
             continue;
         };
@@ -385,7 +389,7 @@ fn species_sync_state(arch: &Archetype) -> Option<SyncState> {
 }
 
 /// Display name of a RON path: its file stem (e.g. `species/hunter.ron` → `hunter`,
-/// `scenarios/predator_prey.ron` → `predator_prey`).
+/// `scenarios/examples/predator_prey.ron` → `predator_prey`).
 fn display_name(path: &str) -> &str {
     std::path::Path::new(path)
         .file_stem()
@@ -1743,7 +1747,10 @@ mod tests {
     #[test]
     fn display_name_is_the_file_stem() {
         assert_eq!(display_name("species/hunter.ron"), "hunter");
-        assert_eq!(display_name("scenarios/predator_prey.ron"), "predator_prey");
+        assert_eq!(
+            display_name("scenarios/examples/predator_prey.ron"),
+            "predator_prey"
+        );
         assert_eq!(display_name("noext"), "noext");
     }
 
