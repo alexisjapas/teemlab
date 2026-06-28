@@ -1297,67 +1297,66 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
 }
 
 /// "World" section: the **scenario** parameters (everything but the per-species
-/// archetypes), as collapsible cards ordered by how often they're touched —
-/// *Arena & generation* and *Relations* open, the rest (Nutrients, Gene bounds,
-/// Appearance) collapsed. Direct read/write of the [`SimConfig`], hence persisted by
-/// "Save". Some fields only take effect at the next Reset (⟲); relations act **live**.
+/// archetypes), as framed **cards** (the same idiom as the archetype editor's
+/// Body/Genes/Brain) — *Arena & generation*, *Relations*, *Nutrients*, *Gene bounds*,
+/// *Appearance*. Direct read/write of the [`SimConfig`], hence persisted by "Save".
+/// Some fields only take effect at the next Reset (⟲); relations act **live**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // ARENA & GENERATION — size and RNG. Open by default. (The sim rate is a scenario
     // file parameter, not exposed here.)
-    egui::CollapsingHeader::new("Arena & generation")
-        .default_open(true)
-        .show(ui, |ui| {
-            // Label-left two-column grid (the convention shared with the Body card),
-            // so the parameter labels align and read label → value.
-            egui::Grid::new("arena_fields")
-                .num_columns(2)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    ui.label("half-arena");
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::Slider::new(
-                            &mut config.arena_half_extent,
-                            100.0..=1000.0,
-                        ))
-                    });
-                    ui.end_row();
-
-                    ui.label("seed");
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
-                    });
-                    ui.end_row();
+    card(ui, |ui| {
+        ui.strong("Arena & generation");
+        // Label-left two-column grid (the convention shared with the Body card),
+        // so the parameter labels align and read label → value.
+        egui::Grid::new("arena_fields")
+            .num_columns(2)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("half-arena");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(
+                        &mut config.arena_half_extent,
+                        100.0..=1000.0,
+                    ))
                 });
-            help::hint(
-                ui,
-                "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
+                ui.end_row();
+
+                ui.label("seed");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
+                });
+                ui.end_row();
+            });
+        help::hint(
+            ui,
+            "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
-            );
-        });
+        );
+    });
 
-    // RELATIONS — the interaction table (acts live). Open by default.
-    egui::CollapsingHeader::new("Relations")
-        .default_open(true)
-        .show(ui, |ui| relations_section(ui, config));
+    // RELATIONS — the interaction table (acts live).
+    card(ui, |ui| {
+        ui.strong("Relations");
+        relations_section(ui, config);
+    });
 
-    // The advanced cards, collapsed by default (each carries its own header).
+    // Nutrients and gene bounds each frame their own card (below).
     nutrient_section(ui, config);
     gene_bounds_section(ui, config);
 
     // APPEARANCE — windowed-render backgrounds (read continuously by
     // `main::draw_play_area` → immediate preview, saved with the scenario).
-    egui::CollapsingHeader::new("Appearance")
-        .default_open(false)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                color_button(ui, &mut config.play_area_color);
-                ui.label("inner background (play area)");
-            });
-            ui.horizontal(|ui| {
-                color_button(ui, &mut config.off_game_color);
-                ui.label("outer background (off-game)");
-            });
+    card(ui, |ui| {
+        ui.strong("Appearance");
+        ui.horizontal(|ui| {
+            color_button(ui, &mut config.play_area_color);
+            ui.label("inner background (play area)");
         });
+        ui.horizontal(|ui| {
+            color_button(ui, &mut config.off_game_color);
+            ui.label("outer background (off-game)");
+        });
+    });
 }
 
 /// The **nutrients** (T2 substrate): the concentration-field parameters and the
@@ -1366,161 +1365,159 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// palette. Everything here is **"(reset)"**: the field is rebuilt and the sources
 /// respawned at the world (re)generation (⟲ of the bar, or "Reload into the world"),
 /// the single passage point that also re-applies the field's resolution/diffusion
-/// (cf. [`crate::controls::apply_reset`]). Collapsed by default (off for most
-/// scenarios — no source ⇒ inert layer).
+/// (cf. [`crate::controls::apply_reset`]). A framed card, like the other World
+/// sections (inert for most scenarios — no source ⇒ inert layer).
 fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    egui::CollapsingHeader::new("Nutrients")
-        .default_open(false)
-        .show(ui, |ui| {
-            help::hint(
-                ui,
-                "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
+    card(ui, |ui| {
+        ui.strong("Nutrients");
+        help::hint(
+            ui,
+            "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
                  survival (the sun). The field is fed by the sources below and spread \
                  by diffusion into gradients. All (reset): applied at ⟲.",
-            );
-            egui::Grid::new("nutrient_fields")
-                .num_columns(2)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    ui.label("grid resolution (reset)");
-                    fonts::value(ui, |ui| {
-                        ui.add(
-                            egui::DragValue::new(&mut config.nutrient.resolution)
-                                .range(8..=256)
-                                .speed(1.0),
-                        )
-                        .on_hover_text("Cells per side of the nutrient field over the arena.")
-                    });
-                    ui.end_row();
+        );
+        egui::Grid::new("nutrient_fields")
+            .num_columns(2)
+            .spacing([8.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("grid resolution (reset)");
+                fonts::value(ui, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut config.nutrient.resolution)
+                            .range(8..=256)
+                            .speed(1.0),
+                    )
+                    .on_hover_text("Cells per side of the nutrient field over the arena.")
+                });
+                ui.end_row();
 
-                    ui.label("diffusion (reset)");
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
-                            .on_hover_text(
-                                "Per-tick spread toward neighbours (the local↔global knob); \
+                ui.label("diffusion (reset)");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
+                        .on_hover_text(
+                            "Per-tick spread toward neighbours (the local↔global knob); \
                                  0 = no spread.",
-                            )
-                    });
-                    ui.end_row();
+                        )
                 });
+                ui.end_row();
+            });
 
-            ui.separator();
-            ui.strong("Sources (emit nutrient into the field)");
-            help::hint(
-                ui,
-                "A fixed point emitting `rate`/s of nutrient at its position.",
-            );
-            let mut to_remove = None;
-            for (i, src) in config.sources.iter_mut().enumerate() {
-                card(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        color_button(ui, &mut src.color);
-                        ui.label(format!("source {i}"));
-                        if ui
-                            .button(fonts::icon(icons::TRASH))
-                            .on_hover_text("Remove this source")
-                            .clicked()
-                        {
-                            to_remove = Some(i);
-                        }
-                    });
-                    egui::Grid::new(("source_fields", i))
-                        .num_columns(2)
-                        .spacing([8.0, 6.0])
-                        .show(ui, |ui| {
-                            ui.label("pos");
-                            ui.horizontal(|ui| {
-                                fonts::value(ui, |ui| {
-                                    ui.add(
-                                        egui::DragValue::new(&mut src.pos[0])
-                                            .speed(1.0)
-                                            .prefix("x: "),
-                                    )
-                                });
-                                fonts::value(ui, |ui| {
-                                    ui.add(
-                                        egui::DragValue::new(&mut src.pos[1])
-                                            .speed(1.0)
-                                            .prefix("y: "),
-                                    )
-                                });
-                            });
-                            ui.end_row();
-
-                            ui.label("rate/s");
+        ui.separator();
+        ui.strong("Sources (emit nutrient into the field)");
+        help::hint(
+            ui,
+            "A fixed point emitting `rate`/s of nutrient at its position.",
+        );
+        let mut to_remove = None;
+        for (i, src) in config.sources.iter_mut().enumerate() {
+            card(ui, |ui| {
+                ui.horizontal(|ui| {
+                    color_button(ui, &mut src.color);
+                    ui.label(format!("source {i}"));
+                    if ui
+                        .button(fonts::icon(icons::TRASH))
+                        .on_hover_text("Remove this source")
+                        .clicked()
+                    {
+                        to_remove = Some(i);
+                    }
+                });
+                egui::Grid::new(("source_fields", i))
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("pos");
+                        ui.horizontal(|ui| {
                             fonts::value(ui, |ui| {
-                                ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
+                                ui.add(
+                                    egui::DragValue::new(&mut src.pos[0])
+                                        .speed(1.0)
+                                        .prefix("x: "),
+                                )
                             });
-                            ui.end_row();
-
-                            ui.label("visual radius");
                             fonts::value(ui, |ui| {
-                                ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                                ui.add(
+                                    egui::DragValue::new(&mut src.pos[1])
+                                        .speed(1.0)
+                                        .prefix("y: "),
+                                )
                             });
-                            ui.end_row();
                         });
-                });
-            }
-            if let Some(i) = to_remove {
-                config.sources.remove(i);
-            }
-            if ui
-                .button(fonts::icon_label(icons::PLUS, "Add a source"))
-                .clicked()
-            {
-                // T2: a single nutrient (index 0). Sensible defaults at the center.
-                config.sources.push(Source {
-                    pos: [0.0, 0.0],
-                    nutrient: 0,
-                    rate: 10.0,
-                    color: [1.0, 0.6, 0.2],
-                    radius: 12.0,
-                });
-            }
-        });
+                        ui.end_row();
+
+                        ui.label("rate/s");
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
+                        });
+                        ui.end_row();
+
+                        ui.label("visual radius");
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                        });
+                        ui.end_row();
+                    });
+            });
+        }
+        if let Some(i) = to_remove {
+            config.sources.remove(i);
+        }
+        if ui
+            .button(fonts::icon_label(icons::PLUS, "Add a source"))
+            .clicked()
+        {
+            // T2: a single nutrient (index 0). Sensible defaults at the center.
+            config.sources.push(Source {
+                pos: [0.0, 0.0],
+                nutrient: 0,
+                rate: 10.0,
+                color: [1.0, 0.6, 0.2],
+                radius: 12.0,
+            });
+        }
+    });
 }
 
 /// The **gene bounds** (`*_bounds` of the scenario), edited globally: min/max of
 /// each characteristic. They bound the **mutation** (cf. [`Genotype::mutate`]) AND
 /// the archetype editor's sliders. Loops over [`TRAITS`] via `bounds_mut`, so adding
-/// a gene exposes it here without touching this section (item 15/3). Collapsed by
-/// default (an advanced setting, rarely touched — hence "outside the UI" until now).
+/// a gene exposes it here without touching this section (item 15/3). A framed card,
+/// like the other World sections (an advanced setting, but in line with the rest).
 fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    egui::CollapsingHeader::new("Gene bounds")
-        .default_open(false)
-        .show(ui, |ui| {
-            help::hint(
-                ui,
-                "Min/max of each gene: bound the mutation and the archetype editor's \
+    card(ui, |ui| {
+        ui.strong("Gene bounds");
+        help::hint(
+            ui,
+            "Min/max of each gene: bound the mutation and the archetype editor's \
                  sliders. Global (shared by all archetypes).",
-            );
-            egui::Grid::new("gene_bounds_grid")
-                .num_columns(3)
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.strong("gene");
-                    ui.strong("min");
-                    ui.strong("max");
+        );
+        egui::Grid::new("gene_bounds_grid")
+            .num_columns(3)
+            .striped(true)
+            .show(ui, |ui| {
+                ui.strong("gene");
+                ui.strong("min");
+                ui.strong("max");
+                ui.end_row();
+                for t in &TRAITS {
+                    // Drag step suited to the gene's scale (fine for agility,
+                    // coarse for speed), via its display decimals.
+                    let speed = 10f64.powi(-(t.decimals as i32));
+                    let b = (t.bounds_mut)(config);
+                    ui.label(t.name);
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::DragValue::new(&mut b.min).speed(speed))
+                    });
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::DragValue::new(&mut b.max).speed(speed))
+                    });
+                    // Keep min ≤ max: a negative span would make the mutation's
+                    // clamp panic (`f32::clamp` requires min ≤ max).
+                    b.max = b.max.max(b.min);
                     ui.end_row();
-                    for t in &TRAITS {
-                        // Drag step suited to the gene's scale (fine for agility,
-                        // coarse for speed), via its display decimals.
-                        let speed = 10f64.powi(-(t.decimals as i32));
-                        let b = (t.bounds_mut)(config);
-                        ui.label(t.name);
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::DragValue::new(&mut b.min).speed(speed))
-                        });
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::DragValue::new(&mut b.max).speed(speed))
-                        });
-                        // Keep min ≤ max: a negative span would make the mutation's
-                        // clamp panic (`f32::clamp` requires min ≤ max).
-                        b.max = b.max.max(b.min);
-                        ui.end_row();
-                    }
-                });
-        });
+                }
+            });
+    });
 }
 
 /// The relation table, **addressed by archetype**: each actor/target is chosen in
