@@ -1304,45 +1304,52 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
 /// "World" section: the **scenario** parameters (everything but the per-species
 /// archetypes), as framed **cards** (the same idiom as the archetype editor's
 /// Body/Genes/Brain) — *Arena & generation*, *Relations*, *Nutrients*, *Gene bounds*,
-/// *Appearance*. Direct read/write of the [`SimConfig`], hence persisted by "Save".
-/// Some fields only take effect at the next Reset (⟲); relations act **live**.
+/// *Appearance*. Each card carries a **collapsible** header (open by default for the
+/// short, frequent ones; closed for the heavy *Nutrients* / *Gene bounds*), except
+/// *Appearance* which is short enough to keep a static title. Direct read/write of the
+/// [`SimConfig`], hence persisted by "Save". Some fields only take effect at the next
+/// Reset (⟲); relations act **live**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // ARENA & GENERATION — size and RNG. Open by default. (The sim rate is a scenario
     // file parameter, not exposed here.)
     card(ui, |ui| {
-        ui.strong("Arena & generation");
-        // Label-left two-column grid (the convention shared with the Body card),
-        // so the parameter labels align and read label → value.
-        egui::Grid::new("arena_fields")
-            .num_columns(2)
-            .spacing([8.0, 6.0])
+        egui::CollapsingHeader::new("Arena & generation")
+            .default_open(true)
             .show(ui, |ui| {
-                ui.label("half-arena");
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(
-                        &mut config.arena_half_extent,
-                        100.0..=1000.0,
-                    ))
-                });
-                ui.end_row();
+                // Label-left two-column grid (the convention shared with the Body card),
+                // so the parameter labels align and read label → value.
+                egui::Grid::new("arena_fields")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("half-arena");
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::Slider::new(
+                                &mut config.arena_half_extent,
+                                100.0..=1000.0,
+                            ))
+                        });
+                        ui.end_row();
 
-                ui.label("seed");
-                fonts::value(ui, |ui| {
-                    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
-                });
-                ui.end_row();
-            });
-        help::hint(
-            ui,
-            "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
+                        ui.label("seed");
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
+                        });
+                        ui.end_row();
+                    });
+                help::hint(
+                    ui,
+                    "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
-        );
+                );
+            });
     });
 
     // RELATIONS — the interaction table (acts live).
     card(ui, |ui| {
-        ui.strong("Relations");
-        relations_section(ui, config);
+        egui::CollapsingHeader::new("Relations")
+            .default_open(true)
+            .show(ui, |ui| relations_section(ui, config));
     });
 
     // Nutrients and gene bounds each frame their own card (below).
