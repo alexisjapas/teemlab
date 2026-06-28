@@ -10,6 +10,7 @@
 mod controls;
 mod editor;
 mod fonts;
+mod help;
 mod hud;
 mod inspector;
 mod panels;

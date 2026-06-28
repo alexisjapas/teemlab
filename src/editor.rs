@@ -23,6 +23,7 @@ use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
 use crate::fonts::{self, icons};
+use crate::help;
 use crate::status::UiStatus;
 
 /// The palette / the editor's state. The **archetype list** now lives in
@@ -144,7 +145,10 @@ pub(crate) fn selector_section(
     config: &mut SimConfig,
     status: &mut UiStatus,
 ) {
-    ui.label("Drag into the area to place; click to edit; Delete (cursor on an entity) to remove.");
+    help::hint(
+        ui,
+        "Drag into the area to place; click to edit; Delete (cursor on an entity) to remove.",
+    );
     ui.separator();
     let mut started = None;
     let mut clicked = None;
@@ -572,7 +576,10 @@ fn archetype_editor(
                 });
                 ui.end_row();
             });
-        ui.small("Count, radius and reserve are baked at spawn, applied on the next reset (⟲).");
+        help::hint(
+            ui,
+            "Count, radius and reserve are baked at spawn, applied on the next reset (⟲).",
+        );
     });
 
     // GENES — the founding genotype + per-species mutability, in a framed card. Every
@@ -581,7 +588,8 @@ fn archetype_editor(
     ui.group(|ui| {
         let arch = &mut config.archetypes[i];
         ui.strong("Genes (the archetype)");
-        ui.small(
+        help::hint(
+            ui,
             "Each placed agent receives a COPY of these genes — its genome — which then \
              mutates on its own.",
         );
@@ -599,7 +607,10 @@ fn archetype_editor(
         // its part, stays shown — it is the mobility switch.
         let immobile = arch.genotype.locomotion().is_immobile();
         if immobile {
-            ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
+            help::hint(
+                ui,
+                "Immobile: locomotion and vision genes hidden (no effect).",
+            );
         }
 
         // The gene editor sits several nested cards deep (Entities › Archetype editor
@@ -757,20 +768,23 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
         BrainKind::Hunter | BrainKind::Sessile => {}
         BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
     }
-    ui.weak(kind.description());
+    help::hint(ui, kind.description());
 }
 
 /// **Numeric** editing of an MLP's architecture (item 18b, core): the number of
 /// hidden layers and the width of each. The input (`3 × rays`: vision, target,
 /// threat) and the output (2) are *constrained* by the contract and only displayed.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
-    ui.small(format!(
-        "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
-         output {} (contract). The input layer then adapts to each individual's \
-         visual precision (gene \"Rays\").",
-        MlpBrain::input_size(vision_rays),
-        MlpBrain::OUTPUTS,
-    ));
+    help::hint(
+        ui,
+        format!(
+            "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
+             output {} (contract). The input layer then adapts to each individual's \
+             visual precision (gene \"Rays\").",
+            MlpBrain::input_size(vision_rays),
+            MlpBrain::OUTPUTS,
+        ),
+    );
     let mut remove = None;
     for (i, n) in hidden.iter_mut().enumerate() {
         ui.horizontal(|ui| {
@@ -999,11 +1013,15 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
     ui.checkbox(&mut layers.agents, "Agents (main)");
     if !layers.nutrients.is_empty() {
         ui.separator();
-        ui.small("Nutrient maps — background, shared opacity:");
+        help::hint(ui, "Nutrient maps — background, shared opacity:");
         for (i, on) in layers.nutrients.iter_mut().enumerate() {
             ui.checkbox(on, format!("Nutrient {i}"));
         }
     }
+    // The dismissable-help toggle lives in this View menu (a view concern, like the
+    // layers) rather than the scenario data.
+    ui.separator();
+    help::toggle(ui);
 }
 
 /// "World" section: the **scenario** parameters (everything but the per-species
@@ -1032,7 +1050,8 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
                 });
             });
-            ui.small(
+            help::hint(
+                ui,
                 "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
             );
@@ -1075,7 +1094,8 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     egui::CollapsingHeader::new("Nutrients")
         .default_open(false)
         .show(ui, |ui| {
-            ui.small(
+            help::hint(
+                ui,
                 "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
                  survival (the sun). The field is fed by the sources below and spread \
                  by diffusion into gradients. All (reset): applied at ⟲.",
@@ -1104,7 +1124,10 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 
             ui.separator();
             ui.strong("Sources (emit nutrient into the field)");
-            ui.small("A fixed point emitting `rate`/s of nutrient at its position.");
+            help::hint(
+                ui,
+                "A fixed point emitting `rate`/s of nutrient at its position.",
+            );
             let mut to_remove = None;
             for (i, src) in config.sources.iter_mut().enumerate() {
                 ui.group(|ui| {
@@ -1178,7 +1201,8 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     egui::CollapsingHeader::new("Gene bounds")
         .default_open(false)
         .show(ui, |ui| {
-            ui.small(
+            help::hint(
+                ui,
                 "Min/max of each gene: bound the mutation and the archetype editor's \
                  sliders. Global (shared by all archetypes).",
             );
@@ -1215,7 +1239,8 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// an archetype menu (name + color). No more bare numbers nor possible collision
 /// with the food — which is a full-fledged archetype, with its index.
 fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    ui.small(
+    help::hint(
+        ui,
         "An actor reduces a target's reserve within range — the gap between their \
          bodies, so range = 0 means contact. This is what makes an archetype a \
          TARGET (what Brain::Hunter pursues). transfer = predation (the actor gains \

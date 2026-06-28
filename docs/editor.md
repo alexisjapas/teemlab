@@ -66,8 +66,10 @@ unsaved edits. Two guardrails protect your work:
 
 ### View menu (`View ▾`)
 
-Toggles the render **layers**: the agents, and the nutrient-field **heatmap(s)**
-(shown by default). A view concern only — never saved with the scenario.
+Toggles the render **layers** (the agents, and the nutrient-field **heatmap(s)**,
+shown by default) and **Inline help** — the explanatory hints in the panels, on by
+default; turn it off to declutter once you know the tool. View concerns only — never
+saved with the scenario.
 
 ### Export (`⏺ Export…`)
 

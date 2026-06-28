@@ -22,6 +22,7 @@ use teemlab::selection::Selection;
 
 use crate::editor::{Palette, draw_mlp_graph};
 use crate::fonts::{self, icons};
+use crate::help;
 
 /// **World** position of the cursor in the play area (single camera and window),
 /// if it exists. Shared by the inspector's picking and the deletion: the
@@ -202,7 +203,7 @@ pub(crate) fn inspector_section(
         ui.group(|ui| {
             ui.strong("Genotype (inherited genes)");
             if immobile {
-                ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
+                help::hint(ui, "Immobile: locomotion and vision genes hidden (no effect).");
             }
             egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
                 // One row per TRAITS characteristic: adding a trait displays it here
@@ -269,7 +270,8 @@ pub(crate) fn inspector_section(
         if let Brain::Mlp(mlp) = brain {
             ui.group(|ui| {
                 ui.strong("MLP brain (activations)");
-                ui.weak(
+                help::hint(
+                    ui,
                     "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
                 );
                 // The activations are recomputed here, on demand, for the single
@@ -284,7 +286,8 @@ pub(crate) fn inspector_section(
         if !immobile {
             ui.group(|ui| {
                 ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
-                ui.weak(
+                help::hint(
+                    ui,
                     "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
                 );
                 for (i, &proximity) in perception.vision.iter().enumerate() {
