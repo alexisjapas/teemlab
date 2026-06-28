@@ -345,13 +345,21 @@ pub(crate) fn selector_section(
 
     ui.separator();
     ui.horizontal(|ui| {
-        if ui.button(fonts::icon_label(icons::PLUS, "Agent")).clicked() {
+        if ui
+            .button(fonts::icon_label(icons::PLUS, "Agent"))
+            .on_hover_text("Add a mobile agent archetype to the scenario.")
+            .clicked()
+        {
             config
                 .archetypes
                 .push(Archetype::new_agent(config.archetypes.len()));
             palette.selected = Some(config.archetypes.len() - 1);
         }
-        if ui.button(fonts::icon_label(icons::PLUS, "Food")).clicked() {
+        if ui
+            .button(fonts::icon_label(icons::PLUS, "Food"))
+            .on_hover_text("Add a sessile food-source archetype to the scenario.")
+            .clicked()
+        {
             config
                 .archetypes
                 .push(Archetype::new_food(config.archetypes.len()));
@@ -405,11 +413,8 @@ pub(crate) fn selector_section(
     if let Some(i) = palette.selected
         && config.archetypes.len() > 1
         && ui
-            .button(fonts::icon_label(
-                icons::TRASH,
-                "Delete the selected archetype",
-            ))
-            .on_hover_text("Removes the archetype and remaps the relation table.")
+            .button(fonts::icon_label(icons::TRASH, "Delete"))
+            .on_hover_text("Removes the selected archetype and remaps the relation table.")
             .clicked()
     {
         remove_archetype(config, i);
