@@ -1305,10 +1305,9 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
 /// archetypes), as framed **cards** (the same idiom as the archetype editor's
 /// Body/Genes/Brain) — *Arena & generation*, *Relations*, *Nutrients*, *Gene bounds*,
 /// *Appearance*. Each card carries a **collapsible** header (open by default for the
-/// short, frequent ones; closed for the heavy *Nutrients* / *Gene bounds*), except
-/// *Appearance* which is short enough to keep a static title. Direct read/write of the
-/// [`SimConfig`], hence persisted by "Save". Some fields only take effect at the next
-/// Reset (⟲); relations act **live**.
+/// short, frequent ones; closed for the heavy *Nutrients* / *Gene bounds*). Direct
+/// read/write of the [`SimConfig`], hence persisted by "Save". Some fields only take
+/// effect at the next Reset (⟲); relations act **live**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // ARENA & GENERATION — size and RNG. Open by default. (The sim rate is a scenario
     // file parameter, not exposed here.)
@@ -1359,15 +1358,18 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // APPEARANCE — windowed-render backgrounds (read continuously by
     // `main::draw_play_area` → immediate preview, saved with the scenario).
     card(ui, |ui| {
-        ui.strong("Appearance");
-        ui.horizontal(|ui| {
-            color_button(ui, &mut config.play_area_color);
-            ui.label("inner background (play area)");
-        });
-        ui.horizontal(|ui| {
-            color_button(ui, &mut config.off_game_color);
-            ui.label("outer background (off-game)");
-        });
+        egui::CollapsingHeader::new("Appearance")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    color_button(ui, &mut config.play_area_color);
+                    ui.label("inner background (play area)");
+                });
+                ui.horizontal(|ui| {
+                    color_button(ui, &mut config.off_game_color);
+                    ui.label("outer background (off-game)");
+                });
+            });
     });
 }
 
