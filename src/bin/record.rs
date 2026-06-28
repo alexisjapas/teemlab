@@ -35,9 +35,10 @@
 //!
 //! `--select` keeps a mobile agent **highlighted** during the video (ring + vision
 //! rays), to show the raycasts to viewers. MODE ∈ `off`, `sticky`, `cycle`,
-//! `active` (the most "active"), `species` (species tour), `eldest`.
+//! `active` (the most "active"), `species` (species tour), `eldest`, `vanguard` (a
+//! random newest-generation agent, rotating species at each death).
 //! `cycle`/`active`/`species` change every `--select-interval` s (default 4);
-//! `sticky`/`eldest` change only at the target's death.
+//! `sticky`/`eldest`/`vanguard` change only at the target's death.
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::asset::RenderAssetUsages;

@@ -13,7 +13,8 @@
 //! common to both: it only reads the [`Selection`] resource, wherever it comes
 //! from.
 
-use crate::components::{Age, Agent, Locomotion, Perception, Radius, Species, Vision};
+use crate::components::{Age, Agent, Generation, Locomotion, Perception, Radius, Species, Vision};
+use crate::rng::Rng;
 use bevy::prelude::*;
 
 /// The entity currently highlighted for observation (highlight + rays), if any.
@@ -45,17 +46,25 @@ pub enum SelectionRoll {
     /// calm — a steady follow of the survivor, pleasant by default.
     #[default]
     Eldest,
+    /// **Vanguard**: follows the evolutionary frontier. Picks, **at random**, one of
+    /// a species' **newest-generation** agents (the highest [`Generation`] — hence one
+    /// of the youngest by lineage depth) and **holds it until it dies**; at its death
+    /// it rotates to **another species** and applies the same rule. No timer (like
+    /// `Eldest`/`Sticky`, it changes only at the target's death), but each death also
+    /// steps the species — every lineage's cutting edge gets its turn.
+    Vanguard,
 }
 
 impl SelectionRoll {
     /// All modes, to populate a UI selector.
-    pub const ALL: [SelectionRoll; 6] = [
+    pub const ALL: [SelectionRoll; 7] = [
         Self::Off,
         Self::Sticky,
         Self::Cycle,
         Self::Active,
         Self::SpeciesTour,
         Self::Eldest,
+        Self::Vanguard,
     ];
 
     /// Stable CLI token (passed to the `record` binary by the recording menu).
@@ -67,6 +76,7 @@ impl SelectionRoll {
             Self::Active => "active",
             Self::SpeciesTour => "species",
             Self::Eldest => "eldest",
+            Self::Vanguard => "vanguard",
         }
     }
 
@@ -84,12 +94,13 @@ impl SelectionRoll {
             Self::Active => "Active",
             Self::SpeciesTour => "Species tour",
             Self::Eldest => "Eldest",
+            Self::Vanguard => "Vanguard",
         }
     }
 
     /// `true` if this mode re-evaluates **at a regular interval** (and therefore
-    /// shows/uses the interval). `Off`, `Sticky` and `Eldest` have no timer: they
-    /// change only at the target's death.
+    /// shows/uses the interval). `Off`, `Sticky`, `Eldest` and `Vanguard` have no
+    /// timer: they change only at the target's death.
     pub fn rolls(&self) -> bool {
         matches!(self, Self::Cycle | Self::Active | Self::SpeciesTour)
     }
@@ -107,10 +118,16 @@ impl Plugin for SelectionRenderPlugin {
     }
 }
 
-/// **Automatic selection** (recorder): always keeps a **mobile** agent
-/// highlighted, *rolling* it according to [`SelectionRoll`]. Targets mobile
-/// agents because they alone cast visible rays (immobile flora has none, cf.
-/// `movement`). To be added in addition to [`SelectionRenderPlugin`].
+/// **Automatic selection**: always keeps a **mobile** agent highlighted, *rolling*
+/// it according to [`SelectionRoll`]. Targets mobile agents because they alone cast
+/// visible rays (immobile flora has none, cf. `movement`). To be added in addition
+/// to [`SelectionRenderPlugin`].
+///
+/// Used by the **recorder** (fixed `roll` from the CLI) **and** the windowed build
+/// (mounted with `Off`; the UI then flips [`AutoSelect::roll`] live — the same
+/// follow modes as the video). Manual picking still works: a click overrides the
+/// auto target, which the driver then *holds* until that agent dies (cf.
+/// [`drive_selection`]).
 pub struct AutoSelectPlugin {
     /// Chosen roll mode.
     pub roll: SelectionRoll,
@@ -121,26 +138,44 @@ pub struct AutoSelectPlugin {
 
 impl Plugin for AutoSelectPlugin {
     fn build(&self, app: &mut App) {
+        // Seed the (observation-only) RNG from the wall clock so the random modes
+        // (`Vanguard`) vary across sessions. This never touches the sim RNG, so
+        // determinism of the simulation is unaffected (§7: selection is rendering).
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0x5EED_C0DE, |d| d.as_nanos() as u64);
         app.init_resource::<Selection>()
             .insert_resource(AutoSelect {
                 roll: self.roll,
                 interval: self.interval.max(0.1),
                 elapsed: 0.0,
                 cursor: 0,
+                rng: Rng::new(seed),
+                applied: self.roll,
             })
             .add_systems(Update, drive_selection);
     }
 }
 
-/// State of the automatic selection driver.
+/// State of the automatic selection driver. Public so the windowed UI can flip the
+/// mode/interval live ([`roll`](Self::roll), [`interval`](Self::interval)); the
+/// internal cursor/timer/RNG stay private.
 #[derive(Resource)]
-struct AutoSelect {
-    roll: SelectionRoll,
-    interval: f32,
+pub struct AutoSelect {
+    /// Active roll mode (the windowed "Follow" selector writes this).
+    pub roll: SelectionRoll,
+    /// Interval between changes for the "timer" modes, in seconds.
+    pub interval: f32,
     /// Time elapsed since the last change, in seconds.
     elapsed: f32,
-    /// Round-robin cursor: agent index (`Cycle` mode) or species index (`SpeciesTour`).
+    /// Round-robin cursor: agent index (`Cycle`), or species index (`SpeciesTour`/`Vanguard`).
     cursor: usize,
+    /// Observation-only RNG for the random modes (`Vanguard`). Not the sim RNG.
+    rng: Rng,
+    /// The roll the current selection was made under. When [`roll`](Self::roll) is
+    /// switched live (windowed selector), this differs → we re-pick **immediately**
+    /// instead of holding a target chosen under the old rule.
+    applied: SelectionRoll,
 }
 
 /// Metrics of an agent that is a candidate for highlighting, read at choice time.
@@ -148,13 +183,16 @@ struct Cand {
     entity: Entity,
     species: u16,
     age: f32,
+    /// Lineage depth (0 at a founder). Drives the `Vanguard` mode.
+    generation: u32,
     /// Sum of the perception channels (vision + target + threat): "how much it sees".
     stim: f32,
 }
 
-/// `Update` (recorder): keeps a mobile agent selected according to the mode.
+/// `Update`: keeps a mobile agent selected according to the mode.
 ///
-/// We **re-choose** only when the target has disappeared (death) or, for the
+/// We **re-choose** only when the target has disappeared (death), when the mode was
+/// just **switched** (windowed selector → apply the new rule at once), or, for the
 /// timer modes ([`SelectionRoll::rolls`]), at the interval's deadline — never per
 /// frame. The target therefore holds a whole interval: no flicker, even when the
 /// metric (energy, speed, "active"…) fluctuates fast.
@@ -162,19 +200,32 @@ fn drive_selection(
     time: Res<Time>,
     mut auto: ResMut<AutoSelect>,
     mut selection: ResMut<Selection>,
-    agents: Query<(Entity, &Locomotion, &Species, &Age, &Perception), With<Agent>>,
+    agents: Query<
+        (
+            Entity,
+            &Locomotion,
+            &Species,
+            &Age,
+            &Generation,
+            &Perception,
+        ),
+        With<Agent>,
+    >,
 ) {
     if auto.roll == SelectionRoll::Off {
         return;
     }
     auto.elapsed += time.delta_secs();
     let due = auto.elapsed >= auto.interval;
+    // The mode was switched live since the current selection was made.
+    let mode_changed = auto.roll != auto.applied;
     // Is the current target still a living mobile agent?
     let valid = selection
         .0
         .is_some_and(|e| agents.get(e).is_ok_and(|(_, loco, ..)| !loco.is_immobile()));
-    // Hold the target: we re-choose only at death, or at the deadline for timer modes.
-    if valid && !(auto.roll.rolls() && due) {
+    // Hold the target: we re-choose only at death, at a mode switch, or — for timer
+    // modes — at the deadline.
+    if valid && !mode_changed && !(auto.roll.rolls() && due) {
         return;
     }
 
@@ -182,10 +233,11 @@ fn drive_selection(
     let mut cands: Vec<Cand> = agents
         .iter()
         .filter(|(_, loco, ..)| !loco.is_immobile())
-        .map(|(entity, _, species, age, perception)| Cand {
+        .map(|(entity, _, species, age, generation, perception)| Cand {
             entity,
             species: species.0,
             age: age.0,
+            generation: generation.0,
             stim: perception
                 .vision
                 .iter()
@@ -203,6 +255,7 @@ fn drive_selection(
     cands.sort_unstable_by_key(|c| c.entity.to_bits());
 
     auto.elapsed = 0.0;
+    auto.applied = auto.roll; // this selection now reflects the active rule.
     let roll = auto.roll;
     selection.0 = Some(choose(roll, &cands, &mut auto));
 }
@@ -238,7 +291,42 @@ fn choose(roll: SelectionRoll, cands: &[Cand], auto: &mut AutoSelect) -> Entity 
                 .max_by(|a, b| a.stim.total_cmp(&b.stim))
                 .map_or(cands[0].entity, |c| c.entity)
         }
+        // Vanguard: this fires only at a (re)choice — i.e. a death — so each call
+        // rotates the species and picks a fresh newest-generation member at random.
+        SelectionRoll::Vanguard => {
+            let pop: Vec<(u16, u32)> = cands.iter().map(|c| (c.species, c.generation)).collect();
+            let idx = vanguard_pick(&pop, &mut auto.cursor, &mut auto.rng);
+            cands[idx].entity
+        }
     }
+}
+
+/// Core of the `Vanguard` mode, factored out (and pure) for testability: advance
+/// `cursor` to the **next species** present in `pop` (sorted-unique, round-robin),
+/// then return the index — into `pop` — of one of *that* species' **newest**
+/// (max-[`Generation`]) members, chosen **uniformly** via `rng`. `pop` is non-empty
+/// (its species necessarily has a member), so the result always indexes a candidate.
+fn vanguard_pick(pop: &[(u16, u32)], cursor: &mut usize, rng: &mut Rng) -> usize {
+    let mut species: Vec<u16> = pop.iter().map(|(s, _)| *s).collect();
+    species.sort_unstable();
+    species.dedup();
+    *cursor = (*cursor + 1) % species.len();
+    let target = species[*cursor];
+    let max_gen = pop
+        .iter()
+        .filter(|(s, _)| *s == target)
+        .map(|(_, g)| *g)
+        .max()
+        .unwrap_or(0);
+    // Indices of the species' newest-generation members; pick one uniformly.
+    let front: Vec<usize> = pop
+        .iter()
+        .enumerate()
+        .filter(|(_, (s, g))| *s == target && *g == max_gen)
+        .map(|(i, _)| i)
+        .collect();
+    let k = (rng.next_f32() * front.len() as f32) as usize;
+    front[k.min(front.len() - 1)]
 }
 
 /// Rendering only: encircle the selected agent with a ring, to spot it in the area.
@@ -316,6 +404,7 @@ mod tests {
             SelectionRoll::Off,
             SelectionRoll::Sticky,
             SelectionRoll::Eldest,
+            SelectionRoll::Vanguard,
         ] {
             assert!(!m.rolls(), "{m:?} should not roll on a timer");
         }
@@ -326,5 +415,29 @@ mod tests {
         ] {
             assert!(m.rolls(), "{m:?} should roll on a timer");
         }
+    }
+
+    /// `Vanguard` always lands on a **newest-generation** member of *some* species,
+    /// and successive (death-triggered) picks **rotate through every species**.
+    #[test]
+    fn vanguard_picks_newest_generation_and_rotates_species() {
+        // species 0: gens {1,3,3} · species 1: gen {5} · species 2: gens {2,2}
+        let pop = [(0u16, 1u32), (0, 3), (0, 3), (1, 5), (2, 2), (2, 2)];
+        let mut rng = Rng::new(42);
+        let mut cursor = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..9 {
+            let i = vanguard_pick(&pop, &mut cursor, &mut rng);
+            let (s, g) = pop[i];
+            let max_g = pop
+                .iter()
+                .filter(|(ps, _)| *ps == s)
+                .map(|(_, pg)| *pg)
+                .max()
+                .unwrap();
+            assert_eq!(g, max_g, "must pick a newest-generation member of {s}");
+            seen.insert(s);
+        }
+        assert_eq!(seen.len(), 3, "rotation should visit every species");
     }
 }

@@ -153,8 +153,9 @@ open work in §9.
   window opened by an Export button (the fragile reverse-order `right_to_left` recorder
   hack is gone); the view **Layers** left the World panel for a top-bar **View** menu
   (view ≠ scenario data); and the three scattered per-panel status strings funnel into
-  one `UiStatus` shown once in the bottom bar. *Next (deferred):* collapsible panels +
-  presentation mode, pan/zoom + selection cartouche, per-panel polish.
+  one `UiStatus` shown once in the bottom bar. (The deferred *pan/zoom + view reset* and
+  windowed *follow modes* are now done — cf. the observation bullet below; only minor
+  per-panel polish remains.)
 - **Scenario management — document model.** The scattered scenario IO (a combo +
   `⟲ Reload`, a free-text Load path, a silent `💾 Save`) becomes a single **Scenario
   menu** (New / Open ▸ / Save / Save As) with the current file name and a
@@ -210,16 +211,30 @@ open work in §9.
   no-change): `Mutability::default` (capabilities + reproduction drift, costs + mutation
   rate frozen — already right, and moving it would churn the RNG stream), the
   `new_food` preset, the gene bounds, and the world scalars.
+- **Observation & view navigation (windowed sim view).** The auto-follow modes that
+  existed only in the **video recorder** (`SelectionRoll`) now drive the windowed view
+  too, from a right-panel **"Follow"** selector — `None` (manual mouse picking, the
+  default), `Sticky`, `Cycle`, `Active`, `Species tour`, `Eldest`, and a new **`Vanguard`**
+  mode: it picks **at random** one of a species' **newest-generation** agents (highest
+  `Generation`), **holds it until it dies**, then **rotates to another species** and
+  repeats — a tour of every lineage's evolutionary frontier. Manual picking still works in
+  any mode (the driver *holds* a clicked agent until its death, then resumes the rule).
+  The `AutoSelect` driver is now **public and shared** with the recorder (`Vanguard` is a
+  `--select vanguard` CLI / Export mode too); **observation-only** — its RNG is
+  wall-clock-seeded and never the sim RNG, so the simulation stays **byte-identical**. And
+  **pan/zoom** on the sim view (`ViewControl`, folded into `set_sim_camera`): scroll zooms
+  **toward the cursor**, middle/right-drag **pans**, **Home** / a **Reset view** button
+  recenter on the whole arena — layered on top of the fit-the-arena framing (an untouched
+  view is byte-identical to before), with picking staying correct under any zoom/pan.
 
 **Remaining.**
 
-- **Editor — deferred polish (the tail of the next pass).** Threads 1 (archetype
-  customization), 2 (the archetype library) and 3 (coherence: typography, dismissable
-  help, per-panel polish) are **done** (cf. §0 above and
-  [`docs/editor.md`](docs/editor.md)). What remains of the editor pass is the **deferred
-  polish** from the UI rework: **pan/zoom + selection cartouche** (camera navigation in
-  the sim view) and **collapsible panels + presentation mode** (a clean sim/video view).
-  Plus, longer term, the cross-scenario **shared** species library (§9).
+- **Editor — the long-tail item.** Threads 1 (archetype customization), 2 (the archetype
+  library) and 3 (coherence: typography, dismissable help, per-panel polish) are **done**
+  (cf. §0 above and [`docs/editor.md`](docs/editor.md)); the UI-rework deferred polish —
+  **pan/zoom + view reset** and the windowed **follow modes** — is **done** too (the
+  observation bullet above). What remains is, longer term, the cross-scenario **shared**
+  species library (§9).
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)

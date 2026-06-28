@@ -18,7 +18,7 @@ use teemlab::components::{
 };
 use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
-use teemlab::selection::Selection;
+use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
 
 use crate::editor::{Palette, draw_mlp_graph};
 use crate::fonts::{self, icons};
@@ -126,6 +126,46 @@ pub fn delete_under_cursor(
         }
     }
     Ok(())
+}
+
+/// **Observation controls** (windowed): the *follow* mode — the **same options as
+/// the video recorder** ([`SelectionRoll`]) — plus the camera **Reset view**. All
+/// rendering-side: it writes the auto-follow mode and the [`crate::ViewControl`],
+/// never the sim. `None` leaves selection to **manual mouse picking** (click an
+/// agent); the other modes auto-follow as in a video. A manual click still works in
+/// any mode — the driver then *holds* the clicked agent until it dies (cf.
+/// [`teemlab::selection`]).
+pub(crate) fn observation_section(
+    ui: &mut egui::Ui,
+    auto: &mut AutoSelect,
+    view: &mut crate::ViewControl,
+) {
+    ui.horizontal(|ui| {
+        ui.label("Follow:");
+        egui::ComboBox::from_id_salt("follow_mode")
+            .selected_text(auto.roll.label())
+            .show_ui(ui, |ui| {
+                for mode in SelectionRoll::ALL {
+                    ui.selectable_value(&mut auto.roll, mode, mode.label());
+                }
+            });
+        if ui
+            .button(fonts::icon_label(icons::RESET, "Reset view"))
+            .on_hover_text("Recenter on the whole arena (pan / zoom)  ·  Home")
+            .clicked()
+        {
+            *view = crate::ViewControl::default();
+        }
+    });
+    // The interval only matters for the "timer" modes (cycle / active / species tour).
+    if auto.roll.rolls() {
+        ui.add(egui::Slider::new(&mut auto.interval, 0.5..=20.0).text("interval (s)"));
+    }
+    help::hint(
+        ui,
+        "None = manual: click an agent. Other modes auto-follow like the video. \
+         Scroll = zoom · middle/right-drag = pan · Home = reset view.",
+    );
 }
 
 /// The agent inspector — genotype, energy, perception, action (+ MLP graph) of

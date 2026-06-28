@@ -11,7 +11,8 @@
 //! editor** in a second left column that opens only when an archetype is selected — the
 //! one species you are editing; **Analysis** on the right (live *stats* + the agent
 //! *inspector*) — the current state you read; the evolution *curves* (a time series)
-//! full-width at the bottom; *scenario IO + transport controls + View menu + Export* in
+//! at the bottom, spanning only the **central width** the side panels leave free;
+//! *scenario IO + transport controls + View menu + Export* in
 //! the top strip (controls centered). View layers live in the top-bar **View** menu and
 //! video export in a floating window from the **Export** button — both out of the
 //! always-on panels.
@@ -31,6 +32,7 @@
 //! to the right, the central sim now gets the **full height** between the top strip and
 //! the bottom curves.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use teemlab::SimConfig;
@@ -38,7 +40,7 @@ use teemlab::brain::Brain;
 use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use teemlab::genotype::Genotype;
 use teemlab::metrics::History;
-use teemlab::selection::Selection;
+use teemlab::selection::{AutoSelect, Selection};
 use teemlab::visuals::Layers;
 
 use crate::controls::{self, SimControls};
@@ -58,6 +60,18 @@ use crate::status::UiStatus;
 /// than offering a drag handle. Kept **equal** left and right so the centered sim
 /// stays centered.
 const SIDE_PANEL_WIDTH: f32 = 370.0;
+
+/// **Observation** state of the right panel, bundled into one [`SystemParam`] so
+/// [`dock`] stays within Bevy's 16-parameter limit: the current [`Selection`]
+/// (read), the auto-follow mode ([`AutoSelect`]) and the sim view's pan/zoom
+/// ([`crate::ViewControl`]) — all written/read by `inspector::observation_section`
+/// and the inspector.
+#[derive(SystemParam)]
+pub struct ObsParams<'w> {
+    pub selection: Res<'w, Selection>,
+    pub auto_select: ResMut<'w, AutoSelect>,
+    pub view: ResMut<'w, crate::ViewControl>,
+}
 
 /// The central region left free by the docked panels (egui points), computed by
 /// [`dock`] from the root `Ui` and consumed by `main::set_sim_camera` to frame the
@@ -119,7 +133,9 @@ pub fn dock(
     fonts_ready: Res<crate::fonts::FontsReady>,
     // Last frame's measured width of the centered transport controls (for centering).
     mut ctrl_width: Local<f32>,
-    selection: Res<Selection>,
+    // Observation: selection + auto-follow mode + the sim view's pan/zoom (bundled to
+    // keep `dock` within the 16-param system limit — cf. [`ObsParams`]).
+    mut obs: ObsParams,
     stats_agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
     inspector_agents: Query<
         (
@@ -221,20 +237,6 @@ pub fn dock(
         }
     }
 
-    // Bottom panel reserved **first** so it spans the **full width**: the evolution
-    // **curves** (a time series) with the unified **status line** folded in. Reserving
-    // it before the side columns is what puts them — and the archetype editor — *above*
-    // the curves (the order of `show_inside` is the layout). Non-resizable and not
-    // wrapped in a `ScrollArea`, so it sizes to exactly the content's height.
-    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
-        if !ui_status.message.is_empty() {
-            ui.weak(&ui_status.message);
-            ui.separator();
-        }
-        ui.strong("Evolution — curves");
-        hud::hud_section(ui, &mut history, &config);
-    });
-
     // Left column, **fixed width, non-resizable** (width via [`SIDE_PANEL_WIDTH`] — egui
     // side panels can't fit their width to content, so no drag handle): **the world** —
     // the scenario parameters (*World*) and the entities list (*Archetypes*, with the
@@ -262,6 +264,9 @@ pub fn dock(
     egui::Panel::right("right_panel")
         .exact_size(SIDE_PANEL_WIDTH)
         .show_inside(&mut root, |ui| {
+            // Observation first: how the highlight follows agents + the view reset.
+            inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
+            ui.separator();
             egui::CollapsingHeader::new("Live stats")
                 .default_open(false)
                 .show(ui, |ui| editor::stats_section(ui, &stats_agents));
@@ -271,7 +276,7 @@ pub fn dock(
             // capture request (a derived archetype): we add it to the config *after*
             // the call (it borrows `config` shared) → mutable borrow then allowed.
             if let Some(arch) =
-                inspector::inspector_section(ui, &selection, &config, &inspector_agents)
+                inspector::inspector_section(ui, &obs.selection, &config, &inspector_agents)
             {
                 let from = arch.captured_from.clone().unwrap_or_default();
                 config.archetypes.push(arch);
@@ -280,8 +285,25 @@ pub fn dock(
             }
         });
 
+    // Bottom panel reserved **after** the side columns (`left_tools`/`right_panel`) so it
+    // spans only the **central width** they leave free, not the full window. The evolution
+    // **curves** (a time series) with the unified **status line** folded in. Created
+    // **before** the conditional `archetype_editor` (below) for two reasons: toggling that
+    // panel then never shifts this one's egui ids, and the editor docks into the rect
+    // *above* these curves — so the curves keep the full central width, the editor sitting
+    // over them rather than narrowing them. Non-resizable and not wrapped in a
+    // `ScrollArea`, so it sizes to exactly the content's height.
+    egui::Panel::bottom("bottom_panel").show_inside(&mut root, |ui| {
+        if !ui_status.message.is_empty() {
+            ui.weak(&ui_status.message);
+            ui.separator();
+        }
+        ui.strong("Evolution — curves");
+        hud::hud_section(ui, &mut history, &config);
+    });
+
     // Archetype editor — the **detail** half: a second left column that docks to the
-    // left of the central area (i.e. right of the world panel, above the full-width
+    // left of the central area (i.e. right of the world panel, above the central-width
     // curves) and opens **only when an archetype is selected** (clicked in the list).
     // Created **last**, after every unconditional panel: an egui child panel's id mixes
     // in the parent's running auto-id counter ([`egui::Ui::new_child`]), so a
