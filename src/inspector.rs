@@ -168,17 +168,32 @@ pub(crate) fn observation_section(
     );
 }
 
+/// What the inspector asks the caller to do this frame (it never writes the sim/config
+/// itself — the editor does). `None` = nothing this tick.
+pub(crate) enum InspectorAction {
+    /// Add the captured archetype to the **current scenario** (evolved genome + weights).
+    Capture(Archetype),
+    /// Save the captured archetype as a library **variant** of scenario species `species`.
+    SaveVariant {
+        /// Scenario archetype index the variant derives from (its base form).
+        species: u16,
+        /// The captured variant archetype (display name already set by the user).
+        variant: Archetype,
+    },
+}
+
 /// The agent inspector — genotype, energy, perception, action (+ MLP graph) of
 /// the selected agent. Rendered in the bottom panel (on the right, dock item). If
 /// the selected agent has disappeared (died), we report it. **Read-only over the
-/// world**: we never write into the sim. The "Capture" button is no exception —
-/// it *reads* the agent and **returns** a derived [`Archetype`] (evolved genome +
-/// concrete weights) that the caller will add to the config (as the editor writes
-/// the config, not the sim). `None` when the user does not capture this tick.
+/// world**: we never write into the sim. The "Capture" / "Save as variant" buttons are
+/// no exception — they *read* the agent and **return** an [`InspectorAction`] the caller
+/// applies (the editor writes the config / the library, not the sim). `variant_name` is
+/// the live buffer of the variant-name field. `None` when the user does nothing this tick.
 pub(crate) fn inspector_section(
     ui: &mut egui::Ui,
     selection: &Selection,
     config: &SimConfig,
+    variant_name: &mut String,
     agents: &Query<
         (
             &Species,
@@ -193,7 +208,7 @@ pub(crate) fn inspector_section(
         ),
         With<Agent>,
     >,
-) -> Option<Archetype> {
+) -> Option<InspectorAction> {
     let Some(entity) = selection.0 else {
         ui.weak("Click an agent in the area to inspect it.");
         return None;
@@ -209,9 +224,10 @@ pub(crate) fn inspector_section(
         return None;
     };
 
-    // Possible capture request (cf. doc): set by the button below, returned to the
-    // caller who will add it to the config.
-    let mut capture: Option<Archetype> = None;
+    // Possible action request (cf. doc): set by the buttons below, returned to the
+    // caller who applies it (add to the scenario, or save a library variant). Named
+    // `request` to avoid shadowing the `action` (`&Action`) component above.
+    let mut request: Option<InspectorAction> = None;
 
     // An immobile entity (flora / sessile source) neither moves nor exploits
     // vision: we then hide the inert genes (locomotion, vision) and the perception
@@ -298,11 +314,42 @@ pub(crate) fn inspector_section(
             )
             .clicked()
         {
-            capture = config
+            request = config
                 .archetypes
                 .get(species.0 as usize)
-                .map(|src| src.capture(*genotype, brain.clone(), generation.0));
+                .map(|src| InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0)));
         }
+
+        // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
+        // but written to the catalog as a NAMED variant of this species (species/saved/),
+        // with a "<scenario>-<n>" id — the caller resolves the base + id (cf. editor).
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(variant_name)
+                    .hint_text("variant name")
+                    .desired_width(120.0),
+            );
+            let named = !variant_name.trim().is_empty();
+            if ui
+                .add_enabled(
+                    named,
+                    egui::Button::new(fonts::icon_label(icons::UPLOAD, "Save as variant")),
+                )
+                .on_hover_text(
+                    "Save this evolved agent as a named variant in the species library \
+                     (species/saved/), reusable in any scenario.",
+                )
+                .clicked()
+                && let Some(src) = config.archetypes.get(species.0 as usize)
+            {
+                let mut variant = src.capture(*genotype, brain.clone(), generation.0);
+                variant.name = variant_name.trim().to_string();
+                request = Some(InspectorAction::SaveVariant {
+                    species: species.0,
+                    variant,
+                });
+            }
+        });
 
         // MLP brain: the network in action (item 18b-viz). Nodes colored by their
         // current activation (the last `think`), edges by sign/weight — the learned
@@ -357,5 +404,5 @@ pub(crate) fn inspector_section(
         }
     });
 
-    capture
+    request
 }

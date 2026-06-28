@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{Archetype, Relation, Source};
+use teemlab::config::{Archetype, Relation, Source, SpeciesEntry};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
@@ -39,11 +39,18 @@ pub struct Palette {
     pub selected: Option<usize>,
     /// Rolling seed to give a distinct stream to the brain of each hand-placed agent.
     pub next_seed: u64,
-    /// Species library catalog: each `species/*.ron` with its loaded definition and
-    /// **cross-scenario usage**, cached by [`scan_library`] — refreshed when the
-    /// library section opens (it reads every species and scenario file, so never per
-    /// frame), not by a manual reload button.
-    pub library: Vec<LibraryEntry>,
+    /// Species catalog: every library form (`species/<lib>/*.ron`) grouped by species
+    /// into a **base + its variants**, with **cross-scenario usage**, cached by
+    /// [`scan_library`] — refreshed when the library section opens (it reads every
+    /// species and scenario file, so never per frame), not by a manual reload button.
+    pub catalog: Vec<CatalogSpecies>,
+    /// Per-species selected form in the catalog (key = species name → index into its
+    /// [`CatalogSpecies::forms`], 0 = base): the dropdown's choice, what Import copies.
+    pub catalog_pick: HashMap<String, usize>,
+    /// Catalog search box: filters species by name or variant id (case-insensitive).
+    pub catalog_search: String,
+    /// Working buffer for the inspector's "Save as variant" name field.
+    pub variant_name: String,
     /// Whether the "Species library" section was open last frame — to rescan the catalog
     /// once on the closed→open transition (cf. `runs::RunsPanel::menu_was_open`).
     pub library_was_open: bool,
@@ -79,11 +86,22 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         dragging: None,
         selected: None,
         next_seed: config.seed ^ 0xED17,
-        library: scan_library(),
+        catalog: scan_library(),
+        catalog_pick: HashMap::new(),
+        catalog_search: String::new(),
+        variant_name: String::new(),
         library_was_open: false,
         show_mutability: false,
     });
 }
+
+/// The committed, curated archetype library (read-only from the editor — hand-managed).
+const EXAMPLES_LIB: &str = "species/examples";
+/// The local (gitignored) library — where the editor *writes* exports and variants.
+const SAVED_LIB: &str = "species/saved";
+/// The libraries the catalog reads (display name, directory). Only `examples` is
+/// committed (cf. `.gitignore`); the editor only ever writes to `saved`.
+const LIBRARIES: [(&str, &str); 2] = [("examples", EXAMPLES_LIB), ("saved", SAVED_LIB)];
 
 /// All `*.ron` paths directly under `dir`, sorted; a missing directory → empty. The
 /// shared scan behind both the species library and the cross-scenario usage lookup.
@@ -103,34 +121,58 @@ fn ron_files(dir: &str) -> Vec<String> {
     found
 }
 
-/// One library species (`species/*.ron`) with its loaded definition and the
-/// scenarios that import it — the cached unit of the catalog (cf. [`scan_library`]).
-pub struct LibraryEntry {
-    /// File path, e.g. `species/hunter.ron`.
+/// One reusable **form** in the catalog — a base or an evolved variant — with its
+/// file, library, loaded archetype, and which scenarios import *this file*.
+pub struct CatalogForm {
+    /// File path, e.g. `species/saved/hunter--predator_prey-1.ron`.
     pub path: String,
-    /// The parsed species (`None` if the file failed to load).
-    pub def: Option<Archetype>,
-    /// Scenarios that import this species (by `source`), each with its sync state.
-    pub usage: Vec<LibraryUsage>,
+    /// Library display name ("examples" / "saved").
+    pub library: &'static str,
+    /// The loaded archetype (a variant carries the evolved genotype + frozen brain).
+    pub archetype: Archetype,
+    /// Variant id `"<scenario>-<n>"`; `None` for the base form.
+    pub variant_id: Option<String>,
+    /// Scenario files importing this form (by `source`) — informational usage tracking
+    /// (import is a one-time copy: no sync state, since there is no resync to act on it).
+    pub usage: Vec<String>,
 }
 
-/// One scenario importing a library species, with whether its copy is up to date
-/// (cf. [`LibraryEntry::usage`]).
-pub struct LibraryUsage {
-    /// Scenario file path, e.g. `scenarios/examples/predator_prey.ron`.
-    pub scenario: String,
-    /// `false` if the scenario's copy is outdated vs the current library definition.
-    pub in_sync: bool,
+/// A catalog species: the **base** form (standard archetype) and its evolved
+/// **variants**, grouped by name across libraries. Cached by [`scan_library`].
+pub struct CatalogSpecies {
+    /// Species name (the grouping key, shared by the base and its variants).
+    pub name: String,
+    /// The base form (the standard archetype), if one exists in any library.
+    pub base: Option<CatalogForm>,
+    /// Evolved variants of this species (snapshots from runs).
+    pub variants: Vec<CatalogForm>,
 }
 
-/// Builds the species-library catalog: every `species/*.ron` loaded, cross-referenced
-/// against every scenario — **examples and saved** — to find which import it (and
-/// whether each copy is still in sync). One pass over the scenarios (parsed once), so it
-/// scales with the file count, not their product. A manual rescan — never per frame.
-fn scan_library() -> Vec<LibraryEntry> {
+impl CatalogSpecies {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            base: None,
+            variants: Vec::new(),
+        }
+    }
+
+    /// All selectable forms: the base (if any) first, then the variants.
+    fn forms(&self) -> Vec<&CatalogForm> {
+        self.base.iter().chain(self.variants.iter()).collect()
+    }
+}
+
+/// Builds the species catalog: every library form (`species/<lib>/*.ron`) loaded and
+/// **grouped by species name** into a base + its variants (across libraries), each form
+/// cross-referenced against every scenario — **examples and saved** — to find which
+/// import it (and whether each copy is still in sync). One pass over the scenarios
+/// (parsed once), so it scales with the file count, not their product. A manual rescan —
+/// never per frame.
+fn scan_library() -> Vec<CatalogSpecies> {
     // Index every scenario's imported archetypes by their `source` path in one pass,
     // across both scenario categories.
-    let mut imports: HashMap<String, Vec<(String, Archetype)>> = HashMap::new();
+    let mut imports: HashMap<String, Vec<String>> = HashMap::new();
     let scenarios = ron_files(crate::runs::EXAMPLES_DIR)
         .into_iter()
         .chain(ron_files(crate::runs::SAVED_DIR));
@@ -139,30 +181,47 @@ fn scan_library() -> Vec<LibraryEntry> {
             continue;
         };
         for arch in cfg.archetypes {
-            if let Some(src) = arch.source.clone() {
-                imports
-                    .entry(src)
-                    .or_default()
-                    .push((scenario.clone(), arch));
+            if let Some(src) = arch.source {
+                imports.entry(src).or_default().push(scenario.clone());
             }
         }
     }
-    ron_files("species")
-        .into_iter()
-        .map(|path| {
-            let def = Archetype::from_ron_file(&path).ok();
-            let usage = imports
-                .get(&path)
-                .into_iter()
-                .flatten()
-                .map(|(scenario, arch)| LibraryUsage {
-                    scenario: scenario.clone(),
-                    in_sync: def.as_ref().is_some_and(|d| species_in_sync(arch, d)),
-                })
-                .collect();
-            LibraryEntry { path, def, usage }
-        })
-        .collect()
+
+    // Load every library's forms and group them by species name (a base keeps its
+    // variants together even when the base is committed and the variants are local).
+    let mut species: std::collections::BTreeMap<String, CatalogSpecies> =
+        std::collections::BTreeMap::new();
+    for (lib_name, dir) in LIBRARIES {
+        for path in ron_files(dir) {
+            let Ok(entry) = SpeciesEntry::from_ron_file(&path) else {
+                continue;
+            };
+            let form = CatalogForm {
+                library: lib_name,
+                usage: imports.get(&path).cloned().unwrap_or_default(),
+                variant_id: entry.variant_id.clone(),
+                archetype: entry.archetype.clone(),
+                path,
+            };
+            match entry.variant_of {
+                // A base: keyed by its own name.
+                None => {
+                    species
+                        .entry(entry.archetype.name.clone())
+                        .or_insert_with(|| CatalogSpecies::new(entry.archetype.name.clone()))
+                        .base = Some(form);
+                }
+                // A variant: attaches to its base name (group created if the base is
+                // missing — an orphan variant still appears).
+                Some(base) => species
+                    .entry(base.clone())
+                    .or_insert_with(|| CatalogSpecies::new(base))
+                    .variants
+                    .push(form),
+            }
+        }
+    }
+    species.into_values().collect()
 }
 
 /// Resolution of an archetype's drag-and-drop into the play area. A **distinct**
@@ -352,42 +411,6 @@ pub(crate) fn selector_section(
     }
 }
 
-/// Sync state of an imported archetype relative to its `source` file (the resync
-/// indicator). `None` when the archetype has no source (it is local to the scenario).
-enum SyncState {
-    /// Body/brain/… already match the source (only the local count may differ).
-    InSync,
-    /// The source file defines something different — a resync would change it.
-    Changed,
-    /// The `source` file is gone (moved / deleted).
-    Missing,
-}
-
-/// `true` if `arch` already matches the library `def`: what a resync would yield
-/// ([`merge_species_def`]) equals `arch`, so a difference in the *count* (preserved by
-/// resync) never reads as out of sync. The shared sync test, used both for an open
-/// scenario's archetype and for a scenario's copy during the cross-scenario scan.
-fn species_in_sync(arch: &Archetype, def: &Archetype) -> bool {
-    let mut resynced = arch.clone();
-    merge_species_def(
-        &mut resynced,
-        def.clone(),
-        arch.source.clone().unwrap_or_default(),
-    );
-    resynced == *arch
-}
-
-/// Compares archetype `arch` against its `source` *file*: loads the definition and
-/// asks [`species_in_sync`] what a resync would change.
-fn species_sync_state(arch: &Archetype) -> Option<SyncState> {
-    let src = arch.source.clone()?;
-    Some(match Archetype::from_ron_file(&src) {
-        Ok(loaded) if species_in_sync(arch, &loaded) => SyncState::InSync,
-        Ok(_) => SyncState::Changed,
-        Err(_) => SyncState::Missing,
-    })
-}
-
 /// Display name of a RON path: its file stem (e.g. `species/hunter.ron` → `hunter`,
 /// `scenarios/examples/predator_prey.ron` → `predator_prey`).
 fn display_name(path: &str) -> &str {
@@ -397,16 +420,15 @@ fn display_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
-/// **Species library** (item 4 + the §9 cross-scenario step): make a species reusable
-/// across scenarios. Three layers, all on the **copy** model (a scenario stays
-/// self-contained and reproducible — the deliberate fork kept over reference):
-/// - the **selected archetype** — **Export** it to `species/<name>.ron`, and (if
-///   imported) its **sync state** + a one-species **Resync**;
-/// - **propagation into the open scenario** — **Update all from library** (bulk resync
-///   of every imported species, each local count preserved);
-/// - the **catalog** — every `species/*.ron` with a color swatch, brain, an **Import**
-///   (copy), and its **cross-scenario usage** (how many scenarios import it, which, and
-///   whether each copy is still in sync), cached by [`scan_library`].
+/// **Species library** (item 4 + the §9 cross-scenario step), on the **copy** model
+/// (a scenario stays self-contained and reproducible). **Import is a one-time copy** —
+/// there is no resync; to update an imported species, re-import it. Two parts:
+/// - **Save to catalog** — write the selected scenario archetype into `species/saved/`
+///   as a reusable base;
+/// - the **catalog** — species grouped into a **base + a variant dropdown**, with a
+///   color swatch, brain, an **Import** of the selected form, informational
+///   **cross-scenario usage**, and a name/id **search**, cached by [`scan_library`]
+///   (refreshed on open).
 fn species_library_section(
     ui: &mut egui::Ui,
     palette: &mut Palette,
@@ -418,141 +440,26 @@ fn species_library_section(
         .show(ui, |ui| {
             help::hint(
                 ui,
-                "Reusable species saved as species/*.ron: export the selected archetype, \
-                 import a COPY into this scenario, or resync imported ones from their source.",
+                "Reusable species (species/examples committed · species/saved local). Save the \
+                 selected archetype to the catalog, or import a one-time COPY (base or variant).",
             );
-
-            // ── Selected archetype: export it, and (if imported) its sync state + resync.
+            // Save the selected scenario archetype into the catalog (scenario → catalog).
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
-                let state = species_sync_state(&config.archetypes[i]);
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(fonts::icon_label(icons::UPLOAD, "Export selection"))
-                        .on_hover_text("Saves the archetype as a reusable species/*.ron.")
-                        .clicked()
-                    {
-                        status.set(export_species(&config.archetypes[i]));
-                        palette.library = scan_library();
-                    }
-                    if state.is_some()
-                        && ui
-                            .button(fonts::icon_label(icons::SYNC, "Resync"))
-                            .on_hover_text(
-                                "Reload the source's definition (keeps the local count).",
-                            )
-                            .clicked()
-                    {
-                        status.set(sync_species(config, i));
-                        palette.library = scan_library();
-                    }
-                });
-                // Provenance + sync indicator for an imported archetype.
-                if let (Some(state), Some(src)) = (state, config.archetypes[i].source.clone()) {
-                    let (msg, color) = match state {
-                        SyncState::InSync => ("in sync", ui.visuals().weak_text_color()),
-                        SyncState::Changed => (
-                            "source changed — resync available",
-                            ui.visuals().warn_fg_color,
-                        ),
-                        SyncState::Missing => ("source missing", ui.visuals().error_fg_color),
-                    };
-                    ui.small(egui::RichText::new(format!("↧ {src} · {msg}")).color(color));
-                }
-            } else {
-                help::hint(ui, "Select an archetype to export or resync it.");
-            }
-
-            // ── Propagation INTO the open scenario: bulk resync every imported species.
-            ui.separator();
-            let imported = config
-                .archetypes
-                .iter()
-                .filter(|a| a.source.is_some())
-                .count();
-            ui.add_enabled_ui(imported > 0, |ui| {
                 if ui
-                    .button(fonts::icon_label(icons::SYNC, "Update all from library"))
+                    .button(fonts::icon_label(icons::UPLOAD, "Save to catalog"))
                     .on_hover_text(
-                        "Resync every imported species in this scenario from its source \
-                         file (each local count preserved).",
+                        "Saves the selected archetype as a reusable base in species/saved/.",
                     )
                     .clicked()
                 {
-                    status.set(sync_all_species(config));
+                    status.set(export_species(&config.archetypes[i]));
+                    palette.catalog = scan_library();
                 }
-            });
-            ui.small(format!("{imported} imported species in this scenario."));
-
-            // ── Catalog: available species + cross-scenario usage. The list refreshes
-            // itself when the section opens (see below) — no manual rescan button.
+            } else {
+                help::hint(ui, "Select an archetype to save it to the catalog.");
+            }
             ui.separator();
-            ui.strong("Available species");
-            if palette.library.is_empty() {
-                help::hint(
-                    ui,
-                    "No species/*.ron yet — export an archetype to create one.",
-                );
-            }
-
-            // Sources already imported in THIS scenario, to flag the catalog rows.
-            let here: HashSet<String> = config
-                .archetypes
-                .iter()
-                .filter_map(|a| a.source.clone())
-                .collect();
-
-            let mut to_import = None;
-            for entry in &palette.library {
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(fonts::icon(icons::DOWNLOAD))
-                        .on_hover_text("Import a COPY into the scenario")
-                        .clicked()
-                    {
-                        to_import = Some(entry.path.clone());
-                    }
-                    match &entry.def {
-                        Some(def) => {
-                            // Color swatch + name + brain kind.
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(11.0, 11.0), egui::Sense::hover());
-                            ui.painter().rect_filled(rect, 2.0, archetype_color32(def));
-                            ui.label(display_name(&entry.path));
-                            ui.weak(def.brain.name());
-                        }
-                        None => {
-                            ui.colored_label(
-                                ui.visuals().error_fg_color,
-                                format!("{} (unreadable)", display_name(&entry.path)),
-                            );
-                        }
-                    }
-                    // Right-aligned: "imported here" marker + cross-scenario usage badge.
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if here.contains(&entry.path) {
-                            ui.weak("· here");
-                        }
-                        if !entry.usage.is_empty() {
-                            let outdated = entry.usage.iter().filter(|u| !u.in_sync).count();
-                            if outdated > 0 {
-                                ui.colored_label(ui.visuals().warn_fg_color, "⚠");
-                            }
-                            ui.weak(format!("used in {}", entry.usage.len()))
-                                .on_hover_ui(|ui| {
-                                    for u in &entry.usage {
-                                        let mark = if u.in_sync { "in sync" } else { "outdated" };
-                                        ui.label(format!("{} — {mark}", display_name(&u.scenario)));
-                                    }
-                                });
-                        }
-                    });
-                });
-            }
-            if let Some(path) = to_import {
-                status.set(import_species(config, &path));
-                palette.selected = Some(config.archetypes.len().saturating_sub(1));
-                palette.library = scan_library();
-            }
+            catalog_section(ui, palette, config, status);
         });
 
     // The catalog refreshes itself **when the section opens** (no manual reload button —
@@ -561,9 +468,130 @@ fn species_library_section(
     // file, so it stays off the per-frame path.
     let open = resp.openness > 0.5;
     if open && !palette.library_was_open {
-        palette.library = scan_library();
+        palette.catalog = scan_library();
     }
     palette.library_was_open = open;
+}
+
+/// Dropdown label of a catalog form: `Base`, or `name (id)` for a variant.
+fn form_label(form: &CatalogForm) -> String {
+    match &form.variant_id {
+        None => "Base".to_string(),
+        Some(id) => format!("{} ({id})", form.archetype.name),
+    }
+}
+
+/// The **catalog**: species grouped into a base + a variant dropdown, with a search box,
+/// a color swatch, the Import of the selected form, and its cross-scenario usage.
+fn catalog_section(
+    ui: &mut egui::Ui,
+    palette: &mut Palette,
+    config: &mut SimConfig,
+    status: &mut UiStatus,
+) {
+    ui.horizontal(|ui| {
+        ui.strong("Catalog");
+        ui.add(
+            egui::TextEdit::singleline(&mut palette.catalog_search)
+                .hint_text("search name / id")
+                .desired_width(150.0),
+        );
+    });
+    if palette.catalog.is_empty() {
+        help::hint(
+            ui,
+            "No species yet — export an archetype to species/saved/.",
+        );
+        return;
+    }
+
+    // Sources already imported in THIS scenario, to flag the catalog rows.
+    let here: HashSet<String> = config
+        .archetypes
+        .iter()
+        .filter_map(|a| a.source.clone())
+        .collect();
+    let needle = palette.catalog_search.trim().to_lowercase();
+
+    // Split borrows: iterate the catalog (read) while mutating the per-species pick map.
+    let Palette {
+        catalog,
+        catalog_pick,
+        ..
+    } = &mut *palette;
+    let mut to_import: Option<String> = None;
+
+    for species in catalog.iter() {
+        let forms = species.forms();
+        if forms.is_empty() {
+            continue;
+        }
+        // Search: match the species name, or any form's name / variant id.
+        if !needle.is_empty() {
+            let hit = species.name.to_lowercase().contains(&needle)
+                || forms.iter().any(|f| {
+                    f.archetype.name.to_lowercase().contains(&needle)
+                        || f.variant_id
+                            .as_deref()
+                            .is_some_and(|id| id.to_lowercase().contains(&needle))
+                });
+            if !hit {
+                continue;
+            }
+        }
+
+        let pick = catalog_pick.entry(species.name.clone()).or_insert(0);
+        if *pick >= forms.len() {
+            *pick = 0;
+        }
+        let form = forms[*pick];
+
+        ui.horizontal(|ui| {
+            if ui
+                .button(fonts::icon(icons::DOWNLOAD))
+                .on_hover_text("Import a COPY of the selected form into the scenario")
+                .clicked()
+            {
+                to_import = Some(form.path.clone());
+            }
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(11.0, 11.0), egui::Sense::hover());
+            ui.painter()
+                .rect_filled(rect, 2.0, archetype_color32(&form.archetype));
+            ui.label(&species.name);
+            ui.weak(form.archetype.brain.name());
+            egui::ComboBox::from_id_salt(("catalog_form", &species.name))
+                .selected_text(form_label(form))
+                .show_ui(ui, |ui| {
+                    for (i, f) in forms.iter().enumerate() {
+                        ui.selectable_value(pick, i, form_label(f));
+                    }
+                });
+        });
+
+        // Selected form details: library, "imported here", cross-scenario usage.
+        let form = forms[*pick]; // re-read: the dropdown may have changed `pick`.
+        ui.horizontal(|ui| {
+            ui.add_space(24.0);
+            ui.weak(form.library);
+            if here.contains(&form.path) {
+                ui.weak("· imported here");
+            }
+            if !form.usage.is_empty() {
+                ui.weak(format!("· used in {}", form.usage.len()))
+                    .on_hover_ui(|ui| {
+                        for scenario in &form.usage {
+                            ui.label(display_name(scenario));
+                        }
+                    });
+            }
+        });
+    }
+
+    if let Some(path) = to_import {
+        status.set(import_species(config, &path));
+        palette.selected = Some(config.archetypes.len().saturating_sub(1));
+        palette.catalog = scan_library();
+    }
 }
 
 /// Removes archetype `i` and **remaps the relation table**: relations that
@@ -619,88 +647,98 @@ fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
     }
 }
 
-/// Exports an archetype as a **reusable species** to `species/<name>.ron`. The
-/// `source` field is cleared: the exported file *is* the source (no self-reference
-/// if an imported species is re-exported). Returns a status message for the UI.
+/// Exports an archetype as a **reusable base** to `species/saved/<name>.ron` (the local
+/// library; the editor never writes to the committed `examples`). The `source`/capture
+/// links are cleared — the exported file *is* the source. Returns a status message.
 fn export_species(arch: &Archetype) -> String {
-    let _ = std::fs::create_dir_all("species");
-    let path = format!("species/{}.ron", sanitize_filename(&arch.name));
-    let mut def = arch.clone();
-    def.source = None;
-    match def.save_ron_file(&path) {
+    let mut base = arch.clone();
+    base.source = None;
+    base.captured_brain = None;
+    base.captured_from = None;
+    let path = format!("{SAVED_LIB}/{}.ron", sanitize_filename(&arch.name));
+    match SpeciesEntry::base(base).save_ron_file(&path) {
         Ok(()) => format!("Species exported → {path}"),
         Err(e) => format!("Export failed: {e}"),
     }
 }
 
-/// Imports a species: a **copy** joins the scenario (which stays self-contained,
-/// §9), retaining the file as `source` (for resyncing). Added at the end of the
-/// list, hence without shifting the relation indices. Returns a status message.
+/// Imports a catalog form (base or variant): a **one-time copy** of its archetype joins
+/// the scenario (which stays self-contained, §9). The originating file is kept as
+/// `source` — **provenance only** (cross-scenario usage tracking), not a live link: there
+/// is no resync. Added at the end of the list, hence without shifting the relation
+/// indices. Returns a status message.
 fn import_species(config: &mut SimConfig, path: &str) -> String {
-    match Archetype::from_ron_file(path) {
-        Ok(mut arch) => {
+    match SpeciesEntry::from_ron_file(path) {
+        Ok(entry) => {
+            let mut arch = entry.archetype;
             arch.source = Some(path.to_string());
             config.archetypes.push(arch);
-            format!("Species imported (copy) ← {path}")
+            format!("Imported (copy) ← {path}")
         }
         Err(e) => format!("Import failed: {e}"),
     }
 }
 
-/// Resyncs archetype `i` from its `source` file: reloads the definition and
-/// reapplies it while **keeping the local count** (`count`). Returns a status message.
-fn sync_species(config: &mut SimConfig, i: usize) -> String {
-    let Some(src) = config.archetypes[i].source.clone() else {
-        return "This archetype has no source to sync.".to_string();
+/// Next variant number for `species` from `scenario`: `max(existing) + 1` over the
+/// cached catalog, so ids stay `"<scenario>-<n>"` and don't collide after a deletion.
+fn next_variant_number(catalog: &[CatalogSpecies], species: &str, scenario: &str) -> u32 {
+    let prefix = format!("{scenario}-");
+    catalog
+        .iter()
+        .filter(|s| s.name == species)
+        .flat_map(|s| s.variants.iter())
+        .filter_map(|v| v.variant_id.as_deref())
+        .filter_map(|id| id.strip_prefix(&prefix))
+        .filter_map(|n| n.parse::<u32>().ok())
+        .max()
+        .map_or(1, |m| m + 1)
+}
+
+/// Saves an **evolved variant** to `species/saved/` (the inspector's "Save as variant").
+/// `variant` is the captured snapshot (evolved genotype + frozen brain) with its display
+/// name already set; `species` is the scenario archetype index it derives from (its name
+/// is the base it attaches to). If no base exists for that name in the catalog, the
+/// **standard form is auto-exported** as a base alongside it (cf. §9, your #4). The id is
+/// `"<scenario>-<n>"`. Returns a status message and rescans the catalog.
+pub(crate) fn save_variant(
+    palette: &mut Palette,
+    config: &SimConfig,
+    species: usize,
+    mut variant: Archetype,
+    scenario: &str,
+) -> String {
+    let Some(base_arch) = config.archetypes.get(species) else {
+        return "No such species to vary.".to_string();
     };
-    match Archetype::from_ron_file(&src) {
-        Ok(loaded) => {
-            merge_species_def(&mut config.archetypes[i], loaded, src.clone());
-            format!("Species resynced ← {src}")
-        }
-        Err(e) => format!("Sync failed: {e}"),
-    }
-}
+    let base_name = base_arch.name.clone();
 
-/// Resyncs **every** imported archetype of the open scenario from its `source` file
-/// (propagation *into* this scenario) — each local count preserved
-/// ([`merge_species_def`]), already-in-sync species untouched. Returns a status
-/// message summarizing how many were updated (and any missing source). The change is
-/// in-memory: the user saves to persist it (the scenario stays self-contained).
-fn sync_all_species(config: &mut SimConfig) -> String {
-    let (mut updated, mut missing, mut linked) = (0usize, 0usize, 0usize);
-    for i in 0..config.archetypes.len() {
-        let Some(src) = config.archetypes[i].source.clone() else {
-            continue;
-        };
-        linked += 1;
-        match Archetype::from_ron_file(&src) {
-            Ok(loaded) => {
-                if !species_in_sync(&config.archetypes[i], &loaded) {
-                    merge_species_def(&mut config.archetypes[i], loaded, src);
-                    updated += 1;
-                }
-            }
-            Err(_) => missing += 1,
+    // Auto-export the base (standard form) if the catalog has none for this name.
+    let has_base = palette
+        .catalog
+        .iter()
+        .any(|s| s.name == base_name && s.base.is_some());
+    if !has_base {
+        let msg = export_species(base_arch);
+        if msg.starts_with("Export failed") {
+            return msg;
         }
+        palette.catalog = scan_library();
     }
-    match (linked, updated, missing) {
-        (0, _, _) => "No imported species to update.".to_string(),
-        (_, 0, 0) => "All imported species already in sync.".to_string(),
-        (_, n, 0) => format!("Updated {n} species from the library."),
-        (_, n, m) => format!("Updated {n} species ({m} source missing)."),
-    }
-}
 
-/// Reapplies a species definition `loaded` onto `target`, **preserving the count**
-/// (`count`, specific to the scenario) and re-setting the `source` link. The rest
-/// (body, brain, color, name, mutability) comes from the definition. Pure (no I/O)
-/// → testable; [`sync_species`] only adds the file read to it.
-fn merge_species_def(target: &mut Archetype, loaded: Archetype, source: String) {
-    let count = target.count;
-    *target = loaded;
-    target.count = count;
-    target.source = Some(source);
+    let id = format!(
+        "{scenario}-{}",
+        next_variant_number(&palette.catalog, &base_name, scenario)
+    );
+    variant.source = None;
+    let entry = SpeciesEntry::variant(variant, base_name.clone(), id.clone());
+    // File named after the BASE (groups variants visually): `<base>--<scenario>-<n>.ron`.
+    let path = format!("{SAVED_LIB}/{}--{id}.ron", sanitize_filename(&base_name));
+    let result = match entry.save_ron_file(&path) {
+        Ok(()) => format!("Variant saved → {path}"),
+        Err(e) => format!("Variant save failed: {e}"),
+    };
+    palette.catalog = scan_library();
+    result
 }
 
 /// Cleans a species name into a safe filename: we keep letters/digits, `-` and
@@ -1706,34 +1744,6 @@ mod tests {
         assert_eq!(config.archetypes.len(), n, "nothing added");
     }
 
-    /// Resyncing an imported species **preserves the local count** (`count`) and
-    /// re-sets the `source` link; everything else (body, name…) comes from the
-    /// definition.
-    #[test]
-    fn merge_species_preserves_local_count_and_relinks() {
-        let mut target = Archetype::new_agent(0);
-        target.count = 50; // count specific to THIS scenario
-        target.name = "renamed locally".into();
-        // The reloaded definition: other body (food), other name, other count.
-        let mut loaded = Archetype::new_food(1);
-        loaded.count = 7;
-        loaded.name = "from the file".into();
-
-        merge_species_def(&mut target, loaded, "species/x.ron".into());
-
-        assert_eq!(target.count, 50, "the local count is preserved");
-        assert_eq!(
-            target.name, "from the file",
-            "the rest comes from the definition"
-        );
-        assert!(target.is_sessile(), "the body comes from the definition");
-        assert_eq!(
-            target.source.as_deref(),
-            Some("species/x.ron"),
-            "the resync link is re-set"
-        );
-    }
-
     /// Sanitizing a species name into a filename: safe characters kept, the rest as
     /// `_`, an empty name falls back to a default.
     #[test]
@@ -1746,34 +1756,11 @@ mod tests {
     /// The library/scenario row label is the file stem (no directory, no `.ron`).
     #[test]
     fn display_name_is_the_file_stem() {
-        assert_eq!(display_name("species/hunter.ron"), "hunter");
+        assert_eq!(display_name("species/examples/hunter.ron"), "hunter");
         assert_eq!(
             display_name("scenarios/examples/predator_prey.ron"),
             "predator_prey"
         );
         assert_eq!(display_name("noext"), "noext");
-    }
-
-    /// `species_in_sync` ignores the local `count` (preserved by a resync) but flags a
-    /// real body/brain divergence — the test behind both the per-species indicator and
-    /// the cross-scenario usage state.
-    #[test]
-    fn species_in_sync_ignores_count_only() {
-        let def = Archetype::new_agent(0);
-        // A scenario copy: same body, different count, with the provenance link set.
-        let mut copy = def.clone();
-        copy.count = def.count + 25;
-        copy.source = Some("species/x.ron".to_string());
-        assert!(
-            species_in_sync(&copy, &def),
-            "only the count differs → in sync"
-        );
-        // A real divergence (the library brain changed) is caught.
-        let mut changed = def.clone();
-        changed.brain = teemlab::brain::BrainKind::Sessile;
-        assert!(
-            !species_in_sync(&copy, &changed),
-            "a body/brain difference → out of sync"
-        );
     }
 }

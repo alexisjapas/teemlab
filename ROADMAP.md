@@ -234,10 +234,15 @@ open work in §9.
   (cf. §0 above and [`docs/editor.md`](docs/editor.md)); the UI-rework deferred polish —
   **pan/zoom + view reset** and the windowed **follow modes** — is **done** too (the
   observation bullet above). The **cross-scenario species library** is now built on the
-  **copy** model (fork decided): a catalog with **cross-scenario usage** (which scenarios
-  import each species + in-sync/outdated) and **bulk propagation into the open scenario**
-  ("Update all from library"); see §9. What remains there is **propagation out** to other
-  scenario files and library-file **management** (rename / delete) — deferred.
+  **copy** model (fork decided), with **import a one-time copy** (no resync — the
+  propagation/sync tooling was tried then removed for confusing the model) and a catalog
+  showing **informational cross-scenario usage** (which scenarios import each species).
+  On top of it, **multiple libraries** (`species/examples/` committed, `species/saved/`
+  local) and **evolved variants** — a named snapshot (brain + evolved genes) saved from
+  the inspector under a base, picked via a catalog **dropdown**, searchable by name/id
+  (v1 done); see §9. What remains there is library-file **management**, per-species
+  **catalog metadata** (inhabited-scenario tags + behaviour notes) and **universal-species**
+  portability — all deferred.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
@@ -1100,22 +1105,49 @@ seam (§4), without touching any core system.
   **single-source** question: trim §1–§4 above to *point* to `CONSTITUTION-SIM.md`
   rather than restate it, so the two can never diverge. **Deferred** until the
   current development work is done (priority is back on features).
-- **Cross-scenario archetype library** (builds on item 4 — **copy + propagation
-  tooling done**, the rest deferred). The **copy-vs-reference fork was decided
-  deliberately**: **copy kept** (a scenario stays self-contained and reproducible — a
-  core value, §5; reference would make a scenario's meaning depend on a mutable external
-  file). On the copy model, the library grew from a flat import list into a real
-  catalog: each `species/*.ron` shows a **color swatch + brain + Import (copy)** and its
-  **cross-scenario usage** — how many scenarios import it, which (hover), and whether
-  each copy is **in sync / outdated** vs the current definition — all cached by a
-  `scan_library` (one pass over every `species/*.ron` × `scenarios/*.ron`, on a manual
-  rescan, never per frame). Propagation **into the open scenario** is a one-click
-  **"Update all from library"** (bulk resync of every imported species, each local
-  `count` preserved), beside the existing per-species Export / Resync and the
-  `Archetype.source` provenance + sync indicator. **Remaining (deferred):** propagation
-  **out** to *other* scenario files on disk (rewriting their copies — destructive, needs
-  a confirm), and library-file **management** (rename / delete / organize). Reference
-  semantics stay off the table unless the value calculus changes.
+- **Cross-scenario archetype library** (builds on item 4 — **done**). The
+  **copy-vs-reference fork was decided deliberately**: **copy kept** (a scenario stays
+  self-contained and reproducible — a core value, §5; reference would make a scenario's
+  meaning depend on a mutable external file). **Import is a one-time copy** — a further,
+  deliberate refinement (the *propagation/resync* tooling was prototyped then **removed**:
+  it confused the copy model, and a live resync is a step back toward reference). On the
+  copy model, the library grew from a flat import list into a real catalog: each form
+  shows a **color swatch + brain + Import (copy)** and **informational cross-scenario
+  usage** — how many scenarios import it, and which (hover) — cached by a `scan_library`
+  (one pass over every `species/<lib>/*.ron` × `scenarios/*/*.ron`, on a manual rescan on
+  open, never per frame). The reverse direction is **Save to catalog** (write the selected
+  scenario archetype into `species/saved/` as a base). The `Archetype.source` link is kept
+  on an imported copy as **provenance only** (it drives the usage tracking), **not** a live
+  link — to update an imported species you re-import it. **Remaining (deferred):**
+  library-file **management** (rename / delete / organize). Reference semantics and any
+  auto-sync stay off the table unless the value calculus changes.
+- **Catalog — evolved variants + multiple libraries (v1 done).** A library is now a
+  **directory** under `species/`, with a **per-library commit policy** mirroring the
+  scenarios split: only `species/examples/` is committed; `species/saved/` (and any other
+  library) is gitignored — the editor only ever *writes* to `saved`. The on-disk unit
+  became a wrapper **`SpeciesEntry { archetype, variant_of, variant_id }`** (config.rs)
+  rather than a bare `Archetype`, so the engine type stays clean and the catalog has a
+  home that can grow (cf. *for later* below). A species in the catalog is a **base + its
+  variants**, grouped by name across libraries; a **dropdown** picks the form (base by
+  default), **Import** copies the chosen one, and a **search** filters by name / id. An
+  **evolved variant** is saved from the **inspector** ("Save as variant", a named
+  snapshot = `Archetype::capture` — evolved genotype + frozen brain) into `saved/` with id
+  **`"<scenario>-<n>"`** (`unsaved` when the origin scenario is unsaved; `n` per
+  (base, scenario)); if no base exists for that species, the **standard form is
+  auto-exported** as a base alongside it. *For later (documented, not built):*
+  - **per-species catalog metadata** — a variant's **tags of inhabited scenarios** plus
+    free **behaviour notes per scenario** (e.g. *invasive / dominant / dominated* in
+    scenario B vs its origin A). `SpeciesEntry` is the additive home for these — zero
+    refonte when added.
+  - **universal species (portability).** A worry: a species evolved under one scenario's
+    "physics" should stay valid elsewhere. **Already universal:** perception is
+    *normalized* and the MLP is orientation-equivariant → the brain is ~scale/speed
+    invariant; the **costs are genes** (they travel with the archetype); **relations are
+    excluded** from the library (re-wired per scenario). **Not yet:** the **gene
+    `*_bounds` are global to the scenario**, not carried by the species — an imported
+    founder can sit out of the new scenario's bounds (mutation clamps, so not fatal, but
+    "illegal"). Pick later: validate/clamp at import, or have the species carry its valid
+    range.
 - **Grazed plants cannot die (renewable-trickle artifact)** (open decision): a
   sessile food/plant grazed to `0` in `interact` is topped up by photosynthesis in
   `metabolize` **before** `reap` runs (order `interact → metabolize → reap`), so it

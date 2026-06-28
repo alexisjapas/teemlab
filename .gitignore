@@ -8,6 +8,11 @@
 /scenarios/saved/*
 !/scenarios/saved/.gitkeep
 
+# Archetype libraries: only the curated `species/examples/` library is committed;
+# every other library (e.g. `species/saved/` — evolved variants) stays local.
+/species/*
+!/species/examples/
+
 # Run snapshot written by default from the Runs panel (Save the run).
 /run.ron
 

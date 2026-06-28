@@ -275,13 +275,34 @@ pub fn dock(
             // `inspector_section` carries its own `ScrollArea` and **returns** any
             // capture request (a derived archetype): we add it to the config *after*
             // the call (it borrows `config` shared) → mutable borrow then allowed.
-            if let Some(arch) =
-                inspector::inspector_section(ui, &obs.selection, &config, &inspector_agents)
-            {
-                let from = arch.captured_from.clone().unwrap_or_default();
-                config.archetypes.push(arch);
-                palette.selected = Some(config.archetypes.len() - 1);
-                ui_status.set(format!("Archetype captured from {from}."));
+            match inspector::inspector_section(
+                ui,
+                &obs.selection,
+                &config,
+                &mut palette.variant_name,
+                &inspector_agents,
+            ) {
+                // Capture → add the derived archetype to the current scenario.
+                Some(inspector::InspectorAction::Capture(arch)) => {
+                    let from = arch.captured_from.clone().unwrap_or_default();
+                    config.archetypes.push(arch);
+                    palette.selected = Some(config.archetypes.len() - 1);
+                    ui_status.set(format!("Archetype captured from {from}."));
+                }
+                // Save variant → write it to the library (species/saved/) under its base.
+                Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
+                    let scenario = runs_panel.origin_label();
+                    let msg = editor::save_variant(
+                        &mut palette,
+                        &config,
+                        species as usize,
+                        variant,
+                        &scenario,
+                    );
+                    palette.variant_name.clear();
+                    ui_status.set(msg);
+                }
+                None => {}
             }
         });
 

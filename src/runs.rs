@@ -152,6 +152,17 @@ pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
     });
 }
 
+impl RunsPanel {
+    /// Origin label for a captured variant: the loaded scenario's file stem, or
+    /// `"unsaved"` for the fresh canvas (a variant id is `"<scenario>-<n>"`).
+    pub(crate) fn origin_label(&self) -> String {
+        self.loaded_path
+            .as_deref()
+            .map(|p| scenario_label(p).to_string())
+            .unwrap_or_else(|| "unsaved".to_string())
+    }
+}
+
 /// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension and,
 /// if no folder is given, places the file under `scenarios/saved/` (saves default to the
 /// gitignored category; an explicit folder still wins, e.g. to overwrite an example).

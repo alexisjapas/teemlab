@@ -62,7 +62,6 @@ pub mod icons {
     pub const ARROW_RIGHT: char = '\u{E06C}'; // relation actor → target
     pub const DOWNLOAD: char = '\u{E20C}'; // import (download-simple)
     pub const UPLOAD: char = '\u{E4C0}'; // export species (upload-simple)
-    pub const SYNC: char = '\u{E094}'; // resync (arrows-clockwise)
     pub const FLOPPY: char = '\u{E248}'; // capture as archetype
 }
 

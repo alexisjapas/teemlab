@@ -293,6 +293,79 @@ impl Archetype {
     }
 }
 
+/// A **library file** entry: a reusable [`Archetype`] plus catalog metadata — the
+/// on-disk unit of the species library (`species/<library>/*.ron`). Wrapping the
+/// archetype (rather than piling catalog-only fields onto the sim's [`Archetype`])
+/// keeps the engine type clean and gives the catalog a home that can grow: variants
+/// today; inhabited-scenario tags and per-scenario behaviour notes later (§9).
+///
+/// A **base** has `variant_of: None`. A **variant** is an evolved snapshot captured
+/// from a run — its `archetype` carries the evolved genotype and a frozen
+/// `captured_brain` — linked to its base by name, with a `variant_id` `"<scenario>-<n>"`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpeciesEntry {
+    /// The reusable archetype (body + brain; for a variant, the evolved genotype and
+    /// the frozen `captured_brain`).
+    pub archetype: Archetype,
+    /// Base species name this varies; `None` for a base form. Omitted from the RON
+    /// when absent (a base file stays minimal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
+    /// Variant id `"<scenario>-<n>"`; `None` for a base form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_id: Option<String>,
+}
+
+impl SpeciesEntry {
+    /// A base entry wrapping `archetype` (no variant metadata).
+    pub fn base(archetype: Archetype) -> Self {
+        Self {
+            archetype,
+            variant_of: None,
+            variant_id: None,
+        }
+    }
+
+    /// A variant entry: an evolved `archetype` linked to base `variant_of` with `variant_id`.
+    pub fn variant(archetype: Archetype, variant_of: String, variant_id: String) -> Self {
+        Self {
+            archetype,
+            variant_of: Some(variant_of),
+            variant_id: Some(variant_id),
+        }
+    }
+
+    /// `true` if this entry is an evolved variant (vs a base form).
+    pub fn is_variant(&self) -> bool {
+        self.variant_of.is_some()
+    }
+
+    /// Serializes to readable RON — a library file.
+    pub fn to_ron_string(&self) -> Result<String, ron::Error> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+    }
+
+    /// Loads a library entry from a RON file.
+    pub fn from_ron_file(path: impl AsRef<Path>) -> Result<Self, ScenarioError> {
+        let text = std::fs::read_to_string(path)?;
+        Ok(ron::from_str(&text)?)
+    }
+
+    /// Writes the library entry to a RON file, creating the parent directory (e.g.
+    /// `species/saved/` on a fresh checkout).
+    pub fn save_ron_file(&self, path: impl AsRef<Path>) -> Result<(), ScenarioError> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = self
+            .to_ron_string()
+            .map_err(|e| ScenarioError::Io(std::io::Error::other(e.to_string())))?;
+        std::fs::write(path, text)?;
+        Ok(())
+    }
+}
+
 /// `[min, max]` bounds of a gene. Materializes, together with the value (in
 /// [`crate::genotype::Genotype`]) and the cost coupling (in the economy), the §2
 /// triplet: *a characteristic is not a number*.
@@ -902,15 +975,45 @@ mod tests {
         assert_eq!(a, back);
     }
 
-    /// The library's bundled species parses into a hunter agent archetype, without
-    /// `source` (the file *is* the source). Guardrail: its schema follows `Archetype`.
+    /// The bundled species library file parses into a `SpeciesEntry` base (no variant
+    /// metadata) wrapping a hunter agent archetype without `source` (the file *is* the
+    /// source). Guardrail on the library file schema.
     #[test]
-    fn bundled_species_parses_as_a_hunter_agent() {
-        let text = include_str!("../species/hunter.ron");
-        let a = Archetype::from_ron_str(text).expect("valid hunter species");
+    fn bundled_species_parses_as_a_hunter_base() {
+        let text = include_str!("../species/examples/hunter.ron");
+        let entry: SpeciesEntry = ron::from_str(text).expect("valid hunter species entry");
+        assert!(!entry.is_variant(), "the bundled hunter is a base form");
+        assert_eq!(entry.variant_of, None);
+        assert_eq!(entry.variant_id, None);
+        let a = entry.archetype;
         assert!(!a.is_sessile());
         assert_eq!(a.brain, BrainKind::Hunter);
-        assert_eq!(a.source, None, "a species file has no source");
+        assert_eq!(a.source, None, "a base library file has no source");
+    }
+
+    /// A `SpeciesEntry` round-trips through RON, base and variant alike — and a base
+    /// omits the variant metadata (skip_serializing_if), so its file stays minimal.
+    #[test]
+    fn species_entry_roundtrips() {
+        let base = SpeciesEntry::base(Archetype::new_agent(0));
+        let text = base.to_ron_string().expect("serialization");
+        assert!(
+            !text.contains("variant_of"),
+            "a base omits variant metadata:\n{text}"
+        );
+        assert_eq!(ron::from_str::<SpeciesEntry>(&text).expect("re-read"), base);
+
+        let variant = SpeciesEntry::variant(
+            Archetype::new_agent(1),
+            "Hunter".to_string(),
+            "predator_prey-1".to_string(),
+        );
+        let text = variant.to_ron_string().expect("serialization");
+        assert!(variant.is_variant());
+        assert_eq!(
+            ron::from_str::<SpeciesEntry>(&text).expect("re-read"),
+            variant
+        );
     }
 
     /// A species without `source` does not emit the field (skip_serializing_if) and
