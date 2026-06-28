@@ -234,182 +234,180 @@ pub(crate) fn inspector_section(
     // section — characteristics without effect, that would have nothing to show.
     let immobile = genotype.locomotion().is_immobile();
 
-    // A scroll area avoids clipping the list of vision rays when the panel is
-    // reduced.
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        // IDENTITY.
-        card(ui, |ui| {
-            ui.strong("Identity");
-            ui.label(format!("Species: {}", species.0));
-            ui.label(format!("Brain: {}", brain.name()));
-            ui.label(format!("Generation: {}", generation.0));
-            ui.label(format!("Age: {:.1} s", age.0));
-        });
-
-        // ENERGY.
-        card(ui, |ui| {
-            ui.strong("Energy / reserve");
-            ui.add(
-                egui::ProgressBar::new(reserve.fraction())
-                    .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
-            );
-        });
-
-        // GENOTYPE.
-        card(ui, |ui| {
-            ui.strong("Genotype (inherited genes)");
-            if immobile {
-                help::hint(ui, "Immobile: locomotion and vision genes hidden (no effect).");
-            }
-            egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-                // One row per TRAITS characteristic: adding a trait displays it here
-                // without touching the inspector. On an immobile entity, we skip the
-                // inert genes (locomotion, vision).
-                for t in &TRAITS {
-                    if immobile && t.inert_when_immobile {
-                        continue;
-                    }
-                    ui.label(t.name);
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.*}",
-                            t.decimals as usize,
-                            (t.get)(genotype)
-                        ))
-                        .monospace(),
-                    );
-                    ui.end_row();
-                }
-                // The vision cost only makes sense for an entity that sees (rays > 0).
-                if !immobile {
-                    ui.label("vision cost/s");
-                    ui.label(egui::RichText::new(format!("{:.3}", vision.metabolic_cost())).monospace());
-                    ui.end_row();
-                }
-            });
-        });
-
-        // ACTION.
-        card(ui, |ui| {
-            ui.strong("Action (brain output)");
-            let throttle = action.throttle;
-            let heading_deg = if action.dir.length_squared() > 1e-6 {
-                action.dir.to_angle().to_degrees()
-            } else {
-                0.0
-            };
-            ui.label(format!("desired heading: {heading_deg:+.0}°"));
-            ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
-        });
-
-        // CAPTURE (a standalone action): freeze this agent (evolved genome + concrete
-        // weights) into a new reusable archetype. We do not touch the sim: we build the
-        // derived archetype (a clone of the original species, cf. `Archetype::capture`)
-        // and return it — the caller will add it to the config.
-        if ui
-            .button(fonts::icon_label(icons::SPARKLE, "Capture to scenario"))
-            .on_hover_text(
-                "Creates a new archetype freezing this agent's evolved genome AND weights \
-                 (to reuse trained weights). The original species stays intact.",
-            )
-            .clicked()
-        {
-            request = config
-                .archetypes
-                .get(species.0 as usize)
-                .map(|src| InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0)));
-        }
-
-        // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
-        // but written to the catalog as a NAMED variant of this species (species/saved/),
-        // with a "<scenario>-<n>" id — the caller resolves the base + id (cf. editor).
-        // Name field on its own line so it fills the fixed-width panel; the button sits
-        // below it (a side-by-side row would crush one or the other in 370 px).
-        ui.add(
-            egui::TextEdit::singleline(variant_name)
-                .hint_text("variant name")
-                .desired_width(f32::INFINITY),
-        );
-        let named = !variant_name.trim().is_empty();
-        if ui
-            .add_enabled(
-                named,
-                egui::Button::new(fonts::icon_label(icons::UPLOAD, "Export as variant")),
-            )
-            .on_hover_text(
-                "Export this evolved agent as a named variant in the species library \
-                 (species/saved/), reusable in any scenario.",
-            )
-            .clicked()
-            && let Some(src) = config.archetypes.get(species.0 as usize)
-        {
-            let mut variant = src.capture(*genotype, brain.clone(), generation.0);
-            variant.name = variant_name.trim().to_string();
-            request = Some(InspectorAction::SaveVariant {
-                species: species.0,
-                variant,
-            });
-        }
-
-        // MLP brain: the network in action (item 18b-viz). Nodes colored by their
-        // current activation (the last `think`), edges by sign/weight — the learned
-        // decision made readable. The other brains have no graph.
-        if let Brain::Mlp(mlp) = brain {
-            card(ui, |ui| {
-                ui.strong("MLP brain (activations)");
-                help::hint(
-                    ui,
-                    "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
-                );
-                // The activations are recomputed here, on demand, for the single
-                // inspected agent (the sim core's `think` no longer memorizes them).
-                let activations = mlp.forward_activations(perception);
-                draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
-            });
-        }
-
-        // Perception section reserved for entities that see: a flora (immobile,
-        // without a ray) has no channel to show.
-        if !immobile {
-            card(ui, |ui| {
-                ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
-                help::hint(
-                    ui,
-                    "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
-                );
-                for (i, &proximity) in perception.vision.iter().enumerate() {
-                    let target = perception.target.get(i).copied().unwrap_or(0.0);
-                    let threat = perception.threat.get(i).copied().unwrap_or(0.0);
-                    ui.horizontal(|ui| {
-                        // Fill the card width: split the row across the three channels in
-                        // the obstacle:target:threat proportion (the obstacle bar keeps a
-                        // little more room for its "r{i} · v" label), minus the two gaps.
-                        // The 0.5 px shave keeps float rounding from wrapping the last bar.
-                        let gap = ui.spacing().item_spacing.x;
-                        let avail = (ui.available_width() - 2.0 * gap - 0.5).max(0.0);
-                        let width = |share: f32| (avail * share / (95.0 + 85.0 + 85.0)).max(1.0);
-                        ui.add(
-                            egui::ProgressBar::new(proximity)
-                                .desired_width(width(95.0))
-                                .text(format!("r{i} · {proximity:.2}")),
-                        );
-                        ui.add(
-                            egui::ProgressBar::new(target)
-                                .desired_width(width(85.0))
-                                .fill(egui::Color32::from_rgb(220, 130, 40))
-                                .text(format!("{target:.2}")),
-                        );
-                        ui.add(
-                            egui::ProgressBar::new(threat)
-                                .desired_width(width(85.0))
-                                .fill(egui::Color32::from_rgb(210, 60, 60))
-                                .text(format!("{threat:.2}")),
-                        );
-                    });
-                }
-            });
-        }
+    // The whole Analysis panel scrolls as one (cf. `panels::dock`); these sections
+    // render directly here, with no nested inner scroll area.
+    // IDENTITY.
+    card(ui, |ui| {
+        ui.strong("Identity");
+        ui.label(format!("Species: {}", species.0));
+        ui.label(format!("Brain: {}", brain.name()));
+        ui.label(format!("Generation: {}", generation.0));
+        ui.label(format!("Age: {:.1} s", age.0));
     });
+
+    // ENERGY.
+    card(ui, |ui| {
+        ui.strong("Energy / reserve");
+        ui.add(
+            egui::ProgressBar::new(reserve.fraction())
+                .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
+        );
+    });
+
+    // GENOTYPE.
+    card(ui, |ui| {
+        ui.strong("Genotype (inherited genes)");
+        if immobile {
+            help::hint(
+                ui,
+                "Immobile: locomotion and vision genes hidden (no effect).",
+            );
+        }
+        egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
+            // One row per TRAITS characteristic: adding a trait displays it here
+            // without touching the inspector. On an immobile entity, we skip the
+            // inert genes (locomotion, vision).
+            for t in &TRAITS {
+                if immobile && t.inert_when_immobile {
+                    continue;
+                }
+                ui.label(t.name);
+                ui.label(
+                    egui::RichText::new(format!("{:.*}", t.decimals as usize, (t.get)(genotype)))
+                        .monospace(),
+                );
+                ui.end_row();
+            }
+            // The vision cost only makes sense for an entity that sees (rays > 0).
+            if !immobile {
+                ui.label("vision cost/s");
+                ui.label(
+                    egui::RichText::new(format!("{:.3}", vision.metabolic_cost())).monospace(),
+                );
+                ui.end_row();
+            }
+        });
+    });
+
+    // ACTION.
+    card(ui, |ui| {
+        ui.strong("Action (brain output)");
+        let throttle = action.throttle;
+        let heading_deg = if action.dir.length_squared() > 1e-6 {
+            action.dir.to_angle().to_degrees()
+        } else {
+            0.0
+        };
+        ui.label(format!("desired heading: {heading_deg:+.0}°"));
+        ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
+    });
+
+    // CAPTURE (a standalone action): freeze this agent (evolved genome + concrete
+    // weights) into a new reusable archetype. We do not touch the sim: we build the
+    // derived archetype (a clone of the original species, cf. `Archetype::capture`)
+    // and return it — the caller will add it to the config.
+    if ui
+        .button(fonts::icon_label(icons::SPARKLE, "Capture to scenario"))
+        .on_hover_text(
+            "Creates a new archetype freezing this agent's evolved genome AND weights \
+                 (to reuse trained weights). The original species stays intact.",
+        )
+        .clicked()
+    {
+        request = config.archetypes.get(species.0 as usize).map(|src| {
+            InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0))
+        });
+    }
+
+    // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
+    // but written to the catalog as a NAMED variant of this species (species/saved/),
+    // with a "<scenario>-<n>" id — the caller resolves the base + id (cf. editor).
+    // Name field on its own line so it fills the fixed-width panel; the button sits
+    // below it (a side-by-side row would crush one or the other in 370 px).
+    ui.add(
+        egui::TextEdit::singleline(variant_name)
+            .hint_text("variant name")
+            .desired_width(f32::INFINITY),
+    );
+    let named = !variant_name.trim().is_empty();
+    if ui
+        .add_enabled(
+            named,
+            egui::Button::new(fonts::icon_label(icons::UPLOAD, "Export as variant")),
+        )
+        .on_hover_text(
+            "Export this evolved agent as a named variant in the species library \
+                 (species/saved/), reusable in any scenario.",
+        )
+        .clicked()
+        && let Some(src) = config.archetypes.get(species.0 as usize)
+    {
+        let mut variant = src.capture(*genotype, brain.clone(), generation.0);
+        variant.name = variant_name.trim().to_string();
+        request = Some(InspectorAction::SaveVariant {
+            species: species.0,
+            variant,
+        });
+    }
+
+    // MLP brain: the network in action (item 18b-viz). Nodes colored by their
+    // current activation (the last `think`), edges by sign/weight — the learned
+    // decision made readable. The other brains have no graph.
+    if let Brain::Mlp(mlp) = brain {
+        card(ui, |ui| {
+            ui.strong("MLP brain (activations)");
+            help::hint(
+                ui,
+                "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
+            );
+            // The activations are recomputed here, on demand, for the single
+            // inspected agent (the sim core's `think` no longer memorizes them).
+            let activations = mlp.forward_activations(perception);
+            draw_mlp_graph(ui, &mlp.layer_sizes(), Some(mlp), Some(&activations));
+        });
+    }
+
+    // Perception section reserved for entities that see: a flora (immobile,
+    // without a ray) has no channel to show.
+    if !immobile {
+        card(ui, |ui| {
+            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
+            help::hint(
+                ui,
+                "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
+            );
+            for (i, &proximity) in perception.vision.iter().enumerate() {
+                let target = perception.target.get(i).copied().unwrap_or(0.0);
+                let threat = perception.threat.get(i).copied().unwrap_or(0.0);
+                ui.horizontal(|ui| {
+                    // Fill the card width: split the row across the three channels in
+                    // the obstacle:target:threat proportion (the obstacle bar keeps a
+                    // little more room for its "r{i} · v" label), minus the two gaps.
+                    // The 0.5 px shave keeps float rounding from wrapping the last bar.
+                    let gap = ui.spacing().item_spacing.x;
+                    let avail = (ui.available_width() - 2.0 * gap - 0.5).max(0.0);
+                    let width = |share: f32| (avail * share / (95.0 + 85.0 + 85.0)).max(1.0);
+                    ui.add(
+                        egui::ProgressBar::new(proximity)
+                            .desired_width(width(95.0))
+                            .text(format!("r{i} · {proximity:.2}")),
+                    );
+                    ui.add(
+                        egui::ProgressBar::new(target)
+                            .desired_width(width(85.0))
+                            .fill(egui::Color32::from_rgb(220, 130, 40))
+                            .text(format!("{target:.2}")),
+                    );
+                    ui.add(
+                        egui::ProgressBar::new(threat)
+                            .desired_width(width(85.0))
+                            .fill(egui::Color32::from_rgb(210, 60, 60))
+                            .text(format!("{threat:.2}")),
+                    );
+                });
+            }
+        });
+    }
 
     request
 }
