@@ -14,6 +14,8 @@
 
 use bevy::prelude::*;
 use bevy_egui::egui;
+
+use crate::fonts::{self, icons};
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Wall};
 use teemlab::ecology::SimRng;
@@ -62,8 +64,13 @@ pub(crate) fn controls_section(
     vtime: &mut Time<Virtual>,
 ) {
     let paused = vtime.is_paused();
+    let play_pause = if paused {
+        fonts::icon_label(icons::PLAY, "Play")
+    } else {
+        fonts::icon_label(icons::PAUSE, "Pause")
+    };
     if ui
-        .button(if paused { "▶ Play" } else { "⏸ Pause" })
+        .button(play_pause)
         .on_hover_text("Play / pause  ·  Space")
         .clicked()
     {
@@ -76,7 +83,7 @@ pub(crate) fn controls_section(
     // Single-stepping only makes sense when stopped.
     ui.add_enabled_ui(paused, |ui| {
         if ui
-            .button("⏭ Step")
+            .button(fonts::icon_label(icons::STEP, "Step"))
             .on_hover_text("Advance one tick  ·  → (when paused)")
             .clicked()
         {
@@ -109,7 +116,7 @@ pub(crate) fn controls_section(
 
     ui.separator();
     if ui
-        .button("⟲ Reset")
+        .button(fonts::icon_label(icons::RESET, "Reset"))
         .on_hover_text("Rebuild the world from the current config  ·  R")
         .clicked()
     {

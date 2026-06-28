@@ -43,9 +43,6 @@ pub struct FontsReady(pub bool);
 /// carries no glyph names; codepoints come from the v2 web mapping). Codepoints are
 /// **version-specific** (Phosphor reassigns them across major versions), so re-derive
 /// these if the bundled font is upgraded. Draw with [`icon`] / [`icon_label`].
-// Consumed by the UI icon pass (replacing the tofu glyphs across the panels); allowed
-// until those call sites land.
-#[allow(dead_code)]
 pub mod icons {
     pub const PLAY: char = '\u{E3D0}';
     pub const PAUSE: char = '\u{E39E}';
@@ -77,8 +74,6 @@ pub fn phosphor() -> egui::FontFamily {
 /// A [`egui::RichText`] for a Phosphor `glyph` (cf. [`icons`]) — for an icon-only
 /// button or label: `ui.button(fonts::icon(icons::TRASH))`. For an icon **+** a text
 /// label (which need different families), use [`icon_label`].
-// Consumed by the UI icon pass; allowed until those call sites land.
-#[allow(dead_code)]
 pub fn icon(glyph: char) -> egui::RichText {
     egui::RichText::new(glyph).family(phosphor())
 }
@@ -87,8 +82,6 @@ pub fn icon(glyph: char) -> egui::RichText {
 /// `ui.button(fonts::icon_label(icons::PLUS, "Agent"))`. A single `RichText` carries one
 /// family, so we build a two-section `LayoutJob`. Both use [`egui::Color32::PLACEHOLDER`]
 /// (egui's sentinel) so the widget recolours them per state (hover / disabled).
-// Consumed by the UI icon pass; allowed until those call sites land.
-#[allow(dead_code)]
 pub fn icon_label(glyph: char, label: &str) -> egui::WidgetText {
     let size = 14.0; // body size; egui buttons use the body text style.
     let fmt = |family: egui::FontFamily| egui::TextFormat {

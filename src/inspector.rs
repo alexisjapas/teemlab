@@ -21,6 +21,7 @@ use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::selection::Selection;
 
 use crate::editor::{Palette, draw_mlp_graph};
+use crate::fonts::{self, icons};
 
 /// **World** position of the cursor in the play area (single camera and window),
 /// if it exists. Shared by the inspector's picking and the deletion: the
@@ -249,7 +250,7 @@ pub(crate) fn inspector_section(
         // derived archetype (a clone of the original species, cf. `Archetype::capture`)
         // and return it — the caller will add it to the config.
         if ui
-            .button("💾 Capture as archetype")
+            .button(fonts::icon_label(icons::FLOPPY, "Capture as archetype"))
             .on_hover_text(
                 "Creates a new archetype freezing this agent's evolved genome AND weights \
                  (to reuse trained weights). The original species stays intact.",

@@ -30,6 +30,7 @@ use teemlab::SimConfig;
 
 use crate::controls::SimControls;
 use crate::editor::Palette;
+use crate::fonts::{self, icons};
 use crate::status::UiStatus;
 
 /// An action requested by the UI, applied at the next `PreUpdate`. Both rebuild the
@@ -216,12 +217,15 @@ pub(crate) fn scenario_section(
     let mut want_save_as = false;
     let mut menu_open = false;
 
-    ui.menu_button("Scenario ▾", |ui| {
+    ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "Scenario"), |ui| {
         menu_open = true;
-        if ui.button("✚ New (empty)").clicked() {
+        if ui
+            .button(fonts::icon_label(icons::PLUS, "New (empty)"))
+            .clicked()
+        {
             want = Some(RunAction::NewEmpty);
         }
-        ui.menu_button("📂 Open ▸", |ui| {
+        ui.menu_button("Open", |ui| {
             for path in &scenarios {
                 if ui.button(path).clicked() {
                     want = Some(RunAction::LoadScenario(path.clone()));
@@ -240,10 +244,16 @@ pub(crate) fn scenario_section(
             });
         });
         ui.separator();
-        if ui.button("💾 Save").clicked() {
+        if ui
+            .button(fonts::icon_label(icons::FLOPPY, "Save"))
+            .clicked()
+        {
             want_save = true;
         }
-        if ui.button("💾 Save As…").clicked() {
+        if ui
+            .button(fonts::icon_label(icons::FLOPPY, "Save As…"))
+            .clicked()
+        {
             want_save_as = true;
         }
     });

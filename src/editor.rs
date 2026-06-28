@@ -22,7 +22,7 @@ use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
-use crate::fonts;
+use crate::fonts::{self, icons};
 use crate::status::UiStatus;
 
 /// The palette / the editor's state. The **archetype list** now lives in
@@ -149,20 +149,35 @@ pub(crate) fn selector_section(
     let mut started = None;
     let mut clicked = None;
     for (i, arch) in config.archetypes.iter().enumerate() {
+        // The label is a LayoutJob so the Phosphor marker icons sit in the icon family
+        // while the name stays in Inter — all in the archetype's colour. Marker: a
+        // caret for the selected one, a dot otherwise; a sparkle suffix for captured
+        // weights (cf. `Archetype::capture`).
+        let color = archetype_color32(arch);
+        let icon_fmt = egui::TextFormat {
+            font_id: egui::FontId::new(14.0, fonts::phosphor()),
+            color,
+            valign: egui::Align::Center,
+            ..Default::default()
+        };
+        let text_fmt = egui::TextFormat {
+            font_id: egui::FontId::new(14.0, egui::FontFamily::Proportional),
+            color,
+            valign: egui::Align::Center,
+            ..Default::default()
+        };
         let mark = if palette.selected == Some(i) {
-            "▶ "
+            icons::CARET_RIGHT
         } else {
-            "⬤ "
+            icons::CIRCLE
         };
         let suffix = if arch.is_sessile() { " · sessile" } else { "" };
-        // ✦: this archetype carries **captured weights** (cf. `Archetype::capture`).
-        let captured = if arch.captured_brain.is_some() {
-            " ✦"
-        } else {
-            ""
-        };
-        let label = egui::RichText::new(format!("{mark}{}{suffix}{captured}", arch.name))
-            .color(archetype_color32(arch));
+        let mut label = egui::text::LayoutJob::default();
+        label.append(&mark.to_string(), 0.0, icon_fmt.clone());
+        label.append(&format!("  {}{suffix}", arch.name), 0.0, text_fmt);
+        if arch.captured_brain.is_some() {
+            label.append(&format!("  {}", icons::SPARKLE), 0.0, icon_fmt);
+        }
         let mut resp = ui.add_sized(
             [ui.available_width(), 28.0],
             egui::Button::new(label).sense(egui::Sense::click_and_drag()),
@@ -186,13 +201,13 @@ pub(crate) fn selector_section(
 
     ui.separator();
     ui.horizontal(|ui| {
-        if ui.button("＋ Agent").clicked() {
+        if ui.button(fonts::icon_label(icons::PLUS, "Agent")).clicked() {
             config
                 .archetypes
                 .push(Archetype::new_agent(config.archetypes.len()));
             palette.selected = Some(config.archetypes.len() - 1);
         }
-        if ui.button("＋ Food").clicked() {
+        if ui.button(fonts::icon_label(icons::PLUS, "Food")).clicked() {
             config
                 .archetypes
                 .push(Archetype::new_food(config.archetypes.len()));
@@ -206,7 +221,7 @@ pub(crate) fn selector_section(
         let count = config.archetypes.len();
         ui.horizontal(|ui| {
             if ui
-                .button("⧉ Duplicate")
+                .button(fonts::icon_label(icons::COPY, "Duplicate"))
                 .on_hover_text(
                     "Clones the selected archetype at the end of the list (relations not copied).",
                 )
@@ -219,7 +234,10 @@ pub(crate) fn selector_section(
             // (re)generation (⟲ of the bar); the relations, for their part, are fixed
             // right away (the saved scenario stays correct).
             if ui
-                .add_enabled(i > 0, egui::Button::new("▲ Move up"))
+                .add_enabled(
+                    i > 0,
+                    egui::Button::new(fonts::icon_label(icons::ARROW_UP, "Move up")),
+                )
                 .on_hover_text("Swaps with the previous archetype (remaps the relations).")
                 .clicked()
             {
@@ -227,7 +245,10 @@ pub(crate) fn selector_section(
                 palette.selected = Some(i - 1);
             }
             if ui
-                .add_enabled(i + 1 < count, egui::Button::new("▼ Move down"))
+                .add_enabled(
+                    i + 1 < count,
+                    egui::Button::new(fonts::icon_label(icons::ARROW_DOWN, "Move down")),
+                )
                 .on_hover_text("Swaps with the next archetype (remaps the relations).")
                 .clicked()
             {
@@ -240,7 +261,10 @@ pub(crate) fn selector_section(
     if let Some(i) = palette.selected
         && config.archetypes.len() > 1
         && ui
-            .button("🗑 Delete the selected archetype")
+            .button(fonts::icon_label(
+                icons::TRASH,
+                "Delete the selected archetype",
+            ))
             .on_hover_text("Removes the archetype and remaps the relation table.")
             .clicked()
     {
@@ -277,7 +301,7 @@ fn species_library_section(
             // Export / sync of the selected archetype.
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
                 if ui
-                    .button("📤 Export the selection → species/")
+                    .button(fonts::icon_label(icons::UPLOAD, "Export the selection"))
                     .on_hover_text("Saves the archetype as a reusable species.")
                     .clicked()
                 {
@@ -286,7 +310,7 @@ fn species_library_section(
                 }
                 if let Some(src) = config.archetypes[i].source.clone()
                     && ui
-                        .button("↻ Sync from the source")
+                        .button(fonts::icon_label(icons::SYNC, "Sync from the source"))
                         .on_hover_text(format!(
                             "Reloads the definition from {src} (keeps the local count)."
                         ))
@@ -318,12 +342,19 @@ fn species_library_section(
                             ui.selectable_value(&mut sel, Some(j), path);
                         }
                     });
-                if ui.button("↻").on_hover_text("Rescan species/").clicked() {
+                if ui
+                    .button(fonts::icon(icons::SYNC))
+                    .on_hover_text("Rescan species/")
+                    .clicked()
+                {
                     rescan = true;
                 }
             });
             if ui
-                .add_enabled(sel.is_some(), egui::Button::new("📥 Import (copy)"))
+                .add_enabled(
+                    sel.is_some(),
+                    egui::Button::new(fonts::icon_label(icons::DOWNLOAD, "Import (copy)")),
+                )
                 .on_hover_text("Adds a COPY of the species to the scenario (re-import to resync).")
                 .clicked()
                 && let Some(path) = sel.and_then(|j| files.get(j))
@@ -747,7 +778,7 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
             fonts::value(ui, |ui| ui.add(egui::DragValue::new(n).suffix(" neurons")));
             *n = (*n).clamp(1, 64); // at least one neuron, reasonable ceiling.
             if ui
-                .small_button("×") // U+00D7 (✕ U+2715 tofus in egui's default font)
+                .small_button(fonts::icon(icons::X))
                 .on_hover_text("remove this layer")
                 .clicked()
             {
@@ -758,8 +789,10 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     if let Some(i) = remove {
         hidden.remove(i); // 0 hidden layers = a simple perceptron, valid.
     }
-    // ASCII "+" (the fullwidth "＋" used elsewhere tofus in egui's default font).
-    if ui.button("+ Hidden layer").clicked() {
+    if ui
+        .button(fonts::icon_label(icons::PLUS, "Hidden layer"))
+        .clicked()
+    {
         hidden.push(8);
     }
 
@@ -1078,7 +1111,11 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     ui.horizontal(|ui| {
                         color_button(ui, &mut src.color);
                         ui.label(format!("source {i}"));
-                        if ui.button("🗑").on_hover_text("Remove this source").clicked() {
+                        if ui
+                            .button(fonts::icon(icons::TRASH))
+                            .on_hover_text("Remove this source")
+                            .clicked()
+                        {
                             to_remove = Some(i);
                         }
                     });
@@ -1116,7 +1153,10 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             if let Some(i) = to_remove {
                 config.sources.remove(i);
             }
-            if ui.button("＋ Add a source").clicked() {
+            if ui
+                .button(fonts::icon_label(icons::PLUS, "Add a source"))
+                .clicked()
+            {
                 // T2: a single nutrient (index 0). Sensible defaults at the center.
                 config.sources.push(Source {
                     pos: [0.0, 0.0],
@@ -1197,10 +1237,10 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
         ui.group(|ui| {
             ui.horizontal(|ui| {
                 archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
-                ui.label("→");
+                ui.label(fonts::icon(icons::ARROW_RIGHT));
                 archetype_combo(ui, ("rel_target", i), &mut rel.target, &archs);
                 if ui
-                    .button("🗑")
+                    .button(fonts::icon(icons::TRASH))
                     .on_hover_text("Remove this relation")
                     .clicked()
                 {
@@ -1225,7 +1265,10 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     if let Some(i) = to_remove {
         config.relations.remove(i);
     }
-    if ui.button("＋ Add a relation").clicked() {
+    if ui
+        .button(fonts::icon_label(icons::PLUS, "Add a relation"))
+        .clicked()
+    {
         // Default: the first mobile agent eats the first sessile source (common case).
         let actor = config
             .archetypes

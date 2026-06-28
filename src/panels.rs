@@ -43,6 +43,7 @@ use teemlab::visuals::Layers;
 
 use crate::controls::{self, SimControls};
 use crate::editor::{self, Palette};
+use crate::fonts::{self, icons};
 use crate::hud;
 use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
@@ -184,7 +185,7 @@ pub fn dock(
                 // reading order is View · Export.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .button("⏺ Export…")
+                        .button(fonts::icon_label(icons::RECORD, "Export…"))
                         .on_hover_text(
                             "Render the current scenario to a video (opens the export panel).",
                         )
@@ -192,9 +193,11 @@ pub fn dock(
                     {
                         recorder_panel.open = !recorder_panel.open;
                     }
-                    ui.menu_button("View ▾", |ui| editor::layers_section(ui, &mut layers))
-                        .response
-                        .on_hover_text("Toggle view layers (agents, nutrient maps).");
+                    ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
+                        editor::layers_section(ui, &mut layers)
+                    })
+                    .response
+                    .on_hover_text("Toggle view layers (agents, nutrient maps).");
                 });
             },
         );
@@ -299,7 +302,7 @@ pub fn dock(
                     ui.strong("Archetype editor");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .button("×") // U+00D7 (✕ U+2715 tofus in egui's default font)
+                            .button(fonts::icon(icons::X))
                             .on_hover_text("Close (deselect the archetype)")
                             .clicked()
                         {
