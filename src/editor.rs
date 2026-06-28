@@ -1305,21 +1305,27 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     egui::CollapsingHeader::new("Arena & generation")
         .default_open(true)
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(
-                        &mut config.arena_half_extent,
-                        100.0..=1000.0,
-                    ))
+            // Label-left two-column grid (the convention shared with the Body card),
+            // so the parameter labels align and read label → value.
+            egui::Grid::new("arena_fields")
+                .num_columns(2)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("half-arena");
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::Slider::new(
+                            &mut config.arena_half_extent,
+                            100.0..=1000.0,
+                        ))
+                    });
+                    ui.end_row();
+
+                    ui.label("seed");
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
+                    });
+                    ui.end_row();
                 });
-                ui.label("half-arena");
-            });
-            ui.horizontal(|ui| {
-                ui.label("seed");
-                fonts::value(ui, |ui| {
-                    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
-                });
-            });
             help::hint(
                 ui,
                 "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
@@ -1370,27 +1376,31 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                  survival (the sun). The field is fed by the sources below and spread \
                  by diffusion into gradients. All (reset): applied at ⟲.",
             );
-            ui.horizontal(|ui| {
-                ui.label("grid resolution (reset)");
-                fonts::value(ui, |ui| {
-                    ui.add(
-                        egui::DragValue::new(&mut config.nutrient.resolution)
-                            .range(8..=256)
-                            .speed(1.0),
-                    )
-                    .on_hover_text("Cells per side of the nutrient field over the arena.")
-                });
-            });
-            ui.horizontal(|ui| {
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
-                        .on_hover_text(
-                            "Per-tick spread toward neighbours (the local↔global knob); \
-                             0 = no spread.",
+            egui::Grid::new("nutrient_fields")
+                .num_columns(2)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("grid resolution (reset)");
+                    fonts::value(ui, |ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut config.nutrient.resolution)
+                                .range(8..=256)
+                                .speed(1.0),
                         )
+                        .on_hover_text("Cells per side of the nutrient field over the arena.")
+                    });
+                    ui.end_row();
+
+                    ui.label("diffusion (reset)");
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
+                            .on_hover_text(
+                                "Per-tick spread toward neighbours (the local↔global knob); \
+                                 0 = no spread.",
+                            )
+                    });
+                    ui.end_row();
                 });
-                ui.label("diffusion (reset)");
-            });
 
             ui.separator();
             ui.strong("Sources (emit nutrient into the field)");
@@ -1412,35 +1422,41 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                             to_remove = Some(i);
                         }
                     });
-                    ui.horizontal(|ui| {
-                        ui.label("pos");
-                        fonts::value(ui, |ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut src.pos[0])
-                                    .speed(1.0)
-                                    .prefix("x: "),
-                            )
+                    egui::Grid::new(("source_fields", i))
+                        .num_columns(2)
+                        .spacing([8.0, 6.0])
+                        .show(ui, |ui| {
+                            ui.label("pos");
+                            ui.horizontal(|ui| {
+                                fonts::value(ui, |ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut src.pos[0])
+                                            .speed(1.0)
+                                            .prefix("x: "),
+                                    )
+                                });
+                                fonts::value(ui, |ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut src.pos[1])
+                                            .speed(1.0)
+                                            .prefix("y: "),
+                                    )
+                                });
+                            });
+                            ui.end_row();
+
+                            ui.label("rate/s");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
+                            });
+                            ui.end_row();
+
+                            ui.label("visual radius");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                            });
+                            ui.end_row();
                         });
-                        fonts::value(ui, |ui| {
-                            ui.add(
-                                egui::DragValue::new(&mut src.pos[1])
-                                    .speed(1.0)
-                                    .prefix("y: "),
-                            )
-                        });
-                    });
-                    ui.horizontal(|ui| {
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
-                        });
-                        ui.label("rate/s");
-                    });
-                    ui.horizontal(|ui| {
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
-                        });
-                        ui.label("visual radius");
-                    });
                 });
             }
             if let Some(i) = to_remove {
@@ -1543,18 +1559,22 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                 }
             });
             ui.checkbox(&mut rel.transfer, "transfer (predation)");
-            ui.horizontal(|ui| {
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0))
+            egui::Grid::new(("relation_fields", i))
+                .num_columns(2)
+                .spacing([8.0, 6.0])
+                .show(ui, |ui| {
+                    ui.label("rate/s");
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0))
+                    });
+                    ui.end_row();
+
+                    ui.label("range (0 = contact)");
+                    fonts::value(ui, |ui| {
+                        ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0))
+                    });
+                    ui.end_row();
                 });
-                ui.label("rate/s");
-            });
-            ui.horizontal(|ui| {
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0))
-                });
-                ui.label("range (0 = contact)");
-            });
         });
     }
     if let Some(i) = to_remove {
