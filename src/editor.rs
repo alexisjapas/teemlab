@@ -40,8 +40,6 @@ pub struct Palette {
     pub next_seed: u64,
     /// Species library: `species/*.ron` files found at the last scan.
     pub species_files: Vec<String>,
-    /// Index, in [`species_files`](Self::species_files), of the species chosen for import.
-    pub species_selected: Option<usize>,
     /// Editor view state (not scenario data): when on, the gene editor shows a
     /// **“mutable”** checkbox beside each gene. Off by default — the toggle sits at
     /// the top of the gene panel so it stays discoverable.
@@ -75,7 +73,6 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         selected: None,
         next_seed: config.seed ^ 0xED17,
         species_files: scan_species(),
-        species_selected: None,
         show_mutability: false,
     });
 }
@@ -285,14 +282,52 @@ pub(crate) fn selector_section(
     }
 }
 
-/// **Species library** (item 4): make a species reusable outside the scenario.
-///
-/// - **Export** the selected archetype to `species/<name>.ron` (`source` cleared:
-///   the file *is* the source).
-/// - **Import** a species: a **copy** joins the scenario (which stays
-///   self-contained, §9), retaining the file as `source`.
-/// - **Sync** an imported archetype: reloads its definition from `source`, keeping
-///   the local count. The "copy + resync link" choice of item 4.
+/// Sync state of an imported archetype relative to its `source` file (the resync
+/// indicator). `None` when the archetype has no source (it is local to the scenario).
+enum SyncState {
+    /// Body/brain/… already match the source (only the local count may differ).
+    InSync,
+    /// The source file defines something different — a resync would change it.
+    Changed,
+    /// The `source` file is gone (moved / deleted).
+    Missing,
+}
+
+/// Compares archetype `arch` against its `source` file: what a resync would yield
+/// ([`merge_species_def`]) is built and compared to the current archetype, so a
+/// difference in the *count* (preserved by resync) never reads as out of sync.
+fn species_sync_state(arch: &Archetype) -> Option<SyncState> {
+    let src = arch.source.clone()?;
+    Some(match Archetype::from_ron_file(&src) {
+        Ok(loaded) => {
+            let mut resynced = arch.clone();
+            merge_species_def(&mut resynced, loaded, src);
+            if &resynced == arch {
+                SyncState::InSync
+            } else {
+                SyncState::Changed
+            }
+        }
+        Err(_) => SyncState::Missing,
+    })
+}
+
+/// Display name of a `species/*.ron` path: its file stem (e.g. `species/hunter.ron`
+/// → `hunter`), the name a freshly exported species is filed under.
+fn species_display_name(path: &str) -> &str {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+}
+
+/// **Species library** (item 4): make a species reusable across scenarios. Surfaced as
+/// a **browsable list** of `species/*.ron` (one row, Import per file) plus, for the
+/// selected archetype: **Export** it to `species/<name>.ron`, and — if it was imported
+/// — its **sync state** with a **Resync** (reloads the source's body/brain, keeping the
+/// local count). Forks of item 4: scope = the archetype minus relations; referencing =
+/// **copy at import** (the scenario stays self-contained) with a `source` provenance
+/// link. The cross-scenario *shared* library is the longer horizon (§9).
 fn species_library_section(
     ui: &mut egui::Ui,
     palette: &mut Palette,
@@ -302,74 +337,84 @@ fn species_library_section(
     egui::CollapsingHeader::new("Species library")
         .default_open(false)
         .show(ui, |ui| {
-            // Export / sync of the selected archetype.
+            help::hint(
+                ui,
+                "Reusable species saved as species/*.ron: export the selected archetype, \
+                 import a COPY into this scenario, or resync an imported one from its source.",
+            );
+
+            // The selected archetype: export it, and (if imported) show its sync state
+            // + a resync button.
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
-                if ui
-                    .button(fonts::icon_label(icons::UPLOAD, "Export the selection"))
-                    .on_hover_text("Saves the archetype as a reusable species.")
-                    .clicked()
-                {
-                    status.set(export_species(&config.archetypes[i]));
-                    palette.species_files = scan_species();
-                }
-                if let Some(src) = config.archetypes[i].source.clone()
-                    && ui
-                        .button(fonts::icon_label(icons::SYNC, "Sync from the source"))
-                        .on_hover_text(format!(
-                            "Reloads the definition from {src} (keeps the local count)."
-                        ))
+                let state = species_sync_state(&config.archetypes[i]);
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(fonts::icon_label(icons::UPLOAD, "Export selection"))
+                        .on_hover_text("Saves the archetype as a reusable species/*.ron.")
                         .clicked()
-                {
-                    status.set(sync_species(config, i));
+                    {
+                        status.set(export_species(&config.archetypes[i]));
+                        palette.species_files = scan_species();
+                    }
+                    if state.is_some()
+                        && ui
+                            .button(fonts::icon_label(icons::SYNC, "Resync"))
+                            .on_hover_text(
+                                "Reload the source's definition (keeps the local count).",
+                            )
+                            .clicked()
+                    {
+                        status.set(sync_species(config, i));
+                    }
+                });
+                // Provenance + sync indicator for an imported archetype.
+                if let (Some(state), Some(src)) = (state, config.archetypes[i].source.clone()) {
+                    let (msg, color) = match state {
+                        SyncState::InSync => ("in sync", ui.visuals().weak_text_color()),
+                        SyncState::Changed => (
+                            "source changed — resync available",
+                            ui.visuals().warn_fg_color,
+                        ),
+                        SyncState::Missing => ("source missing", ui.visuals().error_fg_color),
+                    };
+                    ui.small(egui::RichText::new(format!("↧ {src} · {msg}")).color(color));
                 }
             } else {
-                ui.weak("Select an archetype to export / sync it.");
+                help::hint(ui, "Select an archetype to export or resync it.");
             }
 
             ui.separator();
-            // Import: combo of the `species/*.ron`. We work on local copies so as not
-            // to borrow `palette` both for reading (list) and writing (selection) in
-            // the combo's closure (cf. `crate::runs`).
-            let files = palette.species_files.clone();
-            let mut sel = palette.species_selected;
-            let mut rescan = false;
-            let mut to_import = None;
             ui.horizontal(|ui| {
-                let label = sel
-                    .and_then(|j| files.get(j))
-                    .map(String::as_str)
-                    .unwrap_or("(choose a species…)");
-                egui::ComboBox::from_id_salt("species_import")
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        for (j, path) in files.iter().enumerate() {
-                            ui.selectable_value(&mut sel, Some(j), path);
-                        }
-                    });
+                ui.strong("Available species");
                 if ui
                     .button(fonts::icon(icons::SYNC))
                     .on_hover_text("Rescan species/")
                     .clicked()
                 {
-                    rescan = true;
+                    palette.species_files = scan_species();
                 }
             });
-            if ui
-                .add_enabled(
-                    sel.is_some(),
-                    egui::Button::new(fonts::icon_label(icons::DOWNLOAD, "Import (copy)")),
-                )
-                .on_hover_text("Adds a COPY of the species to the scenario (re-import to resync).")
-                .clicked()
-                && let Some(path) = sel.and_then(|j| files.get(j))
-            {
-                to_import = Some(path.clone());
-            }
 
-            palette.species_selected = sel;
-            if rescan {
-                palette.species_files = scan_species();
-                palette.species_selected = None;
+            // Browsable list: one row per file, Import (copy) on the left.
+            let files = palette.species_files.clone();
+            if files.is_empty() {
+                help::hint(
+                    ui,
+                    "No species/*.ron yet — export an archetype to create one.",
+                );
+            }
+            let mut to_import = None;
+            for path in &files {
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(fonts::icon(icons::DOWNLOAD))
+                        .on_hover_text("Import a COPY into the scenario")
+                        .clicked()
+                    {
+                        to_import = Some(path.clone());
+                    }
+                    ui.label(species_display_name(path));
+                });
             }
             if let Some(path) = to_import {
                 status.set(import_species(config, &path));
@@ -1523,5 +1568,13 @@ mod tests {
         assert_eq!(sanitize_filename("Gray wolf/2"), "Gray_wolf_2");
         assert_eq!(sanitize_filename("alpha-1_b"), "alpha-1_b");
         assert_eq!(sanitize_filename(""), "species");
+    }
+
+    /// The library row label is the file stem (no directory, no `.ron`).
+    #[test]
+    fn species_display_name_is_the_file_stem() {
+        assert_eq!(species_display_name("species/hunter.ron"), "hunter");
+        assert_eq!(species_display_name("species/Gray_wolf.ron"), "Gray_wolf");
+        assert_eq!(species_display_name("noext"), "noext");
     }
 }
