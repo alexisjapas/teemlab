@@ -185,7 +185,7 @@ pub(crate) enum InspectorAction {
 /// The agent inspector — genotype, energy, perception, action (+ MLP graph) of
 /// the selected agent. Rendered in the bottom panel (on the right, dock item). If
 /// the selected agent has disappeared (died), we report it. **Read-only over the
-/// world**: we never write into the sim. The "Capture" / "Save as variant" buttons are
+/// world**: we never write into the sim. The "Capture" / "Export as variant" buttons are
 /// no exception — they *read* the agent and **return** an [`InspectorAction`] the caller
 /// applies (the editor writes the config / the library, not the sim). `variant_name` is
 /// the live buffer of the variant-name field. `None` when the user does nothing this tick.
@@ -307,7 +307,7 @@ pub(crate) fn inspector_section(
         // derived archetype (a clone of the original species, cf. `Archetype::capture`)
         // and return it — the caller will add it to the config.
         if ui
-            .button(fonts::icon_label(icons::FLOPPY, "Capture as archetype"))
+            .button(fonts::icon_label(icons::SPARKLE, "Capture to scenario"))
             .on_hover_text(
                 "Creates a new archetype freezing this agent's evolved genome AND weights \
                  (to reuse trained weights). The original species stays intact.",
@@ -334,10 +334,10 @@ pub(crate) fn inspector_section(
         if ui
             .add_enabled(
                 named,
-                egui::Button::new(fonts::icon_label(icons::UPLOAD, "Save as variant")),
+                egui::Button::new(fonts::icon_label(icons::UPLOAD, "Export as variant")),
             )
             .on_hover_text(
-                "Save this evolved agent as a named variant in the species library \
+                "Export this evolved agent as a named variant in the species library \
                  (species/saved/), reusable in any scenario.",
             )
             .clicked()

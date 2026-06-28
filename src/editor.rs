@@ -49,7 +49,7 @@ pub struct Palette {
     pub catalog_pick: HashMap<String, usize>,
     /// Catalog search box: filters species by name or variant id (case-insensitive).
     pub catalog_search: String,
-    /// Working buffer for the inspector's "Save as variant" name field.
+    /// Working buffer for the inspector's "Export as variant" name field.
     pub variant_name: String,
     /// Whether the "Species library" section was open last frame — to rescan the catalog
     /// once on the closed→open transition (cf. `runs::RunsPanel::menu_was_open`).
@@ -437,7 +437,7 @@ fn display_name(path: &str) -> &str {
 /// **Species library** (item 4 + the §9 cross-scenario step), on the **copy** model
 /// (a scenario stays self-contained and reproducible). **Import is a one-time copy** —
 /// there is no resync; to update an imported species, re-import it. Two parts:
-/// - **Save to catalog** — write the selected scenario archetype into `species/saved/`
+/// - **Export to catalog** — write the selected scenario archetype into `species/saved/`
 ///   as a reusable base;
 /// - the **catalog** — species grouped into a **base + a variant dropdown**, with a
 ///   color swatch, brain, an **Import** of the selected form, informational
@@ -460,9 +460,9 @@ fn species_library_section(
             // Save the selected scenario archetype into the catalog (scenario → catalog).
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
                 if ui
-                    .button(fonts::icon_label(icons::UPLOAD, "Save to catalog"))
+                    .button(fonts::icon_label(icons::UPLOAD, "Export to catalog"))
                     .on_hover_text(
-                        "Saves the selected archetype as a reusable base in species/saved/.",
+                        "Exports the selected archetype as a reusable base in species/saved/.",
                     )
                     .clicked()
                 {
@@ -710,7 +710,7 @@ fn next_variant_number(catalog: &[CatalogSpecies], species: &str, scenario: &str
         .map_or(1, |m| m + 1)
 }
 
-/// Saves an **evolved variant** to `species/saved/` (the inspector's "Save as variant").
+/// Saves an **evolved variant** to `species/saved/` (the inspector's "Export as variant").
 /// `variant` is the captured snapshot (evolved genotype + frozen brain) with its display
 /// name already set; `species` is the scenario archetype index it derives from (its name
 /// is the base it attaches to). If no base exists for that name in the catalog, the
