@@ -355,8 +355,12 @@ pub fn dock(
                 ui.weak(&ui_status.message);
                 ui.separator();
             }
-            ui.strong("Evolution — curves");
-            hud::hud_section(ui, &mut history, &config);
+            // Framed like the other sections (Body/Genes/Brain, the World cards): the
+            // curves live in their own card, the transient status line staying above it.
+            editor::card(ui, |ui| {
+                ui.strong("Evolution — curves");
+                hud::hud_section(ui, &mut history, &config);
+            });
         });
 
     // Archetype editor — the **detail** half: a second left column that docks to the
