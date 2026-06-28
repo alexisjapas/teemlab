@@ -177,6 +177,18 @@ open work in §9.
   (3) the **overall coherence of the editor** — a consistent typographic system,
   dismissable help, and the remaining per-panel polish (the UI rework's *next
   (deferred)* notes above).
+- **Parameter defaults — a deliberate pass.** Rework the **default values of every
+  parameter** a freshly created entity or scenario starts from — the founding
+  [`Genotype`], `Archetype::new_agent` / `new_food`, the world scalars, and the gene
+  bounds — so that *creating* something gives a sensible, balanced starting point
+  rather than today's mix of founding constants and `0.0` (the cost / flora / nutrient
+  genes default to `0` for RNG-safety — correct for byte-identity, but a poor authoring
+  default). **Constraint to honour:** a default that existing scenarios inherit through
+  `#[serde(default)]` cannot be moved freely — a changed value an existing `.ron` omits
+  would silently shift it, and a changed *mutable* default would shift the RNG stream
+  (the chaos-sensitive drivers must stay byte-identical). So the pass reworks the
+  *new-entity* defaults first, and where it must move a *shared* default it migrates the
+  affected `.ron`s explicitly.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
 - **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
