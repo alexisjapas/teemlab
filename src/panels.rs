@@ -113,6 +113,9 @@ pub fn dock(
     mut vtime: ResMut<Time<Virtual>>,
     mut history: ResMut<History>,
     mut ui_status: ResMut<UiStatus>,
+    // Gate: don't render until the UI fonts are live (cf. `fonts`), so an icon is never
+    // drawn before its Phosphor family is bound (egui binds fonts only next-pass).
+    fonts_ready: Res<crate::fonts::FontsReady>,
     // Last frame's measured width of the centered transport controls (for centering).
     mut ctrl_width: Local<f32>,
     selection: Res<Selection>,
@@ -132,6 +135,11 @@ pub fn dock(
         With<Agent>,
     >,
 ) -> Result {
+    // Skip the first pass (before the fonts are bound): the icons would panic, and a
+    // blank first frame on the paused startup screen is imperceptible.
+    if !fonts_ready.0 {
+        return Ok(());
+    }
     let ctx = contexts.ctx_mut()?;
     // A single root viewport `Ui` on the background layer, shared by every panel
     // (bevy_egui 0.40 `examples/ui.rs`). `show_inside` then docks each panel into it.

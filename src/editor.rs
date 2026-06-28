@@ -22,6 +22,7 @@ use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
+use crate::fonts;
 use crate::status::UiStatus;
 
 /// The palette / the editor's state. The **archetype list** now lives in
@@ -521,17 +522,23 @@ fn archetype_editor(
                 ui.end_row();
 
                 ui.label("count");
-                ui.add(egui::DragValue::new(&mut arch.count).range(0..=5000))
-                    .on_hover_text("How many to spawn (applied on the next reset).");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::DragValue::new(&mut arch.count).range(0..=5000))
+                        .on_hover_text("How many to spawn (applied on the next reset).")
+                });
                 ui.end_row();
 
                 ui.label("body radius");
-                ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0));
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut arch.radius, 2.0..=30.0))
+                });
                 ui.end_row();
 
                 ui.label("max reserve");
-                ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0))
-                    .on_hover_text("Energy ceiling: the reserve is clamped to it.");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut arch.reserve_max, 10.0..=500.0))
+                        .on_hover_text("Energy ceiling: the reserve is clamped to it.")
+                });
                 ui.end_row();
             });
         ui.small("Count, radius and reserve are baked at spawn, applied on the next reset (⟲).");
@@ -613,15 +620,16 @@ fn archetype_editor(
                                 }
                             }
                             let mut value = (t.get)(&arch.genotype);
-                            if ui
-                                .add(
-                                    egui::Slider::new(&mut value, bounds.min..=bounds.max)
-                                        .text(t.name),
-                                )
-                                .changed()
-                            {
+                            // Slider value in Departure Mono; the gene name (label)
+                            // stays Inter, after the slider.
+                            let changed = fonts::value(ui, |ui| {
+                                ui.add(egui::Slider::new(&mut value, bounds.min..=bounds.max))
+                                    .changed()
+                            });
+                            if changed {
                                 (t.set)(&mut arch.genotype, value);
                             }
+                            ui.label(t.name);
                         });
                     }
                 });
@@ -709,8 +717,11 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
     });
     match kind {
         BrainKind::Wander { turn_rate } => {
-            ui.add(egui::Slider::new(turn_rate, 0.0..=1.0).text("turn responsiveness"))
-                .on_hover_text("Max amplitude of the heading drift each tick (rad).");
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| ui.add(egui::Slider::new(turn_rate, 0.0..=1.0)))
+                    .on_hover_text("Max amplitude of the heading drift each tick (rad).");
+                ui.label("turn responsiveness");
+            });
         }
         BrainKind::Hunter | BrainKind::Sessile => {}
         BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
@@ -733,7 +744,7 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     for (i, n) in hidden.iter_mut().enumerate() {
         ui.horizontal(|ui| {
             ui.label(format!("hidden layer {}", i + 1));
-            ui.add(egui::DragValue::new(n).suffix(" neurons"));
+            fonts::value(ui, |ui| ui.add(egui::DragValue::new(n).suffix(" neurons")));
             *n = (*n).clamp(1, 64); // at least one neuron, reasonable ceiling.
             if ui
                 .small_button("×") // U+00D7 (✕ U+2715 tofus in egui's default font)
@@ -973,14 +984,21 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     egui::CollapsingHeader::new("Arena & generation")
         .default_open(true)
         .show(ui, |ui| {
-            ui.add(
-                egui::Slider::new(&mut config.arena_half_extent, 100.0..=1000.0).text("half-arena"),
-            );
-            ui.add(
-                egui::DragValue::new(&mut config.seed)
-                    .speed(1.0)
-                    .prefix("seed: "),
-            );
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(
+                        &mut config.arena_half_extent,
+                        100.0..=1000.0,
+                    ))
+                });
+                ui.label("half-arena");
+            });
+            ui.horizontal(|ui| {
+                ui.label("seed");
+                fonts::value(ui, |ui| {
+                    ui.add(egui::DragValue::new(&mut config.seed).speed(1.0))
+                });
+            });
             ui.small(
                 "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
@@ -1029,20 +1047,27 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                  survival (the sun). The field is fed by the sources below and spread \
                  by diffusion into gradients. All (reset): applied at ⟲.",
             );
-            ui.add(
-                egui::DragValue::new(&mut config.nutrient.resolution)
-                    .range(8..=256)
-                    .speed(1.0)
-                    .prefix("grid resolution (reset): "),
-            )
-            .on_hover_text("Cells per side of the nutrient field over the arena.");
-            ui.add(
-                egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0)
-                    .text("diffusion (reset)"),
-            )
-            .on_hover_text(
-                "Per-tick spread toward neighbours (the local↔global knob); 0 = no spread.",
-            );
+            ui.horizontal(|ui| {
+                ui.label("grid resolution (reset)");
+                fonts::value(ui, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut config.nutrient.resolution)
+                            .range(8..=256)
+                            .speed(1.0),
+                    )
+                    .on_hover_text("Cells per side of the nutrient field over the arena.")
+                });
+            });
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
+                        .on_hover_text(
+                            "Per-tick spread toward neighbours (the local↔global knob); \
+                             0 = no spread.",
+                        )
+                });
+                ui.label("diffusion (reset)");
+            });
 
             ui.separator();
             ui.strong("Sources (emit nutrient into the field)");
@@ -1059,19 +1084,33 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     });
                     ui.horizontal(|ui| {
                         ui.label("pos");
-                        ui.add(
-                            egui::DragValue::new(&mut src.pos[0])
-                                .speed(1.0)
-                                .prefix("x: "),
-                        );
-                        ui.add(
-                            egui::DragValue::new(&mut src.pos[1])
-                                .speed(1.0)
-                                .prefix("y: "),
-                        );
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut src.pos[0])
+                                    .speed(1.0)
+                                    .prefix("x: "),
+                            )
+                        });
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut src.pos[1])
+                                    .speed(1.0)
+                                    .prefix("y: "),
+                            )
+                        });
                     });
-                    ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0).text("rate/s"));
-                    ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0).text("visual radius"));
+                    ui.horizontal(|ui| {
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
+                        });
+                        ui.label("rate/s");
+                    });
+                    ui.horizontal(|ui| {
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                        });
+                        ui.label("visual radius");
+                    });
                 });
             }
             if let Some(i) = to_remove {
@@ -1117,8 +1156,12 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                         let speed = 10f64.powi(-(t.decimals as i32));
                         let b = (t.bounds_mut)(config);
                         ui.label(t.name);
-                        ui.add(egui::DragValue::new(&mut b.min).speed(speed));
-                        ui.add(egui::DragValue::new(&mut b.max).speed(speed));
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::DragValue::new(&mut b.min).speed(speed))
+                        });
+                        fonts::value(ui, |ui| {
+                            ui.add(egui::DragValue::new(&mut b.max).speed(speed))
+                        });
                         // Keep min ≤ max: a negative span would make the mutation's
                         // clamp panic (`f32::clamp` requires min ≤ max).
                         b.max = b.max.max(b.min);
@@ -1165,8 +1208,18 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                 }
             });
             ui.checkbox(&mut rel.transfer, "transfer (predation)");
-            ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0).text("rate/s"));
-            ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0).text("range (0 = contact)"));
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0))
+                });
+                ui.label("rate/s");
+            });
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0))
+                });
+                ui.label("range (0 = contact)");
+            });
         });
     }
     if let Some(i) = to_remove {
@@ -1236,20 +1289,23 @@ pub(crate) fn stats_section(
         .num_columns(2)
         .striped(true)
         .show(ui, |ui| {
+            // Values in the monospace family (Departure Mono); labels stay Inter.
             ui.label("Population");
-            ui.label(stats.population.to_string());
+            ui.label(egui::RichText::new(stats.population.to_string()).monospace());
             ui.end_row();
             ui.label("Food");
-            ui.label(stats.food.to_string());
+            ui.label(egui::RichText::new(stats.food.to_string()).monospace());
             ui.end_row();
             ui.label("Mean reserve");
-            ui.label(format!("{:.0}", stats.mean_reserve));
+            ui.label(egui::RichText::new(format!("{:.0}", stats.mean_reserve)).monospace());
             ui.end_row();
             // One row per TRAITS characteristic (the gene means), without a hard-coded
             // field — adding a gene shows up here automatically.
             for (t, mean) in TRAITS.iter().zip(&stats.mean_traits) {
                 ui.label(t.name);
-                ui.label(format!("{:.*}", t.decimals as usize, mean));
+                ui.label(
+                    egui::RichText::new(format!("{:.*}", t.decimals as usize, mean)).monospace(),
+                );
                 ui.end_row();
             }
         });

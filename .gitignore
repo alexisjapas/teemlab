@@ -13,3 +13,9 @@
 # Recording panel. We version the directory (.gitkeep), not its contents.
 /outputs/*
 !/outputs/.gitkeep
+
+# Font source packages (Inter ~60 MB, Departure Mono) dropped under assets/fonts/:
+# we version only the flat static files we load (Inter-Regular.ttf,
+# DepartureMono-Regular.otf, Phosphor.ttf), not the whole upstream archives.
+/assets/fonts/Inter/
+/assets/fonts/DepartureMono/

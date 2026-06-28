@@ -9,6 +9,7 @@
 
 mod controls;
 mod editor;
+mod fonts;
 mod hud;
 mod inspector;
 mod panels;
@@ -62,6 +63,9 @@ fn main() {
         // Single status line shown in the bottom bar (scenario / species / capture /
         // recording feedback), written from across the UI (cf. `status`).
         .init_resource::<status::UiStatus>()
+        // Flips true once the UI fonts are live (cf. `fonts`), gating the first panel
+        // render so an icon is never drawn before its font family is bound.
+        .init_resource::<fonts::FontsReady>()
         // The sim starts **paused** (we prepare the run before launching it).
         .add_systems(
             Startup,
@@ -103,6 +107,9 @@ fn main() {
         .add_systems(
             EguiPrimaryContextPass,
             (
+                // Installs the UI fonts (Inter / Departure Mono / Phosphor) on the egui
+                // context once, before any panel renders (cf. `fonts`).
+                fonts::setup_ui_fonts,
                 panels::dock,
                 inspector::pick_agent,
                 inspector::delete_under_cursor,

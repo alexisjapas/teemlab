@@ -212,13 +212,20 @@ pub(crate) fn inspector_section(
                         continue;
                     }
                     ui.label(t.name);
-                    ui.label(format!("{:.*}", t.decimals as usize, (t.get)(genotype)));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{:.*}",
+                            t.decimals as usize,
+                            (t.get)(genotype)
+                        ))
+                        .monospace(),
+                    );
                     ui.end_row();
                 }
                 // The vision cost only makes sense for an entity that sees (rays > 0).
                 if !immobile {
                     ui.label("vision cost/s");
-                    ui.label(format!("{:.3}", vision.metabolic_cost()));
+                    ui.label(egui::RichText::new(format!("{:.3}", vision.metabolic_cost())).monospace());
                     ui.end_row();
                 }
             });
