@@ -186,17 +186,24 @@ open work in §9.
   **Dismissable inline help** (`help::hint`, one egui-memory flag toggled from View)
   declutters for the expert. Every bundled font carries its licence (Inter / Departure =
   OFL, Phosphor = MIT, DejaVu recovered verbatim from the font's `name` table).
+- **Editor — next pass: archetype library (thread 2, done).** The Species library
+  (item 4) is reworked from a combo + button into a **browsable list** — each
+  `species/*.ron` is a row with an Import (copy) button under a rescan — plus, for the
+  selected archetype, Export and (when imported) its **sync state** (in sync / source
+  changed / source missing, by comparing what a resync would yield) next to a Resync.
+  The reuse workflow is surfaced, and "is this imported species up to date?" is now
+  visible. (The cross-scenario *shared* library — copy-vs-reference revisited — stays
+  the §9 horizon.)
 
 **Remaining.**
 
-- **Editor — finishing the next pass (thread 2 + deferred polish).** Threads 1
-  (archetype customization) and 3 (coherence: typography, dismissable help, per-panel
-  polish) are **done** (cf. §0 above and [`docs/editor.md`](docs/editor.md)). What
-  remains of the editor pass: (2) the **archetype library** — how reusable
-  `species/*.ron` are *surfaced and managed* (export / import-by-copy / resync are
-  wired but buried in a collapsing header; the cross-scenario shared-library idea of §9
-  is the longer horizon); and the **deferred polish** — pan/zoom + selection cartouche,
-  collapsible panels + presentation mode.
+- **Editor — deferred polish (the tail of the next pass).** Threads 1 (archetype
+  customization), 2 (the archetype library) and 3 (coherence: typography, dismissable
+  help, per-panel polish) are **done** (cf. §0 above and
+  [`docs/editor.md`](docs/editor.md)). What remains of the editor pass is the **deferred
+  polish** from the UI rework: **pan/zoom + selection cartouche** (camera navigation in
+  the sim view) and **collapsible panels + presentation mode** (a clean sim/video view).
+  Plus, longer term, the cross-scenario **shared** species library (§9).
 - **Parameter defaults — a deliberate pass.** Rework the **defaults of every
   parameter** a freshly created entity or scenario starts from — both the **values**
   *and* the per-gene **mutability** (which genes are allowed to drift) — across the
