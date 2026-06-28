@@ -176,9 +176,19 @@ pub fn setup_ui_fonts(
         // codepoints and would shadow our icons there. Icons are drawn only via this
         // family ([`icon`] / [`icon_label`]), gated on [`FontsReady`] so they are never
         // requested before egui binds the family (next pass).
-        fonts
-            .families
-            .insert(phosphor(), vec![PHOSPHOR.0.to_owned()]);
+        //
+        // Phosphor sits **first** (its icon codepoints win), with the Proportional fonts
+        // appended **behind** it purely as a glyph fallback. Without that fallback, an
+        // icon-only font has no replacement character ('◻'/'?') and epaint logs
+        // "Failed to find replacement characters …" when it builds this family. The
+        // fallback never shadows an icon (Phosphor is queried first) and we never draw
+        // text through this family, so it is invisible in practice — it only silences
+        // the warning.
+        let mut family = vec![PHOSPHOR.0.to_owned()];
+        if let Some(proportional) = fonts.families.get(&egui::FontFamily::Proportional) {
+            family.extend(proportional.iter().cloned());
+        }
+        fonts.families.insert(phosphor(), family);
     }
 
     ctx.set_fonts(fonts);
