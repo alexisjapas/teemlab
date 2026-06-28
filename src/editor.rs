@@ -1370,116 +1370,121 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// palette. Everything here is **"(reset)"**: the field is rebuilt and the sources
 /// respawned at the world (re)generation (⟲ of the bar, or "Reload into the world"),
 /// the single passage point that also re-applies the field's resolution/diffusion
-/// (cf. [`crate::controls::apply_reset`]). A framed card, like the other World
-/// sections (inert for most scenarios — no source ⇒ inert layer).
+/// (cf. [`crate::controls::apply_reset`]). A framed card like the other World sections,
+/// but with a **collapsible** header inside it (default closed): with its field grid
+/// plus a card per source it is the other heavy section, and inert for most scenarios
+/// (no source ⇒ inert layer), so it folds away while keeping the sibling card frame.
 fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
-        ui.strong("Nutrients");
-        help::hint(
-            ui,
-            "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
+        egui::CollapsingHeader::new("Nutrients")
+            .default_open(false)
+            .show(ui, |ui| {
+                help::hint(
+                    ui,
+                    "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
                  survival (the sun). The field is fed by the sources below and spread \
                  by diffusion into gradients. All (reset): applied at ⟲.",
-        );
-        egui::Grid::new("nutrient_fields")
-            .num_columns(2)
-            .spacing([8.0, 6.0])
-            .show(ui, |ui| {
-                ui.label("grid resolution (reset)");
-                fonts::value(ui, |ui| {
-                    ui.add(
-                        egui::DragValue::new(&mut config.nutrient.resolution)
-                            .range(8..=256)
-                            .speed(1.0),
-                    )
-                    .on_hover_text("Cells per side of the nutrient field over the arena.")
-                });
-                ui.end_row();
-
-                ui.label("diffusion (reset)");
-                fonts::value(ui, |ui| {
-                    ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
-                        .on_hover_text(
-                            "Per-tick spread toward neighbours (the local↔global knob); \
-                                 0 = no spread.",
-                        )
-                });
-                ui.end_row();
-            });
-
-        ui.separator();
-        ui.strong("Sources (emit nutrient into the field)");
-        help::hint(
-            ui,
-            "A fixed point emitting `rate`/s of nutrient at its position.",
-        );
-        let mut to_remove = None;
-        for (i, src) in config.sources.iter_mut().enumerate() {
-            card(ui, |ui| {
-                ui.horizontal(|ui| {
-                    color_button(ui, &mut src.color);
-                    ui.label(format!("source {i}"));
-                    if ui
-                        .button(fonts::icon(icons::TRASH))
-                        .on_hover_text("Remove this source")
-                        .clicked()
-                    {
-                        to_remove = Some(i);
-                    }
-                });
-                egui::Grid::new(("source_fields", i))
+                );
+                egui::Grid::new("nutrient_fields")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
-                        ui.label("pos");
-                        ui.horizontal(|ui| {
-                            fonts::value(ui, |ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut src.pos[0])
-                                        .speed(1.0)
-                                        .prefix("x: "),
-                                )
-                            });
-                            fonts::value(ui, |ui| {
-                                ui.add(
-                                    egui::DragValue::new(&mut src.pos[1])
-                                        .speed(1.0)
-                                        .prefix("y: "),
-                                )
-                            });
+                        ui.label("grid resolution (reset)");
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut config.nutrient.resolution)
+                                    .range(8..=256)
+                                    .speed(1.0),
+                            )
+                            .on_hover_text("Cells per side of the nutrient field over the arena.")
                         });
                         ui.end_row();
 
-                        ui.label("rate/s");
+                        ui.label("diffusion (reset)");
                         fonts::value(ui, |ui| {
-                            ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
-                        });
-                        ui.end_row();
-
-                        ui.label("visual radius");
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                            ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
+                                .on_hover_text(
+                                    "Per-tick spread toward neighbours (the local↔global knob); \
+                                 0 = no spread.",
+                                )
                         });
                         ui.end_row();
                     });
+
+                ui.separator();
+                ui.strong("Sources (emit nutrient into the field)");
+                help::hint(
+                    ui,
+                    "A fixed point emitting `rate`/s of nutrient at its position.",
+                );
+                let mut to_remove = None;
+                for (i, src) in config.sources.iter_mut().enumerate() {
+                    card(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            color_button(ui, &mut src.color);
+                            ui.label(format!("source {i}"));
+                            if ui
+                                .button(fonts::icon(icons::TRASH))
+                                .on_hover_text("Remove this source")
+                                .clicked()
+                            {
+                                to_remove = Some(i);
+                            }
+                        });
+                        egui::Grid::new(("source_fields", i))
+                            .num_columns(2)
+                            .spacing([8.0, 6.0])
+                            .show(ui, |ui| {
+                                ui.label("pos");
+                                ui.horizontal(|ui| {
+                                    fonts::value(ui, |ui| {
+                                        ui.add(
+                                            egui::DragValue::new(&mut src.pos[0])
+                                                .speed(1.0)
+                                                .prefix("x: "),
+                                        )
+                                    });
+                                    fonts::value(ui, |ui| {
+                                        ui.add(
+                                            egui::DragValue::new(&mut src.pos[1])
+                                                .speed(1.0)
+                                                .prefix("y: "),
+                                        )
+                                    });
+                                });
+                                ui.end_row();
+
+                                ui.label("rate/s");
+                                fonts::value(ui, |ui| {
+                                    ui.add(egui::Slider::new(&mut src.rate, 0.0..=100.0))
+                                });
+                                ui.end_row();
+
+                                ui.label("visual radius");
+                                fonts::value(ui, |ui| {
+                                    ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
+                                });
+                                ui.end_row();
+                            });
+                    });
+                }
+                if let Some(i) = to_remove {
+                    config.sources.remove(i);
+                }
+                if ui
+                    .button(fonts::icon_label(icons::PLUS, "Add a source"))
+                    .clicked()
+                {
+                    // T2: a single nutrient (index 0). Sensible defaults at the center.
+                    config.sources.push(Source {
+                        pos: [0.0, 0.0],
+                        nutrient: 0,
+                        rate: 10.0,
+                        color: [1.0, 0.6, 0.2],
+                        radius: 12.0,
+                    });
+                }
             });
-        }
-        if let Some(i) = to_remove {
-            config.sources.remove(i);
-        }
-        if ui
-            .button(fonts::icon_label(icons::PLUS, "Add a source"))
-            .clicked()
-        {
-            // T2: a single nutrient (index 0). Sensible defaults at the center.
-            config.sources.push(Source {
-                pos: [0.0, 0.0],
-                nutrient: 0,
-                rate: 10.0,
-                color: [1.0, 0.6, 0.2],
-                radius: 12.0,
-            });
-        }
     });
 }
 
