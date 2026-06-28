@@ -1062,8 +1062,8 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
             fonts::value(ui, |ui| ui.add(egui::DragValue::new(n).suffix(" neurons")));
             *n = (*n).clamp(1, 64); // at least one neuron, reasonable ceiling.
             if ui
-                .small_button(fonts::icon(icons::X))
-                .on_hover_text("remove this layer")
+                .small_button(fonts::icon(icons::TRASH))
+                .on_hover_text("Remove this layer")
                 .clicked()
             {
                 remove = Some(i);

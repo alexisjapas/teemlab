@@ -54,7 +54,7 @@ pub mod icons {
     pub const ARROW_UP: char = '\u{E08E}'; // move up
     pub const ARROW_DOWN: char = '\u{E03E}'; // move down
     pub const COPY: char = '\u{E1CA}'; // duplicate
-    pub const X: char = '\u{E4F6}'; // close / remove
+    pub const X: char = '\u{E4F6}'; // close a panel (data removal uses TRASH)
     pub const CIRCLE: char = '\u{E18A}'; // archetype bullet (unselected)
     pub const CARET_RIGHT: char = '\u{E13A}'; // selected mark
     pub const CARET_DOWN: char = '\u{E136}'; // menu caret
