@@ -9,6 +9,7 @@
 
 use crate::components::{Agent, Reserve, Species};
 use crate::config::SimConfig;
+use crate::nutrients::Nutrients;
 use avian2d::prelude::*;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -40,17 +41,28 @@ use bevy::prelude::*;
 /// revealed this flaw in Phase 3b.) Both passes are **order-independent** of the
 /// visiting order.
 ///
+/// **Trophic nutrient transfer (T3).** Predation (`transfer: true`) carries not
+/// only energy but the **nutrient** embodied in the prey's biomass: an actor that
+/// eats a fraction `f = actual/avail` of the target's reserve also receives that
+/// same fraction of the target's [`Nutrients`] store. This is what lets a nutrient
+/// flow **up** the food chain (the prerequisite to recycling and to emergent
+/// targeting, ROADMAP §9 "T3"). It is the *same* relation driving both resources —
+/// **no extra schema** — and **inert for free** when the prey carries no nutrient
+/// (every pre-T3 scenario → byte-identical). At the actor's capacity the surplus is
+/// **clamped away** (lost), exactly as energy beyond `reserve.max` is: an interim
+/// leak that **recycling** (deferred) will close.
+///
 /// Death at zero and regeneration live in `ecology` (item 8); here we only
-/// transfer/destroy reserve.
+/// transfer/destroy reserve (and the nutrient it carries).
 ///
 /// Only agents *initiate* (they have a body that moves), but a target can be any
 /// entity carrying [`Species`] + [`Reserve`] — another agent (predation) **or** a
 /// food source (eating thus goes through the same primitive). Colliders without
 /// `Species` (walls) are ignored.
 ///
-/// `too_many_arguments`: an ECS system — 6 real parameters, plus the **`Local`
-/// buffers** reused from tick to tick (raycast filter, `hits`, `demand`,
-/// `deltas`). The Bevy idiom, as on spawn functions.
+/// `too_many_arguments`: an ECS system — 7 real parameters, plus the **`Local`
+/// buffers** reused from tick to tick (raycast filter, `hits`, `demand`, `deltas`,
+/// `nut_deltas`). The Bevy idiom, as on spawn functions.
 #[allow(clippy::too_many_arguments)]
 pub fn interact(
     spatial: SpatialQuery,
@@ -59,15 +71,21 @@ pub fn interact(
     actors: Query<(Entity, &Transform, &Species), With<Agent>>,
     species_of: Query<&Species>,
     mut reserves: Query<&mut Reserve>,
+    // The prey's nutrient store, carried up the chain by predation (T3). Read in
+    // pass 2 (the start-of-tick amount, like `avail` for energy), written at the
+    // end. Disjoint from `reserves` (a different component).
+    mut nutrients: Query<&mut Nutrients>,
     // Reach filter reused from one actor to the next (cf. loop): we avoid
     // reallocating an `EntityHashSet` for every actor and every tick.
     mut filter: Local<SpatialQueryFilter>,
     // Buffers for the two passes, reused from tick to tick (cf. below): cleared
-    // at the top, they keep their capacity instead of reallocating a `Vec` + two
-    // `HashMap`s every tick. `hits`/`demand` carry pass 1, `deltas` carries pass 2.
+    // at the top, they keep their capacity instead of reallocating a `Vec` + the
+    // `HashMap`s every tick. `hits`/`demand` carry pass 1, `deltas`/`nut_deltas`
+    // carry pass 2 (energy and the nutrient it carries).
     mut hits: Local<Vec<(Entity, Entity, f32, bool)>>,
     mut demand: Local<HashMap<Entity, f32>>,
     mut deltas: Local<HashMap<Entity, f32>>,
+    mut nut_deltas: Local<HashMap<Entity, f32>>,
 ) {
     if config.relations.is_empty() {
         return;
@@ -77,6 +95,7 @@ pub fn interact(
     hits.clear();
     demand.clear();
     deltas.clear();
+    nut_deltas.clear();
 
     // One reach collider per relation, built **only once**: the shape depends
     // only on the relation (the actor's species radius is fixed per relation), not
@@ -130,12 +149,38 @@ pub fn interact(
         *deltas.entry(target).or_insert(0.0) -= actual;
         if transfer {
             *deltas.entry(actor).or_insert(0.0) += actual;
+            // Trophic nutrient transfer: the nutrient embodied in the eaten
+            // biomass follows the energy. Eating a fraction `actual/avail` of the
+            // target's reserve carries that same fraction of its nutrient store —
+            // conservative on the target side (the per-actor fractions sum to ≤ 1),
+            // and a no-op when the prey carries no nutrient (pre-T3 → byte-identical).
+            if avail > 0.0 {
+                let store = nutrients
+                    .get(target)
+                    .map(|n| n.current.max(0.0))
+                    .unwrap_or(0.0);
+                if store > 0.0 {
+                    let moved = (actual / avail) * store;
+                    *nut_deltas.entry(target).or_insert(0.0) -= moved;
+                    *nut_deltas.entry(actor).or_insert(0.0) += moved;
+                }
+            }
         }
     }
 
     for (&entity, &delta) in deltas.iter() {
         if let Ok(mut reserve) = reserves.get_mut(entity) {
             reserve.current = (reserve.current + delta).clamp(0.0, reserve.max);
+        }
+    }
+
+    // Apply the nutrient transfers. Empty when no prey carried nutrient → the store
+    // is never touched (byte-identical). Clamp at the actor's capacity: the surplus
+    // is lost, mirroring energy beyond `reserve.max` (the "clamp & lose" choice — an
+    // interim leak closed later by recycling).
+    for (&entity, &delta) in nut_deltas.iter() {
+        if let Ok(mut store) = nutrients.get_mut(entity) {
+            store.current = (store.current + delta).clamp(0.0, store.max);
         }
     }
 }

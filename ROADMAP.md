@@ -135,6 +135,26 @@ open work in §9.
   each, so 2 ⇒ 50 %). In the **video** too (`record --nutrients`), off by default →
   existing videos unchanged. (The roadmapped "Nutrient-field visualization — layers"
   of §9, done.)
+- **Trophic nutrient transfer — the food web, link 1 (T3, §9)**: *eating carries the
+  nutrient up the chain*. Until now a nutrient entered an entity **only** by absorption
+  from the field (plants on a substrate); fauna never acquired any. The **single
+  interaction primitive** (§3) now carries it: on predation (`transfer: true`) an actor
+  that eats a fraction `f = actual/avail` of the prey's reserve receives that **same
+  fraction** of the prey's `Nutrients` store — the nutrient *embodied in biomass*. A
+  **decided choice** (vs a per-relation nutrient rate): biomass-proportional, so the
+  **same relation drives both resources** and there is **no schema change** — and it is
+  **inert for free** when the prey carries no nutrient (every pre-T3 scenario ⇒
+  byte-identical; `nutrients.ron` has `relations: []`, `flora` only a `transfer: false`
+  self-competition, and the predation scenarios have zero nutrient stores). Strictly
+  conservative on the prey side (the per-actor fractions sum to ≤ 1, reusing `interact`'s
+  two-pass contention scaling); at the actor's `nutrient_capacity` the surplus is
+  **clamped away** (lost), exactly as energy beyond `reserve.max` is — an interim leak
+  that **recycling** (link 2) will close. This is the prerequisite to both **recycling**
+  (a dying body now has accumulated nutrient to leak back) and the **emergent targeting**
+  of T3 (Law 8). Driver `tests/trophic.rs`: on a static, deterministic world a forager
+  that **cannot absorb** (no absorption gene, no field) gains nutrient **only** by eating
+  a nutrient-rich plant — gain + matching loss + conservation — plus the falsifiable
+  contrast (`transfer: false` combat moves **no** nutrient).
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
   `nutrients`, …), clean `clippy`/`fmt`.
@@ -245,16 +265,17 @@ open work in §9.
   portability — all deferred.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
   headless parallelized across matches, then weight crossover / NEAT (§9).
-- **Nutrients — the food web, then the closed loop (T3, §9)**, in this order: (1)
-  **trophic nutrient transfer** — eating carries *nutrient* (not just energy) from prey
-  to predator, the prerequisite to both the emergent targeting (Law 8) and a meaningful
-  recycling; (2) **recycling** — a dead body returns its nutrient to the field (a
-  *conserving* loop), worthwhile only once the nutrient is conserved in biomass (1),
-  whereas with a renewable source it is not needed before; per-species absorption +
-  **multiple nutrients** (T3 — a 2nd nutrient layer makes the shared-opacity 50/50
-  real); GUI editing of sources; and re-balancing the 4 parked grazed-food tests via the
-  nutrient layer. NB: recycling ≠ a population **cap** — a flat standing crop is set by
-  **turnover** (mortality / a portable `crush`), an independent lever.
+- **Nutrients — the closed loop (T3, §9)**. Link 1, **trophic nutrient transfer**
+  (eating carries the nutrient up the chain), is **done** (cf. §0 above). What remains, in
+  order: (2) **recycling** — a dead body returns its (now accumulated, link 1) nutrient to
+  the field (a *conserving* loop), worthwhile only once the nutrient is conserved in
+  biomass, whereas with a renewable source it is not needed before; per-species absorption
+  + **multiple nutrients** (a 2nd nutrient layer makes the shared-opacity 50/50 real); GUI
+  editing of sources; and re-balancing the 4 parked grazed-food tests via the nutrient
+  layer. Further out, **emergent targeting** (Law 8 — an entity eats what holds the
+  nutrients it needs, replacing the explicit `relations` table), now unblocked by link 1.
+  NB: recycling ≠ a population **cap** — a flat standing crop is set by **turnover**
+  (mortality / a portable `crush`), an independent lever.
 
 ---
 
@@ -871,18 +892,30 @@ seam (§4), without touching any core system.
     - a **per-plant nutrient store** (a component, set up now to prepare Phase 3): the
       plant **absorbs** from the local field into its store and **pays the store** to
       reproduce (no nutrient = no child, but it lives on the sun → no death spiral).
+    - **Trophic nutrient transfer — link 1 (done, on `main`)**: eating carries the
+      nutrient up the chain. The **single interaction primitive** (`interact`, §3) now
+      transfers, on predation (`transfer: true`), the share of the prey's `Nutrients`
+      store **proportional to the biomass eaten** (`f = actual/avail`) — the *same
+      relation drives both resources*, **no schema change**, inert (byte-identical) when
+      the prey carries no nutrient. Conservative on the prey side (per-actor fractions sum
+      ≤ 1, via the existing two-pass contention scaling); at the actor's
+      `nutrient_capacity` the surplus is **clamped away** (the **decided** "clamp & lose",
+      mirroring energy beyond `reserve.max` — an interim leak recycling closes). Driver
+      `tests/trophic.rs` (gain + matching loss + conservation, and the `transfer: false`
+      → no-transfer contrast). This is the **prerequisite** that unblocks both recycling
+      (below) and the emergent targeting of Phase 3.
     - **deferred — recycling / closed loop**: a dead body returns its nutrients to the
       field at its cell (the realistic biogeochemical cycle, enabled by the Law-11 mortal
       flora). **Decision (2026-06-25): recycling comes *after* the trophic nutrient
-      transfer** ("eating carries nutrient", Phase 3 below), not before. *Why:* with a
-      **renewable source** the nutrient is a self-sustaining **faucet + drain** (source →
-      field → store → spent at reproduction), so nothing needs recycling yet; recycling
-      earns its keep only once the nutrient is **conserved in biomass** and flows up the
-      chain — a dying body then **leaks** the nutrient it accumulated, and recycling
-      closes that leak. **Nuance:** recycling ≠ the population **cap** — a flat standing
-      crop is set by **turnover** (mortality / a portable `crush`), an *independent*
-      lever; recycling only closes the conservation loop. (Also needs per-species
-      absorption first.)
+      transfer** ("eating carries nutrient") — **now done (link 1 above)**, so recycling is
+      next. *Why this order:* with a **renewable source** the nutrient is a self-sustaining
+      **faucet + drain** (source → field → store → spent at reproduction), so nothing needs
+      recycling yet; recycling earns its keep only once the nutrient is **conserved in
+      biomass** and flows up the chain — a dying body then **leaks** the nutrient it
+      accumulated (link 1 made that accumulation possible), and recycling closes that leak.
+      **Nuance:** recycling ≠ the population **cap** — a flat standing crop is set by
+      **turnover** (mortality / a portable `crush`), an *independent* lever; recycling only
+      closes the conservation loop. (Also needs per-species absorption first.)
     - **Detailed step-by-step implementation plan:
       [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md)** — the binding reference
       (records the implementation decisions, incl. the corrections below).
@@ -913,7 +946,9 @@ seam (§4), without touching any core system.
     exist; some species need them, **metabolize and transform** them; downstream species
     need those products (and possibly others). Targeting then becomes **emergent** — an
     entity eats *what contains the nutrients it needs*, replacing the explicit hunt
-    `relations` table (a real change to **SIM Law 8**, hence deferred).
+    `relations` table (a real change to **SIM Law 8**, hence deferred). The **trophic
+    transfer** prerequisite (nutrient flows up the chain on eating) is now **in place**
+    (link 1 above), so the missing piece is *need-driven* target selection, not the flow.
   - **Idea — nutrient-driven spontaneous generation**: an archetype could *appear* where
     a nutrient is concentrated (origin-of-life / colonization). Two guardrails before it
     is worth building: it must stay **conservative** (the new body is *built from* the
