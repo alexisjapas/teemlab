@@ -17,7 +17,7 @@ use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
 use teemlab::config::{Archetype, Relation, Source};
-use teemlab::genotype::{Genotype, TRAITS};
+use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
@@ -40,6 +40,10 @@ pub struct Palette {
     pub species_files: Vec<String>,
     /// Index, in [`species_files`](Self::species_files), of the species chosen for import.
     pub species_selected: Option<usize>,
+    /// Editor view state (not scenario data): when on, the gene editor shows a
+    /// **“mutable”** checkbox beside each gene. Off by default — the toggle sits at
+    /// the top of the gene panel so it stays discoverable.
+    pub show_mutability: bool,
 }
 
 /// egui color of an archetype, from its stored color (`[r, g, b]` ∈ [0, 1]).
@@ -70,6 +74,7 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         next_seed: config.seed ^ 0xED17,
         species_files: scan_species(),
         species_selected: None,
+        show_mutability: false,
     });
 }
 
@@ -469,7 +474,9 @@ fn sanitize_filename(name: &str) -> String {
 /// / **genome** (the copy inherited by each instance, which then mutates on its own).
 pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) {
     match palette.selected {
-        Some(i) if i < config.archetypes.len() => archetype_editor(ui, config, i),
+        Some(i) if i < config.archetypes.len() => {
+            archetype_editor(ui, config, i, &mut palette.show_mutability)
+        }
         _ => {
             ui.label("Click an archetype in the palette to edit it (or create one).");
         }
@@ -483,7 +490,12 @@ pub(crate) fn editor_section(ui: &mut egui::Ui, palette: &mut Palette, config: &
 /// no more type branch: a food source is an archetype with a `Sessile` brain,
 /// editable like the others. Writes *directly* into `config.archetypes[i]`
 /// (persisted by "Save").
-fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
+fn archetype_editor(
+    ui: &mut egui::Ui,
+    config: &mut SimConfig,
+    i: usize,
+    show_mutability: &mut bool,
+) {
     // (Global) bounds captured before borrowing `config.archetypes` mutably.
     let trait_bounds: Vec<_> = TRAITS.iter().map(|t| (t.bounds)(config)).collect();
     // Brain type BEFORE editing: if the user changes the topology or the type while
@@ -520,9 +532,16 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
         ui.strong("Genes (the archetype)");
         ui.small(
             "Each placed agent receives a COPY of these genes — its genome — which then \
-             mutates on its own. The \"mutable\" checkbox governs, PER SPECIES, the right \
-             to mutate.",
+             mutates on its own.",
         );
+        // Mutability toggle at the **top** of the panel (discoverable): when on, a
+        // checkbox appears beside each gene to mark it MUTABLE.
+        ui.checkbox(show_mutability, "Edit mutability")
+            .on_hover_text(
+                "Show a checkbox beside each gene: checked ⇒ MUTABLE (drifts at \
+             reproduction, passed on with variation); unchecked ⇒ transmitted but \
+             frozen at the founder's value.",
+            );
         // An immobile entity (zero max speed, e.g. a flora / sessile source) neither
         // moves nor exploits vision: its locomotion and vision genes are inert, so we
         // do not expose them (cf. `TraitSpec::inert_when_immobile`). `max_speed`, for
@@ -531,31 +550,68 @@ fn archetype_editor(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
         if immobile {
             ui.weak("Immobile: locomotion and vision genes hidden (no effect).");
         }
-        // A single loop over TRAITS: slider (value, bounds) + "mutable" checkbox per
-        // gene. Adding a trait does not add a line here (item 15).
-        for (t, bounds) in TRAITS.iter().zip(&trait_bounds) {
-            if immobile && t.inert_when_immobile {
+
+        // The gene editor sits several nested cards deep (Entities › Archetype editor
+        // › Genes › category); trim the per-category indent so the gene rows keep their
+        // width (egui side panels don't grow to fit content — cf. `panels`).
+        ui.spacing_mut().indent = 10.0;
+
+        // Grouped by GeneCategory (taming the 17-gene wall): one CollapsingHeader per
+        // category, in display order, filtering TRAITS by category. Still a single
+        // pass over TRAITS — adding a gene only needs a category, no line here
+        // (item 15). A category with no visible gene (e.g. Locomotion/Vision when
+        // immobile) draws no header.
+        for cat in GeneCategory::ALL {
+            let mut visible: Vec<usize> = TRAITS
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.category == cat && !(immobile && t.inert_when_immobile))
+                .map(|(idx, _)| idx)
+                .collect();
+            if visible.is_empty() {
                 continue;
             }
-            let mut value = (t.get)(&arch.genotype);
-            if ui
-                .add(egui::Slider::new(&mut value, bounds.min..=bounds.max).text(t.name))
-                .changed()
-            {
-                (t.set)(&mut arch.genotype, value);
-            }
-            let mut m = (t.mutable)(&arch.mutable);
-            if ui
-                .checkbox(&mut m, "mutable")
-                .on_hover_text(
-                    "Checked: this gene mutates at reproduction (it drifts and is passed \
-                     on with variation). Unchecked: it is still transmitted, but frozen \
-                     at the founder's value.",
-                )
-                .changed()
-            {
-                (t.set_mutable)(&mut arch.mutable, m);
-            }
+            // Costs sort to the **bottom** of each category — a uniform reading order
+            // (a stable sort keeps the TRAITS order within the cost / non-cost groups,
+            // so it is robust to where a future gene lands in TRAITS).
+            visible.sort_by_key(|&idx| TRAITS[idx].is_cost);
+            egui::CollapsingHeader::new(cat.label())
+                .default_open(cat.default_open())
+                .show(ui, |ui| {
+                    for &idx in &visible {
+                        let t = &TRAITS[idx];
+                        let bounds = &trait_bounds[idx];
+                        // One row per gene: when "Edit mutability" is on, a compact
+                        // checkbox **beside** the gene (an aligned column on the left),
+                        // then the slider with its name fills the rest of the row.
+                        ui.horizontal(|ui| {
+                            if *show_mutability {
+                                let mut m = (t.mutable)(&arch.mutable);
+                                if ui
+                                    .checkbox(&mut m, "")
+                                    .on_hover_text(
+                                        "Mutable: this gene drifts at reproduction (passed \
+                                         on with variation). Unchecked: transmitted but \
+                                         frozen at the founder's value.",
+                                    )
+                                    .changed()
+                                {
+                                    (t.set_mutable)(&mut arch.mutable, m);
+                                }
+                            }
+                            let mut value = (t.get)(&arch.genotype);
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut value, bounds.min..=bounds.max)
+                                        .text(t.name),
+                                )
+                                .changed()
+                            {
+                                (t.set)(&mut arch.genotype, value);
+                            }
+                        });
+                    }
+                });
         }
     });
 

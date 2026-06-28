@@ -31,8 +31,9 @@ command line), so you can place, edit and inspect before launching.
 
 **Edit** (everything you author) is on the **left**, **Analysis** (the state you
 read) on the **right**, the evolution **curves** full-width at the bottom, and the
-**simulation** fills the centre. Panels are fixed (no manual resizing); the curves
-panel auto-sizes to its content.
+**simulation** fills the centre. The two side panels have a **fixed width** (equal,
+so the sim stays centred) and are **not resizable** — the width is chosen to fit
+their content; the curves panel auto-sizes to its content height.
 
 ## Top strip
 
@@ -102,9 +103,15 @@ Collapsible cards, ordered by how often you touch them:
   imported species from its source.
 - **Archetype editor** — the selected archetype, in three cards:
   - **Body** — name, colour, count at spawn, body radius, max reserve.
-  - **Genes** — each gene is a slider plus a **per-species “mutable”** checkbox
-    (checked ⇒ the gene drifts at reproduction). Inert genes (locomotion, vision) are
-    hidden for an immobile entity.
+  - **Genes** — the founding genotype, grouped into collapsible sections
+    (Locomotion, Vision, Metabolism, Reproduction, Flora, Nutrients); the advanced
+    flora / nutrient axes start collapsed to keep the common case lean, and within each
+    section the **costs are listed last** (a uniform order). Each gene is a slider; the
+    **Edit mutability** toggle at the top of the panel reveals a per-species
+    **“mutable”** checkbox **beside** each gene (an aligned column on the left):
+    checked ⇒ the gene drifts at reproduction, unchecked ⇒ transmitted but frozen at
+    the founder’s value. Inert genes (locomotion, vision) stay hidden for an immobile
+    entity — a section left with none disappears.
   - **Brain** — the decider: **Wander**, **Hunter** (hunt + flee), **Sessile**
     (flora), or **Network (MLP)** (learned by neuroevolution). For the MLP you edit
     the hidden-layer architecture (input/output are fixed by the contract) and see a

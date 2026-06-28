@@ -47,6 +47,15 @@ use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 use crate::status::UiStatus;
 
+/// Fixed width (egui points) of **both** side panels (Edit / Analysis). They are
+/// **non-resizable**: an egui side panel cannot shrink-wrap its content's width
+/// (sliders and scroll areas fill whatever width they are given — there is no natural
+/// width to collapse to, unlike the bottom panel's content-driven *height*), so we
+/// pick a width that comfortably fits the densest content (the gene editor) rather
+/// than offering a drag handle. Kept **equal** left and right so the centered sim
+/// stays centered.
+const SIDE_PANEL_WIDTH: f32 = 370.0;
+
 /// The central region left free by the docked panels (egui points), computed by
 /// [`dock`] from the root `Ui` and consumed by `main::set_sim_camera` to frame the
 /// simulation. Replaces the deprecated `ctx.available_rect()`.
@@ -199,11 +208,12 @@ pub fn dock(
         }
     }
 
-    // Left column, resizable: **Edit** — everything you author, stacked. *World* (the
-    // scenario parameters) then *Entities* (the archetype palette + editor), each a
-    // top-level collapsible card.
+    // Left column, **fixed width, non-resizable**: **Edit** — everything you author,
+    // stacked. *World* (the scenario parameters) then *Entities* (the archetype palette
+    // + editor), each a top-level collapsible card. (Width via [`SIDE_PANEL_WIDTH`] —
+    // egui side panels can't fit their width to content, so no drag handle.)
     egui::Panel::left("left_tools")
-        .exact_size(320.0)
+        .exact_size(SIDE_PANEL_WIDTH)
         .show_inside(&mut root, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::CollapsingHeader::new("World")
@@ -231,11 +241,12 @@ pub fn dock(
             });
         });
 
-    // Right column, resizable: **Analysis** of the current state — live *stats*
-    // (means) on top, then the agent *inspector*. (The evolution curves — a time
-    // series — stay at the bottom.)
+    // Right column, **fixed width, non-resizable** (same [`SIDE_PANEL_WIDTH`] as the
+    // left, so the sim stays centered): **Analysis** of the current state — live
+    // *stats* (means) on top, then the agent *inspector*. (The evolution curves — a
+    // time series — stay at the bottom.)
     egui::Panel::right("right_panel")
-        .exact_size(320.0)
+        .exact_size(SIDE_PANEL_WIDTH)
         .show_inside(&mut root, |ui| {
             egui::CollapsingHeader::new("Live stats")
                 .default_open(false)

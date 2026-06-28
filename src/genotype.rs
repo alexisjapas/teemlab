@@ -229,6 +229,61 @@ impl Genotype {
     }
 }
 
+/// A **semantic grouping** of genes for the editor. The flat [`TRAITS`] table
+/// grew to 17 entries — a "wall" of sliders; a category lets the gene editor draw
+/// collapsible sections instead, **without** breaking the single-source-of-truth
+/// property (item 15): a new gene only needs a category, no new UI branch. The
+/// display order is the declaration order, surfaced through [`GeneCategory::ALL`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneCategory {
+    /// Moving: speed, steering and their costs.
+    Locomotion,
+    /// Seeing: range, field of view, ray count and the brain it feeds.
+    Vision,
+    /// The base cost of staying alive.
+    Metabolism,
+    /// Making offspring: threshold, endowment, mutation.
+    Reproduction,
+    /// The sessile life: passive gain and seeding.
+    Flora,
+    /// The substrate axis (T2): absorbing and spending nutrient.
+    Nutrients,
+}
+
+impl GeneCategory {
+    /// The categories in **display order**. The gene editor iterates this and, for
+    /// each, the [`TRAITS`] filtered by `category` — so a new category must be
+    /// listed here to appear (the counterpart, for the grouping, of adding a gene
+    /// to `TRAITS`).
+    pub const ALL: [GeneCategory; 6] = [
+        GeneCategory::Locomotion,
+        GeneCategory::Vision,
+        GeneCategory::Metabolism,
+        GeneCategory::Reproduction,
+        GeneCategory::Flora,
+        GeneCategory::Nutrients,
+    ];
+
+    /// The section's display label.
+    pub fn label(self) -> &'static str {
+        match self {
+            GeneCategory::Locomotion => "Locomotion",
+            GeneCategory::Vision => "Vision",
+            GeneCategory::Metabolism => "Metabolism",
+            GeneCategory::Reproduction => "Reproduction",
+            GeneCategory::Flora => "Flora",
+            GeneCategory::Nutrients => "Nutrients",
+        }
+    }
+
+    /// Whether the section starts **expanded**. The advanced, usually-zero axes
+    /// (flora, nutrients) start collapsed to keep the common fauna case uncluttered;
+    /// the core ones start open.
+    pub fn default_open(self) -> bool {
+        !matches!(self, GeneCategory::Flora | GeneCategory::Nutrients)
+    }
+}
+
 /// The descriptor of **one** heritable characteristic: the §2 triplet —
 /// (value, bounds, …) — made *iterable*. The [`TRAITS`] table is its single
 /// source of truth; the drivers (mutation, editor, HUD, inspector) loop over it
@@ -238,6 +293,15 @@ impl Genotype {
 pub struct TraitSpec {
     /// Label for the editor and the HUD.
     pub name: &'static str,
+    /// The editor section this gene belongs to (presentation only — never read by
+    /// [`Genotype::mutate`], so it leaves the RNG stream untouched).
+    pub category: GeneCategory,
+    /// `true` if this gene is a **cost** (a price paid — §2, SIM Law 7 "every
+    /// characteristic is priced") rather than a capability or parameter: the
+    /// metabolic, locomotion, brain and maneuvering costs. The gene editor sorts the
+    /// costs to the **bottom** of their category, for a uniform reading order across
+    /// categories. Presentation only (never read by [`Genotype::mutate`]).
+    pub is_cost: bool,
     /// The gene's value in the genotype (read).
     pub get: fn(&Genotype) -> f32,
     /// The gene's value in the genotype (write).
@@ -274,6 +338,8 @@ pub struct TraitSpec {
 pub const TRAITS: [TraitSpec; 17] = [
     TraitSpec {
         name: "Max speed",
+        category: GeneCategory::Locomotion,
+        is_cost: false,
         get: |g| g.max_speed,
         set: |g, v| g.max_speed = v,
         bounds: |c| c.speed_bounds,
@@ -286,6 +352,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Agility",
+        category: GeneCategory::Locomotion,
+        is_cost: false,
         get: |g| g.agility,
         set: |g, v| g.agility = v,
         bounds: |c| c.agility_bounds,
@@ -298,6 +366,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Vision range",
+        category: GeneCategory::Vision,
+        is_cost: false,
         get: |g| g.vision_range,
         set: |g, v| g.vision_range = v,
         bounds: |c| c.vision_range_bounds,
@@ -310,6 +380,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Vision FOV (°)",
+        category: GeneCategory::Vision,
+        is_cost: false,
         get: |g| g.vision_fov_deg,
         set: |g, v| g.vision_fov_deg = v,
         bounds: |c| c.vision_fov_bounds,
@@ -322,6 +394,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Repro threshold",
+        category: GeneCategory::Reproduction,
+        is_cost: false,
         get: |g| g.reproduction_threshold,
         set: |g, v| g.reproduction_threshold = v,
         bounds: |c| c.reproduction_threshold_bounds,
@@ -334,6 +408,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Energy/child",
+        category: GeneCategory::Reproduction,
+        is_cost: false,
         get: |g| g.offspring_energy,
         set: |g, v| g.offspring_energy = v,
         bounds: |c| c.offspring_energy_bounds,
@@ -346,6 +422,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Mutation rate",
+        category: GeneCategory::Reproduction,
+        is_cost: false,
         get: |g| g.mutation_rate,
         set: |g, v| g.mutation_rate = v,
         bounds: |c| c.mutation_rate_bounds,
@@ -358,6 +436,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Metabolism/s",
+        category: GeneCategory::Metabolism,
+        is_cost: true,
         get: |g| g.base_metabolism,
         set: |g, v| g.base_metabolism = v,
         bounds: |c| c.base_metabolism_bounds,
@@ -370,6 +450,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Locomotion cost",
+        category: GeneCategory::Locomotion,
+        is_cost: true,
         get: |g| g.move_cost,
         set: |g, v| g.move_cost = v,
         bounds: |c| c.move_cost_bounds,
@@ -382,6 +464,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Rays (precision)",
+        category: GeneCategory::Vision,
+        is_cost: false,
         get: |g| g.vision_rays,
         set: |g, v| g.vision_rays = v,
         bounds: |c| c.vision_rays_bounds,
@@ -394,6 +478,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Photosynthesis/s",
+        category: GeneCategory::Flora,
+        is_cost: false,
         get: |g| g.photosynthesis,
         set: |g, v| g.photosynthesis = v,
         bounds: |c| c.photosynthesis_bounds,
@@ -406,6 +492,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Dispersal",
+        category: GeneCategory::Flora,
+        is_cost: false,
         get: |g| g.seed_dispersal,
         set: |g, v| g.seed_dispersal = v,
         bounds: |c| c.seed_dispersal_bounds,
@@ -418,6 +506,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Brain cost/neuron",
+        category: GeneCategory::Vision,
+        is_cost: true,
         get: |g| g.brain_cost,
         set: |g, v| g.brain_cost = v,
         bounds: |c| c.brain_cost_bounds,
@@ -431,6 +521,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Agility cost",
+        category: GeneCategory::Locomotion,
+        is_cost: true,
         get: |g| g.agility_cost,
         set: |g, v| g.agility_cost = v,
         bounds: |c| c.agility_cost_bounds,
@@ -444,6 +536,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Nutrient absorb/s",
+        category: GeneCategory::Nutrients,
+        is_cost: false,
         get: |g| g.nutrient_absorption,
         set: |g, v| g.nutrient_absorption = v,
         bounds: |c| c.nutrient_absorption_bounds,
@@ -457,6 +551,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Nutrient capacity",
+        category: GeneCategory::Nutrients,
+        is_cost: false,
         get: |g| g.nutrient_capacity,
         set: |g, v| g.nutrient_capacity = v,
         bounds: |c| c.nutrient_capacity_bounds,
@@ -469,6 +565,8 @@ pub const TRAITS: [TraitSpec; 17] = [
     },
     TraitSpec {
         name: "Nutrient/child",
+        category: GeneCategory::Nutrients,
+        is_cost: false,
         get: |g| g.offspring_nutrient,
         set: |g, v| g.offspring_nutrient = v,
         bounds: |c| c.offspring_nutrient_bounds,
@@ -488,6 +586,75 @@ mod tests {
 
     fn config() -> SimConfig {
         SimConfig::default()
+    }
+
+    /// The gene editor groups [`TRAITS`] by [`GeneCategory`]; the grouping must
+    /// **partition** the table — every gene shown in exactly one section, none
+    /// lost in the wall rework. Counting per category and summing recovers the
+    /// whole table (each trait's category is, by type, one of `ALL`).
+    #[test]
+    fn categories_partition_traits() {
+        let grouped: usize = GeneCategory::ALL
+            .iter()
+            .map(|c| TRAITS.iter().filter(|t| t.category == *c).count())
+            .sum();
+        assert_eq!(
+            grouped,
+            TRAITS.len(),
+            "every gene must fall in exactly one editor category"
+        );
+        // And no category is empty (an empty section would draw a dead header).
+        for c in GeneCategory::ALL {
+            assert!(
+                TRAITS.iter().any(|t| t.category == c),
+                "category {} has no gene",
+                c.label()
+            );
+        }
+    }
+
+    /// The cost genes (priced characteristics, §2/Law 7) are flagged `is_cost` and the
+    /// capabilities/parameters are not — the editor sorts costs to the bottom of each
+    /// category. Guards against an accidental flag flip.
+    #[test]
+    fn cost_genes_are_flagged() {
+        let is_cost = |name: &str| TRAITS.iter().find(|t| t.name == name).unwrap().is_cost;
+        for c in [
+            "Metabolism/s",
+            "Locomotion cost",
+            "Brain cost/neuron",
+            "Agility cost",
+        ] {
+            assert!(is_cost(c), "{c} should be a cost");
+        }
+        for n in [
+            "Max speed",
+            "Vision range",
+            "Repro threshold",
+            "Photosynthesis/s",
+        ] {
+            assert!(!is_cost(n), "{n} should not be a cost");
+        }
+    }
+
+    /// Within each category, a **stable** sort by `is_cost` puts every cost after every
+    /// non-cost — the "costs at the bottom" reading order the gene editor relies on.
+    #[test]
+    fn stable_sort_puts_costs_last_per_category() {
+        for c in GeneCategory::ALL {
+            let mut idx: Vec<usize> = (0..TRAITS.len())
+                .filter(|&i| TRAITS[i].category == c)
+                .collect();
+            idx.sort_by_key(|&i| TRAITS[i].is_cost);
+            let first_cost = idx.iter().position(|&i| TRAITS[i].is_cost);
+            if let Some(p) = first_cost {
+                assert!(
+                    idx[p..].iter().all(|&i| TRAITS[i].is_cost),
+                    "category {} interleaves a non-cost after a cost",
+                    c.label()
+                );
+            }
+        }
     }
 
     /// The default genotype carries consistent founding values (fov in degrees,
