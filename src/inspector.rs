@@ -381,20 +381,27 @@ pub(crate) fn inspector_section(
                     let target = perception.target.get(i).copied().unwrap_or(0.0);
                     let threat = perception.threat.get(i).copied().unwrap_or(0.0);
                     ui.horizontal(|ui| {
+                        // Fill the card width: split the row across the three channels in
+                        // the obstacle:target:threat proportion (the obstacle bar keeps a
+                        // little more room for its "r{i} · v" label), minus the two gaps.
+                        // The 0.5 px shave keeps float rounding from wrapping the last bar.
+                        let gap = ui.spacing().item_spacing.x;
+                        let avail = (ui.available_width() - 2.0 * gap - 0.5).max(0.0);
+                        let width = |share: f32| (avail * share / (95.0 + 85.0 + 85.0)).max(1.0);
                         ui.add(
                             egui::ProgressBar::new(proximity)
-                                .desired_width(95.0)
+                                .desired_width(width(95.0))
                                 .text(format!("r{i} · {proximity:.2}")),
                         );
                         ui.add(
                             egui::ProgressBar::new(target)
-                                .desired_width(85.0)
+                                .desired_width(width(85.0))
                                 .fill(egui::Color32::from_rgb(220, 130, 40))
                                 .text(format!("{target:.2}")),
                         );
                         ui.add(
                             egui::ProgressBar::new(threat)
-                                .desired_width(85.0)
+                                .desired_width(width(85.0))
                                 .fill(egui::Color32::from_rgb(210, 60, 60))
                                 .text(format!("{threat:.2}")),
                         );
