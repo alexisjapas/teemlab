@@ -1,3 +1,6 @@
+// Default — the starting template: one default species ready to evolve. Kept in sync
+// with `SimConfig::default()` (asserted by config.rs), so it mirrors the engine's
+// out-of-the-box creature rather than a hand-tuned scenario.
 (
     tick_hz: 64.0,
     arena_half_extent: 400.0,

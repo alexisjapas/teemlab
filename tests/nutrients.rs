@@ -9,7 +9,7 @@
 //!   (reproduction is fed where the nutrient reaches), (b) stays **bounded** (no
 //!   carpet — the finite nutrient throttles the reproduction *rate*; a true
 //!   standing-crop cap awaits turnover, a deferred sub-phase), (c) **persists** (no
-//!   collapse: the T1 death spiral of `minerals.ron` is gone);
+//!   collapse: the T1 death spiral of the early single-axis prototype is gone);
 //! - **without sources** — the *same* plants do **not** grow (no nutrient → no
 //!   reproduction) yet do **not** collapse either (sun-fed survival). This contrast
 //!   is the proof that the nutrient gates **only** reproduction, never survival.

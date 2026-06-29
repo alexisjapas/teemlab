@@ -897,7 +897,8 @@ seam (§4), without touching any core system.
   naturally — and, if the mineral **cycles** (dead bodies decompose back into it), a
   closed nutrient loop. More principled than `crush`, and the bottom of the food chain.
   Staged:
-  - **Phase 1 — scenario-only prototype (done, `scenarios/examples/minerals.ron`)**: a `Mineral`
+  - **Phase 1 — scenario-only prototype (done; the `minerals.ron` prototype has since been
+    removed)**: a `Mineral`
     archetype + a `Plant→Mineral` relation, photosynthesis below base metabolism so the
     plant *depends* on the mineral. **Validated** the bound (plants self-limit, ~7 not a
     carpet) but **fragile** (2/3 seeds collapse): lacking the mineral = *death* (energy

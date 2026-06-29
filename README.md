@@ -104,17 +104,17 @@ src/
   bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
 scenarios/        Two categories (Open ▸ Examples / Saved); only examples are committed.
   examples/       Curated, committed example scenarios:
-    default.ron     Default scenario, all fields documented.
-    empty.ron       Empty arena: the editor's canvas (no-argument fallback of the windowed build).
-    evolution.ron   Continuous evolutionary loop: reproduction + gene mutation (wandering brains).
-    hunt.ron        Hunter brains on a food source: the competent control group (item 16).
-    cohabitation.ron   Competent control (Hunter) vs naive (wandering), same body: competitive exclusion (item 18a).
-    mlp_brain.ron      LEARNED brain (MLP) vs wandering: dominates starting from random weights (item 18b).
-    predator_prey.ron  3-level trophic chain (plants → prey → predators): pyramid
-                    by counts, Hunter brains, prey that flee (items 17, 18e).
-    flora.ron       Self-limited sessile flora: photosynthesis + local seeding + competition (item 5, Phase 3a).
-    nutrients.ron   T2 nutrient layer: sun-fed plants whose REPRODUCTION is gated by a finite nutrient emitted by sources (Liebig); grows around the sources, no death spiral.
-    minerals.ron    T1 nutrient prototype (scenario-only): plants depend on a finite mineral — validated the bound but fragile (kept for reference).
+    default.ron     The starting template: one default species, kept == SimConfig::default().
+    empty.ron       Blank canvas (count 0): author from scratch; == SimConfig::empty(); the windowed build's no-argument fallback.
+    evolution.ron   Natural selection: a WANDER grazer reproduces + mutates → gene drift, on a nutrient-bounded flora.
+    hunt.ron        The HUNTER brain (target channel): hunters forage a self-renewing flora in a self-regulating ecosystem.
+    cohabitation.ron   Control vs control: Hunter vs Wander, equal counts, shared food → the competent brain excludes the naive one.
+    mlp_brain.ron      Learned vs control: MLP (neuroevolution) vs Wander → the learned brain dominates from random weights.
+    predator_prey.ron  3-level trophic chain (flora → prey → predators): count pyramid, shared Hunter brain, prey that flee (threat channel).
+    flora.ron       Evolutionary sessile flora: photosynthesis + local seeding, self-limited by intraspecific competition (item 5).
+    factions.ron    COMBAT: two factions wage war (transfer:false — destruction without transfer) while foraging a shared flora.
+    nutrients.ron   T2 substrate: sun-fed plants whose REPRODUCTION is gated by a finite nutrient emitted by sources (Liebig), spread by diffusion.
+    nutrient_web.ron   T3 food web: the closed loop — source → flora → herbivore (trophic transfer) → death → recycle; watch it in the inspector + heatmap.
   saved/          Your saved scenarios (editor Save / Save As land here); gitignored — not committed.
 species/
   hunter.ron      Reusable species (library): a generic hunter, importable into a scenario.

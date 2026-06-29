@@ -48,7 +48,7 @@
       # (optimized + debug symbols, Cargo.toml) and a long run for enough samples.
       # perf may need: sudo sysctl -w kernel.perf_event_paranoid=-1
       flame = pkgs.writeShellScriptBin "flame" ''
-        scenario="''${1:-scenarios/evolution.ron}"
+        scenario="''${1:-scenarios/examples/evolution.ron}"
         export TEEMLAB_TICKS="''${TEEMLAB_TICKS:-20000}"
         exec cargo flamegraph --profile profiling -o outputs/flamegraph.svg \
           --bin headless -- "$scenario"

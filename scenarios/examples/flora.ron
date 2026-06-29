@@ -1,17 +1,19 @@
-// Evolutionary flora — a SESSILE plant population that self-regulates by intraspecific
-// COMPETITION (the Plant→Plant non-transfer relation below, §3: contested light/space).
-// High density → drain > photosynthesis → the most crowded plants DIE (Law 11), giving a
-// bounded logistic equilibrium. Recalibrated for the mortal-flora economy (the
-// interact→reap→metabolize order): photosynthesis 7, competition range 32.
-// Driver: tests/flora.rs (peak in [200, 2000], sustained over the 2nd half).
-// NB: the GUI editor strips comments on save — re-add this header after an editor round-trip.
+// Flora — an evolutionary SESSILE plant that self-limits by competition.
+//
+// Showcases: `Brain::Sessile` + the flora genes (photosynthesis, seed dispersal) and
+// self-limitation WITHOUT any forager — the Plant→Plant non-transfer relation (§3:
+// contested light/space) drains the most crowded plants to death (Law 11), giving a
+// bounded logistic equilibrium. A few founders grow into a spatial wave that stays far
+// below the arena's saturation and persists; reproduction_threshold and seed_dispersal
+// drift under the competition pressure. Driver: tests/flora.rs (peak in [200, 2000],
+// sustained over the 2nd half).
 (
     tick_hz: 64.0,
     arena_half_extent: 360.0,
     archetypes: [
         (
             name: "Plant",
-            color: (0.54999983, 0.9, 0.45),
+            color: (0.4, 0.85, 0.4),
             count: 54,
             radius: 6.0,
             reserve_max: 80.0,
@@ -30,6 +32,9 @@
                 seed_dispersal: 50.0,
                 brain_cost: 0.0,
                 agility_cost: 0.0,
+                nutrient_absorption: 0.0,
+                nutrient_capacity: 0.0,
+                offspring_nutrient: 0.0,
             ),
             brain: Sessile,
             mutable: (
@@ -47,9 +52,15 @@
                 seed_dispersal: true,
                 brain_cost: false,
                 agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
             ),
         ),
     ],
+    // Self-competition: a Plant→Plant relation WITHOUT transfer (combat — destroys
+    // reserve without gain). Crowded plants drain each other below their photosynthesis
+    // and die, bounding the density.
     relations: [
         (
             actor: 0,
@@ -59,17 +70,22 @@
             range: 32.0,
         ),
     ],
+    nutrient: (
+        resolution: 48,
+        diffusion: 0.0,
+    ),
+    sources: [],
     speed_bounds: (
         min: 40.0,
-        max: 260.0,
+        max: 280.0,
     ),
     agility_bounds: (
         min: 0.02,
         max: 0.5,
     ),
     vision_range_bounds: (
-        min: 40.0,
-        max: 300.0,
+        min: 30.0,
+        max: 320.0,
     ),
     vision_fov_bounds: (
         min: 40.0,
@@ -96,7 +112,7 @@
         max: 20.0,
     ),
     vision_rays_bounds: (
-        min: 0.0,
+        min: 1.0,
         max: 21.0,
     ),
     photosynthesis_bounds: (
@@ -115,7 +131,19 @@
         min: 0.0,
         max: 2.0,
     ),
-    play_area_color: (0.07000001, 0.07, 0.09),
-    off_game_color: (0.17000002, 0.17, 0.19),
+    nutrient_absorption_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    nutrient_capacity_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_nutrient_bounds: (
+        min: 0.0,
+        max: 120.0,
+    ),
+    play_area_color: (0.07, 0.07, 0.09),
+    off_game_color: (0.17, 0.17, 0.19),
     seed: 12648430,
 )

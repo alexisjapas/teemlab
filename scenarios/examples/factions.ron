@@ -1,28 +1,31 @@
-// Evolution — natural selection in the continuous regime (the canonical loop).
+// Factions — COMBAT: the destructive half of the single interaction primitive (§3).
 //
-// Showcases: reproduction + mutation → gene drift under selection. A naive WANDER
-// grazer forages by chance; those that eat enough breed, their genotype mutates, and
-// the population's gene means drift over time (watch the trait curves). A self-
-// regulating economy: the grazers' reproduction is gated by the nutrient they harvest,
-// and the flora is bounded by the nutrient field — a carrying capacity, not a runaway.
-// The baseline "alive world" the other scenarios build on.
+// Showcases: a relation with `transfer: false` — an attacker DESTROYS its target's
+// reserve without gaining anything (combat), as opposed to predation (`transfer:true`,
+// which feeds the attacker). Two mobile factions wage war on each other (mutual
+// `transfer:false`) while both forage the same nutrient-bounded flora to survive — so
+// fighting is a pure cost, paid on top of making a living. The Hunter brain makes each
+// faction seek the enemy (it is a "target") and warily skirmish (the enemy is also a
+// "threat"); the combat reach is wide enough that blows land at medium range. Neither
+// side gains nutrient from a kill (combat carries none) → reproduction is fed only by
+// grazing, which keeps both factions bounded.
 (
     tick_hz: 64.0,
     arena_half_extent: 480.0,
     archetypes: [
         (
-            name: "Grazer",
-            color: (1.0, 0.45, 0.35),
-            count: 40,
+            name: "Azure",
+            color: (0.3, 0.7, 1.0),
+            count: 10,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
-                max_speed: 140.0,
+                max_speed: 135.0,
                 agility: 0.12,
-                vision_range: 160.0,
-                vision_fov_deg: 120.0,
+                vision_range: 175.0,
+                vision_fov_deg: 130.0,
                 reproduction_threshold: 90.0,
-                offspring_energy: 45.0,
+                offspring_energy: 40.0,
                 mutation_rate: 0.06,
                 base_metabolism: 4.0,
                 move_cost: 2.0,
@@ -35,9 +38,7 @@
                 nutrient_capacity: 30.0,
                 offspring_nutrient: 8.0,
             ),
-            brain: Wander(
-                turn_rate: 0.25,
-            ),
+            brain: Hunter,
             mutable: (
                 max_speed: true,
                 agility: true,
@@ -58,13 +59,57 @@
                 offspring_nutrient: false,
             ),
         ),
-        // Food — a flora bounded by the nutrient field (lives on the sun, absorbs
-        // nutrient, reseeds when its store allows). Renews under grazing instead of
-        // dying out.
+        (
+            name: "Crimson",
+            color: (1.0, 0.45, 0.35),
+            count: 10,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 135.0,
+                agility: 0.12,
+                vision_range: 175.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 90.0,
+                offspring_energy: 40.0,
+                mutation_rate: 0.06,
+                base_metabolism: 4.0,
+                move_cost: 2.0,
+                vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 0.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+                nutrient_absorption: 0.0,
+                nutrient_capacity: 30.0,
+                offspring_nutrient: 8.0,
+            ),
+            brain: Hunter,
+            mutable: (
+                max_speed: true,
+                agility: true,
+                vision_range: true,
+                vision_fov: true,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: true,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
+            ),
+        ),
+        // Shared food — a flora bounded by the nutrient field, grazed by both factions.
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
-            count: 130,
+            count: 150,
             radius: 6.0,
             reserve_max: 50.0,
             genotype: (
@@ -109,12 +154,37 @@
         ),
     ],
     relations: [
+        // Both factions graze the flora (predation — energy + nutrient).
         (
             actor: 0,
-            target: 1,
+            target: 2,
             transfer: true,
             rate: 45.0,
             range: 16.0,
+        ),
+        (
+            actor: 1,
+            target: 2,
+            transfer: true,
+            rate: 45.0,
+            range: 16.0,
+        ),
+        // War: mutual COMBAT (transfer: false) — each destroys the other's reserve
+        // without gaining it. Gentle rate (a war of attrition, not instant
+        // annihilation), with a reach wide enough that blows land at medium range.
+        (
+            actor: 0,
+            target: 1,
+            transfer: false,
+            rate: 6.0,
+            range: 22.0,
+        ),
+        (
+            actor: 1,
+            target: 0,
+            transfer: false,
+            rate: 6.0,
+            range: 22.0,
         ),
     ],
     nutrient: (
@@ -125,28 +195,28 @@
         (
             pos: (-220.0, 220.0),
             nutrient: 0,
-            rate: 12.0,
+            rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (220.0, 220.0),
             nutrient: 0,
-            rate: 12.0,
+            rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (-220.0, -220.0),
             nutrient: 0,
-            rate: 12.0,
+            rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (220.0, -220.0),
             nutrient: 0,
-            rate: 12.0,
+            rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),

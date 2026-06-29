@@ -1,3 +1,6 @@
+// Empty — a blank canvas: one species declared but spawned zero times (count 0), so the
+// world starts empty and you author from scratch in the editor. Kept in sync with
+// `SimConfig::empty()` (asserted by config.rs).
 (
     tick_hz: 64.0,
     arena_half_extent: 400.0,
