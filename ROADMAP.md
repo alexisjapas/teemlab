@@ -182,6 +182,30 @@ open work in §9.
   store** as a second reservoir bar (shown in any nutrient scenario; "—" off the axis),
   beside the energy reserve — so the absorb/eat/spend/recycle flow is legible live,
   alongside the field heatmap layer.
+- **Example scenarios — full rework (homogenize · modernize · balance · one per
+  feature)**: the `scenarios/examples/*` set was rebuilt from scratch. Obsolete files
+  **deleted** (the crush-era `coldstart`/`hunter_vs_wanderer`, the T1 `minerals`
+  prototype, the orphan `new_scenario`); the rest homogenized (uniform header, full
+  bounds block, role colors, seed). **Coverage**: at least one scenario per engine
+  feature, incl. a new **`factions`** (COMBAT — `transfer: false`, the destructive half
+  of §3, the only previously-unshown primitive). **The living-food wall, resolved
+  pragmatically**: since the Law-11 reorder a grazed photosynthetic patch *dies*, so a
+  forager+flora world is Lotka-Volterra — it **coexists for a while then winds down**
+  (no recipe reaches the old 120–200 s test horizons; confirmed empirically). Decided
+  with the user: **nutrient ecosystems everywhere, no renewable/immortal-food flag**,
+  and the 4 parked ecological tests **re-greened by rewriting them to the coexistence
+  window** (not the old horizons). The unifying recipe: a **nutrient-gated flora that
+  clusters into oases** around the sources (patchy food) + foragers nutrient-capped (no
+  overshoot) — the competent forager navigates to the oases and wins. **`cohabitation`,
+  `predator_prey`, `containment` un-ignored** (3 of the 4). **MLP — the learning story
+  in 3 scenarios** (the 4th, `mlp`, un-ignored as a *learning* test, not a domination
+  one): `mlp_brain` (a from-random MLP is **out-foraged** by a wander), `mlp_train`
+  (MLPs evolve **alone** on the oasis flora), `mlp_evolved` (the **trained** variant
+  reaches **parity** with the control). Parity, not domination, is the honest
+  living-food outcome (the item-18b wall: domination needed a long stable selection
+  window). New headless **`train` bin** runs the training ground, captures the
+  best-evolved MLP, and **generates** `mlp_brain`/`mlp_evolved` + the catalog variant
+  `species/examples/mlp_trained.ron` (using `Archetype::capture` + `captured_brain`).
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
   `nutrients`, …), clean `clippy`/`fmt`.
@@ -298,12 +322,14 @@ open work in §9.
   forager → (death) → field, conservatively. What remains: **per-species absorption** +
   **multiple nutrients** (a 2nd nutrient layer makes the shared-opacity 50/50 real); the
   **conservation invariant at reproduction** (today still an interim *consumable* — a child
-  born empty, the gate amount destroyed; §9); GUI editing of sources; and re-balancing the
-  4 parked grazed-food tests via the nutrient layer — now that turnover **and** a closed
-  loop exist, an actual flat carrying capacity is in reach. Further out, **emergent
-  targeting** (Law 8 — an entity eats what holds the nutrients it needs, replacing the
-  explicit `relations` table), now unblocked by link 1. NB: recycling ≠ a population **cap**
-  — a flat standing crop is set by **turnover** (mortality / a portable `crush`), an
+  born empty, the gate amount destroyed; §9); GUI editing of sources. (The 4 parked
+  grazed-food tests are **no longer parked** — re-greened against the coexistence window,
+  cf. §0; a true *flat* carrying capacity over the old long horizons would still need a
+  renewable-food lever or a portable density death, deliberately not added.) Further out,
+  **emergent targeting** (Law 8 — an entity eats what holds the nutrients it needs,
+  replacing the explicit `relations` table), now unblocked by link 1. NB: recycling ≠ a
+  population **cap** — a flat standing crop is set by **turnover** (mortality / a portable
+  `crush`), an
   independent lever.
 
 ---

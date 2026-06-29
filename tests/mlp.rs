@@ -1,46 +1,47 @@
-//! Item 18b (core) — the **driver** of the evolved MLP brain.
+//! Item 18b — the MLP **learning story**, told across two scenarios.
 //!
-//! The §4 falsification through the most robust experiment: **cohabitation** (cf.
-//! `tests/cohabitation.rs`). Two species with the same body and the same economy,
-//! shared and limited food, differ only by their brain — species 0 = MLP (learned,
-//! started from random weights), species 1 = wander (naive control). With a scarce
-//! resource, the better forager excludes the other: if neuroevolution learns
-//! anything useful, the MLP gains the upper hand over the wanderer. We check it
-//! over several seeds (a single one would be anecdotal).
+//! A from-random MLP is a poor forager, and on living (mortal, reproducing) food the
+//! coexistence window is too short for neuroevolution to evolve a *dominant* forager
+//! (the high-variance wall of item 18b: the original domination needed a long, stable
+//! selection window — immortal food + many generations). So instead of forcing a
+//! single "MLP dominates wander" scenario, we tell the story honestly:
 //!
-//! We run the *real* sim world (the same `SimPlugin` as the binaries), in manual
-//! single-stepping (cf. §6).
+//!   - `mlp_brain` — the **naive** MLP (random weights) vs a wander control: the
+//!     wanderer **out-forages** it.
+//!   - `mlp_train` — MLPs train ALONE on the oasis flora (a generator, see the `train`
+//!     bin), from which an evolved variant is captured.
+//!   - `mlp_evolved` — the **trained** variant vs the same control: it reaches
+//!     **parity** (it is no longer out-foraged).
+//!
+//! This driver falsifies the *learning* claim: the trained MLP fares **better relative
+//! to the control** than the naive MLP — training closed the gap — across several seeds.
+//! (Parity, not domination, is the honest outcome of the living-food regime.)
+//!
+//! We run the *real* sim world (the same `SimPlugin` as the binaries), single-stepping.
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Species};
-use teemlab::genotype::Genotype;
 
 mod common;
 
-const SCENARIO: &str = include_str!("../scenarios/examples/mlp_brain.ron");
+const NAIVE: &str = include_str!("../scenarios/examples/mlp_brain.ron");
+const TRAINED: &str = include_str!("../scenarios/examples/mlp_evolved.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
-const SECONDS: usize = 200;
+const SECONDS: usize = 45;
 
-/// Species 0 = MLP (learned), species 1 = wander (naive control).
+/// Species 0 = the MLP (naive or trained), species 1 = the wander control.
 const MLP: u16 = 0;
 const WANDER: u16 = 1;
 
-/// Trajectory of a run: counts (MLP, wander) per second + final mean vision per
-/// species (vision is maintained if the brain uses it).
-struct Run {
-    traj: Vec<(usize, usize)>,
-    mlp_vision: f32,
-    wander_vision: f32,
-}
-
-fn run_seed(seed: u64) -> Run {
-    let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid MLP scenario");
+/// Mean (MLP, wander) counts over the **last third** of the coexistence window for one
+/// run of `scenario` under `seed` (sampled once per simulated second).
+fn forager_means(scenario: &str, seed: u64) -> (f32, f32) {
+    let mut config = SimConfig::from_ron_str(scenario).expect("valid MLP scenario");
     config.seed = seed;
     let tick_hz = config.tick_hz as usize;
 
     let mut app = common::stepping_app(&config);
-
     let mut traj = Vec::with_capacity(SECONDS);
     for _ in 0..SECONDS {
         for _ in 0..tick_hz {
@@ -48,7 +49,7 @@ fn run_seed(seed: u64) -> Run {
         }
         let world = app.world_mut();
         let mut q = world.query_filtered::<&Species, With<Agent>>();
-        let (mut mlp, mut wander) = (0, 0);
+        let (mut mlp, mut wander) = (0usize, 0usize);
         for s in q.iter(world) {
             match s.0 {
                 MLP => mlp += 1,
@@ -59,79 +60,65 @@ fn run_seed(seed: u64) -> Run {
         traj.push((mlp, wander));
     }
 
-    let world = app.world_mut();
-    let mut q = world.query::<(&Species, &Genotype)>();
-    let (mut ms, mut mn, mut ws, mut wn) = (0.0f32, 0usize, 0.0f32, 0usize);
-    for (s, g) in q.iter(world) {
-        match s.0 {
-            MLP => {
-                ms += g.vision_range;
-                mn += 1;
-            }
-            WANDER => {
-                ws += g.vision_range;
-                wn += 1;
-            }
-            _ => {}
-        }
-    }
-    let mean = |sum: f32, n: usize| if n == 0 { f32::NAN } else { sum / n as f32 };
-    Run {
-        traj,
-        mlp_vision: mean(ms, mn),
-        wander_vision: mean(ws, wn),
+    let back = &traj[SECONDS * 2 / 3..];
+    let n = back.len() as f32;
+    let mlp = back.iter().map(|&(m, _)| m).sum::<usize>() as f32 / n;
+    let wander = back.iter().map(|&(_, w)| w).sum::<usize>() as f32 / n;
+    (mlp, wander)
+}
+
+/// The MLP/wander ratio over the window — how the MLP fares **relative to the control**.
+/// `wander == 0` (control extinct) ⇒ the MLP is unboundedly ahead, reported as a large
+/// finite number so the comparison stays well-defined.
+fn ratio(mlp: f32, wander: f32) -> f32 {
+    if wander <= 0.0 {
+        if mlp > 0.0 { 1000.0 } else { 0.0 }
+    } else {
+        mlp / wander
     }
 }
 
 #[test]
-#[ignore = "mlp_brain.ron is now the NAIVE-MLP baseline (a from-random MLP forages worse \
-than a wander and cannot evolve a good forager within the living-food coexistence window — \
-the neuroevolution-from-random wall, item 18b). The 'learned beats control' assertion moves \
-to the trained-variant showcase (mlp_evolved, forthcoming): train MLPs alone, export an \
-evolved variant to the catalog, then pit it against a control. Kept ignored on purpose."]
-fn mlp_outforages_wanderer_across_seeds() {
+fn training_improves_the_mlp_against_the_control() {
     let mut failures = Vec::new();
-    eprintln!("  seed         | MLP(2nd-half mean) | wander(2nd-half mean) | vision MLP/wander");
+    eprintln!("  seed         | naive MLP/wander | trained MLP/wander");
     for seed in SEEDS {
-        let run = run_seed(seed);
-        // 2nd half: we let the transient pass (growth, the first generations while
-        // neuroevolution gets going).
-        let back = &run.traj[SECONDS / 2..];
-        let mean = |f: &dyn Fn(&(usize, usize)) -> usize| -> f32 {
-            back.iter().map(f).sum::<usize>() as f32 / back.len() as f32
-        };
-        let mlp_mean = mean(&|&(m, _)| m);
-        let wander_mean = mean(&|&(_, w)| w);
-        let sampled: Vec<String> = run
-            .traj
-            .iter()
-            .step_by(25)
-            .map(|&(m, w)| format!("{m}/{w}"))
-            .collect();
+        let (naive_mlp, naive_wander) = forager_means(NAIVE, seed);
+        let (trained_mlp, trained_wander) = forager_means(TRAINED, seed);
+        let naive_ratio = ratio(naive_mlp, naive_wander);
+        let trained_ratio = ratio(trained_mlp, trained_wander);
         eprintln!(
-            "  {seed:#012x} | {mlp_mean:>6.1}             | {wander_mean:>6.1}                 | {:.0} / {:.0}",
-            run.mlp_vision, run.wander_vision
+            "  {seed:#012x} | {naive_mlp:>4.1}/{naive_wander:<4.1} ({naive_ratio:.2}) | \
+             {trained_mlp:>4.1}/{trained_wander:<4.1} ({trained_ratio:.2})"
         );
-        eprintln!("               t=0,25,..: {}", sampled.join("  "));
 
-        // The learned MLP must DOMINATE the wanderer (forage far better): with an
-        // equal start and an identical body, this is the proof that it learned (§4).
-        // We require a clear domination (≥ 2×), not a hair — and that the MLP itself
-        // thrives (otherwise "both collapsed" would pass wrongly).
-        if mlp_mean < 50.0 {
+        // (1) The naive MLP is out-foraged by the wander control (the baseline).
+        if naive_ratio >= 1.0 {
             failures.push(format!(
-                "seed {seed:#x}: the MLP does not thrive ({mlp_mean:.1}) — it did not learn to forage"
+                "seed {seed:#x}: the NAIVE MLP was not out-foraged by the wanderer \
+                 ({naive_mlp:.1} vs {naive_wander:.1}) — the baseline should show it losing"
             ));
-        } else if mlp_mean <= 2.0 * wander_mean {
+        }
+        // (2) The trained MLP coexists (it is a viable forager, not driven extinct).
+        if trained_mlp <= 0.0 {
             failures.push(format!(
-                "seed {seed:#x}: the MLP does not dominate the wanderer ({mlp_mean:.1} vs {wander_mean:.1}) — insufficient learning"
+                "seed {seed:#x}: the TRAINED MLP went extinct — training did not yield a forager"
+            ));
+        }
+        // (3) Training closed the gap: the trained MLP fares clearly better **relative
+        // to the control** than the naive one did (≥ 1.5×). This is the learning claim
+        // (parity, not domination — the honest living-food outcome).
+        if trained_ratio < naive_ratio * 1.5 {
+            failures.push(format!(
+                "seed {seed:#x}: training did not improve the MLP's standing \
+                 (naive ratio {naive_ratio:.2} → trained {trained_ratio:.2})"
             ));
         }
     }
 
     assert!(
         failures.is_empty(),
-        "the MLP failed to beat the wander control:\n  {}",
+        "the MLP learning story did not hold:\n  {}",
         failures.join("\n  ")
     );
 }
