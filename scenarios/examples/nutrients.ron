@@ -1,10 +1,19 @@
+// Nutrients (T2) — the substrate axis: reproduction limited by a finite mineral.
+//
+// Showcases: the nutrient FIELD (a concentration grid + diffusion, outside Law 11),
+// local SOURCES that emit it (gradients / oases — toggle the heatmap in View ▸ Layers),
+// and plants that ABSORB it and SPEND it to reproduce. Two axes: energy (sun) governs
+// survival, the nutrient governs reproduction only — a plant short of nutrient simply
+// stops breeding (it lives on the sun → no death spiral, the fix to the T1 fragility).
+// Plants-only (no forager): the population grows around the sources and stays bounded.
+// Driver: tests/nutrients.rs (grows ≫ founders, bounded, persists; no sources ⇒ no growth).
 (
     tick_hz: 64.0,
     arena_half_extent: 300.0,
     archetypes: [
         (
             name: "Plant",
-            color: (0.39999998, 0.85, 0.4000001),
+            color: (0.4, 0.85, 0.4),
             count: 40,
             radius: 6.0,
             reserve_max: 50.0,
@@ -62,28 +71,28 @@
             pos: (-140.0, 140.0),
             nutrient: 0,
             rate: 10.0,
-            color: (1.0, 0.54999983, 0.19999999),
+            color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (140.0, 140.0),
             nutrient: 0,
             rate: 10.0,
-            color: (1.0, 0.54999983, 0.19999999),
+            color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (-140.0, -140.0),
             nutrient: 0,
             rate: 10.0,
-            color: (1.0, 0.54999983, 0.19999999),
+            color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (140.0, -140.0),
             nutrient: 0,
             rate: 10.0,
-            color: (1.0, 0.54999983, 0.19999999),
+            color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
     ],
@@ -155,7 +164,7 @@
         min: 0.0,
         max: 120.0,
     ),
-    play_area_color: (0.07000001, 0.07, 0.09),
-    off_game_color: (0.17000002, 0.17, 0.19),
+    play_area_color: (0.07, 0.07, 0.09),
+    off_game_color: (0.17, 0.17, 0.19),
     seed: 12648430,
 )
