@@ -64,6 +64,12 @@
           rustfmt
           rust-analyzer
           pkg-config
+          # Documentation site (docs/): `mdbook serve docs --open` previews it,
+          # `mdbook build docs` renders it. The Pages workflow builds the same book.
+          mdbook
+          # License compliance: `cargo about generate about.hbs` produces the
+          # THIRD-PARTY-LICENSES bundle the release ships (see .github/workflows).
+          cargo-about
           # Vulkan/OpenGL HUD overlay: `mangohud cargo run --bin teemlab`
           # to watch FPS / frame times while tuning the simulation.
           mangohud
@@ -97,6 +103,7 @@
           echo "  play [--release] [scenario.ron]  # build the workshop + launch the windowed build (record included)"
           echo "  cargo bench                      # throughput benchmark (ticks/sec; A/B via --save-baseline/--baseline)"
           echo "  flame [scenario.ron]             # flamegraph of the headless sim (cargo-flamegraph + perf)"
+          echo "  mdbook serve docs --open         # preview the documentation site (docs/)"
         '';
       };
     };

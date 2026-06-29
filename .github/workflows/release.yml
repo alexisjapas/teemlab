@@ -38,8 +38,30 @@ jobs:
             exit 1
           fi
 
-  build:
+  # Generate THIRD-PARTY-LICENSES.html — the bundle of dependency license notices
+  # shipped in every archive (MIT/Apache require the copyright notices to travel with
+  # the binaries). `cargo about` reads about.toml: a dependency whose license is not in
+  # its `accepted` allow-list FAILS this job — a tripwire against an unvetted (e.g.
+  # copyleft) license sneaking into the tree on a future bump.
+  licenses:
     needs: version-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.0
+      - name: Generate third-party license notices
+        run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: third-party-licenses
+          path: THIRD-PARTY-LICENSES.html
+          if-no-files-found: error
+
+  build:
+    needs: [version-check, licenses]
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -95,6 +117,12 @@ jobs:
           cargo build --locked --profile dist --target ${{ matrix.target }} \
             --bin teemlab --bin record --bin headless --bin sweep
 
+      - name: Fetch the third-party license notices
+        uses: actions/download-artifact@v7
+        with:
+          name: third-party-licenses
+          path: .
+
       - name: Stage and archive the release
         run: |
           version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
@@ -111,6 +139,9 @@ jobs:
           # (assets/), the scenario selector (scenarios/) and the species library
           # (species/). outputs/ is where the recorder writes — ship it empty.
           cp -r assets scenarios species README.md "$dist/"
+          # License files: the project's dual license + the bundled notices of the
+          # statically linked dependencies (MIT/Apache require the notices to ship).
+          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "$dist/"
           mkdir -p "$dist/outputs"
 
           if [ "${{ matrix.archive }}" = "zip" ]; then

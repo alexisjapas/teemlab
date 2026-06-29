@@ -210,3 +210,25 @@ editor of the selected archetype; a **bottom** strip with controls + stats, then
 HUD curves and the agent inspector. The panels *reserve* the edges, so the sim is
 always framed and fully visible in the center. All this tooling lives outside
 `FixedUpdate` (rendering / UI); the headless build embeds none of it.
+
+## License
+
+teemlab is dual-licensed under either of
+
+- **MIT license** ([LICENSE-MIT](LICENSE-MIT)), or
+- **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE)),
+
+at your option. This is the conventional Rust-ecosystem dual license, matching the
+dependencies.
+
+The bundled **fonts** (`assets/fonts/`) keep their own permissive licenses, shipped
+alongside the font data: Inter and Departure Mono under the **SIL Open Font License
+1.1**, Phosphor under the **MIT license**, and DejaVu Sans under the **Bitstream Vera /
+public-domain** terms. Every release archive also includes a generated
+**`THIRD-PARTY-LICENSES.html`** reproducing the license notices of the statically
+linked dependencies (`cargo about`, `about.toml`); the whole dependency tree is
+permissive (MIT / Apache-2.0 / BSD / ISC / Zlib / …), with no copyleft obligation.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for
+inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual-licensed as above, without any additional terms or conditions.

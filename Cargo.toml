@@ -3,6 +3,9 @@ name = "teemlab"
 version = "0.1.0"
 edition = "2024"
 description = "Evolutionary simulation engine — one engine, many scenarios."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/alexisjapas/teemlab"
+readme = "README.md"
 
 [dependencies]
 bevy = { version = "0.19", features = ["wayland"] }
