@@ -23,7 +23,7 @@ mod common;
 
 /// The bundled scenario, loaded as-is: the driver measures WHAT the binaries
 /// launch, not a test variant.
-const SCENARIO: &str = include_str!("../scenarios/examples/predator_prey.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/10_predator_prey.ron");
 
 /// Experiment seeds (cf. §5: we replay a *config*, not bit-for-bit). Five
 /// independent worlds: if coexistence holds for all of them, it is not luck but a

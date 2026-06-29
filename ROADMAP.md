@@ -186,7 +186,11 @@ open work in §9.
   feature)**: the `scenarios/examples/*` set was rebuilt from scratch. Obsolete files
   **deleted** (the crush-era `coldstart`/`hunter_vs_wanderer`, the T1 `minerals`
   prototype, the orphan `new_scenario`); the rest homogenized (uniform header, full
-  bounds block, role colors, seed). **Coverage**: at least one scenario per engine
+  bounds block, role colors, seed) and **numbered by discovery order** (`00_empty` …
+  `12_nutrient_web` — the Open ▸ Examples menu sorts by name, so the prefix drives the
+  pedagogical path: resources first (`02_nutrients`/`03_flora` underpin every forager),
+  then the loop, brains, ecosystems, and the closed nutrient loop as the finale).
+  **Coverage**: at least one scenario per engine
   feature, incl. a new **`factions`** (COMBAT — `transfer: false`, the destructive half
   of §3, the only previously-unshown primitive). **The living-food wall, resolved
   pragmatically**: since the Law-11 reorder a grazed photosynthetic patch *dies*, so a

@@ -122,7 +122,7 @@ fn scan_dir(dir: &str) -> Vec<String> {
     found
 }
 
-/// Menu label for a scenario path: its file stem (`scenarios/examples/hunt.ron` → `hunt`).
+/// Menu label for a scenario path: its file stem (`scenarios/examples/05_hunt.ron` → `05_hunt`).
 fn scenario_label(path: &str) -> &str {
     std::path::Path::new(path)
         .file_stem()

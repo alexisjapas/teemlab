@@ -25,8 +25,8 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-const NAIVE: &str = include_str!("../scenarios/examples/mlp_brain.ron");
-const TRAINED: &str = include_str!("../scenarios/examples/mlp_evolved.ron");
+const NAIVE: &str = include_str!("../scenarios/examples/07_mlp_brain.ron");
+const TRAINED: &str = include_str!("../scenarios/examples/09_mlp_evolved.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 const SECONDS: usize = 45;
 

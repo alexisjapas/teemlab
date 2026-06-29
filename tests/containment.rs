@@ -17,7 +17,7 @@ mod common;
 fn agents_stay_within_arena() {
     // The evolution scenario: it moves at full speed and reproduces, so it presses
     // the edges in every useful way.
-    let config = SimConfig::from_ron_file("scenarios/examples/evolution.ron")
+    let config = SimConfig::from_ron_file("scenarios/examples/04_evolution.ron")
         .expect("scenario evolution.ron loadable");
 
     // Each `update()` advances by exactly one fixed tick (cf. `common::stepping_app`).

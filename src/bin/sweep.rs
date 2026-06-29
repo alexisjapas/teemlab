@@ -15,7 +15,7 @@
 //!   grazing `rate`), running `seeds` seeds at each value — the search for the
 //!   **coexistence band**. A `<knob>` is `kind:index`, `kind ∈ {count, mutation,
 //!   photo, rate}` (the index is an archetype, or a relation for `rate`). Example:
-//!   `sweep scenarios/examples/predator_prey.ron count:0 2 20 5`.
+//!   `sweep scenarios/examples/10_predator_prey.ron count:0 2 20 5`.
 //!
 //! **Score = Shannon diversity** `H = -Σ pᵢ·ln(pᵢ)` over the species with a living
 //! population, rewarding both *richness* (how many species are alive) and *evenness*
