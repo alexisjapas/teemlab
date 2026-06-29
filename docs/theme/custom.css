@@ -1,0 +1,43 @@
+/* teemlab docs — small accents on top of the built-in "navy" theme. */
+
+:root {
+    --teemlab-flora: #6ad96a;
+    --teemlab-fauna: #ff7359;
+    --teemlab-nutrient: #ff8c33;
+    --teemlab-mlp: #cc73ff;
+}
+
+/* A touch more breathing room and a readable measure for long-form prose. */
+.content {
+    line-height: 1.6;
+}
+
+/* Lead paragraph: the first paragraph after a top-level heading reads as a deck. */
+.content h1 + p {
+    font-size: 1.1em;
+    opacity: 0.92;
+}
+
+/* Tables: the gene / scenario reference tables are the heart of the docs. */
+.content table {
+    width: 100%;
+    margin: 1em 0;
+}
+.content table th {
+    font-weight: 600;
+}
+.content table td code {
+    white-space: nowrap;
+}
+
+/* Blockquotes as "notes". */
+.content blockquote {
+    border-inline-start: 3px solid var(--teemlab-nutrient);
+    background: rgba(255, 140, 51, 0.06);
+}
+
+/* Scenario-number badges, e.g. used as `00`..`12` in the crescendo list. */
+.content h2 code:first-child,
+.content h3 code:first-child {
+    color: var(--teemlab-nutrient);
+}
