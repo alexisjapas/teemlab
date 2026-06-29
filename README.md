@@ -108,8 +108,8 @@ scenarios/        Two categories (Open ▸ Examples / Saved); only examples are 
     empty.ron       Blank canvas (count 0): author from scratch; == SimConfig::empty(); the windowed build's no-argument fallback.
     evolution.ron   Natural selection: a WANDER grazer reproduces + mutates → gene drift, on a nutrient-bounded flora.
     hunt.ron        The HUNTER brain (target channel): hunters forage a self-renewing flora in a self-regulating ecosystem.
-    cohabitation.ron   Control vs control: Hunter vs Wander, equal counts, shared food → the competent brain excludes the naive one.
-    mlp_brain.ron      Learned vs control: MLP (neuroevolution) vs Wander → the learned brain dominates from random weights.
+    cohabitation.ron   Control vs control: Hunter vs Wander on patchy flora oases → the competent brain finds the oases and excludes the naive one.
+    mlp_brain.ron      Naive learned brain: a from-random MLP vs Wander → it forages no better than chance (the baseline before training; cf. the MLP learning story).
     predator_prey.ron  3-level trophic chain (flora → prey → predators): count pyramid, shared Hunter brain, prey that flee (threat channel).
     flora.ron       Evolutionary sessile flora: photosynthesis + local seeding, self-limited by intraspecific competition (item 5).
     factions.ron    COMBAT: two factions wage war (transfer:false — destruction without transfer) while foraging a shared flora.

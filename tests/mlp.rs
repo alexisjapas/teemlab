@@ -84,8 +84,11 @@ fn run_seed(seed: u64) -> Run {
 }
 
 #[test]
-#[ignore = "WIP: photosynthetic food now dies when grazed (Law 11 reorder); this scenario \
-needs a nutrient-based density bound to be re-balanced — ROADMAP §9 nutrients"]
+#[ignore = "mlp_brain.ron is now the NAIVE-MLP baseline (a from-random MLP forages worse \
+than a wander and cannot evolve a good forager within the living-food coexistence window — \
+the neuroevolution-from-random wall, item 18b). The 'learned beats control' assertion moves \
+to the trained-variant showcase (mlp_evolved, forthcoming): train MLPs alone, export an \
+evolved variant to the catalog, then pit it against a control. Kept ignored on purpose."]
 fn mlp_outforages_wanderer_across_seeds() {
     let mut failures = Vec::new();
     eprintln!("  seed         | MLP(2nd-half mean) | wander(2nd-half mean) | vision MLP/wander");

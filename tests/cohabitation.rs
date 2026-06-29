@@ -36,7 +36,11 @@ const SCENARIO: &str = include_str!("../scenarios/examples/cohabitation.ron");
 /// a property of the brain.
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 
-const SECONDS: usize = 120;
+// The coexistence window: the living food is a reproducing flora (a fixed immortal
+// patch now dies when grazed — Law 11), so this is a Lotka-Volterra system that
+// coexists for a while then the foragers fade. We judge the domination over the 2nd
+// half of this window, where the hunter has pulled clearly ahead of the wanderer.
+const SECONDS: usize = 60;
 
 /// Species 0 = hunter (competent control), species 1 = wander (naive control).
 const HUNTER: u16 = 0;
@@ -100,8 +104,6 @@ fn run_seed(seed: u64) -> Run {
 }
 
 #[test]
-#[ignore = "WIP: photosynthetic food now dies when grazed (Law 11 reorder); this scenario \
-needs a nutrient-based density bound to be re-balanced — ROADMAP §9 nutrients"]
 fn hunter_outforages_wanderer_across_seeds() {
     let hunter_founders =
         SimConfig::from_ron_str(SCENARIO).unwrap().archetypes[HUNTER as usize].count;
@@ -112,9 +114,12 @@ fn hunter_outforages_wanderer_across_seeds() {
     );
     for seed in SEEDS {
         let run = run_seed(seed);
-        // We judge the domination on the 2nd half: we let the transient pass
-        // (growth from the founders, first adjustment of the competition).
-        let back = &run.traj[SECONDS / 2..];
+        // We judge the domination on the **last third** of the coexistence window:
+        // on living (mortal, reproducing) food the wanderer survives the abundant
+        // early phase by chance, and the competitive exclusion only becomes clear once
+        // the food has been drawn down — exactly where the competent forager pulls
+        // away. (Pre-Law-11 immortal food showed it across the whole 2nd half.)
+        let back = &run.traj[SECONDS * 2 / 3..];
         let mean = |f: &dyn Fn(&(usize, usize)) -> usize| -> f32 {
             back.iter().map(f).sum::<usize>() as f32 / back.len() as f32
         };

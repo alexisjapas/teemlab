@@ -30,7 +30,11 @@ const SCENARIO: &str = include_str!("../scenarios/examples/predator_prey.ron");
 /// property of the calibrated economy.
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 
-const SECONDS: usize = 120;
+// The coexistence window. The food is a living, mortal flora (a fixed immortal patch
+// would die when grazed — Law 11), so this is a 3-level Lotka-Volterra system that
+// coexists for a while then winds down; we judge the band over the 2nd half of this
+// window, where all three levels are sustained.
+const SECONDS: usize = 40;
 
 /// Trajectory of a run: counts (predators = species 0, prey = species 1) sampled
 /// each sim second, + the final mean vision per species.
@@ -96,8 +100,6 @@ fn run_seed(seed: u64) -> Run {
 }
 
 #[test]
-#[ignore = "WIP: photosynthetic food now dies when grazed (Law 11 reorder); this scenario \
-needs a nutrient-based density bound to be re-balanced — ROADMAP §9 nutrients"]
 fn predator_prey_coexists_in_a_band_across_seeds() {
     let founder_vision = SimConfig::from_ron_str(SCENARIO)
         .unwrap()

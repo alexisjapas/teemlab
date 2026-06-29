@@ -1,15 +1,24 @@
+// Predator-prey — a 3-level trophic chain with co-evolution and flight.
+//
+// Showcases: a count PYRAMID (flora ≫ prey ≫ predators), the SAME shared Hunter brain
+// making one species a herbivore and another a carnivore (resolved by the relation
+// table), and ACTIVE FLIGHT — the prey flees its predator (the "threat" channel). The
+// nutrient cascades up the chain (flora oases → prey → predators, each capped by the
+// nutrient it harvests → no overshoot). Energy governs survival, the nutrient caps
+// reproduction. Driver: tests/predator_prey.rs (prey and predators coexist over the
+// window — neither extinct nor exploding).
 (
     tick_hz: 64.0,
-    arena_half_extent: 560.0,
+    arena_half_extent: 520.0,
     archetypes: [
         (
             name: "Predator",
             color: (0.3, 0.7, 1.0),
-            count: 10,
+            count: 8,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
-                max_speed: 140.0,
+                max_speed: 130.0,
                 agility: 0.12,
                 vision_range: 170.0,
                 vision_fov_deg: 130.0,
@@ -19,6 +28,13 @@
                 base_metabolism: 4.0,
                 move_cost: 2.0,
                 vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 0.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+                nutrient_absorption: 0.0,
+                nutrient_capacity: 30.0,
+                offspring_nutrient: 8.0,
             ),
             brain: Hunter,
             mutable: (
@@ -32,16 +48,23 @@
                 base_metabolism: false,
                 move_cost: false,
                 vision_rays: true,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
             ),
         ),
         (
             name: "Prey",
             color: (1.0, 0.45, 0.35),
-            count: 60,
+            count: 34,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
-                max_speed: 140.0,
+                max_speed: 130.0,
                 agility: 0.12,
                 vision_range: 170.0,
                 vision_fov_deg: 130.0,
@@ -51,6 +74,13 @@
                 base_metabolism: 4.0,
                 move_cost: 2.0,
                 vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 0.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+                nutrient_absorption: 0.0,
+                nutrient_capacity: 30.0,
+                offspring_nutrient: 8.0,
             ),
             brain: Hunter,
             mutable: (
@@ -64,33 +94,67 @@
                 base_metabolism: false,
                 move_cost: false,
                 vision_rays: true,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
             ),
         ),
-        // Trophic base (Phase 3b): a SESSILE photosynthetic patch grazed by the prey.
-        // Fixed count (no seeding), renewed in place by photosynthesis. Throughput ≈
-        // 220 × 5 ≈ the old regen 24/s × energy 45.
+        // Base of the chain — a flora that reseeds only where the nutrient field is rich, so
+        // it clusters into OASES around the sources (patchy food). The hunter navigates
+        // to an oasis; the wanderer rarely finds one → competitive exclusion.
         (
-            name: "Plant",
-            color: (0.55, 0.9, 0.45),
-            count: 220,
-            radius: 7.0,
-            reserve_max: 45.0,
+            name: "Flora",
+            color: (0.4, 0.85, 0.4),
+            count: 130,
+            radius: 6.0,
+            reserve_max: 80.0,
             genotype: (
                 max_speed: 0.0,
+                agility: 0.12,
                 vision_range: 30.0,
                 vision_fov_deg: 120.0,
-                reproduction_threshold: 0.0,
-                base_metabolism: 0.0,
+                reproduction_threshold: 60.0,
+                offspring_energy: 30.0,
+                mutation_rate: 0.0,
+                base_metabolism: 1.0,
                 move_cost: 0.0,
                 vision_rays: 1.0,
                 photosynthesis: 5.0,
-                seed_dispersal: 0.0,
+                seed_dispersal: 25.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
+                nutrient_absorption: 1.5,
+                nutrient_capacity: 8.0,
+                offspring_nutrient: 8.0,
             ),
             brain: Sessile,
-            mutable: (),
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                nutrient_absorption: false,
+                nutrient_capacity: false,
+                offspring_nutrient: false,
+            ),
         ),
     ],
     relations: [
+        // Predators (0) eat prey (1): predation up the chain.
         (
             actor: 0,
             target: 1,
@@ -98,12 +162,47 @@
             rate: 26.0,
             range: 12.0,
         ),
+        // Prey (1) graze the flora (2).
         (
             actor: 1,
             target: 2,
             transfer: true,
-            rate: 220.0,
-            range: 18.0,
+            rate: 45.0,
+            range: 16.0,
+        ),
+    ],
+    nutrient: (
+        resolution: 256,
+        diffusion: 0.3,
+    ),
+    sources: [
+        (
+            pos: (-220.0, 220.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (220.0, 220.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (-220.0, -220.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (220.0, -220.0),
+            nutrient: 0,
+            rate: 10.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
         ),
     ],
     speed_bounds: (
@@ -146,5 +245,35 @@
         min: 1.0,
         max: 21.0,
     ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    nutrient_absorption_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    nutrient_capacity_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_nutrient_bounds: (
+        min: 0.0,
+        max: 120.0,
+    ),
+    play_area_color: (0.07, 0.07, 0.09),
+    off_game_color: (0.17, 0.17, 0.19),
     seed: 12648430,
 )
