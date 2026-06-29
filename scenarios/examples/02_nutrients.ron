@@ -1,20 +1,27 @@
 // Nutrients (T2) — the substrate axis: reproduction limited by a finite mineral.
 //
-// Showcases: the nutrient FIELD (a concentration grid + diffusion, outside Law 11),
-// local SOURCES that emit it (gradients / oases — toggle the heatmap in View ▸ Layers),
-// and plants that ABSORB it and SPEND it to reproduce. Two axes: energy (sun) governs
-// survival, the nutrient governs reproduction only — a plant short of nutrient simply
-// stops breeding (it lives on the sun → no death spiral, the fix to the T1 fragility).
-// Plants-only (no forager): the population grows around the sources and stays bounded.
+// Showcases, at a glance (toggle the heatmap in View ▸ Layers): the nutrient FIELD
+// (a concentration grid + diffusion, outside Law 11), local SOURCES that emit it,
+// and plants that ABSORB it and SPEND it to breed. The four vents emit at GRADED
+// rates (6 → 12 → 18 → 24 per second), so each grows an oasis of a different size —
+// you read "more nutrient ⇒ bigger bloom" straight off the arena.
+//
+// The decisive demonstration is the contrast between SURVIVAL and REPRODUCTION
+// (the two-axis design): the founders are scattered everywhere and EVERY one of
+// them lives — they eat the sun (photosynthesis), independent of the nutrient. But
+// they only BREED where they can absorb a nutrient, so a dense thicket builds up
+// around each vent while the barren ground keeps only its lone, immortal founders.
+// A plant short of nutrient simply stops breeding (no death spiral — the fix to the
+// T1 fragility). Plants-only (no forager): the blooms stay bounded.
 // Driver: tests/nutrients.rs (grows ≫ founders, bounded, persists; no sources ⇒ no growth).
 (
     tick_hz: 64.0,
-    arena_half_extent: 300.0,
+    arena_half_extent: 320.0,
     archetypes: [
         (
             name: "Plant",
             color: (0.4, 0.85, 0.4),
-            count: 40,
+            count: 36,
             radius: 6.0,
             reserve_max: 50.0,
             genotype: (
@@ -22,14 +29,14 @@
                 agility: 0.12,
                 vision_range: 30.0,
                 vision_fov_deg: 120.0,
-                reproduction_threshold: 30.0,
-                offspring_energy: 15.0,
+                reproduction_threshold: 28.0,
+                offspring_energy: 14.0,
                 mutation_rate: 0.0,
                 base_metabolism: 1.0,
                 move_cost: 0.0,
                 vision_rays: 1.0,
                 photosynthesis: 5.0,
-                seed_dispersal: 25.0,
+                seed_dispersal: 22.0,
                 brain_cost: 0.0,
                 agility_cost: 0.0,
                 nutrient_absorption: 1.5,
@@ -66,32 +73,37 @@
         resolution: 256,
         diffusion: 0.3,
     ),
+    // Four vents at GRADED emission rates: the same mineral, in different supply —
+    // so the four oases grow to visibly different sizes (the heatmap reads as four
+    // halos of increasing brightness, the thickets as four blooms of increasing
+    // density). The poorest vent (top-left, 6/s) barely sustains a patch; the
+    // richest (bottom-right, 24/s) anchors the largest thicket.
     sources: [
         (
-            pos: (-140.0, 140.0),
+            pos: (-150.0, 150.0),
             nutrient: 0,
-            rate: 10.0,
+            rate: 6.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
-            pos: (140.0, 140.0),
+            pos: (150.0, 150.0),
             nutrient: 0,
-            rate: 10.0,
+            rate: 12.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
-            pos: (-140.0, -140.0),
+            pos: (-150.0, -150.0),
             nutrient: 0,
-            rate: 10.0,
+            rate: 18.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
-            pos: (140.0, -140.0),
+            pos: (150.0, -150.0),
             nutrient: 0,
-            rate: 10.0,
+            rate: 24.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),

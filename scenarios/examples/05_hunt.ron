@@ -1,11 +1,14 @@
 // Hunt — the deterministic HUNTER brain.
 //
 // Showcases: `Brain::Hunter` foraging via the perception "target" channel (item 16).
-// Watch a hunter steer straight at the nearest flora and skirt obstacles without
-// fleeing them. A self-regulating 2-level ecosystem: the hunters' reproduction is
-// gated by the nutrient they harvest (eating flora), so their numbers cannot overshoot
-// and crash the food — the flora persists at a bounded standing crop fed by the
-// nutrient field (toggle the heatmap in View ▸ Layers).
+// Where the `evolution` grazer only stumbles onto food, the hunter SEES it and steers
+// straight at the nearest flora, skirting obstacles without fleeing them — select a
+// hunter (click it) and watch its vision rays lock onto a target. The payoff of the
+// vision the `evolution` wanderer was busy throwing away. A self-regulating 2-level
+// ecosystem: the hunters' reproduction is gated by the nutrient they harvest (eating
+// flora), so their numbers track the food and cannot overshoot and crash it; the flora
+// holds a bounded standing crop, self-limited by intraspecific competition (the
+// Plant→Plant relation). Toggle the nutrient heatmap in View ▸ Layers.
 (
     tick_hz: 64.0,
     arena_half_extent: 480.0,
@@ -13,13 +16,13 @@
         (
             name: "Hunter",
             color: (0.3, 0.7, 1.0),
-            count: 12,
+            count: 14,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
                 max_speed: 130.0,
                 agility: 0.12,
-                vision_range: 170.0,
+                vision_range: 180.0,
                 vision_fov_deg: 130.0,
                 reproduction_threshold: 90.0,
                 offspring_energy: 40.0,
@@ -62,7 +65,7 @@
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
-            count: 90,
+            count: 120,
             radius: 6.0,
             reserve_max: 80.0,
             genotype: (

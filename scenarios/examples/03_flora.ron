@@ -1,20 +1,22 @@
 // Flora — an evolutionary SESSILE plant that self-limits by competition.
 //
 // Showcases: `Brain::Sessile` + the flora genes (photosynthesis, seed dispersal) and
-// self-limitation WITHOUT any forager — the Plant→Plant non-transfer relation (§3:
-// contested light/space) drains the most crowded plants to death (Law 11), giving a
-// bounded logistic equilibrium. A few founders grow into a spatial wave that stays far
-// below the arena's saturation and persists; reproduction_threshold and seed_dispersal
-// drift under the competition pressure. Driver: tests/flora.rs (peak in [200, 2000],
-// sustained over the 2nd half).
+// self-limitation WITHOUT any forager. A handful of founders seed a green WAVE that
+// spreads outward across the whole arena and then stops — not because it runs out of
+// room (it stays far below the physical saturation) but because the Plant→Plant
+// non-transfer relation (§3: contested light/space) drains the most crowded plants to
+// death (Law 11). Growth therefore halts at an equilibrium DENSITY: a logistic plateau,
+// negative feedback, not a runaway. Watch the reproduction_threshold and seed_dispersal
+// genes drift under the competition pressure (HUD ▸ gene curves).
+// Driver: tests/flora.rs (peak well above the founders, bounded, sustained 2nd half).
 (
     tick_hz: 64.0,
-    arena_half_extent: 360.0,
+    arena_half_extent: 480.0,
     archetypes: [
         (
             name: "Plant",
             color: (0.4, 0.85, 0.4),
-            count: 54,
+            count: 40,
             radius: 6.0,
             reserve_max: 80.0,
             genotype: (
@@ -22,14 +24,14 @@
                 agility: 0.1,
                 vision_range: 30.0,
                 vision_fov_deg: 120.0,
-                reproduction_threshold: 60.0,
-                offspring_energy: 30.0,
+                reproduction_threshold: 48.0,
+                offspring_energy: 24.0,
                 mutation_rate: 0.04,
                 base_metabolism: 1.0,
                 move_cost: 0.0,
                 vision_rays: 1.0,
-                photosynthesis: 7.0,
-                seed_dispersal: 50.0,
+                photosynthesis: 8.0,
+                seed_dispersal: 44.0,
                 brain_cost: 0.0,
                 agility_cost: 0.0,
                 nutrient_absorption: 0.0,
@@ -60,14 +62,14 @@
     ],
     // Self-competition: a Plant→Plant relation WITHOUT transfer (combat — destroys
     // reserve without gain). Crowded plants drain each other below their photosynthesis
-    // and die, bounding the density.
+    // and die, bounding the density into the equilibrium plateau.
     relations: [
         (
             actor: 0,
             target: 0,
             transfer: false,
-            rate: 8.0,
-            range: 32.0,
+            rate: 7.0,
+            range: 28.0,
         ),
     ],
     nutrient: (

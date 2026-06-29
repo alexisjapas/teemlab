@@ -5,8 +5,10 @@
 // oases: selection keeps the lineages that navigate to the oases, so over many
 // generations the population's neuroevolution improves foraging. Train, then export a
 // good individual to the catalog (inspector ▸ "Save as variant", or the `train` bin)
-// and reuse it in mlp_evolved. Many founders (diversity) + a higher mutation rate
-// (faster search). No driver: this is a generator, not a falsification.
+// and reuse it in mlp_evolved. A LARGE founder population (80 — diversity to select
+// from), a HIGH mutation rate (0.15 — aggressive search) and a low reproduction
+// threshold (fast generational turnover) make the neuroevolution bite harder than the
+// other scenarios. No driver: this is a generator, not a falsification.
 (
     tick_hz: 64.0,
     arena_half_extent: 480.0,
@@ -14,7 +16,7 @@
         (
             name: "MLP",
             color: (0.8, 0.45, 1.0),
-            count: 50,
+            count: 80,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
@@ -22,9 +24,9 @@
                 agility: 0.12,
                 vision_range: 170.0,
                 vision_fov_deg: 130.0,
-                reproduction_threshold: 55.0,
-                offspring_energy: 25.0,
-                mutation_rate: 0.1,
+                reproduction_threshold: 50.0,
+                offspring_energy: 22.0,
+                mutation_rate: 0.15,
                 base_metabolism: 4.0,
                 move_cost: 2.0,
                 vision_rays: 7.0,
