@@ -307,6 +307,32 @@ open work in §9.
   **toward the cursor**, middle/right-drag **pans**, **Home** / a **Reset view** button
   recenter on the whole arena — layered on top of the fit-the-arena framing (an untouched
   view is byte-identical to before), with picking staying correct under any zoom/pan.
+- **P5 — generational regime (run → score → breed): headless orchestrator + windowed
+  dashboard**. The second canonical regime of §4 (batched reproduction × explicit fitness)
+  lands as a **recomposition** of the two separable seams — *not* a reified `enum Regime`.
+  An **outside-sim orchestrator** (`breeding::Orchestrator`) breeds *between* matches while
+  the inner match stays the **byte-identical** `SimPlugin` (the continuous in-match
+  `ecology::reproduce` untouched): it runs a cohort of headless matches per generation (the
+  `sweep`/`train` pattern, §6), **scores** each by an explicit `Fitness` (a growable menu —
+  `BestEvolved` / `Population`), **selects** the top `survivors` and **re-seeds** them as
+  the next cohort's founders (via `Archetype::capture`, the trained-weights seam of item 4).
+  The regime config is an **additive** `SimConfig.batch: Option<BatchConfig>` (default
+  `None` → every continuous scenario byte-identical, the field absent from the RON).
+  Surfaced two ways: a headless **`breed` bin** (prints fitness/generation, captures the
+  best genome into the catalog — the multi-generation extension of `train`), and a
+  **windowed dashboard** (`dashboard.rs`): a floating window (shown when a `batch` is set)
+  with Run/Stop + progress, the **fitness-vs-generation curve** (the shared `hud::plot`,
+  generalized with an `x_unit`), and a **leaderboard** of the cohort (inspect an MLP
+  genome's network via the 18b-viz graph + Save-as-variant); the `BatchConfig` is authored
+  in the World panel (`editor::batch_section`). First carrier `scenarios/examples/13_mlp_breed.ron`
+  (breed a forager MLP — the founder-diversity answer to the item-18b variance finding).
+  **Driver `tests/breeding.rs`** tests the orchestrator *mechanism* (it runs every
+  generation; selection re-seeds an evolved elite, `survivors: 0` carries nothing) — the
+  emergent improvement is the bin's job (a generator, like `train`, not CI), since
+  neuroevolution on living food plateaus at **parity** (§7) and `BestEvolved` is **perverse
+  on a free reproducer** (it rewards reproduce-to-collapse → `Population` is the saner
+  forager fitness). Built **headless-first**, every UI piece **visually verified** (Bevy
+  screenshot API). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.**
 
@@ -324,13 +350,16 @@ open work in §9.
   (v1 done); see §9. What remains there is library-file **management**, per-species
   **catalog metadata** (inhabited-scenario tags + behaviour notes) and **universal-species**
   portability — all deferred.
-- **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
-  headless parallelized across matches, then weight crossover / NEAT (§9). **First brick
-  landed**: the headless **`sweep` bin** already does the *run → score* half (biodiversity
-  scoring over seed/parameter sweeps, sequential and in-process — cf. the Tooling bullet
-  in §0); what stays deferred is the *select → breed* loop and the cross-match parallelism.
-  **Plan written:** [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md) (schema +
-  orchestrator + dashboard + MLP-breeding carrier; headless-first, the spectator deferred).
+- **P5 — battle + scaling (the generational regime itself is now built; cf. §0 Done).**
+  The `run → score → breed` loop, the explicit-fitness menu and both faces (the `breed`
+  bin + the windowed dashboard) are **done**, with MLP breeding as the first carrier
+  ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)). What **remains**: **cross-match
+  parallelism** (item 20 — isolated `World`s on a task pool, *profiler in hand*; the
+  nested-`App` global-thread-pool contention is the known risk, so correctness shipped
+  **sequential** first); the **battle / factions scenario** (item 19's co-evolutionary
+  case — multiple scored species + a `transfer: false` faction relation, Red-Queen
+  calibration §7); a **live match spectator** + **Pause / Step-generation** in the
+  dashboard; and weight **crossover / NEAT** (item 21, §9).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
@@ -888,18 +917,28 @@ flowchart TB
     the 5 seeds, `predator_prey` coexists, `flora` unchanged, `snapshot` unified).
     **Remaining**: nothing on this axis — "everything is an entity" is complete (§9).
 
-### P5 — Battle (deferred) + scaling
+### P5 — Generational regime (built) · battle + scaling (remaining)
 
 The generational regime tests axis A: it must enter as a recomposition along the A/B
 seam (§4), without touching any core system. **Detailed plan:**
 [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md) — the binding reference (schema,
 orchestrator, dashboard, MLP-breeding scenario), staged so the inner match stays the
-byte-identical `SimPlugin`.
+byte-identical `SimPlugin`. **The regime machinery is now built** (the outside-sim
+`breeding::Orchestrator` + the `Fitness` menu + the `breed` bin + the windowed dashboard,
+MLP breeding as the first carrier — §0 Done); items 19–21 carry the remaining *scenario*
+and *scaling* work.
 
 19. Battle scenario — generational regime: run → score → breed → run loop
     (outside-sim orchestrator), explicit fitness via a menu of engine primitives,
-    terminal condition, factions (= species + a `transfer: false` relation).
+    terminal condition, factions (= species + a `transfer: false` relation). **The
+    regime loop + the fitness menu are done** (`breeding::Orchestrator`, `Fitness`, the
+    `breed` bin + the dashboard, MLP breeding the first carrier); what **remains** is the
+    *battle scenario itself* — **multiple scored species** + a faction relation +
+    **co-evolutionary (Red-Queen) calibration** (§7).
 20. Headless parallelized across matches: isolated `World`s, multi-core batch.
+    **(deferred — profiler in hand.)** The cohort runs **sequentially** today (correctness
+    first); the nested-`App` global-thread-pool contention is the known risk to measure
+    before committing a scheme.
 21. Reflex/learned hybridization (subsumption); variable topology / NEAT, if a
     morphology with a variable number of sensors proves necessary.
 
@@ -910,11 +949,13 @@ byte-identical `SimPlugin`.
 - **A/B regime seam** (§4): in continuous, reproduction is a sim system
   (`ecology::reproduce`, `FixedUpdate`) with implicit fitness; the generational adds
   an outside-sim orchestrator without the continuous system depending on it. No closed
-  `enum Regime`. **Now designed in detail** —
+  `enum Regime`. **Now built** —
   [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md): an additive
   `SimConfig.batch: Option<BatchConfig>` + a `Fitness` menu, a `breeding::Orchestrator`
   that breeds *between* matches (the continuous in-match loop untouched), a headless
-  `breed` bin and a windowed dashboard, MLP breeding as the first carrier.
+  `breed` bin and a windowed dashboard, MLP breeding as the first carrier. Validity
+  criterion honoured: the battle regime (item 19) is a *recomposition* of these pieces
+  (a different `Fitness` + multiple scored species), not a special case.
 - **Toroidal arena — deferred until Bevy/Avian support it natively**: a borderless,
   wrapping arena (a local crowd disperses across an edge instead of piling against a
   wall — closer to nature than a hard box) is **wanted but postponed**. A position-only
