@@ -128,6 +128,31 @@ built to make the *mechanisms* observable, and it stays lively for a good while.
 
 → concepts: [recycling & the closed loop](./model/nutrients.md#recycling-closing-the-loop)
 
+## `13`-`15` · The generational regime
+
+Every scenario above runs **continuously**: agents reproduce *inside* the sim and "fitness"
+is simply survival. These last three are the **other** evolutionary regime — *batched*
+reproduction with an *explicit* fitness. They are **not** played continuously; each carries
+a **`batch`** block and is run by the **`breed` bin** (`cargo run --bin breed -- <scenario>`)
+or the windowed **breeding dashboard**. An out-of-sim **orchestrator** runs a cohort of
+headless matches per generation, **scores** each by a chosen `Fitness`, keeps the best
+genomes and **re-seeds** them into the next cohort — *run → score → breed*, repeated. Each
+inner match is the byte-identical engine; only the breeding sits on top.
+
+- **`13` · MLP breed** — *breed a forager.* A cohort of MLP genomes forage the oasis flora;
+  the orchestrator scores each match by **standing biomass** (`Population`) and re-seeds the
+  best. The generational answer to the high variance of from-random neuroevolution.
+- **`14` · Battle breed** — *breed a champion.* One faction (Azure) is bred to **dominate** a
+  fixed rival (Crimson) in a `transfer: false` war, scored by **`Dominance`** (own survivors
+  − living rivals). Azure's lead grows generation by generation.
+- **`15` · Red Queen** — *co-evolution.* Now **both** factions are bred at once
+  (`scored_species: [0, 1]`), each scored against the other. Neither pulls permanently ahead
+  — as one improves, the other must too, just to keep up: an arms race ("it takes all the
+  running you can do, to keep in the same place"). The dashboard's **per-faction** curve
+  shows the two lines tracking each other around zero.
+
+→ concepts: [the agent loop](./model/the-loop.md) · [combat](./model/interactions.md#three-behaviours-from-one-verb) · [brains (MLP)](./model/brains.md)
+
 ---
 
 ## Make your own

@@ -10,7 +10,7 @@ Design and implementation order: [`ROADMAP.md`](ROADMAP.md).
 
 **Done (P0–P3).**
 
-- **Foundations**: Bevy 0.18 + Avian 0.6, collisions, 2D camera; two entry points
+- **Foundations**: Bevy 0.19 + Avian 0.7, collisions, 2D camera; two entry points
   (windowed / headless) sharing the same fixed-timestep sim schedule.
 - **Continuous evolutionary loop**: raycast vision (with metabolic cost), a single
   interaction primitive (predation/combat), energy economy (natural selection),
@@ -63,11 +63,31 @@ The renderer becomes a set of toggleable **layers** ("calques"): the agents (mai
 layer) over the nutrient **heatmaps** (background, off by default, sharing an opacity
 budget) — in the windowed build (a "Layers" panel) **and** in the video
 (`record --nutrients`). Cf. [`ROADMAP.md`](ROADMAP.md) §9 and
-[`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md).
+[`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md). The **food web (T3, done)** then
+closes the loop: **eating carries the nutrient up the chain** (the interaction primitive
+transfers a biomass-proportional share on predation) and a **dying body recycles** its
+store back into the field — the nutrient now cycles source → field → plant → forager →
+death → field, conservatively.
 
-**Remaining.** **P5 — battle** (generational regime, the final test of the
-abstraction along a clean *A/B seam*); and, on the nutrient axis, the **food web**
-(eating carries nutrient) then the **closed loop** (recycling) — cf. §9.
+**P5 — generational regime: breeding, battle & co-evolution (done).** The second canonical
+regime of the *A/B seam* (§4) — batched reproduction × explicit fitness — as a
+**recomposition**, not a reified `enum Regime`. An **outside-sim orchestrator** (`breeding`)
+breeds *between* matches while each match stays the byte-identical sim: per generation it
+runs a **cohort of headless matches** (parallelized across cores, ~5×), **scores** each by
+an explicit `Fitness` (`BestEvolved` / `Population` / **`Dominance`** — combat), **selects**
+the top survivors and **re-seeds** them as the next cohort's founders. Two faces: a headless
+**`breed` bin** (a generator that captures the best genome into the catalog) and a **windowed
+dashboard** (Run/Stop + progress, a fitness-vs-generation curve, a leaderboard with the
+genome's MLP graph + Save-as-variant). Carriers: `13_mlp_breed` (breed a forager MLP),
+`14_battle_breed` (breed one faction to dominate a rival) and **`15_red_queen`** (breed
+**both** factions at once — co-evolution, the Red Queen, with a *per-faction* curve +
+leaderboard). Cf. [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+
+**Remaining.** P5 **polish** (a live match spectator, Pause/Step) and **weight crossover /
+NEAT** (item 21 — the last learned-evolution piece); the nutrient axis's **T3 refinements**
+(per-species absorption, multiple nutrients, a conservation invariant at reproduction);
+editor long-tail (library management, catalog metadata). Cf. [`ROADMAP.md`](ROADMAP.md)
+§0/§8/§9.
 
 > **Cardinal invariant**: no simulation logic in `Update`. Agency lives in
 > `FixedUpdate`, Avian physics in `FixedPostUpdate`; `Update` is reserved for the
@@ -86,6 +106,7 @@ src/
   movement.rs     perceive / decide / act systems (FixedUpdate, chained).
   interaction.rs  Single interaction primitive (predation / combat / competition), conserved under contention, + relation table.
   ecology.rs      Economy: metabolize (expenses + photosynthesis), die, age, reproduce (local seeding).
+  breeding.rs     Generational regime (P5): the outside-sim Orchestrator (run → score → breed over cohorts of headless matches, parallelized across cores) + Fitness (BestEvolved / Population / Dominance) + per-faction selection. The inner match stays the byte-identical sim.
   rng.rs          Minimal deterministic PRNG (SplitMix64) + Gaussian draw.
   spawn.rs        Population: arena + agents; spawn_agent (compiles a genotype into a living phenotype).
   main.rs         Windowed binary → `teemlab`: wires the docked panels + frames the sim in the central area (set_sim_camera).
@@ -96,12 +117,16 @@ src/
   inspector.rs    egui inspector (windowed only): click → genotype / energy / perception / action / MLP graph / genealogy (read-only).
   runs.rs         egui management (windowed only): scenario selector, hot reload, run save/load.
   recorder.rs     egui menu (windowed only): configures and launches the `record` binary as a subprocess.
+  dashboard.rs    egui breeding dashboard (windowed only, P5): drives the generational Orchestrator on a BACKGROUND thread (so the render loop stays responsive); a floating window with Run/Stop + progress, a fitness-vs-generation curve and a PER-FACTION leaderboard (inspect a genome's MLP graph + Save-as-variant). Shown only for a scenario with a `batch`.
   metrics.rs      MetricsPlugin: shared metrics (History + sampling) — population / trait curves, live stats; one source for the egui HUD and the native visualizer.
   visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder; toggleable Layers (agents + nutrient heatmaps, shared opacity).
   dataviz.rs      DataVizPlugin: the NATIVE Bevy visualizer (Text2d / Sprite / gizmos) for the VIDEO (stats / curves / inspector, 9:16) — reserved to `record`.
   selection.rs    Selection (the inspected / highlighted agent) + its rendering (ring + vision rays), shared windowed ⇄ recorder (auto-select drives the video).
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
   bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
+  bin/sweep.rs    Headless `sweep`: runs a scenario many times and scores each final world by biodiversity (a seed or parameter sweep) — the search for a coexistence band.
+  bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora and writes the evolved variant + the 07_mlp_brain / 09_mlp_evolved showcase.
+  bin/breed.rs    Headless `breed` (generator, P5): drives the generational Orchestrator on a scenario's `batch`, prints fitness per generation per faction, captures the best genome into the catalog (species/saved/).
 scenarios/        Two categories (Open ▸ Examples / Saved); only examples are committed.
   examples/       Curated, committed example scenarios:
     # Numbered by DISCOVERY ORDER (simplest → most complex; the Open ▸ Examples menu
@@ -121,6 +146,10 @@ scenarios/        Two categories (Open ▸ Examples / Saved); only examples are 
     10_predator_prey.ron 3-level trophic chain (flora oases → prey → predators): count pyramid, shared Hunter brain, prey that flee (threat channel).
     11_factions.ron     COMBAT: two factions wage war (transfer:false — destruction without transfer) while foraging a shared flora.
     12_nutrient_web.ron T3 food web (the finale): the closed loop — source → flora → herbivore (trophic transfer) → death → recycle; watch it in the inspector + heatmap.
+    # The GENERATIONAL regime (P5) — GENERATORS, not continuous: each carries a `batch` block; run with the `breed` bin (or the windowed dashboard).
+    13_mlp_breed.ron    Breed a forager MLP: a cohort of headless matches per generation, scored by standing biomass (Population); the best is re-seeded into the next cohort.
+    14_battle_breed.ron Battle: breed ONE faction (Azure) to dominate a rival (Crimson) via mutual transfer:false combat, scored by Dominance.
+    15_red_queen.ron    Co-evolution (Red Queen): breed BOTH factions at once (scored_species: [0, 1]) — each scored against the other, so neither pulls permanently ahead.
   saved/          Your saved scenarios (editor Save / Save As land here); gitignored — not committed.
 species/
   examples/       Committed reusable species (library):
@@ -150,6 +179,11 @@ cargo run --bin record -- scenarios/examples/04_evolution.ron --out outputs/run.
 #   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
 #   (defaults: 30 fps, 61 s, 1080×1080 — the arena is square)
 #   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/examples/02_nutrients.ron)
+
+# Generational regime (P5) + dev generators (headless; the breeding ones need a `batch`):
+cargo run --bin breed -- scenarios/examples/15_red_queen.ron [generations]   # run → score → breed; captures the best genome into species/saved/
+cargo run --bin train                                                        # regenerate the trained-MLP showcase (07/09 + the catalog variant)
+cargo run --bin sweep -- scenarios/examples/10_predator_prey.ron             # biodiversity sweep (seed / parameter) — search a coexistence band
 
 cargo test                            # unit tests + multi-seed drivers + snapshot/containment
 cargo fmt                             # formatting — default rustfmt is authoritative

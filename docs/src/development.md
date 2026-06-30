@@ -6,7 +6,7 @@ the contributor's view — the module map, the testing philosophy, and the relea
 
 ## The workshop
 
-`cargo build` produces four binaries:
+`cargo build` produces several binaries:
 
 | Binary     | What it is |
 | ---------- | ---------- |
@@ -15,6 +15,7 @@ the contributor's view — the module map, the testing philosophy, and the relea
 | `record`   | headless render → `ffmpeg` ([video capture](./recording.md)). |
 | `sweep`    | a multi-seed parameter sweeper for tuning scenarios. |
 | `train`    | a one-off generator: evolves an MLP and writes the `mlp_*` artifacts. |
+| `breed`    | the **generational regime** (P5): `run → score → breed` over a scenario's `batch`, capturing the best genome into the catalog. |
 
 ## Source map
 
@@ -31,10 +32,11 @@ The engine core (`SimPlugin`) is render-agnostic and shared by every binary:
 | `ecology.rs`     | the economy: metabolize, die, age, reproduce. |
 | `nutrients.rs`   | the nutrient field, emission, diffusion, absorption. |
 | `spawn.rs`       | compiling a genotype into a living phenotype. |
+| `breeding.rs`    | the generational `Orchestrator` (P5): cohorts of headless matches, `Fitness` scoring, per-faction selection — the `breed` bin's engine. |
 
 The windowed build adds `main.rs`, `panels.rs`, `editor.rs`, `hud.rs`, `inspector.rs`,
-`visuals.rs` and friends — all of it strictly in `Update` (rendering / UI), never
-touching the fixed simulation schedule.
+`visuals.rs`, the breeding `dashboard.rs` and friends — all of it strictly in `Update`
+(rendering / UI), never touching the fixed simulation schedule.
 
 ## Testing: properties across seeds
 
