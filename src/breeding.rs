@@ -63,6 +63,17 @@ pub fn score(individuals: &[Individual], fitness: Fitness, scored_species: u16) 
         // Standing biomass of the scored species at the terminal condition (an
         // ecological score — coexistence / dominance).
         Fitness::Population => scored().count() as f64,
+        // Combat dominance: own survivors minus living rivals (every other non-sessile
+        // agent — food excluded). The battle / factions primitive (item 19): a faction
+        // wins by both surviving and eliminating the enemy.
+        Fitness::Dominance => {
+            let own = scored().count() as f64;
+            let rivals = individuals
+                .iter()
+                .filter(|i| i.species != scored_species && !matches!(i.brain, Brain::Sessile(_)))
+                .count() as f64;
+            own - rivals
+        }
     }
 }
 
@@ -187,36 +198,33 @@ impl Orchestrator {
                 .collect()
         });
 
-        // Score + select sequentially over the collected cohort (cheap, vs the matches).
+        // Score every match (for the curve) and pair each with its representative genome
+        // — the match's `best_individual` (deepest lineage, then reserve). **Selection is
+        // driven by the fitness**: the elites carried forward are the representatives of
+        // the highest-*scoring* matches, so a combat `Dominance` (item 19) actually breeds
+        // better fighters. (For foraging — `Population` / `BestEvolved` — the fitness and
+        // the representative key align; for battle they must be coupled, or selection would
+        // ignore the fitness entirely.)
         let mut match_scores = Vec::with_capacity(cohort.len());
-        let mut bests: Vec<Individual> = Vec::new();
+        let mut ranked: Vec<(f64, Individual)> = Vec::new();
         for individuals in &cohort {
-            match_scores.push(score(
-                individuals,
-                self.batch.fitness,
-                self.batch.scored_species,
-            ));
+            let s = score(individuals, self.batch.fitness, self.batch.scored_species);
+            match_scores.push(s);
             if let Some(best) = best_individual(individuals, self.batch.scored_species) {
-                bests.push(best.clone());
+                ranked.push((s, best.clone()));
             }
         }
-        // Rank the cohort's per-match elites by the selection key (generation, then
-        // reserve), descending. The generation's `best` is the top one **before**
-        // truncation (so it surfaces even with `survivors: 0`); the carried `survivors`
-        // are the top-K (possibly **none** — the falsifiable no-selection contrast).
-        bests.sort_by(|a, b| {
-            (b.generation, b.reserve)
-                .partial_cmp(&(a.generation, a.reserve))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let gen_best = bests.first().cloned();
-        // The full ranked cohort feeds the dashboard leaderboard; the carried survivors
-        // are its top-K prefix.
-        let elites = bests.clone();
-        bests.truncate(self.batch.survivors);
-        self.survivors = bests;
+        // Carry the representatives of the best matches (descending fitness): `gen_best`
+        // is the top one (surfaces even with `survivors: 0`), `survivors` the top-K prefix
+        // (possibly **none** — the falsifiable no-selection contrast), and `elites` (the
+        // full ranked list) feeds the dashboard leaderboard.
+        ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let elites: Vec<Individual> = ranked.into_iter().map(|(_, i)| i).collect();
+        let gen_best = elites.first().cloned();
+        self.survivors = elites.iter().take(self.batch.survivors).cloned().collect();
 
-        let best_fitness = match_scores.iter().copied().fold(0.0_f64, f64::max);
+        // Allow a **negative** best (a losing Dominance) through, rather than flooring at 0.
+        let best_fitness = match_scores.iter().copied().reduce(f64::max).unwrap_or(0.0);
         let mean_fitness = if match_scores.is_empty() {
             0.0
         } else {
@@ -298,7 +306,7 @@ fn extract_individuals(world: &mut World) -> Vec<Individual> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::brain::{Brain, HunterBrain};
+    use crate::brain::{Brain, HunterBrain, SessileBrain};
 
     /// A cheap individual (a unit `HunterBrain`, default genome) — scoring and selection
     /// read only species / generation / reserve, so the genotype / brain are inert here.
@@ -341,6 +349,31 @@ mod tests {
         assert_eq!(score(&pop, Fitness::BestEvolved, 0), 0.0);
         assert_eq!(score(&pop, Fitness::Population, 0), 0.0);
         assert_eq!(score(&[], Fitness::BestEvolved, 0), 0.0);
+    }
+
+    /// `Dominance` = own survivors − living rivals (other **non-sessile** species); food
+    /// (sessile) is excluded. The battle / factions fitness — and it is symmetric (the
+    /// loser's dominance is the winner's, negated).
+    #[test]
+    fn dominance_is_own_minus_living_non_sessile_rivals() {
+        let sessile = Individual {
+            species: 2,
+            generation: 0,
+            reserve: 50.0,
+            genotype: Genotype::default(),
+            brain: Brain::Sessile(SessileBrain),
+        };
+        let pop = [
+            ind(0, 1, 1.0),
+            ind(0, 1, 1.0),
+            ind(0, 1, 1.0),  // 3 own (scored species 0)
+            ind(1, 1, 1.0),  // 1 rival (enemy faction)
+            sessile.clone(), // food — must NOT count as a rival
+        ];
+        assert_eq!(score(&pop, Fitness::Dominance, 0), 2.0); // 3 own − 1 rival
+        assert_eq!(score(&pop, Fitness::Dominance, 1), -2.0); // 1 own − 3 rivals
+        // A wiped-out faction with only food left scores its full deficit.
+        assert_eq!(score(&[sessile], Fitness::Dominance, 0), 0.0); // 0 own − 0 rivals
     }
 
     /// Selection key: `generation` dominates (a deeper lineage wins over a shallower,

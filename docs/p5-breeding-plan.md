@@ -117,8 +117,10 @@ pub enum Fitness {
     /// Standing biomass: living count of `scored_species` at the terminal condition
     /// (an ecological score — coexistence/dominance).
     Population,
-    // Future (item 19, battle): SurvivalTime, Kills, EnergyHarvested — added as arms
-    // here + in `breeding::score`, no schema reshuffle.
+    /// **Combat dominance** (item 19, done): own survivors − living rivals (every other
+    /// non-sessile agent; food excluded). The battle / factions primitive — added as one
+    /// arm here + in `breeding::score`, no schema reshuffle.
+    Dominance,
 }
 ```
 
@@ -340,6 +342,17 @@ variant = `mlp_evolved` reaching (then beating) parity.
   weight crossover lands with NEAT (item 21).
 - **Per-`think` MLP allocations** (§9 perf) — becomes significant under the parallel batch
   (item 20); handle profiler in hand, *after* P5, not before.
-- **Battle (item 19)** — multiple scored factions (`scored_species` → a set), a
-  `transfer: false` faction relation, co-evolutionary fitness; this plan's seams (orchestrator,
-  `Fitness`, capture) are the foundation it recomposes onto.
+- **Battle (item 19) — single-faction done; co-evolution deferred.** `14_battle_breed.ron`
+  breeds **one** faction to dominate a rival via mutual `transfer: false` combat, scored by
+  `Fitness::Dominance` (own − living rivals). A clean recomposition (no new core system) —
+  it reused the existing combat scenario (`11_factions`) + the orchestrator + a new
+  `Fitness` arm. **Finding it forced:** the orchestrator's selection was **decoupled** from
+  the fitness (it ranked carried elites by `(generation, reserve)` regardless of the
+  `Fitness`); that only *happened* to align for foraging (deep/rich = good forager) but is
+  wrong for combat. Fixed — **selection now carries the representatives of the
+  highest-*scoring* matches**, so the `Fitness` actually drives evolution. Match horizon
+  matters too: `match_ticks` must score **inside the coexistence window** (living-food
+  wind-down, §7) — 2500, not 5000 (the fauna had gone extinct). **Still deferred:** the
+  **co-evolutionary (Red-Queen)** case — breeding **both** factions at once
+  (`scored_species: u16` → a *set*, each with its own survivors pool + per-faction scoring),
+  the orchestrator's next extension.

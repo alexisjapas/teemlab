@@ -612,6 +612,10 @@ pub enum Fitness {
     /// Standing biomass: the living count of the scored species at the terminal condition
     /// (an ecological score — coexistence / dominance).
     Population,
+    /// Combat **dominance**: the scored species' living count **minus** its living rivals
+    /// (every other non-sessile agent — food is excluded). Rewards both surviving *and*
+    /// eliminating the enemy — the battle / factions primitive (item 19, §3 combat).
+    Dominance,
 }
 
 impl Default for BatchConfig {
@@ -1344,6 +1348,38 @@ mod tests {
         assert!(
             matches!(cfg.brain_of(batch.scored_species), BrainKind::Mlp { .. }),
             "the scored species is the learned MLP"
+        );
+    }
+
+    /// The battle-breeding scenario (P5 item 19): a generational `batch` scored by **combat
+    /// dominance**, with two factions waging mutual `transfer:false` war. The scored faction
+    /// is bred to dominate. Guardrail on the combat-fitness schema + the scenario wiring.
+    #[test]
+    fn bundled_battle_breed_is_a_combat_dominance_regime() {
+        let text = include_str!("../scenarios/examples/14_battle_breed.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid battle-breeding scenario");
+        let batch = cfg.batch.as_ref().expect("a batch regime");
+        assert_eq!(
+            batch.fitness,
+            Fitness::Dominance,
+            "scored by combat dominance"
+        );
+        let scored = batch.scored_species;
+        // The scored faction is a mobile fighter, not the sessile food.
+        assert!(!cfg.archetypes[scored as usize].is_sessile());
+        // It is at war: a combat (transfer:false) relation where it is the actor…
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.actor == scored && !r.transfer),
+            "the scored faction must wage combat (transfer:false)"
+        );
+        // …and the enemy strikes back (the war is mutual).
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.target == scored && !r.transfer),
+            "the war is mutual (the enemy attacks the scored faction too)"
         );
     }
 

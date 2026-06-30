@@ -1709,12 +1709,14 @@ fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
     let text = match value {
         Fitness::BestEvolved => "best evolved",
         Fitness::Population => "population",
+        Fitness::Dominance => "dominance (combat)",
     };
     egui::ComboBox::from_id_salt("batch_fitness")
         .selected_text(text)
         .show_ui(ui, |ui| {
             ui.selectable_value(value, Fitness::BestEvolved, "best evolved");
             ui.selectable_value(value, Fitness::Population, "population");
+            ui.selectable_value(value, Fitness::Dominance, "dominance (combat)");
         });
 }
 

@@ -334,7 +334,14 @@ open work in §9.
   forager fitness). Built **headless-first**, every UI piece **visually verified** (Bevy
   screenshot API). The cohort runs **in parallel across matches** (item 20: scoped OS
   threads over isolated `World`s — the feared global-pool contention did not materialize;
-  **~5×** on a 6-match cohort). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+  **~5×** on a 6-match cohort). A first **battle** carrier (`scenarios/examples/14_battle_breed.ron`,
+  item 19) breeds one faction (Azure) to **dominate** a rival (Crimson) through mutual
+  `transfer: false` combat (§3), scored by a new **`Fitness::Dominance`** (own survivors −
+  living rivals); this exposed and fixed a latent gap — **selection now follows the
+  fitness** (the elites come from the highest-*scoring* matches; before, it ranked by
+  generation/reserve regardless, which only *happened* to align for foraging). Co-evolution
+  proper (breeding **both** factions — Red Queen) is deferred. Reference:
+  [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.**
 
@@ -355,12 +362,13 @@ open work in §9.
 - **P5 — battle + scaling (the generational regime itself is now built; cf. §0 Done).**
   The `run → score → breed` loop, the explicit-fitness menu and both faces (the `breed`
   bin + the windowed dashboard) are **done**, with MLP breeding as the first carrier
-  ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)), and the cohort now runs **in
-  parallel across matches** (item 20 — scoped OS threads over isolated `World`s, ~5×
-  measured; §0 Done). What **remains**: the **battle / factions scenario** (item 19's
-  co-evolutionary case — multiple scored species + a `transfer: false` faction relation,
-  Red-Queen calibration §7); a **live match spectator** + **Pause / Step-generation** in
-  the dashboard; and weight **crossover / NEAT** (item 21, §9).
+  ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)), the cohort runs **in parallel
+  across matches** (item 20 — ~5× measured; §0 Done), and a **battle scenario** breeds one
+  faction to dominate a rival via a combat `Fitness::Dominance` (item 19, single-faction;
+  §0 Done). What **remains**: the **co-evolutionary (Red-Queen) battle** — breeding **both**
+  factions at once (the orchestrator's *multiple-scored-species* extension, §7 calibration);
+  a **live match spectator** + **Pause / Step-generation** in the dashboard; and weight
+  **crossover / NEAT** (item 21, §9).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
@@ -931,11 +939,13 @@ and *scaling* work.
 
 19. Battle scenario — generational regime: run → score → breed → run loop
     (outside-sim orchestrator), explicit fitness via a menu of engine primitives,
-    terminal condition, factions (= species + a `transfer: false` relation). **The
-    regime loop + the fitness menu are done** (`breeding::Orchestrator`, `Fitness`, the
-    `breed` bin + the dashboard, MLP breeding the first carrier); what **remains** is the
-    *battle scenario itself* — **multiple scored species** + a faction relation +
-    **co-evolutionary (Red-Queen) calibration** (§7).
+    terminal condition, factions (= species + a `transfer: false` relation). **Done
+    (single-faction):** `14_battle_breed.ron` breeds one faction to dominate a rival via
+    mutual `transfer: false` combat, scored by **`Fitness::Dominance`** (own − living
+    rivals); the regime loop + the fitness menu + selection (now **fitness-driven**) carry
+    it (`breeding::Orchestrator`, the `breed` bin + the dashboard). What **remains** is the
+    **co-evolutionary (Red-Queen)** case — breeding **both** factions at once (the
+    orchestrator's *multiple-scored-species* extension + §7 calibration).
 20. Headless parallelized across matches: isolated `World`s, multi-core batch. **(done.)**
     `Orchestrator::step` runs the cohort on **scoped OS threads** (one per match) over
     independent `World`s, sharing Bevy's global task pool — the feared nested-`App`
