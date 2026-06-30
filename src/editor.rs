@@ -23,6 +23,7 @@ use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
+use crate::files::ron_files;
 use crate::fonts::{self, icons};
 use crate::help;
 use crate::status::UiStatus;
@@ -116,24 +117,6 @@ const SAVED_LIB: &str = "species/saved";
 /// The libraries the catalog reads (display name, directory). Only `examples` is
 /// committed (cf. `.gitignore`); the editor only ever writes to `saved`.
 const LIBRARIES: [(&str, &str); 2] = [("examples", EXAMPLES_LIB), ("saved", SAVED_LIB)];
-
-/// All `*.ron` paths directly under `dir`, sorted; a missing directory → empty. The
-/// shared scan behind both the species library and the cross-scenario usage lookup.
-fn ron_files(dir: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("ron")
-                && let Some(s) = path.to_str()
-            {
-                found.push(s.to_string());
-            }
-        }
-    }
-    found.sort();
-    found
-}
 
 /// One reusable **form** in the catalog — a base or an evolved variant — with its
 /// file, library, loaded archetype, and which scenarios import *this file*.
@@ -1242,14 +1225,14 @@ pub(crate) fn draw_mlp_graph(
     let font = egui::FontId::monospace(8.0);
     let ink = egui::Color32::from_gray(165);
     let n_in = sizes[0];
-    let rays = n_in / 3; // input = 3 × rays (vision ++ target ++ threat)
+    // Channel names from the MLP contract (`MlpBrain::CHANNEL_LABELS`): the input is one
+    // block of `rays` per channel (vision ++ target ++ threat).
+    let channels = MlpBrain::CHANNEL_LABELS;
+    let rays = n_in / channels.len();
     for node in 0..n_in {
-        let text = if n_in.is_multiple_of(3) {
-            match node / rays {
-                0 => format!("vis {node}"),
-                1 => format!("tgt {}", node - rays),
-                _ => format!("thr {}", node - 2 * rays),
-            }
+        let text = if n_in.is_multiple_of(channels.len()) {
+            let ch = node / rays;
+            format!("{} {}", channels[ch], node - ch * rays)
         } else {
             format!("in {node}")
         };
@@ -1266,8 +1249,7 @@ pub(crate) fn draw_mlp_graph(
     let n_out = sizes[last];
     for node in 0..n_out {
         let text = match (n_out == MlpBrain::OUTPUTS).then_some(node) {
-            Some(0) => "fwd",
-            Some(1) => "side",
+            Some(o) if o < MlpBrain::OUTPUT_LABELS.len() => MlpBrain::OUTPUT_LABELS[o],
             _ => continue, // non-standard output: no guessable label.
         };
         let p = pos(last, node, n_out);

@@ -31,6 +31,7 @@ use teemlab::SimConfig;
 
 use crate::controls::SimControls;
 use crate::editor::Palette;
+use crate::files::ron_files;
 use crate::fonts::{self, icons};
 use crate::status::UiStatus;
 
@@ -105,23 +106,6 @@ pub(crate) const EXAMPLES_DIR: &str = "scenarios/examples";
 /// Save target. The two categories live in sibling directories under `scenarios/`.
 pub(crate) const SAVED_DIR: &str = "scenarios/saved";
 
-/// Lists the RON files present in `dir`, sorted; a missing directory → empty list.
-fn scan_dir(dir: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("ron")
-                && let Some(s) = path.to_str()
-            {
-                found.push(s.to_string());
-            }
-        }
-    }
-    found.sort();
-    found
-}
-
 /// Menu label for a scenario path: its file stem (`scenarios/examples/05_hunt.ron` → `05_hunt`).
 fn scenario_label(path: &str) -> &str {
     std::path::Path::new(path)
@@ -138,8 +122,8 @@ pub fn build_runs_panel(mut commands: Commands, config: Res<SimConfig>) {
     // `loaded_path` is None and the first Save asks for a name.
     let loaded_path = std::env::args().nth(1);
     commands.insert_resource(RunsPanel {
-        examples: scan_dir(EXAMPLES_DIR),
-        saved: scan_dir(SAVED_DIR),
+        examples: ron_files(EXAMPLES_DIR),
+        saved: ron_files(SAVED_DIR),
         scenario_path: format!("{SAVED_DIR}/edited.ron"),
         pending: None,
         confirm: None,
@@ -326,8 +310,8 @@ pub(crate) fn scenario_section(
     // Resolve intents (full &mut access here, no egui closure borrow in flight).
     panel.scenario_path = scenario_path;
     if rescan {
-        panel.examples = scan_dir(EXAMPLES_DIR);
-        panel.saved = scan_dir(SAVED_DIR);
+        panel.examples = ron_files(EXAMPLES_DIR);
+        panel.saved = ron_files(SAVED_DIR);
     }
     // Destructive navigation guards on unsaved edits.
     if let Some(action) = want {
@@ -491,8 +475,8 @@ fn save_as_dialog(
         } else if save_and_claim(panel, config, status, path) {
             panel.save_dialog_open = false;
             // A new file may have appeared (usually under saved/; rescan both to be safe).
-            panel.examples = scan_dir(EXAMPLES_DIR);
-            panel.saved = scan_dir(SAVED_DIR);
+            panel.examples = ron_files(EXAMPLES_DIR);
+            panel.saved = ron_files(SAVED_DIR);
         }
     } else if cancel || !window_open {
         panel.save_dialog_open = false;

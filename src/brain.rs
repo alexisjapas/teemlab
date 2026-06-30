@@ -433,6 +433,20 @@ impl MlpBrain {
     /// reproduction respects these `CHANNELS` blocks (cf. [`MlpBrain::resize_input_fan`]).
     const CHANNELS: usize = 3;
 
+    /// Abbreviated names of the input perception channels, in input-vector order — one
+    /// block of `vision_rays` each (`input = CHANNELS × vision_rays`, cf.
+    /// [`MlpBrain::input_vector`]). The **single source of truth** the two network-graph
+    /// renderers (the inspector's egui graph and the video visualizer's gizmo graph)
+    /// label the input column from, so a contract change (a renamed/added channel)
+    /// updates every view at once. The array length is pinned to `CHANNELS`, so changing
+    /// the channel count without the labels is a compile error.
+    pub const CHANNEL_LABELS: [&'static str; Self::CHANNELS] = ["vis", "tgt", "thr"];
+    /// Names of the output neurons, in order: the body-frame steering vector (forward,
+    /// side), cf. [`MlpBrain::think`]. The output-column counterpart of
+    /// [`CHANNEL_LABELS`](Self::CHANNEL_LABELS) — same single-source role, length pinned
+    /// to `OUTPUTS`.
+    pub const OUTPUT_LABELS: [&'static str; Self::OUTPUTS] = ["fwd", "side"];
+
     /// Size of the input layer for `vision_rays` rays: the `vision`, `target` AND
     /// `threat` channels concatenated, hence `CHANNELS × vision_rays`.
     pub fn input_size(vision_rays: usize) -> usize {
@@ -634,6 +648,16 @@ impl MlpBrain {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The graph renderers' channel/output labels stay pinned to the MLP I/O contract:
+    /// one input label per perception channel (`input_size(1) == CHANNELS`) and one
+    /// output label per output neuron. (The array lengths are already `CHANNELS` /
+    /// `OUTPUTS` at compile time; this guards the relationship through the public API.)
+    #[test]
+    fn contract_label_arrays_match_io_arity() {
+        assert_eq!(MlpBrain::CHANNEL_LABELS.len(), MlpBrain::input_size(1));
+        assert_eq!(MlpBrain::OUTPUT_LABELS.len(), MlpBrain::OUTPUTS);
+    }
 
     /// Three rays: left (+Y), forward (+X), right (-Y) — a symmetric fan around the
     /// +X heading, as `perceive` would produce them. The three channels (obstacle,

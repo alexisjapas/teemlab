@@ -205,8 +205,8 @@ pub fn drive_recorder(
     config: Res<SimConfig>,
 ) {
     // Monitoring the running process: we detect its end without blocking (`try_wait`).
-    if panel.child.is_some() {
-        match panel.child.as_mut().unwrap().try_wait() {
+    if let Some(child) = panel.child.as_mut() {
+        match child.try_wait() {
             Ok(Some(exit)) => {
                 panel.child = None;
                 status.set(if exit.success() {

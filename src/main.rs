@@ -9,6 +9,7 @@
 
 mod controls;
 mod editor;
+mod files;
 mod fonts;
 mod help;
 mod hud;

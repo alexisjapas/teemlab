@@ -99,18 +99,6 @@ pub fn srgb3([r, g, b]: [f32; 3]) -> Color {
     Color::srgb(r, g, b)
 }
 
-/// Base color of a species (cyclic palette). Rendering alone gives a visual
-/// meaning to the species integer; the sim itself has no color.
-pub fn species_color(species: Species) -> Srgba {
-    const PALETTE: [Srgba; 4] = [
-        Srgba::new(0.30, 0.70, 1.00, 1.0), // blue
-        Srgba::new(1.00, 0.45, 0.35, 1.0), // coral
-        Srgba::new(0.55, 0.90, 0.45, 1.0), // green
-        Srgba::new(0.95, 0.80, 0.30, 1.0), // amber
-    ];
-    PALETTE[species.0 as usize % PALETTE.len()]
-}
-
 /// Display color of an entity: that of **its archetype** (the index carried by
 /// [`Species`]), falling back to the palette for an out-of-list index. This is
 /// how the color chosen in the archetype editor shows on screen.

@@ -31,6 +31,7 @@ use crate::config::SimConfig;
 use crate::genotype::{Genotype, TRAITS};
 use crate::metrics::{Curve, History, live_stats, population_curves, trait_curves};
 use crate::selection::Selection;
+use crate::visuals::srgb3;
 
 /// Render layer of the visualizer (Text2d / Sprite / `VizGizmos` gizmos).
 const VIZ_LAYER: usize = 1;
@@ -320,10 +321,6 @@ fn p(x: f32, y: f32) -> Vec2 {
     Vec2::new(x - VIZ_W * 0.5, VIZ_H * 0.5 - y)
 }
 
-fn srgb([r, g, b]: [f32; 3]) -> Color {
-    Color::srgb(r, g, b)
-}
-
 /// Spawns text aligned top-left at the canvas's px position (DejaVu font for the
 /// non-ASCII glyphs).
 fn text(
@@ -558,7 +555,7 @@ fn plot(
         p(px, py)
     };
     for c in curves {
-        let col = srgb(c.color);
+        let col = srgb3(c.color);
         for win in c.pts.windows(2) {
             gizmos.line_2d(map(win[0][0], win[0][1]), map(win[1][0], win[1][1]), col);
         }
@@ -568,7 +565,7 @@ fn plot(
     let mut lx = x;
     let ly = y + h + 4.0;
     for c in curves {
-        rect(commands, lx, ly + 4.0, 10.0, 10.0, srgb(c.color), 0.2);
+        rect(commands, lx, ly + 4.0, 10.0, 10.0, srgb3(c.color), 0.2);
         text(
             commands,
             font,
@@ -935,11 +932,13 @@ fn draw_mlp(
         }
     }
 
-    // Labels of the input groups (vis/tgt/thr) and the outputs (fwd/side).
+    // Labels of the input groups (vis/tgt/thr) and the outputs (fwd/side) — names from
+    // the MLP contract (`MlpBrain::CHANNEL_LABELS` / `OUTPUT_LABELS`), not hardcoded.
     let n_in = sizes[0];
-    if n_in.is_multiple_of(3) {
-        let rays = n_in / 3;
-        for (g, name) in ["vis", "tgt", "thr"].iter().enumerate() {
+    let channels = MlpBrain::CHANNEL_LABELS;
+    if n_in.is_multiple_of(channels.len()) {
+        let rays = n_in / channels.len();
+        for (g, name) in channels.iter().enumerate() {
             let (_, py) = node_px(0, g * rays + rays / 2, n_in);
             text(
                 commands,
@@ -954,7 +953,7 @@ fn draw_mlp(
     }
     let last = cols - 1;
     if sizes[last] == MlpBrain::OUTPUTS {
-        for (o, name) in ["fwd", "side"].iter().enumerate() {
+        for (o, name) in MlpBrain::OUTPUT_LABELS.iter().enumerate() {
             let (px, py) = node_px(last, o, MlpBrain::OUTPUTS);
             text(
                 commands,
