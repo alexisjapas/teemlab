@@ -115,6 +115,13 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
         run: |
+          # Fat LTO (profile.dist) merges all of Bevy + Avian into one module and
+          # needs more RAM than the 7 GB macOS arm64 runner has — it OOM-thrashes and
+          # never links. Drop to thin LTO on macOS only (near-identical runtime perf,
+          # a fraction of the peak memory); Linux/Windows (16 GB) keep fat LTO.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            export CARGO_PROFILE_DIST_LTO=thin
+          fi
           cargo build --locked --profile dist --target ${{ matrix.target }} \
             --bin teemlab --bin record --bin headless --bin sweep
 
