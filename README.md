@@ -219,11 +219,12 @@ flame [scenario.ron]                  # flamegraph of the headless sim → outpu
 > unit — runtime-perf tuned) for **Linux x86_64**, **Windows x86_64** (both with an
 > `x86-64-v3` CPU floor) and **macOS arm64**, archives each with the data read at
 > launch (`assets/`, `scenarios/`, `species/`), and publishes them as a GitHub
-> Release. Tags are cut on **minor** bumps only; patches still increment
-> `Cargo.toml` but ship untagged. The tag is **annotated** and its message is the
-> changelog (the description of what changed since the previous tag), which becomes
-> the release notes. To run a release: bump `Cargo.toml`, commit, then
-> `git tag -a vX.Y.0 -m "…what changed…" && git push origin vX.Y.0`.
+> Release. A tag is cut **on explicit request** (any version, a patch included) or
+> **before a minor/major bump** (tag the outgoing version first if it isn't already);
+> a patch you don't release stays in `Cargo.toml` untagged. The tag is **annotated**
+> and its message is the changelog (the description of what changed since the previous
+> tag), which becomes the release notes. To run a release: bump `Cargo.toml`, commit,
+> then `git tag -a vX.Y.Z -m "…what changed…" && git push origin vX.Y.Z`.
 >
 > **Recording needs `ffmpeg`.** The archives deliberately do **not** bundle it:
 > `record` only spawns `ffmpeg` as a separate process, so it stays an *external*

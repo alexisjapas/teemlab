@@ -1,8 +1,9 @@
 # Release build & publish.
 #
-# Trigger: pushing a v-prefixed semver tag (e.g. `v0.2.0`). Per CONSTITUTION-DEV
-# Rule 11, tags are cut only on minor (and major) version bumps; the tag must equal
-# the `Cargo.toml` version — `version-check` below fails the run otherwise.
+# Trigger: pushing a v-prefixed semver tag (e.g. `v0.3.1`). Per CONSTITUTION-DEV
+# Rule 11, a tag is cut on explicit request (any version, a patch included) or to
+# capture the outgoing version before a minor/major bump; the tag must equal the
+# `Cargo.toml` version — `version-check` below fails the run otherwise.
 #
 # Each platform builds the whole workshop (teemlab + record + headless + sweep)
 # with the `dist` profile (fat LTO, codegen-units = 1 — see Cargo.toml) for maximum

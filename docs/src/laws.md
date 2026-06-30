@@ -44,7 +44,8 @@ How the code is kept honest. The headlines:
   property across seeds.
 - **Extend the data, not the drivers** — a new gene touches one table entry, not every
   consumer.
-- **Conventional Commits; tag minors; the annotated tag's message is the changelog.**
+- **Conventional Commits; tag on request or before a minor bump; the annotated tag's
+  message is the changelog.**
 
 ## License
 

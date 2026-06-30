@@ -158,7 +158,7 @@ import-by-copy).
 
 ---
 
-## Rule 11 — Version is semver of the shipped artifact; tag minors
+## Rule 11 — Version is semver of the shipped artifact; tag on request or before a minor bump
 
 `Cargo.toml`'s `version` is the single source of truth, and it is **semver of the
 shipped artifact** (the released binaries) — not a commit counter:
@@ -170,15 +170,20 @@ shipped artifact** (the released binaries) — not a commit counter:
   shipped binaries → **no bump** (dev-only tooling — benches, CI, the dev shell —
   is not part of what is versioned).
 
-Every release **tag** is `v<that exact version>` (e.g. `Cargo.toml = 0.2.0` → tag
-`v0.2.0`); the release CI **fails** the run if they disagree. To avoid flooding the
-repo with tags, cut a tag only on a **minor** (or major) bump — `feat:`/breaking
-work; a `fix:` patch lands in `Cargo.toml` untagged and rides along in the next
-tagged minor. Pushing a `vX.Y.Z` tag is the *only* trigger for a release — build →
-archive (Linux / Windows / macOS, `dist` profile, runtime-perf tuned) → GitHub
-Release. To pin an arbitrary build to its commit, use the **git SHA** (optionally as
-semver build metadata, `0.2.0+a1b2c3d`, ignored for precedence) — the version field
-tracks *behavior*, not every commit.
+Every release **tag** is `v<that exact version>` (e.g. `Cargo.toml = 0.3.1` → tag
+`v0.3.1`); the release CI **fails** the run if they disagree. A tag is cut in two
+cases: **(a) on explicit request** — any version, a `fix:` patch included, can be
+released when you decide it ships; and **(b) before a minor/major bump** — when you
+roll `Cargo.toml` onto a new minor or major (`feat:` / breaking), first tag the
+*outgoing* version if it is not already tagged, so the last state of the closing line
+is captured before the line moves on (e.g. sitting at `0.3.7`, bumping to `0.4.0` →
+tag `v0.3.7` first, then bump). A patch you don't ask to release simply lands in
+`Cargo.toml` untagged and rides along under whichever tag captures its line. Pushing a
+`vX.Y.Z` tag is the *only* trigger for a release — build → archive (Linux / Windows /
+macOS, `dist` profile, runtime-perf tuned) → GitHub Release. To pin an arbitrary build
+to its commit, use the **git SHA** (optionally as semver build metadata,
+`0.3.1+a1b2c3d`, ignored for precedence) — the version field tracks *behavior*, not
+every commit.
 
 The tag is **annotated** (`git tag -a`), and its message **is the changelog**: a
 hand-written description of the evolutions since the previous tag. The release CI
@@ -189,9 +194,11 @@ Changelog" link), so a lightweight tag — or an annotated tag with an empty mes
 **Why.** Semver keyed to the *artifact's behavior* — not the repo's activity — is
 what lets a reader map a release to what actually changed; bumping the patch on
 every chore turns the version into a meaningless commit counter. The git SHA, not an
-inflated patch number, is what pins an arbitrary build. Tagging only minors keeps the
-milestones legible, and an auto-generated commit list is not a changelog — the human
-"what changed and why" is the part a reader actually needs.
+inflated patch number, is what pins an arbitrary build. Tagging on demand — plus a
+guaranteed tag of the outgoing version whenever a new minor line opens — keeps the
+milestones legible without forcing a tag on every patch, and an auto-generated commit
+list is not a changelog — the human "what changed and why" is the part a reader
+actually needs.
 
 **Anchored in.** `Cargo.toml` (`version`); `.github/workflows/release.yml`
 (`version-check` guard, the `dist` build matrix); `Cargo.toml` `[profile.dist]`.

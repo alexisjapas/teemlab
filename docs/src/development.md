@@ -77,8 +77,9 @@ Pushing a `vX.Y.Z` tag that matches `Cargo.toml`'s version triggers the release 
 LTO, runtime-perf tuned) for Linux x86_64, Windows x86_64 and macOS arm64, archives each
 with the runtime data (`assets/`, `scenarios/`, `species/`), the dual
 [license](./laws.md#license) files and a generated `THIRD-PARTY-LICENSES.html`, and
-publishes them to a GitHub Release. Tags are cut only on **minor** bumps; the annotated
-tag's message *is* the changelog.
+publishes them to a GitHub Release. A tag is cut **on explicit request** (any version,
+a patch included) or to capture the **outgoing** version before a minor/major bump; the
+annotated tag's message *is* the changelog.
 
 ## Performance
 
