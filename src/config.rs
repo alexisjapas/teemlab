@@ -589,9 +589,11 @@ pub struct BatchConfig {
     /// (extinction, score threshold) are a later enum — kept a single `ticks` to avoid a
     /// premature abstraction.
     pub match_ticks: u64,
-    /// The archetype under selection (the scored species). v1: one; battle (item 19)
-    /// generalizes to several factions.
-    pub scored_species: u16,
+    /// The archetypes under selection — the factions the orchestrator **breeds**. A single
+    /// faction (`[0]`) is the foraging / single-faction-battle case; **several** factions
+    /// (`[0, 1]`) are bred at once — co-evolution (the Red-Queen battle, item 19), each
+    /// scored against the others by [`Fitness`] and re-seeded from its own elites.
+    pub scored_species: Vec<u16>,
     /// The explicit fitness function (§4 axis B).
     pub fitness: Fitness,
     /// Top-K genomes carried into the next generation's founders (selection pressure).
@@ -626,7 +628,7 @@ impl Default for BatchConfig {
             generations: 8,
             matches_per_gen: 4,
             match_ticks: 5000,
-            scored_species: 0,
+            scored_species: vec![0],
             fitness: Fitness::Population,
             survivors: 2,
             seed_base: 1,
@@ -1061,7 +1063,7 @@ mod tests {
                 generations: 12,
                 matches_per_gen: 6,
                 match_ticks: 6000,
-                scored_species: 0,
+                scored_species: vec![0],
                 fitness: Fitness::BestEvolved,
                 survivors: 3,
                 seed_base: 1,
@@ -1346,7 +1348,7 @@ mod tests {
         let batch = cfg.batch.as_ref().expect("a batch regime");
         assert!(batch.generations > 1, "a generational run");
         assert!(
-            matches!(cfg.brain_of(batch.scored_species), BrainKind::Mlp { .. }),
+            matches!(cfg.brain_of(batch.scored_species[0]), BrainKind::Mlp { .. }),
             "the scored species is the learned MLP"
         );
     }
@@ -1364,7 +1366,7 @@ mod tests {
             Fitness::Dominance,
             "scored by combat dominance"
         );
-        let scored = batch.scored_species;
+        let scored = batch.scored_species[0];
         // The scored faction is a mobile fighter, not the sessile food.
         assert!(!cfg.archetypes[scored as usize].is_sessile());
         // It is at war: a combat (transfer:false) relation where it is the actor…
@@ -1380,6 +1382,39 @@ mod tests {
                 .iter()
                 .any(|r| r.target == scored && !r.transfer),
             "the war is mutual (the enemy attacks the scored faction too)"
+        );
+    }
+
+    /// The Red-Queen scenario (P5 item 19, **co-evolution**): a generational `batch`
+    /// breeding **two** factions at once (`scored_species` has ≥ 2), each a mobile fighter
+    /// at mutual war, scored by `Dominance`. Guardrail on the multiple-scored-species schema.
+    #[test]
+    fn bundled_red_queen_breeds_two_warring_factions() {
+        let text = include_str!("../scenarios/examples/15_red_queen.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid Red-Queen scenario");
+        let batch = cfg.batch.as_ref().expect("a batch regime");
+        assert!(
+            batch.scored_species.len() >= 2,
+            "co-evolution breeds several factions"
+        );
+        assert_eq!(batch.fitness, Fitness::Dominance);
+        for &s in &batch.scored_species {
+            assert!(
+                !cfg.archetypes[s as usize].is_sessile(),
+                "a bred faction is a mobile fighter, not food"
+            );
+        }
+        // The two bred factions wage mutual combat (each attacks the other, transfer:false).
+        let (a, b) = (batch.scored_species[0], batch.scored_species[1]);
+        assert!(
+            cfg.relations
+                .iter()
+                .any(|r| r.actor == a && r.target == b && !r.transfer)
+                && cfg
+                    .relations
+                    .iter()
+                    .any(|r| r.actor == b && r.target == a && !r.transfer),
+            "the two bred factions are at war"
         );
     }
 

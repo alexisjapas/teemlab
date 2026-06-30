@@ -156,7 +156,7 @@
         generations: 8,
         matches_per_gen: 4,
         match_ticks: 5000,
-        scored_species: 0,
+        scored_species: [0],
         fitness: Population,
         survivors: 2,
         seed_base: 1,

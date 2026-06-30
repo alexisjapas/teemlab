@@ -36,15 +36,21 @@ fn main() {
         batch.generations = g;
     }
 
-    let Some(scored) = config.batch.as_ref().map(|b| b.scored_species) else {
+    // The bin captures the **first** scored faction's champion (the report's view). With
+    // several factions (co-evolution) the others co-evolve too; their capture is a refinement.
+    let Some(scored) = config
+        .batch
+        .as_ref()
+        .and_then(|b| b.scored_species.first().copied())
+    else {
         eprintln!(
-            "breed: scenario \"{path}\" has no `batch` regime — add a BatchConfig \
-             (see docs/p5-breeding-plan.md)"
+            "breed: scenario \"{path}\" has no `batch` regime (or no scored faction) — add a \
+             BatchConfig (see docs/p5-breeding-plan.md)"
         );
         std::process::exit(1);
     };
     let Some(base_arch) = config.archetypes.get(scored as usize).cloned() else {
-        eprintln!("breed: scored_species {scored} is out of range");
+        eprintln!("breed: scored species {scored} is out of range");
         std::process::exit(1);
     };
 

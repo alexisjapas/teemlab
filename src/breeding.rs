@@ -126,9 +126,11 @@ pub struct Orchestrator {
     base: SimConfig,
     /// The generational parameters.
     batch: BatchConfig,
-    /// The current elites, re-seeded as the next cohort's founders (empty at generation 0
-    /// → the cohort starts from the scenario's own founders).
-    survivors: Vec<Individual>,
+    /// The current elites **per scored faction** (parallel to `batch.scored_species`),
+    /// re-seeded as the next cohort's founders. Each inner `Vec` is empty at generation 0
+    /// (the cohort starts from the scenario's own founders) and after a `survivors: 0` step.
+    /// Several factions ⇒ **co-evolution** (each bred from its own elites — the Red Queen).
+    survivors: Vec<Vec<Individual>>,
     /// Next generation to run.
     next_gen: usize,
 }
@@ -140,10 +142,11 @@ impl Orchestrator {
         let batch = config.batch.clone()?;
         let mut base = config;
         base.batch = None;
+        let factions = batch.scored_species.len();
         Some(Self {
             base,
             batch,
-            survivors: Vec::new(),
+            survivors: vec![Vec::new(); factions],
             next_gen: 0,
         })
     }
@@ -153,17 +156,17 @@ impl Orchestrator {
         self.batch.generations
     }
 
-    /// The archetype index under selection.
-    pub fn scored_species(&self) -> u16 {
-        self.batch.scored_species
+    /// The archetype indices under selection (the bred factions).
+    pub fn scored_species(&self) -> &[u16] {
+        &self.batch.scored_species
     }
 
-    /// The current **elites** carried into the next generation's founders (empty before
-    /// the first [`step`](Self::step), and after any step with `survivors: 0` — the
-    /// no-selection case). Exposed for the dashboard's leaderboard and as the falsifiable
-    /// handle on "selection re-seeds, no-selection does not".
+    /// The current **elites of the first scored faction** carried into the next cohort's
+    /// founders (empty before the first [`step`](Self::step), and after any step with
+    /// `survivors: 0` — the no-selection case). The falsifiable handle on "selection
+    /// re-seeds, no-selection does not"; per-faction pools drive the actual co-evolution.
     pub fn survivors(&self) -> &[Individual] {
-        &self.survivors
+        self.survivors.first().map_or(&[], Vec::as_slice)
     }
 
     /// `true` once every generation has run.
@@ -198,56 +201,71 @@ impl Orchestrator {
                 .collect()
         });
 
-        // Score every match (for the curve) and pair each with its representative genome
-        // — the match's `best_individual` (deepest lineage, then reserve). **Selection is
-        // driven by the fitness**: the elites carried forward are the representatives of
-        // the highest-*scoring* matches, so a combat `Dominance` (item 19) actually breeds
-        // better fighters. (For foraging — `Population` / `BestEvolved` — the fitness and
-        // the representative key align; for battle they must be coupled, or selection would
-        // ignore the fitness entirely.)
-        let mut match_scores = Vec::with_capacity(cohort.len());
-        let mut ranked: Vec<(f64, Individual)> = Vec::new();
-        for individuals in &cohort {
-            let s = score(individuals, self.batch.fitness, self.batch.scored_species);
-            match_scores.push(s);
-            if let Some(best) = best_individual(individuals, self.batch.scored_species) {
-                ranked.push((s, best.clone()));
+        // **Co-evolution**: select for EACH scored faction independently — score the cohort
+        // by that faction's fitness and carry the representatives of its highest-*scoring*
+        // matches into its own survivor pool. **Selection is fitness-driven** (the elites
+        // come from the best-scoring matches, so a combat `Dominance` actually breeds better
+        // fighters; for foraging the fitness and the representative key align). One faction
+        // ⇒ the single-faction case; several ⇒ each is bred against the others' current best
+        // → the **Red Queen** (item 19). The **report** is the *first* faction's view (the
+        // dashboard is single-faction): its match scores + ranked elites.
+        let mut new_survivors: Vec<Vec<Individual>> =
+            Vec::with_capacity(self.batch.scored_species.len());
+        let mut report_scores: Vec<f64> = Vec::new();
+        let mut report_elites: Vec<Individual> = Vec::new();
+        for (faction, &species) in self.batch.scored_species.iter().enumerate() {
+            let mut scores = Vec::with_capacity(cohort.len());
+            let mut ranked: Vec<(f64, Individual)> = Vec::new();
+            for individuals in &cohort {
+                let s = score(individuals, self.batch.fitness, species);
+                scores.push(s);
+                if let Some(best) = best_individual(individuals, species) {
+                    ranked.push((s, best.clone()));
+                }
+            }
+            ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            let elites: Vec<Individual> = ranked.into_iter().map(|(_, i)| i).collect();
+            // The carried survivors (top-K, possibly **none** — the no-selection contrast).
+            new_survivors.push(elites.iter().take(self.batch.survivors).cloned().collect());
+            if faction == 0 {
+                report_scores = scores;
+                report_elites = elites;
             }
         }
-        // Carry the representatives of the best matches (descending fitness): `gen_best`
-        // is the top one (surfaces even with `survivors: 0`), `survivors` the top-K prefix
-        // (possibly **none** — the falsifiable no-selection contrast), and `elites` (the
-        // full ranked list) feeds the dashboard leaderboard.
-        ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        let elites: Vec<Individual> = ranked.into_iter().map(|(_, i)| i).collect();
-        let gen_best = elites.first().cloned();
-        self.survivors = elites.iter().take(self.batch.survivors).cloned().collect();
+        self.survivors = new_survivors;
 
-        // Allow a **negative** best (a losing Dominance) through, rather than flooring at 0.
-        let best_fitness = match_scores.iter().copied().reduce(f64::max).unwrap_or(0.0);
-        let mean_fitness = if match_scores.is_empty() {
+        // The report is the first faction's view. `best` = its top genome (surfaces even
+        // with `survivors: 0`); a **negative** best (a losing Dominance) passes through.
+        let gen_best = report_elites.first().cloned();
+        let best_fitness = report_scores
+            .iter()
+            .copied()
+            .reduce(f64::max)
+            .unwrap_or(0.0);
+        let mean_fitness = if report_scores.is_empty() {
             0.0
         } else {
-            match_scores.iter().sum::<f64>() / match_scores.len() as f64
+            report_scores.iter().sum::<f64>() / report_scores.len() as f64
         };
         let report = GenerationReport {
             generation: self.next_gen,
             best_fitness,
             mean_fitness,
-            match_scores,
+            match_scores: report_scores,
             best: gen_best,
-            elites,
+            elites: report_elites,
         };
         self.next_gen += 1;
         report
     }
 
-    /// The match config for match `m` of the current generation: the carrier scenario
-    /// with a per-match seed and, **from generation 1**, the scored species re-seeded from
-    /// one elite (round-robin over the survivors) — its founders born with the elite's
-    /// genome + frozen weights (`captured_brain`), then diverging by in-match mutation.
-    /// Cross-match seeding + the per-match seed give the cohort its diversity (the
-    /// founder-diversity lever, item 18b).
+    /// The match config for match `m` of the current generation: the carrier scenario with
+    /// a per-match seed and, **from generation 1**, **each** scored faction re-seeded from
+    /// one of its elites (round-robin over its survivor pool) — its founders born with the
+    /// elite's genome + frozen weights (`captured_brain`), then diverging by in-match
+    /// mutation. Cross-match seeding + the per-match seed give the cohort its diversity (the
+    /// founder-diversity lever, item 18b); re-seeding *every* faction is what makes the
+    /// co-evolution (Red Queen).
     fn build_match_config(&self, m: usize) -> SimConfig {
         let mut cfg = self.base.clone();
         cfg.seed = self
@@ -255,9 +273,13 @@ impl Orchestrator {
             .seed_base
             .wrapping_add(self.next_gen as u64 * self.batch.matches_per_gen as u64)
             .wrapping_add(m as u64);
-        if !self.survivors.is_empty() {
-            let elite = &self.survivors[m % self.survivors.len()];
-            if let Some(arch) = cfg.archetypes.get_mut(self.batch.scored_species as usize) {
+        for (faction, &species) in self.batch.scored_species.iter().enumerate() {
+            let pool = &self.survivors[faction];
+            if pool.is_empty() {
+                continue; // generation 0 (or no-selection): keep the scenario's founders.
+            }
+            let elite = &pool[m % pool.len()];
+            if let Some(arch) = cfg.archetypes.get_mut(species as usize) {
                 arch.genotype = elite.genotype;
                 arch.captured_brain = Some(elite.brain.clone());
             }

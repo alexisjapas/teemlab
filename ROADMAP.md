@@ -339,9 +339,12 @@ open work in §9.
   `transfer: false` combat (§3), scored by a new **`Fitness::Dominance`** (own survivors −
   living rivals); this exposed and fixed a latent gap — **selection now follows the
   fitness** (the elites come from the highest-*scoring* matches; before, it ranked by
-  generation/reserve regardless, which only *happened* to align for foraging). Co-evolution
-  proper (breeding **both** factions — Red Queen) is deferred. Reference:
-  [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+  generation/reserve regardless, which only *happened* to align for foraging). And the
+  **co-evolutionary Red Queen** (`scenarios/examples/15_red_queen.ron`) breeds **both**
+  factions at once (`scored_species` → a *set*, an elite pool per faction): each is scored
+  against the other and re-seeded from its own elites, so neither pulls permanently ahead —
+  the lead **closes** as the rival catches up ("it takes all the running you can do, to keep
+  in the same place"). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.**
 
@@ -363,12 +366,13 @@ open work in §9.
   The `run → score → breed` loop, the explicit-fitness menu and both faces (the `breed`
   bin + the windowed dashboard) are **done**, with MLP breeding as the first carrier
   ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)), the cohort runs **in parallel
-  across matches** (item 20 — ~5× measured; §0 Done), and a **battle scenario** breeds one
-  faction to dominate a rival via a combat `Fitness::Dominance` (item 19, single-faction;
-  §0 Done). What **remains**: the **co-evolutionary (Red-Queen) battle** — breeding **both**
-  factions at once (the orchestrator's *multiple-scored-species* extension, §7 calibration);
-  a **live match spectator** + **Pause / Step-generation** in the dashboard; and weight
-  **crossover / NEAT** (item 21, §9).
+  across matches** (item 20 — ~5× measured; §0 Done), and the **battle** is **done** — both
+  a single-faction breed (`14_battle_breed`) and the **co-evolutionary Red Queen**
+  (`15_red_queen`: **both** factions bred via `scored_species: [0, 1]`, item 19; §0 Done).
+  What **remains**: dashboard **polish** — a **live match spectator**, **Pause /
+  Step-generation**, and a **per-faction** view (the dashboard shows only the first bred
+  faction today); deeper Red-Queen calibration (§7); and weight **crossover / NEAT**
+  (item 21, §9).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
@@ -939,13 +943,13 @@ and *scaling* work.
 
 19. Battle scenario — generational regime: run → score → breed → run loop
     (outside-sim orchestrator), explicit fitness via a menu of engine primitives,
-    terminal condition, factions (= species + a `transfer: false` relation). **Done
-    (single-faction):** `14_battle_breed.ron` breeds one faction to dominate a rival via
-    mutual `transfer: false` combat, scored by **`Fitness::Dominance`** (own − living
-    rivals); the regime loop + the fitness menu + selection (now **fitness-driven**) carry
-    it (`breeding::Orchestrator`, the `breed` bin + the dashboard). What **remains** is the
-    **co-evolutionary (Red-Queen)** case — breeding **both** factions at once (the
-    orchestrator's *multiple-scored-species* extension + §7 calibration).
+    terminal condition, factions (= species + a `transfer: false` relation). **Done.**
+    `14_battle_breed.ron` breeds one faction to dominate a rival, and `15_red_queen.ron`
+    breeds **both** at once (`scored_species: [0, 1]` — the orchestrator keeps an **elite
+    pool per faction**, each scored against the other by **`Fitness::Dominance`** and
+    re-seeded from its own elites → the Red Queen). Selection is now **fitness-driven**
+    (the latent gap it exposed, fixed). Remaining: a **per-faction dashboard view**
+    (single-faction today) + deeper Red-Queen calibration (§7) — refinements, not blockers.
 20. Headless parallelized across matches: isolated `World`s, multi-core batch. **(done.)**
     `Orchestrator::step` runs the cohort on **scoped OS threads** (one per match) over
     independent `World`s, sharing Bevy's global task pool — the feared nested-`App`

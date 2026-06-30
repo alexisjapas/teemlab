@@ -1649,8 +1649,42 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                         .num_columns(2)
                         .spacing([8.0, 6.0])
                         .show(ui, |ui| {
-                            ui.label("scored species");
-                            archetype_combo(ui, "batch_scored", &mut batch.scored_species, &archs);
+                            // Scored factions: one (foraging / single-faction battle) or
+                            // several (co-evolution — Red Queen). A small add/remove list.
+                            ui.label("scored factions");
+                            ui.vertical(|ui| {
+                                let mut remove = None;
+                                let multi = batch.scored_species.len() > 1;
+                                for i in 0..batch.scored_species.len() {
+                                    ui.horizontal(|ui| {
+                                        archetype_combo(
+                                            ui,
+                                            ("batch_scored", i),
+                                            &mut batch.scored_species[i],
+                                            &archs,
+                                        );
+                                        // Keep at least one faction.
+                                        if multi
+                                            && ui
+                                                .button(fonts::icon(icons::TRASH))
+                                                .on_hover_text("Stop breeding this faction")
+                                                .clicked()
+                                        {
+                                            remove = Some(i);
+                                        }
+                                    });
+                                }
+                                if let Some(i) = remove {
+                                    batch.scored_species.remove(i);
+                                }
+                                if ui
+                                    .button(fonts::icon_label(icons::PLUS, "faction"))
+                                    .on_hover_text("Breed another faction too (co-evolution)")
+                                    .clicked()
+                                {
+                                    batch.scored_species.push(0);
+                                }
+                            });
                             ui.end_row();
 
                             ui.label("fitness");

@@ -1,18 +1,16 @@
-// Battle — the GENERATIONAL regime over COMBAT (P5 item 19). The factions scenario
-// (11_factions) made generational: breed ONE faction (Azure, the scored species) to
-// **dominate** the other (Crimson, the control) in a war of attrition. Both wage mutual
-// `transfer:false` combat (§3) while foraging the shared oasis flora to live; Azure
-// evolves (in-match reproduction + cross-generation selection on `Dominance` = own
-// survivors − living rivals) toward a body that out-fights Crimson, who stays the baseline
-// (re-spawned from its founders each match). A recomposition of the breeding pieces (§4):
-// the same orchestrator, a combat `Fitness`, the existing combat relations — no new core
-// system. NOT a continuous scenario and NOT in CI (a generator, like 13_mlp_breed): run it
-// with the `breed` bin, which captures the best-evolved Azure into the catalog:
-//
-//     cargo run --bin breed -- scenarios/examples/14_battle_breed.ron [generations]
-//
-// (Co-evolution proper — breeding BOTH factions, the Red-Queen case — needs the
-// orchestrator's multi-scored-species extension; deferred. See docs/p5-breeding-plan.md.)
+// Red Queen — CO-EVOLUTION (P5 item 19, the off-diagonal "Battle" of §4). The battle
+// scenario with BOTH factions bred at once (`scored_species: [0, 1]`): Azure and Crimson
+// each evolve, each scored by `Dominance` against the other, each re-seeded from its own
+// elites. Neither pulls permanently ahead — as one improves, so must the other to keep up
+// (Lewis Carroll's Red Queen: "it takes all the running you can do, to keep in the same
+// place"). The tell-tale of co-evolution is in the curve: faction 0's `Dominance`
+// **tends back toward 0** — its lead closes as the rival catches up (an arms race, no
+// lasting winner), where the single-faction 14_battle_breed (one side bred vs a *fixed*
+// rival) lets the gap widen. Noisy over few generations (a generator — watch a long run).
+// A clean recomposition — the
+// same orchestrator, now breeding a *set* of factions (the multiple-scored-species seam).
+// NOT continuous, NOT in CI (a generator): run it with the `breed` bin (it captures the
+// FIRST faction's champion; both co-evolve). See docs/p5-breeding-plan.md.
 (
     tick_hz: 64.0,
     arena_half_extent: 480.0,
@@ -158,11 +156,8 @@
         ),
     ],
     relations: [
-        // Both factions graze the flora (predation — energy + nutrient).
         (actor: 0, target: 2, transfer: true, rate: 45.0, range: 16.0),
         (actor: 1, target: 2, transfer: true, rate: 45.0, range: 16.0),
-        // War: mutual COMBAT (transfer: false) — each destroys the other's reserve without
-        // gaining it (a war of attrition, blows landing at medium range).
         (actor: 0, target: 1, transfer: false, rate: 6.0, range: 22.0),
         (actor: 1, target: 0, transfer: false, rate: 6.0, range: 22.0),
     ],
@@ -199,7 +194,7 @@
         generations: 8,
         matches_per_gen: 4,
         match_ticks: 2500,
-        scored_species: [0],
+        scored_species: [0, 1],
         fitness: Dominance,
         survivors: 2,
         seed_base: 1,

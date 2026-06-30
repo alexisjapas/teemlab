@@ -49,7 +49,7 @@ fn breeder_config(survivors: usize, generations: usize) -> SimConfig {
             generations,
             matches_per_gen: 2,
             match_ticks: 600,
-            scored_species: 0,
+            scored_species: vec![0],
             fitness: Fitness::BestEvolved,
             survivors,
             seed_base: 1,
@@ -71,7 +71,7 @@ fn new_requires_a_batch_regime() {
 
     let orch = Orchestrator::new(breeder_config(1, 4)).expect("batch present");
     assert_eq!(orch.generations(), 4);
-    assert_eq!(orch.scored_species(), 0);
+    assert_eq!(orch.scored_species().to_vec(), vec![0]);
     assert!(
         orch.survivors().is_empty(),
         "no elite before the first step"

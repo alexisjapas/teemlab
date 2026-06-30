@@ -92,9 +92,11 @@ pub struct BatchConfig {
     /// conditions — extinction, score threshold — are a later enum, kept a single
     /// `ticks` for now to avoid a premature abstraction).
     pub match_ticks: u64,
-    /// The archetype under selection (the MLP species). v1: one. Battle (item 19)
-    /// generalizes to several scored factions.
-    pub scored_species: u16,
+    /// The archetypes under selection — the bred factions. `[0]` = single faction
+    /// (foraging / single-faction battle); several (`[0, 1]`) = **co-evolution** (the
+    /// Red-Queen battle, item 19), each scored against the others + bred from its own
+    /// elite pool.
+    pub scored_species: Vec<u16>,
     /// The explicit fitness function (§4 axis B).
     pub fitness: Fitness,
     /// Top-K genomes carried into the next generation's founders (selection pressure).
@@ -342,17 +344,23 @@ variant = `mlp_evolved` reaching (then beating) parity.
   weight crossover lands with NEAT (item 21).
 - **Per-`think` MLP allocations** (§9 perf) — becomes significant under the parallel batch
   (item 20); handle profiler in hand, *after* P5, not before.
-- **Battle (item 19) — single-faction done; co-evolution deferred.** `14_battle_breed.ron`
-  breeds **one** faction to dominate a rival via mutual `transfer: false` combat, scored by
-  `Fitness::Dominance` (own − living rivals). A clean recomposition (no new core system) —
-  it reused the existing combat scenario (`11_factions`) + the orchestrator + a new
-  `Fitness` arm. **Finding it forced:** the orchestrator's selection was **decoupled** from
-  the fitness (it ranked carried elites by `(generation, reserve)` regardless of the
-  `Fitness`); that only *happened* to align for foraging (deep/rich = good forager) but is
-  wrong for combat. Fixed — **selection now carries the representatives of the
-  highest-*scoring* matches**, so the `Fitness` actually drives evolution. Match horizon
-  matters too: `match_ticks` must score **inside the coexistence window** (living-food
-  wind-down, §7) — 2500, not 5000 (the fauna had gone extinct). **Still deferred:** the
-  **co-evolutionary (Red-Queen)** case — breeding **both** factions at once
-  (`scored_species: u16` → a *set*, each with its own survivors pool + per-faction scoring),
-  the orchestrator's next extension.
+- **Battle (item 19) — done (single-faction + co-evolution).** `14_battle_breed.ron` breeds
+  **one** faction to dominate a rival via mutual `transfer: false` combat, scored by
+  `Fitness::Dominance` (own − living rivals); `15_red_queen.ron` breeds **both**. A clean
+  recomposition (no new core system) — it reused the existing combat scenario (`11_factions`)
+  + the orchestrator + a new `Fitness` arm.
+  - **Finding it forced:** the orchestrator's selection was **decoupled** from the fitness
+    (it ranked carried elites by `(generation, reserve)` regardless of the `Fitness`); that
+    only *happened* to align for foraging (deep/rich = good forager) but is wrong for
+    combat. Fixed — **selection now carries the representatives of the highest-*scoring*
+    matches**, so the `Fitness` actually drives evolution.
+  - **Match horizon:** `match_ticks` must score **inside the coexistence window**
+    (living-food wind-down, §7) — 2500, not 5000 (the fauna had gone extinct).
+  - **Co-evolution (done):** `scored_species: u16` → `Vec<u16>`; the orchestrator keeps an
+    **elite pool per faction**, and scores + selects + re-seeds **each** independently
+    (`build_match_config` re-seeds every faction) → the Red Queen. The report + dashboard
+    show the **first** faction (a single-faction *view*; both co-evolve). Observed: faction
+    0's `Dominance` lead **closes** over generations as the rival catches up.
+  - **Still deferred (refinements):** a **per-faction dashboard** (curve + leaderboard per
+    bred faction; today only the first), capturing **every** faction's champion (the bin
+    captures the first), and deeper Red-Queen calibration for a cleaner oscillation.

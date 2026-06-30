@@ -249,7 +249,11 @@ pub fn draw(
     // the genome under the scored species' base archetype and write it to the catalog —
     // the `breed`-bin / inspector path, reused (`Archetype::capture` + `save_variant`).
     if let Some(genome) = to_save {
-        let scored = config.batch.as_ref().map_or(0, |b| b.scored_species) as usize;
+        let scored = config
+            .batch
+            .as_ref()
+            .and_then(|b| b.scored_species.first().copied())
+            .unwrap_or(0) as usize;
         if let Some(base) = config.archetypes.get(scored) {
             let variant = base.capture(genome.genotype, genome.brain, genome.generation);
             let scenario = runs_panel.origin_label();
