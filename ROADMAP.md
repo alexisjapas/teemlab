@@ -344,7 +344,9 @@ open work in §9.
   factions at once (`scored_species` → a *set*, an elite pool per faction): each is scored
   against the other and re-seeded from its own elites, so neither pulls permanently ahead —
   the lead **closes** as the rival catches up ("it takes all the running you can do, to keep
-  in the same place"). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+  in the same place"). The dashboard shows a **per-faction** view — a curve line + a
+  leaderboard selector **per bred faction** (the `breed` bin prints one line per faction).
+  Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.**
 
@@ -369,10 +371,10 @@ open work in §9.
   across matches** (item 20 — ~5× measured; §0 Done), and the **battle** is **done** — both
   a single-faction breed (`14_battle_breed`) and the **co-evolutionary Red Queen**
   (`15_red_queen`: **both** factions bred via `scored_species: [0, 1]`, item 19; §0 Done).
-  What **remains**: dashboard **polish** — a **live match spectator**, **Pause /
-  Step-generation**, and a **per-faction** view (the dashboard shows only the first bred
-  faction today); deeper Red-Queen calibration (§7); and weight **crossover / NEAT**
-  (item 21, §9).
+  The dashboard has a **per-faction view** (a curve line + a leaderboard selector per bred
+  faction; §0 Done). What **remains**: dashboard **polish** — a **live match spectator** and
+  **Pause / Step-generation**; deeper Red-Queen calibration (§7); and weight **crossover /
+  NEAT** (item 21, §9).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →

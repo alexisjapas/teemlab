@@ -358,9 +358,13 @@ variant = `mlp_evolved` reaching (then beating) parity.
     (living-food wind-down, §7) — 2500, not 5000 (the fauna had gone extinct).
   - **Co-evolution (done):** `scored_species: u16` → `Vec<u16>`; the orchestrator keeps an
     **elite pool per faction**, and scores + selects + re-seeds **each** independently
-    (`build_match_config` re-seeds every faction) → the Red Queen. The report + dashboard
-    show the **first** faction (a single-faction *view*; both co-evolve). Observed: faction
-    0's `Dominance` lead **closes** over generations as the rival catches up.
-  - **Still deferred (refinements):** a **per-faction dashboard** (curve + leaderboard per
-    bred faction; today only the first), capturing **every** faction's champion (the bin
-    captures the first), and deeper Red-Queen calibration for a cleaner oscillation.
+    (`build_match_config` re-seeds every faction) → the Red Queen. Observed: a faction's
+    `Dominance` lead **closes** over generations as the rival catches up.
+  - **Per-faction dashboard (done):** the `GenerationReport` carries one `FactionReport` per
+    bred faction; the dashboard shows a per-faction readout, a curve with **one line per
+    faction** (its colour; the Y range follows the data — `Dominance` goes negative, so the
+    two lines mirror around 0), and a faction **selector** for the leaderboard. The `breed`
+    bin prints one line per faction (the mirrored Dominance is visible).
+  - **Still deferred (refinements):** capturing **every** faction's champion (the bin + the
+    Save-as-variant act on the first / the selected genome — which already carries its own
+    `species`), and deeper Red-Queen calibration for a cleaner oscillation.

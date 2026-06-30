@@ -95,26 +95,41 @@ pub fn best_individual(individuals: &[Individual], scored_species: u16) -> Optio
         })
 }
 
-/// One generation's outcome — the data the `breed` bin prints and (step 5) the dashboard
-/// plots. `best` is the generation's single top genome (for display + the final catalog
-/// capture), independent of how many `survivors` are *carried* (so a no-selection run
-/// still surfaces a best, while breeding nothing forward).
+/// One **bred faction's** outcome in a generation — the data the dashboard's per-faction
+/// curve + leaderboard read. (`best` is `elites.first()`; absent when the faction died out
+/// in every match.)
+#[derive(Clone, Debug)]
+pub struct FactionReport {
+    /// The bred archetype index.
+    pub species: u16,
+    /// Best match fitness this generation (the curve's line for this faction).
+    pub best_fitness: f64,
+    /// Mean match fitness over the cohort.
+    pub mean_fitness: f64,
+    /// Per-match fitness scalars (the cohort).
+    pub match_scores: Vec<f64>,
+    /// The generation's per-match best genomes, ranked by fitness (descending) — the
+    /// faction's **leaderboard** (a superset of its carried `survivors`).
+    pub elites: Vec<Individual>,
+}
+
+impl FactionReport {
+    /// The faction's top genome this generation (for display + the final catalog capture),
+    /// or `None` if it died out in every match.
+    pub fn best(&self) -> Option<&Individual> {
+        self.elites.first()
+    }
+}
+
+/// One generation's outcome — a [`FactionReport`] per bred faction (one for a foraging /
+/// single-faction run, several under co-evolution). The bin + the dashboard read the
+/// factions; a single-faction view is `factions[0]`.
 #[derive(Clone, Debug)]
 pub struct GenerationReport {
     /// 0-based generation index.
     pub generation: usize,
-    /// Best match fitness this generation (the curve's upper line).
-    pub best_fitness: f64,
-    /// Mean match fitness over the cohort.
-    pub mean_fitness: f64,
-    /// Per-match fitness scalars (the cohort, for the bin printout / the dashboard).
-    pub match_scores: Vec<f64>,
-    /// The generation's top genome by the selection key, or `None` if the scored species
-    /// died out in every match.
-    pub best: Option<Individual>,
-    /// The generation's per-match best genomes, ranked by the selection key (descending) —
-    /// the dashboard **leaderboard**'s data (a superset of the carried `survivors`).
-    pub elites: Vec<Individual>,
+    /// One report per bred faction (parallel to `batch.scored_species`).
+    pub factions: Vec<FactionReport>,
 }
 
 /// The **generational orchestrator** (P5, §4 axis A): runs `generations` cohorts of
@@ -207,13 +222,13 @@ impl Orchestrator {
         // come from the best-scoring matches, so a combat `Dominance` actually breeds better
         // fighters; for foraging the fitness and the representative key align). One faction
         // ⇒ the single-faction case; several ⇒ each is bred against the others' current best
-        // → the **Red Queen** (item 19). The **report** is the *first* faction's view (the
-        // dashboard is single-faction): its match scores + ranked elites.
+        // → the **Red Queen** (item 19). One [`FactionReport`] per faction (the dashboard's
+        // per-faction curve + leaderboard); a **negative** fitness (a losing Dominance)
+        // passes through.
         let mut new_survivors: Vec<Vec<Individual>> =
             Vec::with_capacity(self.batch.scored_species.len());
-        let mut report_scores: Vec<f64> = Vec::new();
-        let mut report_elites: Vec<Individual> = Vec::new();
-        for (faction, &species) in self.batch.scored_species.iter().enumerate() {
+        let mut factions: Vec<FactionReport> = Vec::with_capacity(self.batch.scored_species.len());
+        for &species in &self.batch.scored_species {
             let mut scores = Vec::with_capacity(cohort.len());
             let mut ranked: Vec<(f64, Individual)> = Vec::new();
             for individuals in &cohort {
@@ -227,33 +242,25 @@ impl Orchestrator {
             let elites: Vec<Individual> = ranked.into_iter().map(|(_, i)| i).collect();
             // The carried survivors (top-K, possibly **none** — the no-selection contrast).
             new_survivors.push(elites.iter().take(self.batch.survivors).cloned().collect());
-            if faction == 0 {
-                report_scores = scores;
-                report_elites = elites;
-            }
+            let best_fitness = scores.iter().copied().reduce(f64::max).unwrap_or(0.0);
+            let mean_fitness = if scores.is_empty() {
+                0.0
+            } else {
+                scores.iter().sum::<f64>() / scores.len() as f64
+            };
+            factions.push(FactionReport {
+                species,
+                best_fitness,
+                mean_fitness,
+                match_scores: scores,
+                elites,
+            });
         }
         self.survivors = new_survivors;
 
-        // The report is the first faction's view. `best` = its top genome (surfaces even
-        // with `survivors: 0`); a **negative** best (a losing Dominance) passes through.
-        let gen_best = report_elites.first().cloned();
-        let best_fitness = report_scores
-            .iter()
-            .copied()
-            .reduce(f64::max)
-            .unwrap_or(0.0);
-        let mean_fitness = if report_scores.is_empty() {
-            0.0
-        } else {
-            report_scores.iter().sum::<f64>() / report_scores.len() as f64
-        };
         let report = GenerationReport {
             generation: self.next_gen,
-            best_fitness,
-            mean_fitness,
-            match_scores: report_scores,
-            best: gen_best,
-            elites: report_elites,
+            factions,
         };
         self.next_gen += 1;
         report

@@ -53,6 +53,8 @@ fn main() {
         eprintln!("breed: scored species {scored} is out of range");
         std::process::exit(1);
     };
+    // Faction names for the per-faction printout (captured before `config` is moved).
+    let names: Vec<String> = config.archetypes.iter().map(|a| a.name.clone()).collect();
 
     let mut orch = Orchestrator::new(config).expect("batch present (checked above)");
     eprintln!(
@@ -65,17 +67,22 @@ fn main() {
     let mut best_overall: Option<Individual> = None;
     while !orch.is_done() {
         let report = orch.step();
-        let cohort = report
-            .match_scores
-            .iter()
-            .map(|s| format!("{s:.0}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        println!(
-            "gen {:>3}: best={:.2}  mean={:.2}  [{cohort}]",
-            report.generation, report.best_fitness, report.mean_fitness,
-        );
-        if let Some(best) = report.best {
+        // One line per bred faction (several under co-evolution).
+        for fr in &report.factions {
+            let cohort = fr
+                .match_scores
+                .iter()
+                .map(|s| format!("{s:.0}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let name = names.get(fr.species as usize).map_or("?", |n| n.as_str());
+            println!(
+                "gen {:>3}  {name:<10} best={:.2}  mean={:.2}  [{cohort}]",
+                report.generation, fr.best_fitness, fr.mean_fitness,
+            );
+        }
+        // Capture the FIRST faction's champion (the others co-evolve too).
+        if let Some(best) = report.factions.first().and_then(|fr| fr.best().cloned()) {
             let better = best_overall
                 .as_ref()
                 .is_none_or(|b| (b.generation, b.reserve) < (best.generation, best.reserve));

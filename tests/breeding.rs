@@ -88,8 +88,9 @@ fn runs_every_generation_and_reports_the_cohort() {
     while !orch.is_done() {
         let report = orch.step();
         assert_eq!(report.generation, seen, "reports come in order");
+        assert_eq!(report.factions.len(), 1, "one bred faction");
         assert_eq!(
-            report.match_scores.len(),
+            report.factions[0].match_scores.len(),
             2,
             "one fitness score per match in the cohort"
         );
@@ -109,7 +110,7 @@ fn selection_carries_an_elite_forward_no_selection_does_not() {
     let mut sel = Orchestrator::new(breeder_config(1, 2)).expect("batch present");
     let report = sel.step();
     assert!(
-        report.best.is_some(),
+        report.factions[0].best().is_some(),
         "the scored species produced a best genome"
     );
     assert_eq!(sel.survivors().len(), 1, "one elite carried forward");
@@ -124,7 +125,7 @@ fn selection_carries_an_elite_forward_no_selection_does_not() {
     let mut nosel = Orchestrator::new(breeder_config(0, 2)).expect("batch present");
     let report = nosel.step();
     assert!(
-        report.best.is_some(),
+        report.factions[0].best().is_some(),
         "a best still surfaces even with no selection"
     );
     assert!(
