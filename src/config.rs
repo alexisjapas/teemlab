@@ -614,6 +614,22 @@ pub enum Fitness {
     Population,
 }
 
+impl Default for BatchConfig {
+    /// Sensible breeding defaults — the `13_mlp_breed.ron` showcase's regime (a forager
+    /// scored by standing biomass). The **editor** uses this when the user enables `batch`.
+    fn default() -> Self {
+        Self {
+            generations: 8,
+            matches_per_gen: 4,
+            match_ticks: 5000,
+            scored_species: 0,
+            fitness: Fitness::Population,
+            survivors: 2,
+            seed_base: 1,
+        }
+    }
+}
+
 impl Default for SimConfig {
     fn default() -> Self {
         Self {

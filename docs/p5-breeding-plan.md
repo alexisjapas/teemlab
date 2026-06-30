@@ -305,10 +305,19 @@ variant = `mlp_evolved` reaching (then beating) parity.
 4. **`scenarios/examples/13_mlp_breed.ron` (done)** + **`tests/breeding.rs` (done)** — the
    committed showcase (parse-unit-tested, run via the bin) + the **mechanism** driver
    (re-seeding contrast, cf. §7; *not* the planned trend test). `tests/mlp.rs` still green.
-5. **Dashboard** — `BreedingState` resource + channel, the background task, `batch_section`
-   editor, the Run/Pause/Stop/Step-gen transport, the fitness-vs-generation curve, the
-   leaderboard + Save-as-variant. *Checkpoint:* run a breeding session windowed,
-   `cargo clippy --all-targets` clean, `cargo fmt`.
+5. **Dashboard (done)** — a `dashboard::BreedingSession` resource owning an
+   `Arc<Mutex<…>>` **worker thread** (simpler than the planned `AsyncComputeTaskPool` +
+   channel — the UI reads a snapshot each frame), Run/Stop + a progress bar, the
+   `editor::batch_section` World-panel editor (enable/disable + every field, scored-species
+   & fitness dropdowns), the **fitness-vs-generation curve** (the shared `hud::plot`,
+   generalized with an `x_unit` so it isn't hard-wired to seconds), and the **leaderboard**
+   of the latest cohort (inspect an MLP genome's network via `editor::draw_mlp_graph` +
+   Save-as-variant via `editor::save_variant`). **As-built deviations** from §5: a
+   **floating window** shown whenever the scenario carries a `batch` (scenario-driven),
+   *not* a docked panel nor a Spectate↔Generational toggle; **Run/Stop** only (Pause /
+   Step-generation deferred); the live world is paused on Run. The leaderboard is fed by a
+   new `GenerationReport.elites` (the ranked per-match bests). Every piece **visually
+   verified** via the Bevy screenshot API (`docs`/memory).
 6. **Item 20 — cross-match parallelism** (`TaskPool`/`std::thread`, isolated `World`s),
    **profiler in hand**, after correctness. The nested-`App` global-thread-pool contention
    is the known risk; measure before committing a scheme.

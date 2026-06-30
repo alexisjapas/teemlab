@@ -101,6 +101,9 @@ pub struct GenerationReport {
     /// The generation's top genome by the selection key, or `None` if the scored species
     /// died out in every match.
     pub best: Option<Individual>,
+    /// The generation's per-match best genomes, ranked by the selection key (descending) —
+    /// the dashboard **leaderboard**'s data (a superset of the carried `survivors`).
+    pub elites: Vec<Individual>,
 }
 
 /// The **generational orchestrator** (P5, §4 axis A): runs `generations` cohorts of
@@ -185,6 +188,9 @@ impl Orchestrator {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let gen_best = bests.first().cloned();
+        // The full ranked cohort feeds the dashboard leaderboard; the carried survivors
+        // are its top-K prefix.
+        let elites = bests.clone();
         bests.truncate(self.batch.survivors);
         self.survivors = bests;
 
@@ -200,6 +206,7 @@ impl Orchestrator {
             mean_fitness,
             match_scores,
             best: gen_best,
+            elites,
         };
         self.next_gen += 1;
         report

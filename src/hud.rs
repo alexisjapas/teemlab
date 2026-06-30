@@ -57,7 +57,7 @@ fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
         ui.weak("(no living species)");
         return;
     }
-    plot(ui, 110.0, &curves, 0.0, y_max * 1.1);
+    plot(ui, 110.0, &curves, 0.0, y_max * 1.1, "s");
     legend(ui, &curves);
 }
 
@@ -80,7 +80,7 @@ fn draw_traits(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
         return;
     }
     // Fixed bounds [0, 1]: drift is read against the gene's possible span.
-    plot(ui, 110.0, &curves, 0.0, 1.0);
+    plot(ui, 110.0, &curves, 0.0, 1.0, "s");
     legend(ui, &curves);
 }
 
@@ -92,7 +92,7 @@ fn swatch(ui: &mut egui::Ui, color: [f32; 3]) {
 }
 
 /// A legend: a colour swatch + the name of each curve.
-fn legend(ui: &mut egui::Ui, curves: &[Curve]) {
+pub(crate) fn legend(ui: &mut egui::Ui, curves: &[Curve]) {
     ui.horizontal_wrapped(|ui| {
         for c in curves {
             swatch(ui, c.color);
@@ -114,7 +114,14 @@ fn nearest(pts: &[[f32; 2]], t: f32) -> Option<[f32; 2]> {
 /// `Painter` drawing (no `egui_plot`): a background, a light grid with Y value and X
 /// time labels, the polylines, and a **hover readout** — a vertical cursor, a dot on
 /// each curve at the hovered time, and a tooltip listing the time and each value.
-fn plot(ui: &mut egui::Ui, height: f32, curves: &[Curve], y_min: f32, y_max: f32) {
+pub(crate) fn plot(
+    ui: &mut egui::Ui,
+    height: f32,
+    curves: &[Curve],
+    y_min: f32,
+    y_max: f32,
+    x_unit: &str,
+) {
     let width = ui.available_width().max(64.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
@@ -203,7 +210,7 @@ fn plot(ui: &mut egui::Ui, height: f32, curves: &[Curve], y_min: f32, y_max: f32
             painter.text(
                 egui::pos2(x, inner.bottom() + 2.0),
                 anchor,
-                format!("{t:.0}s"),
+                format!("{t:.0}{x_unit}"),
                 font.clone(),
                 tick,
             );
@@ -237,7 +244,7 @@ fn plot(ui: &mut egui::Ui, height: f32, curves: &[Curve], y_min: f32, y_max: f32
     // …and a tooltip listing the time and each curve's value at that time.
     response.on_hover_ui_at_pointer(|ui| {
         let Some(t) = hover_t else { return };
-        ui.small(format!("t = {t:.0} s"));
+        ui.small(format!("{t:.0}{x_unit}"));
         for c in curves {
             if let Some(p) = nearest(&c.pts, t) {
                 ui.horizontal(|ui| {

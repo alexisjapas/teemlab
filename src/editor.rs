@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{Archetype, Relation, Source, SpeciesEntry};
+use teemlab::config::{Archetype, BatchConfig, Fitness, Relation, Source, SpeciesEntry};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
@@ -1333,6 +1333,10 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             .show(ui, |ui| relations_section(ui, config));
     });
 
+    // BREEDING — the generational regime (P5). Authored here (saved with the scenario);
+    // the run itself happens in the Breeding window / the `breed` bin.
+    batch_section(ui, config);
+
     // Nutrients and gene bounds each frame their own card (below).
     nutrient_section(ui, config);
     gene_bounds_section(ui, config);
@@ -1608,6 +1612,110 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             range: 0.0, // contact by default (surface-to-surface clearance).
         });
     }
+}
+
+/// The **generational (breeding) regime** (P5): toggle a `batch` on the scenario and edit
+/// its parameters. The run itself happens in the **Breeding** window (the dashboard) or
+/// the `breed` bin headless; this card only *authors* the [`BatchConfig`] (saved with the
+/// scenario, like the relations / nutrients). A framed card with a collapsible header
+/// (default closed — most scenarios are continuous).
+fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+    card(ui, |ui| {
+        egui::CollapsingHeader::new("Breeding (generational)")
+            .default_open(false)
+            .show(ui, |ui| {
+                let mut enabled = config.batch.is_some();
+                if ui
+                    .checkbox(&mut enabled, "generational regime")
+                    .on_hover_text(
+                        "Run → score → breed across generations (the Breeding window, or \
+                         the `breed` bin headless).",
+                    )
+                    .changed()
+                {
+                    // Enabling installs sensible defaults; disabling drops the regime
+                    // (the scenario goes back to continuous — the field leaves the RON).
+                    config.batch = enabled.then(BatchConfig::default);
+                }
+                // (name, color) snapshot for the scored-species menu, before the mutable
+                // borrow of `config.batch`.
+                let archs: Vec<(String, egui::Color32)> = config
+                    .archetypes
+                    .iter()
+                    .map(|a| (a.name.clone(), archetype_color32(a)))
+                    .collect();
+                if let Some(batch) = config.batch.as_mut() {
+                    egui::Grid::new("batch_fields")
+                        .num_columns(2)
+                        .spacing([8.0, 6.0])
+                        .show(ui, |ui| {
+                            ui.label("scored species");
+                            archetype_combo(ui, "batch_scored", &mut batch.scored_species, &archs);
+                            ui.end_row();
+
+                            ui.label("fitness");
+                            fitness_combo(ui, &mut batch.fitness);
+                            ui.end_row();
+
+                            ui.label("generations");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut batch.generations).range(1..=200))
+                            });
+                            ui.end_row();
+
+                            ui.label("matches / gen");
+                            fonts::value(ui, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut batch.matches_per_gen).range(1..=64),
+                                )
+                            });
+                            ui.end_row();
+
+                            ui.label("match ticks");
+                            fonts::value(ui, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut batch.match_ticks)
+                                        .speed(50.0)
+                                        .range(100..=200_000),
+                                )
+                            });
+                            ui.end_row();
+
+                            ui.label("survivors");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut batch.survivors).range(0..=64))
+                            });
+                            ui.end_row();
+
+                            ui.label("seed base");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut batch.seed_base).speed(1.0))
+                            });
+                            ui.end_row();
+                        });
+                    help::hint(
+                        ui,
+                        "survivors = elites carried to the next generation (0 = no \
+                         selection). Run it from the Breeding window.",
+                    );
+                }
+            });
+    });
+}
+
+/// A dropdown over the [`Fitness`] menu — the exhaustive `match` keeps the labels in
+/// sync with the enum (a new variant must be handled here).
+fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
+    let text = match value {
+        Fitness::BestEvolved => "best evolved",
+        Fitness::Population => "population",
+    };
+    egui::ComboBox::from_id_salt("batch_fitness")
+        .selected_text(text)
+        .show_ui(ui, |ui| {
+            ui.selectable_value(value, Fitness::BestEvolved, "best evolved");
+            ui.selectable_value(value, Fitness::Population, "population");
+        });
 }
 
 /// A dropdown that selects an **archetype** (by `u16` index) among `archs`,

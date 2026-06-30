@@ -8,6 +8,7 @@
 #![allow(clippy::type_complexity)]
 
 mod controls;
+mod dashboard;
 mod editor;
 mod files;
 mod fonts;
@@ -67,6 +68,9 @@ fn main() {
         // recomposing the view would break the UI (cf. memory).
         .init_resource::<controls::SimControls>()
         .init_resource::<recorder::RecorderPanel>()
+        // Breeding dashboard (P5): the generational session handle (owns the worker
+        // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
+        .init_resource::<dashboard::BreedingSession>()
         // Central region left free by the docked panels (cf. `panels::dock`), read by
         // `set_sim_camera` to frame the sim — the non-deprecated `available_rect`.
         .init_resource::<panels::CentralRect>()
@@ -124,6 +128,10 @@ fn main() {
                 // context once, before any panel renders (cf. `fonts`).
                 fonts::setup_ui_fonts,
                 panels::dock,
+                // Breeding dashboard window (P5) — after `dock` (same egui context), a
+                // floating window that does not touch the dock's central rect, so the sim
+                // framing and the interaction systems below stay correct.
+                dashboard::draw,
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,
