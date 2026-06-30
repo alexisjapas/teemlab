@@ -27,4 +27,6 @@ entities are circles. Rust, Bevy 0.19 + Avian 0.7.
   is the chaos-sensitive tripwire. — DEV Rule 3.
 - **Every characteristic is priced** (value, bounds, cost) — no free beneficial
   trait. — SIM Law 7.
-- **Working language of the codebase is English** (cite laws by number).
+- **English for everything written for the project** — not just code and docs but
+  also commit messages, tags, branch names, PRs and issues; French only in live
+  discussion. Cite laws by number.

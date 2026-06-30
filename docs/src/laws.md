@@ -46,6 +46,8 @@ How the code is kept honest. The headlines:
   consumer.
 - **Conventional Commits; tag on request or before a minor bump; the annotated tag's
   message is the changelog.**
+- **English for everything written for the project** — code, docs, commits, tags,
+  branches, PRs and issues alike; French only in live discussion.
 
 ## License
 

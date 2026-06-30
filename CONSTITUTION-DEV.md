@@ -6,8 +6,12 @@ holds setup and commands. The laws of the *simulated world* live in
 [`CONSTITUTION-SIM.md`](CONSTITUTION-SIM.md) — this document is about the **code
 and the process** around it.
 
-Working language of the codebase (code, comments, docs, scenarios) is **English**;
-French is fine in discussion. Cite an article by number ("cf. SIM Law 7").
+Working language of **everything written for the project** is **English** — without
+exception. Not only code, comments, docs and scenarios, but **also** commit messages,
+tag and release notes, branch names, PR titles and descriptions, and issues: every
+artifact that lands in the repo or its infrastructure. French is fine only in *live
+discussion* (a chat like this one), never in anything persisted. Cite an article by
+number ("cf. SIM Law 7").
 
 ---
 
