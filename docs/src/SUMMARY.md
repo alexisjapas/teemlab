@@ -12,6 +12,7 @@
 - [The economy: energy & nutrient](./model/economy.md)
 - [Interactions: predation, combat, competition](./model/interactions.md)
 - [The nutrient substrate](./model/nutrients.md)
+- [Evolutionary regimes](./model/regimes.md)
 
 # Using teemlab
 
