@@ -5,6 +5,11 @@
 //! historical match) and **pipe the raw frames directly to an `ffmpeg`
 //! process**: no intermediate PNG on disk.
 //!
+//! `ffmpeg` is an **external** runtime dependency, never bundled (it stays a
+//! separate process, so its GPL terms don't reach the tree). It is resolved via
+//! [`ffmpeg_binary`]: `TEEMLAB_FFMPEG` env override → a copy next to this executable
+//! → the `PATH`.
+//!
 //! The rendering is *genuinely* windowless: we disable `WinitPlugin`, remove the
 //! primary window, and the camera renders into a **target image**
 //! (`RenderTarget::Image`). `ScheduleRunnerPlugin` pumps the loop; each `Update`
@@ -50,6 +55,7 @@ use bevy::time::TimeUpdateStrategy;
 use bevy::window::ExitCondition;
 use bevy::winit::WinitPlugin;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
@@ -191,6 +197,31 @@ struct RecordProgress {
 #[derive(Resource)]
 struct FrameSink(Sender<Vec<u8>>);
 
+/// Path of the `ffmpeg` encoder. Resolution order: the `TEEMLAB_FFMPEG` env var
+/// (explicit override), then a copy sitting *next to* the current executable (so a
+/// release archive — or the user — can drop in its own `ffmpeg` with no system
+/// install), then the bare `ffmpeg` on the `PATH`. ffmpeg stays an **external**
+/// runtime dependency, never bundled: `record` only spawns it as a separate process
+/// (raw frames over its stdin), which keeps the tree clear of ffmpeg's GPL terms.
+fn ffmpeg_binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("TEEMLAB_FFMPEG") {
+        return PathBuf::from(path);
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let sibling = dir.join(if cfg!(windows) {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        });
+        if sibling.exists() {
+            return sibling;
+        }
+    }
+    PathBuf::from("ffmpeg")
+}
+
 fn main() -> AppExit {
     let settings = Settings::parse();
     let config = match &settings.scenario {
@@ -227,7 +258,8 @@ fn main() -> AppExit {
 
     // `ffmpeg` reads raw RGBA video on stdin → encodes to H.264/yuv420p. No
     // intermediate file: we wire up the pipe directly.
-    let mut child: Child = Command::new("ffmpeg")
+    let ffmpeg = ffmpeg_binary();
+    let mut child: Child = Command::new(&ffmpeg)
         .args([
             "-y",
             "-f",
@@ -249,7 +281,11 @@ fn main() -> AppExit {
         .stdin(Stdio::piped())
         .spawn()
         .unwrap_or_else(|err| {
-            eprintln!("record: cannot launch ffmpeg ({err}). Is it installed?");
+            eprintln!(
+                "record: cannot launch ffmpeg at \"{}\" ({err}). Install ffmpeg (on \
+                 PATH), drop it next to this binary, or set TEEMLAB_FFMPEG to its path.",
+                ffmpeg.display()
+            );
             std::process::exit(1);
         });
 

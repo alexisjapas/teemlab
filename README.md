@@ -224,6 +224,13 @@ flame [scenario.ron]                  # flamegraph of the headless sim → outpu
 > changelog (the description of what changed since the previous tag), which becomes
 > the release notes. To run a release: bump `Cargo.toml`, commit, then
 > `git tag -a vX.Y.0 -m "…what changed…" && git push origin vX.Y.0`.
+>
+> **Recording needs `ffmpeg`.** The archives deliberately do **not** bundle it:
+> `record` only spawns `ffmpeg` as a separate process, so it stays an *external*
+> runtime dependency and its GPL terms never reach the tree (the dev shell provides
+> it via `flake.nix`). To record from a packaged build, install `ffmpeg` (so it is
+> on the `PATH`), or drop an `ffmpeg` binary next to the executables, or point
+> `TEEMLAB_FFMPEG` at its path. Without it, `record` exits with a message saying so.
 
 > **Launching the windowed build: the `play` command** (provided by the Nix dev
 > shell — `flake.nix`, `writeShellScriptBin`, no versioned script). The recording
