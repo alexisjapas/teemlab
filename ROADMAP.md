@@ -202,8 +202,9 @@ open work in §9.
   clusters into oases** around the sources (patchy food) + foragers nutrient-capped (no
   overshoot) — the competent forager navigates to the oases and wins. **`cohabitation`,
   `predator_prey`, `containment` un-ignored** (3 of the 4). **MLP — the learning story
-  in 3 scenarios** (the 4th, `mlp`, un-ignored as a *learning* test, not a domination
-  one): `mlp_brain` (a from-random MLP is **out-foraged** by a wander), `mlp_train`
+  in 3 scenarios** (and its driver `tests/mlp.rs` re-greened as a *learning* test, not a
+  domination one — there is no separate `mlp.ron`):
+  `mlp_brain` (a from-random MLP is **out-foraged** by a wander), `mlp_train`
   (MLPs evolve **alone** on the oasis flora), `mlp_evolved` (the **trained** variant
   reaches **parity** with the control). Parity, not domination, is the honest
   living-food outcome (the item-18b wall: domination needed a long stable selection
@@ -212,7 +213,12 @@ open work in §9.
   `species/examples/mlp_trained.ron` (using `Archetype::capture` + `captured_brain`).
 - Tooling: video recording (headless re-render via ffmpeg, defaults 30 fps / 61 s),
   multi-seed test drivers (`predator_prey`, `mlp`, `cohabitation`, `flight`, `flora`,
-  `nutrients`, …), clean `clippy`/`fmt`.
+  `nutrients`, …), and a headless **`sweep` bin** — runs a scenario many times and
+  **scores** each final world by biodiversity (Shannon `H` → effective species count),
+  over a seed sweep or a parameter sweep (count / mutation / photosynthesis / grazing
+  rate), to search for the coexistence band. It is the deliberately sequential,
+  in-process **first brick of P5's "run → score"** (cf. §9); generational breeding and
+  cross-match parallelism stay deferred. Clean `clippy`/`fmt`.
 - **UI rework — foundation + semantic reorg** (windowed build, sim untouched). The
   five independent docked-panel systems are **merged into one** `panels::dock` that
   builds a single background-layer root `Ui` and adds each panel with
@@ -319,7 +325,10 @@ open work in §9.
   **catalog metadata** (inhabited-scenario tags + behaviour notes) and **universal-species**
   portability — all deferred.
 - **P5 — battle (deferred) + scaling**: generational regime (run → score → breed),
-  headless parallelized across matches, then weight crossover / NEAT (§9).
+  headless parallelized across matches, then weight crossover / NEAT (§9). **First brick
+  landed**: the headless **`sweep` bin** already does the *run → score* half (biodiversity
+  scoring over seed/parameter sweeps, sequential and in-process — cf. the Tooling bullet
+  in §0); what stays deferred is the *select → breed* loop and the cross-match parallelism.
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
