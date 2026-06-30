@@ -318,9 +318,12 @@ variant = `mlp_evolved` reaching (then beating) parity.
    Step-generation deferred); the live world is paused on Run. The leaderboard is fed by a
    new `GenerationReport.elites` (the ranked per-match bests). Every piece **visually
    verified** via the Bevy screenshot API (`docs`/memory).
-6. **Item 20 — cross-match parallelism** (`TaskPool`/`std::thread`, isolated `World`s),
-   **profiler in hand**, after correctness. The nested-`App` global-thread-pool contention
-   is the known risk; measure before committing a scheme.
+6. **Item 20 — cross-match parallelism (done).** `Orchestrator::step` runs the cohort on
+   **scoped OS threads** (one per match) over isolated `World`s, sharing Bevy's global task
+   pool — the feared nested-`App` contention **did not materialize** (concurrent
+   `app.update()` works). Measured **~5×** on a 6-match cohort (8 cores: 44 s → 8.4 s,
+   646 % CPU). Determinism was already abandoned (Law 10). A bounded pool would only matter
+   for a very large `matches_per_gen` (today: one OS thread per match).
 7. **ROADMAP/constitution update** — move P5 items 19–20 from "Remaining" with the findings.
 
 ---

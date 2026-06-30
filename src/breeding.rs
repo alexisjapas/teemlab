@@ -164,17 +164,39 @@ impl Orchestrator {
     /// `survivors` across the cohort (carried into the next generation's founders), and
     /// return the [`GenerationReport`].
     pub fn step(&mut self) -> GenerationReport {
-        let mut match_scores = Vec::with_capacity(self.batch.matches_per_gen);
+        // Build every match's config up front, then run the cohort **in parallel** (item
+        // 20): each match is an isolated headless `World` (§6), so the cohort is
+        // embarrassingly parallel. Determinism is already abandoned (Law 10), so running
+        // them concurrently changes nothing the project relies on — the matches share
+        // Bevy's global task pool (initialised once, then reused). Scoped OS threads keep
+        // it dependency-free, and a borrow of `cfgs` suffices (the threads join before the
+        // scope ends). NB: one thread per match — fine for a realistic `matches_per_gen`;
+        // a bounded pool would only matter for a very large cohort.
+        let cfgs: Vec<SimConfig> = (0..self.batch.matches_per_gen)
+            .map(|m| self.build_match_config(m))
+            .collect();
+        let ticks = self.batch.match_ticks;
+        let cohort: Vec<Vec<Individual>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = cfgs
+                .iter()
+                .map(|cfg| scope.spawn(move || run_match(cfg, ticks)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a breeding match thread panicked"))
+                .collect()
+        });
+
+        // Score + select sequentially over the collected cohort (cheap, vs the matches).
+        let mut match_scores = Vec::with_capacity(cohort.len());
         let mut bests: Vec<Individual> = Vec::new();
-        for m in 0..self.batch.matches_per_gen {
-            let cfg = self.build_match_config(m);
-            let individuals = run_match(&cfg, self.batch.match_ticks);
+        for individuals in &cohort {
             match_scores.push(score(
-                &individuals,
+                individuals,
                 self.batch.fitness,
                 self.batch.scored_species,
             ));
-            if let Some(best) = best_individual(&individuals, self.batch.scored_species) {
+            if let Some(best) = best_individual(individuals, self.batch.scored_species) {
                 bests.push(best.clone());
             }
         }

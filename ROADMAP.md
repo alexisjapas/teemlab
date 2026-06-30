@@ -332,7 +332,9 @@ open work in §9.
   neuroevolution on living food plateaus at **parity** (§7) and `BestEvolved` is **perverse
   on a free reproducer** (it rewards reproduce-to-collapse → `Population` is the saner
   forager fitness). Built **headless-first**, every UI piece **visually verified** (Bevy
-  screenshot API). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+  screenshot API). The cohort runs **in parallel across matches** (item 20: scoped OS
+  threads over isolated `World`s — the feared global-pool contention did not materialize;
+  **~5×** on a 6-match cohort). Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.**
 
@@ -353,13 +355,12 @@ open work in §9.
 - **P5 — battle + scaling (the generational regime itself is now built; cf. §0 Done).**
   The `run → score → breed` loop, the explicit-fitness menu and both faces (the `breed`
   bin + the windowed dashboard) are **done**, with MLP breeding as the first carrier
-  ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)). What **remains**: **cross-match
-  parallelism** (item 20 — isolated `World`s on a task pool, *profiler in hand*; the
-  nested-`App` global-thread-pool contention is the known risk, so correctness shipped
-  **sequential** first); the **battle / factions scenario** (item 19's co-evolutionary
-  case — multiple scored species + a `transfer: false` faction relation, Red-Queen
-  calibration §7); a **live match spectator** + **Pause / Step-generation** in the
-  dashboard; and weight **crossover / NEAT** (item 21, §9).
+  ([`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md)), and the cohort now runs **in
+  parallel across matches** (item 20 — scoped OS threads over isolated `World`s, ~5×
+  measured; §0 Done). What **remains**: the **battle / factions scenario** (item 19's
+  co-evolutionary case — multiple scored species + a `transfer: false` faction relation,
+  Red-Queen calibration §7); a **live match spectator** + **Pause / Step-generation** in
+  the dashboard; and weight **crossover / NEAT** (item 21, §9).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
@@ -935,10 +936,13 @@ and *scaling* work.
     `breed` bin + the dashboard, MLP breeding the first carrier); what **remains** is the
     *battle scenario itself* — **multiple scored species** + a faction relation +
     **co-evolutionary (Red-Queen) calibration** (§7).
-20. Headless parallelized across matches: isolated `World`s, multi-core batch.
-    **(deferred — profiler in hand.)** The cohort runs **sequentially** today (correctness
-    first); the nested-`App` global-thread-pool contention is the known risk to measure
-    before committing a scheme.
+20. Headless parallelized across matches: isolated `World`s, multi-core batch. **(done.)**
+    `Orchestrator::step` runs the cohort on **scoped OS threads** (one per match) over
+    independent `World`s, sharing Bevy's global task pool — the feared nested-`App`
+    contention **did not materialize** (concurrent `app.update()` works). Measured **~5×**
+    on a 6-match cohort (8-core box: 44 s → 8.4 s, 646 % CPU); determinism was already
+    abandoned (Law 10), so the parallel order changes nothing. A bounded pool would only
+    matter for a very large `matches_per_gen`.
 21. Reflex/learned hybridization (subsumption); variable topology / NEAT, if a
     morphology with a variable number of sensors proves necessary.
 
