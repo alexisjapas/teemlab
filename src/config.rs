@@ -104,6 +104,14 @@ pub struct SimConfig {
     pub off_game_color: [f32; 3],
     /// RNG seed: replay an *experiment config*, not bit-for-bit.
     pub seed: u64,
+    /// **Generational regime** parameters (§4 axis A — batched reproduction). `None`
+    /// (the default, every existing scenario) → the **continuous** regime, untouched:
+    /// the field is absent from the RON and no orchestrator runs. Present → the
+    /// `breed` bin / the windowed dashboard can run the `run → score → breed` loop, an
+    /// **outside-sim** orchestrator (DEV Rule 1) whose inner match stays the
+    /// byte-identical [`SimPlugin`](crate::SimPlugin). See `docs/p5-breeding-plan.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch: Option<BatchConfig>,
 }
 
 /// An **archetype**: a first-order species. Its index in
@@ -559,6 +567,53 @@ pub struct Source {
     pub radius: f32,
 }
 
+/// **Generational ("batched repro") regime** parameters — §4 axis A (reproduction at a
+/// generation boundary) × axis B (explicit fitness). Carried on [`SimConfig::batch`] as
+/// an `Option`, **absent by default** so every continuous scenario is byte-identical.
+///
+/// The regime is **not** a reified `enum Regime` (§4 architectural guard): it is a
+/// *recomposition* — an `breeding::Orchestrator` (outside the sim) runs a cohort of
+/// matches, scores each by [`Fitness`], selects the top `survivors` and re-seeds them as
+/// the next generation's founders (via [`Archetype::capture`]). The **inner match** stays
+/// the byte-identical [`SimPlugin`](crate::SimPlugin), its continuous in-match evolution
+/// (`ecology::reproduce`) untouched. See `docs/p5-breeding-plan.md`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchConfig {
+    /// Number of generation boundaries the orchestrator runs.
+    pub generations: usize,
+    /// Independent seeded matches per generation (the cohort) — the **founder-diversity**
+    /// lever motivating P5 (the item-18b variance finding).
+    pub matches_per_gen: usize,
+    /// Terminal condition of one match: a fixed tick budget (v1). Richer conditions
+    /// (extinction, score threshold) are a later enum — kept a single `ticks` to avoid a
+    /// premature abstraction.
+    pub match_ticks: u64,
+    /// The archetype under selection (the scored species). v1: one; battle (item 19)
+    /// generalizes to several factions.
+    pub scored_species: u16,
+    /// The explicit fitness function (§4 axis B).
+    pub fitness: Fitness,
+    /// Top-K genomes carried into the next generation's founders (selection pressure).
+    pub survivors: usize,
+    /// Base seed for the per-match seeds, so a whole breeding run replays from one number
+    /// (an *experiment*, not bit-for-bit — Law 10).
+    pub seed_base: u64,
+}
+
+/// Explicit fitness — how a match **scores** a genome (§4 axis B). A small, growable menu
+/// of engine primitives (an exhaustive `match` in `breeding::score`), the heterogeneous
+/// counterpart of the cost / relation tables.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Fitness {
+    /// Best-evolved individual of the scored species: highest `Generation`, tie-broken by
+    /// `Reserve` — exactly the `train` bin's capture rule. The MLP-breeding default.
+    BestEvolved,
+    /// Standing biomass: the living count of the scored species at the terminal condition
+    /// (an ecological score — coexistence / dominance).
+    Population,
+}
+
 impl Default for SimConfig {
     fn default() -> Self {
         Self {
@@ -642,6 +697,7 @@ impl Default for SimConfig {
             play_area_color: [0.07, 0.07, 0.09],
             off_game_color: [0.17, 0.17, 0.19],
             seed: 0x00C0_FFEE,
+            batch: None,
         }
     }
 }
@@ -964,6 +1020,39 @@ mod tests {
         assert_eq!(cfg, back);
     }
 
+    /// The **generational regime** is optional: a continuous scenario omits `batch` from
+    /// its RON (`skip_serializing_if`) and reads back as `None` — so every existing
+    /// scenario stays byte-identical (no migration, DEV Rule 3). A scenario **with** a
+    /// batch round-trips losslessly.
+    #[test]
+    fn batch_regime_is_optional_and_roundtrips() {
+        // Absent by default → field omitted from the RON, reads back None.
+        let plain = SimConfig::default();
+        assert_eq!(plain.batch, None);
+        let text = plain.to_ron_string().expect("RON serialization");
+        assert!(
+            !text.contains("batch"),
+            "the batch field must be omitted when None:\n{text}"
+        );
+
+        // Present → lossless round-trip.
+        let cfg = SimConfig {
+            batch: Some(BatchConfig {
+                generations: 12,
+                matches_per_gen: 6,
+                match_ticks: 6000,
+                scored_species: 0,
+                fitness: Fitness::BestEvolved,
+                survivors: 3,
+                seed_base: 1,
+            }),
+            ..SimConfig::default()
+        };
+        let back = SimConfig::from_ron_str(&cfg.to_ron_string().expect("RON serialization"))
+            .expect("re-read");
+        assert_eq!(cfg, back);
+    }
+
     /// A species (archetype) makes a lossless RON round-trip, `source` included —
     /// the library's export/import (item 4).
     #[test]
@@ -1224,6 +1313,21 @@ mod tests {
         assert!(
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "species 1 = wander control"
+        );
+    }
+
+    /// The MLP-breeding scenario (P5): a generational `batch` whose scored species is the
+    /// learned MLP foraging the oasis flora — the carrier the `breed` bin runs (a
+    /// generator, not a CI sim). Guardrail on the batch schema + the scenario wiring.
+    #[test]
+    fn bundled_mlp_breed_carries_a_batch_regime() {
+        let text = include_str!("../scenarios/examples/13_mlp_breed.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid MLP-breeding scenario");
+        let batch = cfg.batch.as_ref().expect("a batch regime");
+        assert!(batch.generations > 1, "a generational run");
+        assert!(
+            matches!(cfg.brain_of(batch.scored_species), BrainKind::Mlp { .. }),
+            "the scored species is the learned MLP"
         );
     }
 

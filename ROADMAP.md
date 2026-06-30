@@ -329,6 +329,8 @@ open work in §9.
   landed**: the headless **`sweep` bin** already does the *run → score* half (biodiversity
   scoring over seed/parameter sweeps, sequential and in-process — cf. the Tooling bullet
   in §0); what stays deferred is the *select → breed* loop and the cross-match parallelism.
+  **Plan written:** [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md) (schema +
+  orchestrator + dashboard + MLP-breeding carrier; headless-first, the spectator deferred).
 - **Nutrients — the closed loop (T3, §9)**. Links 1 (**trophic transfer** — eating
   carries the nutrient up the chain) and 2 (**recycling** — a dying body returns it to the
   field) are **done** (cf. §0 above): the nutrient now cycles source → field → plant →
@@ -889,7 +891,10 @@ flowchart TB
 ### P5 — Battle (deferred) + scaling
 
 The generational regime tests axis A: it must enter as a recomposition along the A/B
-seam (§4), without touching any core system.
+seam (§4), without touching any core system. **Detailed plan:**
+[`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md) — the binding reference (schema,
+orchestrator, dashboard, MLP-breeding scenario), staged so the inner match stays the
+byte-identical `SimPlugin`.
 
 19. Battle scenario — generational regime: run → score → breed → run loop
     (outside-sim orchestrator), explicit fitness via a menu of engine primitives,
@@ -905,7 +910,11 @@ seam (§4), without touching any core system.
 - **A/B regime seam** (§4): in continuous, reproduction is a sim system
   (`ecology::reproduce`, `FixedUpdate`) with implicit fitness; the generational adds
   an outside-sim orchestrator without the continuous system depending on it. No closed
-  `enum Regime`.
+  `enum Regime`. **Now designed in detail** —
+  [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md): an additive
+  `SimConfig.batch: Option<BatchConfig>` + a `Fitness` menu, a `breeding::Orchestrator`
+  that breeds *between* matches (the continuous in-match loop untouched), a headless
+  `breed` bin and a windowed dashboard, MLP breeding as the first carrier.
 - **Toroidal arena — deferred until Bevy/Avian support it natively**: a borderless,
   wrapping arena (a local crowd disperses across an edge instead of piling against a
   wall — closer to nature than a hard box) is **wanted but postponed**. A position-only

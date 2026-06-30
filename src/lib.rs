@@ -14,6 +14,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod brain;
+pub mod breeding;
 pub mod components;
 pub mod config;
 pub mod dataviz;
