@@ -1164,13 +1164,11 @@ and *scaling* work.
   sources, relation table) on one `number_input` pipeline, egui `left_tools` removed; a
   new `scenarios/examples/example.ron` became the windowed default. **Verdict: the native
   feathers/`bevy_ui` windowed UI is not usable in practice** (judged on the running
-  build) → **`main` keeps the egui UI**. The attempt is **preserved on the branch
-  `native-ui-migration`** (local and on `origin`), whose tip is the spike commit
-  **`35ddd2f`** — it carries **`docs/native-ui-migration-plan.md`**, which holds the detailed
-  findings; inspect with `git checkout native-ui-migration`. Note the branch retains **only the
-  spike**: the panel-by-panel port commits described above (#1/#2/#4, once tip `32983ef`) are
-  **no longer in the repo** — their findings survive in the plan doc and in the *Lessons* bullet
-  below, which is what a future rework actually needs.
+  build) → **`main` keeps the egui UI**, and the attempt was **discarded**: the
+  `native-ui-migration` branch (and its 147-line `docs/native-ui-migration-plan.md`) has been
+  **deleted**, because a future full-native move would be a **rework from scratch**, not a
+  resume of this spike. The findings that such a rework actually needs are preserved on `main`
+  in the *Lessons for the eventual rework* bullet below.
   - **Lessons for the eventual rework** (so it isn't re-derived): (a) **feathers is
     young** — buttons/sliders/checkboxes/number_input/text_input/theme work, but there
     is **no table/grid and no drag-and-drop**, and the BSN scene API (`spawn_scene` +
