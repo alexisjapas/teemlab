@@ -89,6 +89,13 @@ NEAT** (item 21 — the last learned-evolution piece); the nutrient axis's **T3 
 editor long-tail (library management, catalog metadata). Cf. [`ROADMAP.md`](ROADMAP.md)
 §0/§8/§9.
 
+**Near-term orientation.** The near-term goal is **rich, non-collapsing** ecosystems (with a
+downstream *science of collapse factors*); the prioritised work is a **cognitive substrate** —
+deliberate, costed eating + **proprioception** — that makes behavioural *restraint* expressible,
+alongside **component emission** (corpses, waste, toxicity, communication as one agent →
+environment mechanism). Synthesis:
+[`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md).
+
 > **Cardinal invariant**: no simulation logic in `Update`. Agency lives in
 > `FixedUpdate`, Avian physics in `FixedPostUpdate`; `Update` is reserved for the
 > rendering / UI of the windowed binary.

@@ -593,6 +593,17 @@ first; it already carries predation, competition and co-evolution (cf. Avida,
 Tierra, Polyworld). The generational regime (battle) is deferred as the final test
 of axis A.
 
+The platform serves **several needs**, not one. The **near-term product goal** is to
+generate simulations that are **rich** (behavioural and ecological diversity) **and that
+do not persistently collapse** (populations survive over a long horizon — *persistent*,
+not *constant*: oscillation is real ecology, cf. §7). A **downstream need** is a *science
+of collapse factors* — determining which parameters tip a system from persistence into
+irreversible collapse. The near-term priority order and the organising frame (endogenous
+stabilisers vs destabilisers; the deliberate-eating + proprioception substrate; component
+emission) are synthesised in
+[`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md), the binding orientation
+reference for the threads that follow in §9.
+
 ### P0 — Foundations (done)
 
 1. Bevy + Avian, rigid circles, collisions, 2D camera; sim in `FixedUpdate` /
@@ -1099,6 +1110,29 @@ and *scaling* work.
     is worth building: it must stay **conservative** (the new body is *built from* the
     consumed nutrients, never free — Law 9), and it **dilutes natural selection** (cheap
     re-emergence lowers the cost of extinction — the project's core pressure), so dose it.
+- **Emission of components — agent → environment (planned; the symmetric of absorption)**:
+  two current gaps are one missing mechanism — an agent cannot **die without disappearing**
+  (no corpses) nor **emit components during life** (organic waste, excretions). Both are an
+  **agent → environment** write, the **symmetric of absorption** (which already reads
+  environment → agent, T2). Today's recycling (dead body → field) is only a *special case*
+  wired into the death system; the general, voluntary/continuous outbound direction is
+  missing. **Architectural approach (current): one layer per component/nutrient type** (as the
+  nutrient field already is) — emission *writes* into these per-component layers, death deposits
+  biomass into a layer (corpses / the missing **turnover**). Inter-layer **metabolisation**
+  (transforming one component into another) is a later, optional addition. With *emitted
+  component + a field-perception channel + relation-defined semantics*, and **no per-kind code**
+  (Law 11), one mechanism unifies four wishlist items: **corpses** (biomass at death),
+  **organic waste** (continuous emission), **toxicity** (a component the relation marks *toxic /
+  edible / inert* per species), and **communication / pheromones** (a component meant to be
+  *perceived*, not consumed — a chemical pheromone and a toxic waste differ only by their
+  relation). **Double-edged for persistence** (§8): recycling closes the matter loop (Law 9 in
+  spirit), while **toxin accumulation is a new endogenous collapse mode** (self-poisoning,
+  eutrophication-like) — a collapse factor to study. **Open question:** the **audio/wave**
+  modality (several frequencies, propagation) does **not** fit the diffusion-layer model — a
+  layer-per-frequency path would still need **wave collision/reflection**, which diffusion does
+  not do; and the per-layer approach is itself **challengeable** if non-optimal. This subsumes
+  the "grazed plants cannot die" turnover decision and the conservation-at-reproduction
+  invariant. Synthesis: [`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md) §3.
 - **Nutrient-field visualization — layers (done)**: a toggleable **heatmap layer** per
   nutrient (the invisible substrate made observable — gradients, sources, depletion
   around clusters), render-only and off by default. Generalized into a small **layer
@@ -1161,15 +1195,40 @@ and *scaling* work.
   `--select != off`) → "Resource does not exist" panic. Any other combination is fine
   (default `--select eldest` provides it). Fix: gate `draw_viz` on the HUD being enabled,
   or take `Option<Res<Selection>>`. Found while rendering nutrient videos; not yet fixed.
+- **Rich, persistent ecosystems & the science of collapse factors (near-term
+  orientation)** — the synthesis is
+  [`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md) (binding). The near-term
+  product goal is **rich, non-collapsing** simulations; the *science of collapse factors* is
+  a downstream need (cf. §8). Organising frame: persistence has **endogenous** drivers, not
+  only exogenous knobs — an endogenous **stabiliser** (behavioural *restraint*, §2 of the doc)
+  and an endogenous **destabiliser** (*toxin accumulation* from emission). The two concrete
+  threads it prioritises are the **cognitive substrate** (the two bullets that follow) and
+  **component emission** (the "Emission of components" point in the nutrients cluster above).
+  "Does not collapse" ≠ constant:
+  the science must separate an *irreversible* collapse from a *reversible* trough (a collapse
+  metric + running past the first trough), and induce collapses via **single-factor gradients**
+  — the `sweep` bin (§0/§6) is its first brick.
 - **Eating / attacking as a *deliberate, costed* action — not automatic on contact
-  (planned, touches Law 8)**: today `interaction::interact` fires on *every* actor that
-  has a valid target in range — predation is a reflex. The richer model: the **brain
-  decides** whether to act (an output of `Action`), and the act **costs** something
+  (PRIORITISED near-term; touches Law 8)**: today `interaction::interact` fires on *every*
+  actor that has a valid target in range — predation is a reflex. The richer model: the
+  **brain decides** whether to act (an output of `Action`), and the act **costs** something
   (energy/effort), so attacking/eating becomes a strategic choice weighed against its
   cost — and, with the `nutrients` web, *what* to eat follows from *which nutrients are
   needed*. A real change to the one-primitive semantics (Law 8: the primitive stays, its
-  *triggering* moves from automatic-in-range to brain-driven), hence flagged for a
-  deliberate decision.
+  *triggering* moves from automatic-in-range to brain-driven). **Why prioritised:** *not
+  eating everything* is behavioural **restraint**, an endogenous stabiliser of the ecosystem
+  — selectable only under **spatial viscosity** (limited dispersal, so offspring inherit the
+  environment their parent degraded/preserved; ties to `seed_dispersal` and the spatial-refuge
+  lesson of item 17). It pairs with **proprioception** (next bullet): the two together are the
+  minimal substrate for restraint to be *expressible* (cf. `docs/persistent-ecosystems.md` §2).
+- **Proprioception — self-state perception channels (PRIORITISED near-term; extends
+  Law 3/Law 4)**: the brain's inputs are today only its exteroception (vision/target/threat).
+  Add **self-referential** channels — current speed, energy reserve, nutrient store — so an
+  agent can *modulate* its behaviour on its own state (eat when hungry, not on contact). It is
+  **instrumentally necessary** for deliberate eating above: without an internal-state input,
+  "choosing whether to eat" has nothing to weigh against. New sensors extend the I/O vectors,
+  the brain adapting to the body (Law 4); the MLP input resizes at reproduction like the
+  vision channels did (item 18c/18g). Cf. `docs/persistent-ecosystems.md` §2.
 - **Manual headless stepping**: `app.update()` in a tight loop requires `app.finish()`
   then `app.cleanup()` beforehand (Avian inserts resources in `Plugin::finish()`).
   Proven in `tests/containment.rs`.
