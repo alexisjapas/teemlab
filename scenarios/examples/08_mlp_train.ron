@@ -224,5 +224,5 @@
     ),
     play_area_color: (0.07, 0.07, 0.09),
     off_game_color: (0.17, 0.17, 0.19),
-    seed: 12648430,
+    seed: 10,
 )

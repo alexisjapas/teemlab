@@ -140,10 +140,11 @@ impl Vision {
 }
 
 /// Sensory snapshot. Written by `perceive`, read by `decide` — conceptually the
-/// brain's input vector. It gathers the **normalized channels** (`vision`,
-/// `target`, `threat`, in `[0, 1]`) and the **geometry** that situates them
-/// (`heading`, `ray_dirs`), so a brain can decide without knowing anything about
-/// the body ([`Vision`]).
+/// brain's input vector. It gathers the **exteroceptive** channels (`vision`,
+/// `target`, `threat`, in `[0, 1]`, one per ray), the **proprioceptive**
+/// channels (`self_state` — the agent's own internal state, scalar), and the
+/// **geometry** that situates the ray channels (`heading`, `ray_dirs`), so a
+/// brain can decide without knowing anything about the body ([`Vision`]).
 #[derive(Component, Default)]
 pub struct Perception {
     /// Current heading as a unit vector (zero when stopped).
@@ -170,12 +171,35 @@ pub struct Perception {
     /// (repulsion) — the exact counterpart of the `target` channel that attracts
     /// it.
     pub threat: Box<[f32]>,
-    /// **World** direction (unit) of each ray, situating the channels above.
+    /// **Proprioceptive** channels — the agent's own internal state, normalized
+    /// to `[0, 1]`, **scalar** (one per agent, *not* per ray): in order, the
+    /// energy reserve fraction ([`Reserve::fraction`]), the nutrient store
+    /// fraction ([`crate::nutrients::Nutrients::fraction`]) and the current speed
+    /// fraction (`|v| / max_speed`). Written by `perceive`, read as the **tail**
+    /// of the MLP input vector (after the per-ray channels, cf.
+    /// [`crate::brain::MlpBrain`]). They let a brain *modulate on its own state* —
+    /// eat when hungry rather than automatically on contact — the minimal
+    /// substrate for behavioural **restraint** to be expressible
+    /// (`docs/persistent-ecosystems.md` §2). A fixed, universal capability (not an
+    /// evolvable gene, so nothing to price against drift — SIM Law 7 is about
+    /// evolvable magnitudes; the *use* is already priced through the decision
+    /// network's `brain_cost`). The hand-written brains ignore it.
+    pub self_state: [f32; Self::SELF_CHANNELS],
+    /// **World** direction (unit) of each ray, situating the ray channels above.
     /// `perceive` already derives it to cast the raycast; exposing it spares the
     /// brain from knowing [`Vision`]'s geometry (fov, ray count): a reflex
     /// decodes "ray i → direction" without depending on the body, and the
     /// `Perception → Action` contract stays pure (an MLP will ignore this field).
     pub ray_dirs: Box<[Vec2]>,
+}
+
+impl Perception {
+    /// Number of **proprioceptive** (self-state) channels wired into the brain's
+    /// input: energy reserve fraction, nutrient store fraction, speed fraction —
+    /// in that fixed order (cf. [`Perception::self_state`] and `perceive`). The
+    /// single source of truth the MLP input sizing ([`crate::brain::MlpBrain`])
+    /// and the graph labels read, so changing the count is one edit here.
+    pub const SELF_CHANNELS: usize = 3;
 }
 
 /// Motor command. Written by `decide`, read by `act`.

@@ -932,23 +932,35 @@ fn draw_mlp(
         }
     }
 
-    // Labels of the input groups (vis/tgt/thr) and the outputs (fwd/side) — names from
-    // the MLP contract (`MlpBrain::CHANNEL_LABELS` / `OUTPUT_LABELS`), not hardcoded.
+    // Labels of the input groups and the outputs (fwd/side) — names from the MLP
+    // contract (`MlpBrain::CHANNEL_LABELS` / `SELF_LABELS` / `OUTPUT_LABELS`), not
+    // hardcoded. The input column is `CHANNELS` per-ray blocks (vis/tgt/thr, each
+    // `rays` wide) followed by the scalar self block (nrg/nut/spd).
     let n_in = sizes[0];
     let channels = MlpBrain::CHANNEL_LABELS;
-    if n_in.is_multiple_of(channels.len()) {
-        let rays = n_in / channels.len();
+    let self_labels = MlpBrain::SELF_LABELS;
+    let ray_inputs = n_in.saturating_sub(self_labels.len());
+    let label = |commands: &mut Commands, node: usize, name: &&str| {
+        let (_, py) = node_px(0, node, n_in);
+        text(
+            commands,
+            font,
+            *name,
+            x - 2.0,
+            py - 6.0,
+            11.0,
+            Color::srgb(0.6, 0.6, 0.65),
+        );
+    };
+    if ray_inputs > 0 && ray_inputs.is_multiple_of(channels.len()) {
+        let rays = ray_inputs / channels.len();
+        // One label per per-ray channel block, centered on the block.
         for (g, name) in channels.iter().enumerate() {
-            let (_, py) = node_px(0, g * rays + rays / 2, n_in);
-            text(
-                commands,
-                font,
-                *name,
-                x - 2.0,
-                py - 6.0,
-                11.0,
-                Color::srgb(0.6, 0.6, 0.65),
-            );
+            label(commands, g * rays + rays / 2, name);
+        }
+        // One label per scalar self channel (the trailing block).
+        for (s, name) in self_labels.iter().enumerate() {
+            label(commands, ray_inputs + s, name);
         }
     }
     let last = cols - 1;

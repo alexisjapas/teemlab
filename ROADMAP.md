@@ -347,6 +347,36 @@ open work in §9.
   in the same place"). The dashboard shows a **per-faction** view — a curve line + a
   leaderboard selector **per bred faction** (the `breed` bin prints one line per faction).
   Reference: [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+- **Proprioception — self-state perception channels (the cognitive substrate, part 1;
+  `docs/persistent-ecosystems.md` §2, §9)**: the brain can now sense **itself**, not only
+  the world. [`Perception`] gains a scalar **proprioceptive** block (`self_state`,
+  `SELF_CHANNELS = 3`) — the **energy reserve** fraction, the **nutrient store** fraction and
+  the **speed** fraction — filled by `perceive` (which now reads `Reserve`/`Nutrients`/
+  velocity) and appended to the MLP input **after** the per-ray blocks, so `input_size =
+  CHANNELS × rays + SELF_CHANNELS`; `MlpBrain::resize_input_fan` carries the
+  **ray-count-independent** self block over unchanged when visual precision drifts (item 18c),
+  and a `SELF_LABELS` triplet labels it in the graph views. The **exact same method as the
+  `threat` channel** (extend the perception contract, then wire the learned brain — item
+  18e→18g): the hand-written brains ignore `self_state`, so **every non-MLP scenario stays
+  byte-identical** (no MLP ⇒ the input-size growth is inert; the fill is read-only, drawing no
+  RNG), and only the MLP scenarios widen (more Xavier draws). **A deliberate no-cost** (SIM
+  Law 7): proprioception is a *fixed, universal, non-evolvable* capability — no magnitude that
+  drifts, hence nothing to price against (unlike vision's range × rays); its *use* is already
+  priced through the decision network's `brain_cost` (neuron count). Made **legible**: the
+  inspector shows a `self` readout (nrg · nut · spd) and the video network-graph labels the
+  input's trailing self block. The trained-MLP **showcase was regenerated** under the new
+  contract (the old captured brains had the pre-proprioception input size → inert): `train`
+  rewrote `07_mlp_brain` / `09_mlp_evolved` + the `mlp_trained` catalog variant, with the
+  training seed **pinned in `08_mlp_train.ron`** so the default `cargo run --bin train`
+  reproduces the committed capture; `tests/mlp` **revalidated** — the trained MLP reaches
+  parity/slight-domination on the oasis flora while the naive control is out-foraged, across
+  the 5 seeds. **Driver** unit `mlp_reads_self_state_channel`: two perceptions identical except
+  for `self_state` → **different** actions (the self-referential analogue of
+  `mlp_reads_threat_channel` — the falsifiable proof the channel is not ignored; using it
+  *well*, e.g. eat-when-hungry, is up to selection). **Why:** it makes behavioural **restraint**
+  *expressible* — an agent that can weigh its own hunger is the prerequisite for **deliberate,
+  costed eating** (the substrate's part 2, §9), the endogenous stabiliser of
+  `docs/persistent-ecosystems.md` §2.
 
 **Remaining.**
 
@@ -1222,14 +1252,20 @@ and *scaling* work.
   environment their parent degraded/preserved; ties to `seed_dispersal` and the spatial-refuge
   lesson of item 17). It pairs with **proprioception** (next bullet): the two together are the
   minimal substrate for restraint to be *expressible* (cf. `docs/persistent-ecosystems.md` §2).
-- **Proprioception — self-state perception channels (PRIORITISED near-term; extends
-  Law 3/Law 4)**: the brain's inputs are today only its exteroception (vision/target/threat).
-  Add **self-referential** channels — current speed, energy reserve, nutrient store — so an
-  agent can *modulate* its behaviour on its own state (eat when hungry, not on contact). It is
-  **instrumentally necessary** for deliberate eating above: without an internal-state input,
-  "choosing whether to eat" has nothing to weigh against. New sensors extend the I/O vectors,
-  the brain adapting to the body (Law 4); the MLP input resizes at reproduction like the
-  vision channels did (item 18c/18g). Cf. `docs/persistent-ecosystems.md` §2.
+- **Proprioception — self-state perception channels (extends Law 3/Law 4) — DONE (cf. §0).**
+  The brain's inputs were only its exteroception (vision/target/threat); it now also reads
+  **self-referential** channels — energy reserve, nutrient store, current speed
+  ([`Perception::self_state`], `SELF_CHANNELS = 3`) — so an agent can *modulate* on its own
+  state (eat when hungry, not on contact). Filled by `perceive`, appended **after** the per-ray
+  blocks in the MLP input (`input_size = CHANNELS × rays + SELF_CHANNELS`; `resize_input_fan`
+  carries the ray-count-independent self block over unchanged, item 18c). Extended the way the
+  vision/threat channels were (item 18c/18g): **non-MLP scenarios byte-identical** (the
+  hand-written brains ignore it, the fill draws no RNG), the MLP showcase regenerated + `tests/mlp`
+  revalidated, driver `mlp_reads_self_state_channel`. A **deliberate no-cost** (Law 7 targets
+  *evolvable* magnitudes; this is a fixed capability, its use priced via `brain_cost`). It is
+  **instrumentally necessary** for the deliberate-eating thread above: without an internal-state
+  input, "choosing whether to eat" has nothing to weigh against. Cf.
+  `docs/persistent-ecosystems.md` §2.
 - **Manual headless stepping**: `app.update()` in a tight loop requires `app.finish()`
   then `app.cleanup()` beforehand (Avian inserts resources in `Plugin::finish()`).
   Proven in `tests/containment.rs`.

@@ -414,6 +414,14 @@ pub(crate) fn inspector_section(
                 ui,
                 "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
             );
+            // Proprioception: the scalar self-state channels the brain reads about
+            // *itself* (normalized [0,1]) — the substrate for modulating on its own
+            // state (eat when hungry, not on contact). See `Perception::self_state`.
+            let [nrg, nut, spd] = perception.self_state;
+            ui.horizontal(|ui| {
+                ui.strong("self");
+                ui.label(format!("nrg {nrg:.2} · nut {nut:.2} · spd {spd:.2}"));
+            });
             for (i, &proximity) in perception.vision.iter().enumerate() {
                 let target = perception.target.get(i).copied().unwrap_or(0.0);
                 let threat = perception.threat.get(i).copied().unwrap_or(0.0);

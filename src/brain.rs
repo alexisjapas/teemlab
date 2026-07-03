@@ -400,13 +400,17 @@ impl Layer {
 /// at reproduction ([`MlpBrain::mutated`]). Homemade by design: ML libs aim at the
 /// big GPU network, the opposite of the need (§5).
 ///
-/// **Input**: the three normalized channels `vision`, `target` then `threat`
-/// concatenated (`CHANNELS × vision_rays`; it ignores the `ray_dirs` geometry, cf.
-/// `components.rs`). The `threat` channel (active flight, item 18e) was first
+/// **Input**: the per-ray exteroceptive channels `vision`, `target` then `threat`
+/// concatenated (`CHANNELS × vision_rays`), followed by the scalar **proprioceptive**
+/// channels (`self_state` — energy, nutrient, speed; [`Perception::SELF_CHANNELS`]),
+/// hence `CHANNELS × vision_rays + SELF_CHANNELS` (it ignores the `ray_dirs` geometry,
+/// cf. `components.rs`). The `threat` channel (active flight, item 18e) was first
 /// validated **on the deterministic hunter** before being entrusted to the learned
 /// one — exactly like `target` (introduced on the hunter at item 16, then consumed
 /// by the MLP at item 18b): the learned brain now therefore receives what it needs
-/// to *learn* to flee, where the hunter applies a hard-wired reflex. **Output**: 2
+/// to *learn* to flee, where the hunter applies a hard-wired reflex. The
+/// proprioceptive channels let it modulate on its own state (eat when hungry — the
+/// substrate for restraint, `docs/persistent-ecosystems.md` §2). **Output**: 2
 /// neurons read as a steering vector *in body frame*, rotated to the world by the
 /// heading → orientation-equivariant (the network need not learn the absolute
 /// orientation, as the hunter reads "ray i" relative to the heading).
@@ -427,10 +431,13 @@ impl MlpBrain {
     pub const OUTPUTS: usize = 2;
     /// Scale of a weight-mutation step (multiplied by `mutation_rate`).
     const WEIGHT_STEP: f32 = 0.6;
-    /// Number of **perception channels** per ray wired into the input: `vision`
+    /// Number of **per-ray** perception channels wired into the input: `vision`
     /// (obstacle), `target` (attracting target) and `threat` (fleeing threat). The
-    /// input layer is therefore `CHANNELS × vision_rays` — and its resizing at
-    /// reproduction respects these `CHANNELS` blocks (cf. [`MlpBrain::resize_input_fan`]).
+    /// per-ray part of the input is therefore `CHANNELS × vision_rays` — and its
+    /// resizing at reproduction respects these `CHANNELS` blocks (cf.
+    /// [`MlpBrain::resize_input_fan`]). The **proprioceptive** channels
+    /// ([`Perception::SELF_CHANNELS`]) are appended after them, scalar and
+    /// ray-count-independent.
     const CHANNELS: usize = 3;
 
     /// Abbreviated names of the input perception channels, in input-vector order — one
@@ -441,16 +448,25 @@ impl MlpBrain {
     /// updates every view at once. The array length is pinned to `CHANNELS`, so changing
     /// the channel count without the labels is a compile error.
     pub const CHANNEL_LABELS: [&'static str; Self::CHANNELS] = ["vis", "tgt", "thr"];
+    /// Abbreviated names of the **proprioceptive** input channels, appended after the
+    /// per-ray blocks in input-vector order (cf. [`Perception::self_state`] and
+    /// `perceive`): energy reserve, nutrient store, speed. Same single-source role as
+    /// [`CHANNEL_LABELS`](Self::CHANNEL_LABELS) for the graph renderers; length pinned
+    /// to [`Perception::SELF_CHANNELS`], so changing the self-channel count without the
+    /// labels is a compile error.
+    pub const SELF_LABELS: [&'static str; Perception::SELF_CHANNELS] = ["nrg", "nut", "spd"];
     /// Names of the output neurons, in order: the body-frame steering vector (forward,
     /// side), cf. [`MlpBrain::think`]. The output-column counterpart of
     /// [`CHANNEL_LABELS`](Self::CHANNEL_LABELS) — same single-source role, length pinned
     /// to `OUTPUTS`.
     pub const OUTPUT_LABELS: [&'static str; Self::OUTPUTS] = ["fwd", "side"];
 
-    /// Size of the input layer for `vision_rays` rays: the `vision`, `target` AND
-    /// `threat` channels concatenated, hence `CHANNELS × vision_rays`.
+    /// Size of the input layer for `vision_rays` rays: the per-ray `vision`,
+    /// `target` AND `threat` channels concatenated (`CHANNELS × vision_rays`), plus
+    /// the scalar **proprioceptive** channels ([`Perception::SELF_CHANNELS`]) appended
+    /// at the tail — hence `CHANNELS × vision_rays + SELF_CHANNELS`.
     pub fn input_size(vision_rays: usize) -> usize {
-        Self::CHANNELS * vision_rays
+        Self::CHANNELS * vision_rays + Perception::SELF_CHANNELS
     }
 
     /// Network with **random** weights: dims = `[n_inputs] ++ hidden ++ [OUTPUTS]`.
@@ -506,23 +522,27 @@ impl MlpBrain {
         Self { layers }
     }
 
-    /// Resizes the input layer's fan-in to `n_inputs`, **respecting the
-    /// [`CHANNELS`](Self::CHANNELS) blocks** of the perception vector (`vision`,
-    /// `target` then `threat`, each of `rays` channels — cf.
-    /// [`MlpBrain::input_vector`]). Each block is truncated (if the child sees less
-    /// finely) or padded with fresh Xavier-style weights (if it sees more finely),
-    /// so that the kept weights stay **aligned on the right channel**. The biases
-    /// (per output neuron) are unchanged.
+    /// Resizes the input layer's fan-in to `n_inputs`, **respecting the input
+    /// layout**: `CHANNELS` per-ray blocks (`vision`, `target`, `threat`, each of
+    /// `rays` channels) followed by the [`SELF_CHANNELS`](Perception::SELF_CHANNELS)
+    /// scalar proprioceptive channels (cf. [`MlpBrain::input_vector`]). Only the ray
+    /// count changes at reproduction (gene `vision_rays`): each per-ray block is
+    /// truncated (child sees less finely) or padded with fresh Xavier-style weights
+    /// (child sees more finely), so the kept weights stay **aligned on the right
+    /// channel**; the self block is **ray-count-independent** and its weights are
+    /// carried over **unchanged**. The biases (per output neuron) are unchanged.
     fn resize_input_fan(layer: &Layer, rng: &mut Rng, n_inputs: usize) -> Layer {
         let outputs = layer.outputs();
         let old_in = layer.inputs;
-        let old_rays = old_in / Self::CHANNELS; // input = CHANNELS × rays
-        let new_rays = n_inputs / Self::CHANNELS;
+        // Strip the trailing self block to recover the per-ray counts on both sides.
+        let old_rays = (old_in - Perception::SELF_CHANNELS) / Self::CHANNELS;
+        let new_rays = (n_inputs - Perception::SELF_CHANNELS) / Self::CHANNELS;
+        let old_self_start = Self::CHANNELS * old_rays; // where the self block begins
         let scale = 1.0 / (n_inputs.max(1) as f32).sqrt();
         let mut weights = Vec::with_capacity(n_inputs * outputs);
         for o in 0..outputs {
             let row = &layer.weights[o * old_in..(o + 1) * old_in];
-            // One block per channel (vision, target, threat), each of `old_rays` weights.
+            // One block per per-ray channel (vision, target, threat), each `old_rays` wide.
             for block in 0..Self::CHANNELS {
                 let block_start = block * old_rays;
                 for r in 0..new_rays {
@@ -533,6 +553,11 @@ impl MlpBrain {
                     });
                 }
             }
+            // The proprioceptive block: fixed size, carried over unchanged (its
+            // channels do not depend on the ray count).
+            for s in 0..Perception::SELF_CHANNELS {
+                weights.push(row[old_self_start + s]);
+            }
         }
         Layer {
             inputs: n_inputs,
@@ -541,14 +566,17 @@ impl MlpBrain {
         }
     }
 
-    /// Input vector: `vision`, `target` then `threat` (the same channels the
-    /// inspector displays, in the same order — `CHANNELS` blocks of `rays`).
+    /// Input vector: the per-ray `vision`, `target` then `threat` blocks (`CHANNELS`
+    /// blocks of `rays`, the same channels the inspector displays, in the same order),
+    /// then the scalar **proprioceptive** channels (`self_state`) appended at the tail
+    /// — matching [`input_size`](Self::input_size) and the [`resize_input_fan`] layout.
     fn input_vector(perception: &Perception) -> Vec<f32> {
         perception
             .vision
             .iter()
             .chain(perception.target.iter())
             .chain(perception.threat.iter())
+            .chain(perception.self_state.iter())
             .copied()
             .collect()
     }
@@ -655,7 +683,13 @@ mod tests {
     /// `OUTPUTS` at compile time; this guards the relationship through the public API.)
     #[test]
     fn contract_label_arrays_match_io_arity() {
-        assert_eq!(MlpBrain::CHANNEL_LABELS.len(), MlpBrain::input_size(1));
+        // One per-ray label per per-ray channel + one self label per self channel =
+        // the full single-ray input width.
+        assert_eq!(
+            MlpBrain::CHANNEL_LABELS.len() + MlpBrain::SELF_LABELS.len(),
+            MlpBrain::input_size(1)
+        );
+        assert_eq!(MlpBrain::SELF_LABELS.len(), Perception::SELF_CHANNELS);
         assert_eq!(MlpBrain::OUTPUT_LABELS.len(), MlpBrain::OUTPUTS);
     }
 
@@ -668,6 +702,7 @@ mod tests {
             vision: vision.into(),
             target: target.into(),
             threat: threat.into(),
+            self_state: [0.0; Perception::SELF_CHANNELS],
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -870,14 +905,16 @@ mod tests {
         );
     }
 
-    /// A 3-ray perception for the MLP tests: 9 inputs (vision ++ target ++ threat),
-    /// threat left at zero here (cf. `mlp_reads_threat_channel` for a non-zero case).
+    /// A 3-ray perception for the MLP tests: 12 inputs (vision ++ target ++ threat ++
+    /// self_state), threat and self_state left at zero here (cf. `mlp_reads_threat_channel`
+    /// for a non-zero threat case).
     fn mlp_perception(heading: Vec2, vision: [f32; 3], target: [f32; 3]) -> Perception {
         Perception {
             heading,
             vision: vision.into(),
             target: target.into(),
             threat: [0.0; 3].into(),
+            self_state: [0.0; Perception::SELF_CHANNELS],
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -904,26 +941,51 @@ mod tests {
         );
     }
 
+    /// The **proprioceptive** channels are now wired into the MLP's input (this
+    /// increment): two perceptions identical except for `self_state` produce
+    /// **different** actions. The self-referential analogue of
+    /// `mlp_reads_threat_channel` — the falsifiable proof that the brain can sense
+    /// its own internal state (the substrate for behavioural restraint,
+    /// `docs/persistent-ecosystems.md` §2). We do not prescribe *how* the random
+    /// network responds — only that it does; using the signal *well* (e.g. eat when
+    /// hungry) is up to selection, exactly as for the exteroceptive channels.
+    #[test]
+    fn mlp_reads_self_state_channel() {
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
+
+        let mut full = mlp_perception(Vec2::X, vision, target);
+        full.self_state = [1.0, 0.0, 0.0]; // full energy reserve
+        let mut empty = mlp_perception(Vec2::X, vision, target);
+        empty.self_state = [0.0, 0.0, 0.0]; // depleted energy reserve
+
+        assert_ne!(
+            brain.think(&full).dir,
+            brain.think(&empty).dir,
+            "the proprioceptive channels must influence the MLP's decision"
+        );
+    }
+
     /// The MLP built by `BrainKind` respects the I/O contract: input =
-    /// `3 × vision_rays` (vision ++ target ++ threat), output = `OUTPUTS`, hidden
-    /// layers as requested.
+    /// `3 × vision_rays + SELF_CHANNELS` (vision ++ target ++ threat ++ self_state),
+    /// output = `OUTPUTS`, hidden layers as requested.
     #[test]
     fn brainkind_mlp_builds_with_contract_io() {
-        let n_inputs = MlpBrain::input_size(3); // 9 = 3 channels × 3 rays
+        let n_inputs = MlpBrain::input_size(3); // 12 = 3 channels × 3 rays + 3 self
         let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![5] }).build(42, 0.0, n_inputs) else {
             panic!("expected an MLP");
         };
         assert_eq!(m.layers.len(), 2, "1 hidden + 1 output");
-        assert_eq!(m.layers[0].inputs, 9, "input = 3 × rays");
+        assert_eq!(m.layers[0].inputs, 12, "input = 3 × rays + 3 self");
         assert_eq!(m.layers[0].outputs(), 5, "requested hidden layer");
         assert_eq!(m.layers[1].inputs, 5);
         assert_eq!(m.layers[1].outputs(), MlpBrain::OUTPUTS);
         // The visualization API (item 18b-viz) reflects the same topology.
-        assert_eq!(m.layer_sizes(), vec![9, 5, MlpBrain::OUTPUTS]);
+        assert_eq!(m.layer_sizes(), vec![12, 5, MlpBrain::OUTPUTS]);
         assert_eq!(m.weight_layers(), 2);
         let (w, fan_in, fan_out) = m.layer_weights(0);
-        assert_eq!((fan_in, fan_out), (9, 5));
-        assert_eq!(w.len(), 9 * 5);
+        assert_eq!((fan_in, fan_out), (12, 5));
+        assert_eq!(w.len(), 12 * 5);
         // The biases (which size the graph's nodes): one per output neuron of each
         // layer, zero at construction (Xavier init).
         assert_eq!(m.layer_biases(0).len(), 5, "one bias per hidden neuron");
@@ -936,7 +998,7 @@ mod tests {
     /// the hand-written brains, having no network, count zero.
     #[test]
     fn neuron_count_is_hidden_plus_output() {
-        let n_inputs = MlpBrain::input_size(7); // 21 inputs — must NOT be counted
+        let n_inputs = MlpBrain::input_size(7); // 24 inputs (7 rays × 3 + 3 self) — must NOT be counted
         let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![8] }).build(42, 0.0, n_inputs) else {
             panic!("expected an MLP");
         };
@@ -1018,19 +1080,19 @@ mod tests {
     #[test]
     fn mlp_reproduce_resizes_input_layer_to_child_rays() {
         let mut rng = Rng::new(5);
-        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 9 inputs
+        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 12 inputs (3×3 + 3 self)
 
         // Unchanged precision + zero rate = faithful clone.
         let same = parent.reproduced(&mut rng, 0.0, MlpBrain::input_size(3));
         assert_eq!(same, parent, "constant precision, zero rate → identity");
 
-        // Child that sees more finely: 5 rays → 15 inputs (input layer enlarged).
+        // Child that sees more finely: 5 rays → 18 inputs (5×3 + 3 self; input layer enlarged).
         let grown = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(5));
-        assert_eq!(grown.layer_sizes(), vec![15, 8, 4, MlpBrain::OUTPUTS]);
+        assert_eq!(grown.layer_sizes(), vec![18, 8, 4, MlpBrain::OUTPUTS]);
 
-        // Child that sees more coarsely: 2 rays → 6 inputs (input layer shrunk).
+        // Child that sees more coarsely: 2 rays → 9 inputs (2×3 + 3 self; input layer shrunk).
         let shrunk = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(2));
-        assert_eq!(shrunk.layer_sizes(), vec![6, 8, 4, MlpBrain::OUTPUTS]);
+        assert_eq!(shrunk.layer_sizes(), vec![9, 8, 4, MlpBrain::OUTPUTS]);
     }
 
     /// The activations visualization is computed **on demand**, outside the sim
@@ -1050,9 +1112,12 @@ mod tests {
         for (layer, &size) in acts.iter().zip(&brain.layer_sizes()) {
             assert_eq!(layer.len(), size);
         }
-        // The exposed input = vision ++ target ++ threat (the network's input
-        // vector; `mlp_perception` sets the threat to zero).
-        assert_eq!(acts[0], vec![0.2, 0.7, 0.1, 0.0, 0.7, 0.0, 0.0, 0.0, 0.0]);
+        // The exposed input = vision ++ target ++ threat ++ self_state (the network's
+        // input vector; `mlp_perception` sets threat and self_state to zero).
+        assert_eq!(
+            acts[0],
+            vec![0.2, 0.7, 0.1, 0.0, 0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
 
         // The raw output (last layer) is consistent with `think`'s action:
         // `throttle = min(|output|, 1)`, and the direction is that output rotated by
@@ -1070,17 +1135,18 @@ mod tests {
     /// coloring the missing nodes neutral.
     #[test]
     fn forward_activations_is_robust_to_wrong_input_size() {
-        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // expects 9 inputs
-        // 2-ray perception → 6 inputs (≠ 9): the first product does not match.
+        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // expects 12 inputs
+        // 2-ray perception → 9 inputs (2×3 + 3 self ≠ 12): the first product does not match.
         let p = Perception {
             heading: Vec2::X,
             vision: [0.1, 0.2].into(),
             target: [0.0, 0.0].into(),
             threat: [0.0, 0.0].into(),
+            self_state: [0.0; Perception::SELF_CHANNELS],
             ray_dirs: vec![Vec2::X, Vec2::Y].into_boxed_slice(),
         };
         let acts = brain.forward_activations(&p);
         assert_eq!(acts.len(), 1, "only the input is exposed, without panic");
-        assert_eq!(acts[0].len(), 6);
+        assert_eq!(acts[0].len(), 9);
     }
 }

@@ -5,8 +5,11 @@
 //! Avian.
 
 use crate::brain::Brain;
-use crate::components::{Action, Agent, Locomotion, Maneuver, Perception, Species, Vision};
+use crate::components::{
+    Action, Agent, Locomotion, Maneuver, Perception, Reserve, Species, Vision,
+};
 use crate::config::SimConfig;
+use crate::nutrients::Nutrients;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -33,6 +36,8 @@ pub fn perceive(
             &Species,
             &Vision,
             &Locomotion,
+            &Reserve,
+            &Nutrients,
             &mut Perception,
         ),
         With<Agent>,
@@ -42,7 +47,9 @@ pub fn perceive(
     // reallocating an `EntityHashSet` for every agent and every tick.
     mut filter: Local<SpatialQueryFilter>,
 ) {
-    for (entity, transform, velocity, species, vision, loco, mut perception) in &mut agents {
+    for (entity, transform, velocity, species, vision, loco, reserve, nutrients, mut perception) in
+        &mut agents
+    {
         // An **immobile** entity (flora / sessile source) casts no ray: without a
         // heading or locomotion, its vision is unusable (its brain ignores it).
         // We therefore skip it — we do not write its perception (nothing reads it
@@ -61,6 +68,19 @@ pub fn perceive(
             facing
         };
         perception.heading = facing;
+
+        // PROPRIOCEPTION: the agent's own internal state (scalar channels), so a
+        // brain can modulate on itself (eat when hungry, not on contact —
+        // `docs/persistent-ecosystems.md` §2). Order fixed by [`Perception`]:
+        // energy fraction, nutrient fraction, speed fraction. `max_speed > 0` here
+        // (the immobile check above already returned), so the division is safe.
+        // A read-only fill: the hand-written brains ignore it and no RNG is drawn →
+        // non-MLP scenarios stay byte-identical (only the MLP reads these channels).
+        perception.self_state = [
+            reserve.fraction(),
+            nutrients.fraction(),
+            (velocity.0.length() / loco.max_speed).clamp(0.0, 1.0),
+        ];
 
         // Buffers of the right size (the species may have changed shape between
         // two runs; at steady state this is a no-op). The three channels share
