@@ -74,6 +74,21 @@ fn main() {
     );
     println!("captured MLP: generation {generation}, reserve {reserve:.1}");
 
+    // Quality floor. The committed capture (07/09/mlp_trained) is the artifact the
+    // `tests/mlp` learning tripwire scores; a *fluke* early-generation brain (few
+    // rounds of selection) is a weak forager that can flake the tripwire on a marginal
+    // seed. Rather than silently commit one on a regeneration, fail **loudly** so the
+    // seed is re-picked — the pinned default seed (`08_mlp_train.ron`) clears this by a
+    // wide margin (generation 9). This does not weaken the tripwire (DEV Rule 3); it
+    // guards the *generator's* output quality.
+    const MIN_CAPTURE_GENERATION: u32 = 6;
+    assert!(
+        generation >= MIN_CAPTURE_GENERATION,
+        "captured generation {generation} < floor {MIN_CAPTURE_GENERATION}: the population \
+         did not evolve far enough for a robust forager — re-run with a different seed / more \
+         ticks (do NOT commit this weak capture; it will flake tests/mlp)",
+    );
+
     // The evolved archetype (frozen brain). Used as both the catalog variant and the
     // showcase's species 0.
     let captured = base.capture(genotype, brain, generation);
