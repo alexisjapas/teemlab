@@ -489,8 +489,15 @@ open work in §9.
   on this axis**: **toxicity DONE** (the `affect` verb wired — `scenarios/examples/19_toxicity.ron`
   + `tests/toxicity.rs`: a self-poisoning emitter monoculture blooms then collapses to extinction
   where the emission-off control persists, the §1 *destabiliser* mirroring the restraint
-  *stabiliser* — both poles now demonstrable); **turnover/corpses** (`emit_at_death`) remains
-  *config-only* on this substrate (Law 11).
+  *stabiliser* — both poles now demonstrable); **turnover/corpses** (`emit_at_death`) now **wired
+  and deterministically proven** (`tests/turnover.rs`: a dying body deposits exactly one corpse
+  into its field, a living one none), **completing the emission substrate**
+  (absorb/emit/sense/affect/emit_at_death, Law 11). But a *playable* detritivore niche is
+  **blocked** by two levers the sim deliberately lacks: steady prey **turnover** (a
+  mortality/density-death mechanism — a thriving prey barely dies, so no carrion; a collapsing one
+  leaves only a pulse) and **field-navigation** (a scavenger following a carrion gradient is
+  MLP-only; fields are not in entity-vision). The verb is ready; its ecological payoff waits on the
+  mortality lever (the flagged "grazed plants cannot die" / turnover thread).
 
 **Remaining.**
 

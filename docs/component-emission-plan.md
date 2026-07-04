@@ -141,11 +141,16 @@ skips non-mutable genes), so the `tests/mlp` tripwire never needed a re-baseline
   a diffusing/decaying pheromone on the oasis) + `tests/pheromones.rs` (persists AND the
   pheromone field is written). **Deferred:** graph labels for the field-sense input nodes
   (the renderer skips them safely, no panic); an emission cost.
-- **Phase 4 — docs + memory (REMAINING — the only open thread here).** ROADMAP §0/§8/§9,
-  `persistent-ecosystems.md` §3/§7, `docs/src/model/*` (nutrients→components, the
-  FieldRelation table, the emit/sense channel), the scenario catalog (`18_pheromones`),
-  `scenario-format.md`. Then **toxicity** (`affect`) and **turnover/corpses**
-  (`emit_at_death`) are config-only on this substrate (Law 11).
+- **Phase 4 — docs + memory (DONE).** ROADMAP §0/§8/§9, `persistent-ecosystems.md` §3/§7,
+  `docs/src/model/*` (nutrients→components, the FieldRelation table, the emit/sense channel),
+  the scenario catalog (`18_pheromones`), `scenario-format.md`. **Toxicity** (`affect`) is then
+  **DONE** (`19_toxicity.ron` + `tests/toxicity.rs`: a self-poisoning monoculture collapses to
+  extinction where the emission-off control persists); **turnover/corpses** (`emit_at_death`) is
+  **wired and deterministically proven** (`tests/turnover.rs`: a dying body leaves exactly one
+  corpse, a living one none) — this **completes the emission substrate** (all five verbs
+  absorb/emit/sense/affect/emit_at_death exist, Law 11). A *playable* detritivore scenario,
+  though, is **blocked** by the mortality lever (steady prey turnover) + field-navigation
+  (carrion-following is MLP-only) — see ROADMAP §0.
 
 ## 3. Order-of-battle & invariants
 
@@ -161,5 +166,6 @@ skips non-mutable genes), so the `tests/mlp` tripwire never needed a re-baseline
   (the tripwire is behavioural — thrive+dominate bands — not hardcoded numbers, so it is
   re-*validated*, not re-numbered).
 - **Deferred (not v1):** gene-bound table magnitudes (evolvable emission/absorption); gradient
-  (per-ray) field sensing; turnover/detritus decomposition scenario; a toxicity scenario (both
-  now *config-only* on this substrate); GUI editing of components/sources.
+  (per-ray) field sensing; a **playable turnover/detritus scenario** (blocked on the mortality
+  lever + field-navigation — the verb itself is wired and proven, `tests/turnover.rs`); GUI
+  editing of components/sources.

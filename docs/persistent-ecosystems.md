@@ -100,9 +100,15 @@ costed action"; "Proprioception").
 > (`sense` → a brain input channel) are wired and shown by the `pheromones` scenario. What
 > remains: **toxicity is now BUILT** (the `affect < 0` verb wired — the `19_toxicity` scenario: a
 > self-poisoning monoculture blooms then collapses to extinction where the emission-off control
-> persists, a new endogenous collapse mode). Still **config-only** on this substrate: **turnover /
-> corpses** (`emit_at_death` — a decomposing biomass field, the flat-carrying-capacity lever). The
-> paragraphs below record the original design, now realised.
+> persists, a new endogenous collapse mode). **Turnover / corpses** (`emit_at_death`) is now
+> **wired and deterministically proven** (`tests/turnover.rs`: a dying body deposits exactly one
+> corpse into its field, a living one none) — this **completes the emission substrate** (absorb /
+> emit / sense / affect / emit_at_death). A *playable* detritivore niche, however, is **blocked**
+> by two levers the sim deliberately lacks: steady prey **turnover** (a mortality / density-death
+> mechanism — a thriving prey barely dies, so no carrion; a collapsing one leaves only a pulse)
+> and **field-navigation** (a scavenger following a carrion gradient is MLP-only — fields are not
+> in entity-vision). The verb is ready; its ecological payoff waits on the mortality lever (§2's
+> spatial-refuge / turnover thread). The paragraphs below record the original design, now realised.
 
 Two current gaps point at a single missing mechanism: agents cannot **die without disappearing**
 (so there are no corpses), and they cannot **emit components during life** (organic waste,
@@ -193,7 +199,9 @@ Law 7 — if so). This restates the roadmap's existing performance positions (§
 3. **Emission of components** via per-component fields (§3) — **DONE**: the `FieldRelation`
    table + `emit` / `sense` (the `pheromones` scenario), and **toxicity** (`affect`, the
    `19_toxicity` self-poisoning scenario — the §1 destabiliser). **Turnover / corpses**
-   (`emit_at_death`) remains *config-only*; the audio/wave case is still left open.
+   (`emit_at_death`) is **wired and proven** (`tests/turnover.rs`), completing the substrate,
+   but its playable niche awaits a **mortality lever** (steady turnover) and **field-navigation**;
+   the audio/wave case is still left open.
 4. **Downstream:** the collapse-factor science instrument (§4).
 5. **Far horizon:** species as an emergent cluster; de-hardcoded identity (§5).
 

@@ -70,7 +70,7 @@ The verbs — any subset per row, all independent:
 | **`capacity`** | — | the store's size for this component |
 | **`repro_cost`** | store spent | amount consumed per child — the **reproduction gate** |
 | **`emit`** | body → field | write the component into the field (per second) — the *symmetric of absorb* |
-| **`emit_at_death`** | body → field | fraction of the store returned at death (recycling) |
+| **`emit_at_death`** | body → field | a **fixed biomass** deposited into the field at death — the corpse / carrion a scavenger lives on (distinct from the nutrient store, which recycles separately) |
 | **`sense`** | field → brain | the local concentration becomes a **brain input** channel |
 | **`affect`** | field → reserve | the concentration changes energy (`< 0` a toxin, `> 0` a boon) |
 
