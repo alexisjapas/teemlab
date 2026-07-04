@@ -10,6 +10,17 @@ use crate::components::{Action, Perception};
 use crate::rng::Rng;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+
+thread_local! {
+    /// Reused forward-pass scratch for [`MlpBrain::think`]: two `Vec<f32>` ping-ponged
+    /// so the per-tick decision allocates nothing after warm-up. Thread-local because
+    /// `decide` may run on any Bevy worker thread — each thread gets its own pair, so
+    /// there is no sharing and no locking. Purely an allocation optimisation; it never
+    /// changes a computed value (byte-identical to the allocating path).
+    static THINK_SCRATCH: RefCell<(Vec<f32>, Vec<f32>)> =
+        const { RefCell::new((Vec::new(), Vec::new())) };
+}
 
 /// An agent's brain. One variant per implementation.
 ///
@@ -378,15 +389,27 @@ impl Layer {
         }
     }
 
-    /// Propagation `tanh(bias + W·in)`; `input.len()` must equal `self.inputs`.
+    /// Propagation `tanh(bias + W·in)` **into a reused buffer** (`out` is cleared and
+    /// refilled); `input.len()` must equal `self.inputs`. Writing into a caller-owned
+    /// buffer is what lets the hot path ([`MlpBrain::think`]) avoid a per-layer
+    /// allocation. Same values, same order as the allocating [`forward`](Self::forward).
+    fn forward_into(&self, input: &[f32], out: &mut Vec<f32>) {
+        out.clear();
+        out.reserve(self.outputs());
+        for o in 0..self.outputs() {
+            let row = &self.weights[o * self.inputs..(o + 1) * self.inputs];
+            let sum = self.biases[o] + row.iter().zip(input).map(|(w, x)| w * x).sum::<f32>();
+            out.push(sum.tanh());
+        }
+    }
+
+    /// Allocating propagation — a thin wrapper over [`forward_into`](Self::forward_into)
+    /// for the on-demand paths (the inspector's [`MlpBrain::forward_activations`]) that
+    /// keep one vector per layer; the per-tick `think` uses the buffer form instead.
     fn forward(&self, input: &[f32]) -> Vec<f32> {
-        (0..self.outputs())
-            .map(|o| {
-                let row = &self.weights[o * self.inputs..(o + 1) * self.inputs];
-                let sum = self.biases[o] + row.iter().zip(input).map(|(w, x)| w * x).sum::<f32>();
-                sum.tanh()
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.forward_into(input, &mut out);
+        out
     }
 
     /// Child layer: each weight and bias perturbed by Gaussian noise of std-dev
@@ -592,49 +615,64 @@ impl MlpBrain {
     /// then the scalar **proprioceptive** channels (`self_state`) appended at the tail
     /// — matching [`input_size`](Self::input_size) and the [`resize_input_fan`] layout.
     fn input_vector(perception: &Perception) -> Vec<f32> {
-        perception
-            .vision
-            .iter()
-            .chain(perception.target.iter())
-            .chain(perception.threat.iter())
-            .chain(perception.self_state.iter())
-            .copied()
-            .collect()
+        let mut v = Vec::new();
+        Self::fill_input(perception, &mut v);
+        v
+    }
+
+    /// Fills `out` (cleared first) with the input vector — same channels, same order as
+    /// [`input_vector`](Self::input_vector). The buffer form the per-tick `think` uses
+    /// to avoid allocating the input vector every tick.
+    fn fill_input(perception: &Perception, out: &mut Vec<f32>) {
+        out.clear();
+        out.extend(perception.vision.iter().copied());
+        out.extend(perception.target.iter().copied());
+        out.extend(perception.threat.iter().copied());
+        out.extend(perception.self_state.iter().copied());
     }
 
     fn think(&self, perception: &Perception) -> Action {
-        let mut signal = Self::input_vector(perception);
-        for layer in &self.layers {
-            // Robust to a wrongly-sized perception (shape changed between runs): if
-            // the fan-in does not match, we keep the heading (network mute this tick).
-            if signal.len() != layer.inputs {
+        // Reuse two thread-local buffers (`cur`/`next`, ping-ponged by `swap`) so the
+        // per-tick forward pass allocates **nothing** — the input vector and each
+        // layer's output are written into reused storage. Thread-local: `decide` may
+        // run on any worker thread and each gets its own buffers (no sharing, no lock).
+        // Purely an allocation optimisation — the computed values are byte-identical to
+        // the allocating path (`forward` == `forward_into` into a fresh Vec).
+        THINK_SCRATCH.with_borrow_mut(|(cur, next)| {
+            Self::fill_input(perception, cur);
+            for layer in &self.layers {
+                // Robust to a wrongly-sized perception (shape changed between runs): if
+                // the fan-in does not match, keep the heading (network mute this tick).
+                if cur.len() != layer.inputs {
+                    return Self::mute(perception);
+                }
+                layer.forward_into(cur, next);
+                std::mem::swap(cur, next);
+            }
+            // A stale capture serialized before the output grew to `OUTPUTS` would have
+            // a narrower last layer → reading `cur[2]` below would panic. Go **inert**
+            // (mute) rather than crash; the committed captures are regenerated under the
+            // new contract, so this only shields a hand-loaded old brain.
+            if cur.len() < Self::OUTPUTS {
                 return Self::mute(perception);
             }
-            signal = layer.forward(&signal);
-        }
-        // A stale capture serialized before the output grew to `OUTPUTS` would have a
-        // narrower last layer → reading `signal[2]` below would panic. Go **inert**
-        // (mute) rather than crash; the committed captures are regenerated under the
-        // new contract, so this only shields a hand-loaded old brain.
-        if signal.len() < Self::OUTPUTS {
-            return Self::mute(perception);
-        }
-        // Outputs 0-1 = steering vector in body frame, rotated to the world by the
-        // heading (the body's +X points toward `heading`); output 2 = the eat/attack
-        // intent (`Action::act`), the *deliberate* half of the primitive (SIM Law 8).
-        let body = Vec2::new(signal[0], signal[1]);
-        let world = perception.heading.rotate(body);
-        let dir = world.normalize_or_zero();
-        let dir = if dir == Vec2::ZERO {
-            perception.heading
-        } else {
-            dir
-        };
-        Action {
-            dir,
-            throttle: body.length().min(1.0),
-            act: signal[2],
-        }
+            // Outputs 0-1 = steering vector in body frame, rotated to the world by the
+            // heading (the body's +X points toward `heading`); output 2 = the eat/attack
+            // intent (`Action::act`), the *deliberate* half of the primitive (SIM Law 8).
+            let body = Vec2::new(cur[0], cur[1]);
+            let world = perception.heading.rotate(body);
+            let dir = world.normalize_or_zero();
+            let dir = if dir == Vec2::ZERO {
+                perception.heading
+            } else {
+                dir
+            };
+            Action {
+                dir,
+                throttle: body.length().min(1.0),
+                act: cur[2],
+            }
+        })
     }
 
     /// A mute action (keep the heading, no throttle, **no** eat intent) for when the
