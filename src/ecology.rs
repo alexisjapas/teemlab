@@ -19,7 +19,7 @@
 //! target to the actor. The engine has only one verb.
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
+use crate::components::{Action, Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::nutrients::{NutrientField, Nutrients};
@@ -59,21 +59,23 @@ pub fn metabolize(
             &LinearVelocity,
             &Brain,
             &Maneuver,
+            &Action,
         ),
         With<Agent>,
     >,
 ) {
     let dt = time.delta_secs();
-    for (mut reserve, genotype, species, vision, velocity, brain, maneuver) in &mut agents {
-        // Metabolism, locomotion, agility, photosynthesis and brain cost are genes
-        // (per-species). An agent with no energy item at all (all five zero) is in
-        // an inert world (pre-item-8 scenarios): neither drain nor gain, not even
+    for (mut reserve, genotype, species, vision, velocity, brain, maneuver, action) in &mut agents {
+        // Metabolism, locomotion, agility, photosynthesis, brain and act cost are
+        // genes (per-species). An agent with no energy item at all (all six zero) is
+        // in an inert world (pre-item-8 scenarios): neither drain nor gain, not even
         // the vision or brain cost.
         if genotype.base_metabolism == 0.0
             && genotype.move_cost == 0.0
             && genotype.agility_cost == 0.0
             && genotype.photosynthesis == 0.0
             && genotype.brain_cost == 0.0
+            && genotype.act_cost == 0.0
         {
             continue;
         }
@@ -94,11 +96,20 @@ pub fn metabolize(
         // brain counts zero neurons (cf. `Brain::neuron_count`) → no cost, so
         // non-MLP scenarios are unaffected. The counterpart, for the *decision
         // system*, of the vision sensor's cost.
+        //
+        // Act cost: energy/s while the agent **holds its eat/attack intent**
+        // (`Action::act > 0`, deliberate eating — SIM Law 8). Charged as an *effort*,
+        // whether or not a target is in range, so that indiscriminate always-on eating
+        // is wasteful and **restraint** pays (`docs/persistent-ecosystems.md` §2). The
+        // hand-written brains hold `1.0` but with `act_cost` defaulting to 0 they pay
+        // nothing → non-MLP scenarios byte-identical.
+        let act_effort = if action.act > 0.0 { 1.0 } else { 0.0 };
         let drain = genotype.base_metabolism
             + genotype.move_cost * speed_ratio
             + genotype.agility_cost * maneuver.0
             + vision.metabolic_cost()
-            + genotype.brain_cost * brain.neuron_count() as f32;
+            + genotype.brain_cost * brain.neuron_count() as f32
+            + genotype.act_cost * act_effort;
         // Net balance = passive gain − expenses. For fauna (photosynthesis 0)
         // this is the old pure drain, and the cap at `max` is then a no-op (eating
         // already caps at `max`, cf. `interaction`) → unchanged behavior.

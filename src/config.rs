@@ -94,6 +94,9 @@ pub struct SimConfig {
     /// Bounds of the nutrient-per-child gene (nutrient paid per offspring, the
     /// analogue of `offspring_energy`, T2).
     pub offspring_nutrient_bounds: Bounds,
+    /// Bounds of the act-cost gene (energy/s while the eat/attack intent is held,
+    /// deliberate eating). Drives the editor slider; non-mutable by default.
+    pub act_cost_bounds: Bounds,
     /// Background color of the **play area** (inside of the arena), sRGB `[r, g, b]`
     /// in `[0, 1]`. A **presentation** setting (windowed rendering only, cf.
     /// `main::draw_play_area`); lives in the scenario to be saved/loaded with it.
@@ -425,6 +428,7 @@ pub struct Mutability {
     pub nutrient_absorption: bool,
     pub nutrient_capacity: bool,
     pub offspring_nutrient: bool,
+    pub act_cost: bool,
 }
 
 impl Mutability {
@@ -449,6 +453,7 @@ impl Mutability {
             nutrient_absorption: false,
             nutrient_capacity: false,
             offspring_nutrient: false,
+            act_cost: false,
         }
     }
 }
@@ -492,6 +497,10 @@ impl Default for Mutability {
             nutrient_absorption: false,
             nutrient_capacity: false,
             offspring_nutrient: false,
+            // Deliberate-eating cost: like the other costs, non-mutable by default
+            // (evolvable, it would be whittled to 0 and the restraint pressure would
+            // vanish) and absent from the draw stream.
+            act_cost: false,
         }
     }
 }
@@ -712,6 +721,13 @@ impl Default for SimConfig {
             offspring_nutrient_bounds: Bounds {
                 min: 0.0,
                 max: 120.0,
+            },
+            // Deliberate-eating cost, non-mutable by default: min 0 (default gene 0 →
+            // inert). An editor-slider range of the same order as base_metabolism —
+            // enough for the act cost to bite against the food it buys.
+            act_cost_bounds: Bounds {
+                min: 0.0,
+                max: 10.0,
             },
             // Default backgrounds: dark play area, off-game one notch lighter —
             // enough to delimit the arena without any zone looking empty. (Reuses

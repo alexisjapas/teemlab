@@ -210,6 +210,20 @@ pub struct Action {
     pub dir: Vec2,
     /// Desired fraction of max speed, in `[0, 1]`.
     pub throttle: f32,
+    /// **Eat/attack intent** — the *deliberate* half of the interaction primitive
+    /// (SIM Law 8): `> 0` ⇒ the agent acts this tick (draws from targets in range,
+    /// [`crate::interaction::interact`] gates on it); `≤ 0` ⇒ it abstains from **all**
+    /// its interactions. The hand-written brains set `1.0` (reflex — eat/attack on
+    /// contact as before, so every non-MLP scenario stays byte-identical); the
+    /// **MLP** learns it as a 3rd output ([`crate::brain::MlpBrain`]), weighing it
+    /// against its own state ([`Perception::self_state`]) — the substrate for
+    /// behavioural **restraint** (`docs/persistent-ecosystems.md` §2). Holding the
+    /// intent costs energy (gene `act_cost`, charged in
+    /// [`crate::ecology::metabolize`]), so acting is a priced choice (SIM Law 7).
+    /// `#[derive(Default)]` yields `0.0`, only relevant before the first `think`
+    /// (never reached: `decide` precedes `interact`/`metabolize` in the chain, and a
+    /// newborn is thought the tick after it is spawned).
+    pub act: f32,
 }
 
 /// **Voluntary steering effort** of the last tick: the magnitude `|Δv|` of the

@@ -186,6 +186,7 @@ mod tests {
                 Action {
                     dir: Vec2::X,
                     throttle: 1.0,
+                    act: 1.0,
                 },
                 Locomotion {
                     max_speed: 100.0,

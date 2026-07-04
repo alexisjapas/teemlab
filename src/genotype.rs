@@ -109,6 +109,19 @@ pub struct Genotype {
     /// the gate always passes spending nothing → pre-T2 reproduction unchanged.
     /// Appended at the **end**, not mutable by default (draw stream preserved).
     pub offspring_nutrient: f32,
+    /// **Deliberate-eating cost**: energy drained **per second** while the agent
+    /// holds its eat/attack intent ([`crate::components::Action::act`] `> 0`, gated in
+    /// [`crate::interaction::interact`]). The Law-7 price of the *act* itself — the
+    /// counterpart, for the interaction primitive, of what `move_cost` is for
+    /// locomotion: it makes acting a **costed choice**, so indiscriminate always-on
+    /// eating is wasteful and behavioural **restraint** becomes selectable
+    /// (`docs/persistent-ecosystems.md` §2). Charged in [`crate::ecology::metabolize`]
+    /// whether or not a target is in range (an *effort* model). `0` (default) → no
+    /// cost, and the hand-written brains (intent always `1.0`) pay nothing → **every
+    /// pre-existing scenario byte-identical**. Per-species, **not mutable by default**
+    /// like the other costs (evolvable, it would be whittled to 0 and the restraint
+    /// pressure would vanish). Appended at the **end** (draw stream preserved).
+    pub act_cost: f32,
 }
 
 impl Default for Genotype {
@@ -153,6 +166,10 @@ impl Default for Genotype {
             nutrient_absorption: 0.0,
             nutrient_capacity: 0.0,
             offspring_nutrient: 0.0,
+            // Deliberate-eating cost inert by default (like the flora/nutrient genes):
+            // acting is free → the interaction economy of every pre-existing scenario
+            // is unchanged. A deliberate-eating scenario opts in with a non-zero value.
+            act_cost: 0.0,
         }
     }
 }
@@ -354,7 +371,7 @@ pub struct TraitSpec {
 /// seeded config — whence the addition at the **end** of the table, which leaves
 /// the pre-existing traits' stream intact). A constant table shared by all
 /// agents.
-pub const TRAITS: [TraitSpec; 17] = [
+pub const TRAITS: [TraitSpec; 18] = [
     TraitSpec {
         name: "Max speed",
         category: GeneCategory::Locomotion,
@@ -594,6 +611,23 @@ pub const TRAITS: [TraitSpec; 17] = [
         set_mutable: |m, b| m.offspring_nutrient = b,
         decimals: 0,
         // Nutrient endowment of a seed: relevant for flora reproduction.
+        inert_when_immobile: false,
+    },
+    TraitSpec {
+        name: "Act cost/s",
+        // No "Interaction" category — an energy expense, filed with Metabolism (its
+        // pragmatic home; revisit only if a 2nd interaction-cost gene appears).
+        category: GeneCategory::Metabolism,
+        is_cost: true,
+        get: |g| g.act_cost,
+        set: |g, v| g.act_cost = v,
+        bounds: |c| c.act_cost_bounds,
+        bounds_mut: |c| &mut c.act_cost_bounds,
+        mutable: |m| m.act_cost,
+        set_mutable: |m, b| m.act_cost = b,
+        decimals: 2,
+        // A sessile actor (flora self-competition) can hold the intent and pay it, so
+        // it is not inert on an immobile entity (unlike the locomotion/vision costs).
         inert_when_immobile: false,
     },
 ];

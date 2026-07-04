@@ -1,14 +1,19 @@
-// MLP training ground — let a population of learned brains evolve a forager.
+// Deliberate eating — the interaction primitive becomes a COSTED, brain-driven choice.
 //
-// Step 2 of the MLP learning story (mlp_brain = naive baseline; mlp_evolved = the
-// trained variant in action). Here MLPs forage ALONE (no competitor) on patchy flora
-// oases: selection keeps the lineages that navigate to the oases, so over many
-// generations the population's neuroevolution improves foraging. Train, then export a
-// good individual to the catalog (inspector ▸ "Save as variant", or the `train` bin)
-// and reuse it in mlp_evolved. A LARGE founder population (80 — diversity to select
-// from), a HIGH mutation rate (0.15 — aggressive search) and a low reproduction
-// threshold (fast generational turnover) make the neuroevolution bite harder than the
-// other scenarios. No driver: this is a generator, not a falsification.
+// The second half of the cognitive substrate (docs/persistent-ecosystems.md §2; the
+// first was proprioception). Until now eating fired automatically on every target in
+// range — predation was a reflex. Here the MLP DECIDES whether to eat (its 3rd output,
+// Action.act, gated in `interact`) and holding that intent COSTS energy (gene
+// `act_cost`, charged in `metabolize` — SIM Law 7). So indiscriminate "always eat"
+// bleeds energy, and the brains selection keeps are those that GATE their eating —
+// holding the intent near food / when hungry (weighing the proprioceptive self-state,
+// item "proprioception"), releasing it otherwise. Restraint becomes *expressible*.
+//
+// A living population evolving on patchy oasis flora (as in mlp_train), but with the
+// eating cost switched on. Open the inspector to watch an agent's `act` output in the
+// network graph toggle as it forages. An EXAMPLE to watch — the population persists on
+// the oasis over the observation window (it does not collapse); on living food the
+// long-horizon outcome is Lotka–Volterra (ROADMAP §7), not a flat steady state.
 (
     tick_hz: 64.0,
     arena_half_extent: 480.0,
@@ -37,6 +42,14 @@
                 nutrient_absorption: 0.0,
                 nutrient_capacity: 30.0,
                 offspring_nutrient: 8.0,
+                // The eating cost — the point of this scenario. Energy/s while the
+                // eat/attack intent is held (Action.act > 0). Modest against the ~45
+                // eating rate and the 4.0 base metabolism: enough that holding the
+                // intent everywhere is wasteful (restraint pays), not so much that a
+                // competent forager cannot make eating net-positive. NON-mutable (it is
+                // the selection pressure, like the other costs) — the gating evolves in
+                // the brain (the `act` output), not by zeroing the gene.
+                act_cost: 1.5,
             ),
             brain: Mlp(
                 hidden: [10],
@@ -59,11 +72,11 @@
                 nutrient_absorption: false,
                 nutrient_capacity: false,
                 offspring_nutrient: false,
+                act_cost: false,
             ),
         ),
         // Patchy food — a flora that reseeds only where the nutrient field is rich, so
-        // it clusters into oases around the sources. Navigating to an oasis is the skill
-        // selection rewards.
+        // it clusters into oases around the sources (as in mlp_train).
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
@@ -88,6 +101,7 @@
                 nutrient_absorption: 1.5,
                 nutrient_capacity: 8.0,
                 offspring_nutrient: 8.0,
+                act_cost: 0.0,
             ),
             brain: Sessile,
             mutable: (
@@ -108,6 +122,7 @@
                 nutrient_absorption: false,
                 nutrient_capacity: false,
                 offspring_nutrient: false,
+                act_cost: false,
             ),
         ),
     ],
@@ -222,11 +237,11 @@
         min: 0.0,
         max: 120.0,
     ),
+    act_cost_bounds: (
+        min: 0.0,
+        max: 10.0,
+    ),
     play_area_color: (0.07, 0.07, 0.09),
     off_game_color: (0.17, 0.17, 0.19),
-    // Seed pinned so the default `cargo run --bin train` reproduces the committed
-    // capture. Chosen (post deliberate-eating: the `act` output gates eating) as the
-    // one whose best-evolved brain — generation 9 — reaches parity on the oasis flora
-    // across all five tripwire seeds (`tests/mlp`).
-    seed: 77,
+    seed: 10,
 )

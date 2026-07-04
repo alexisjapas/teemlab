@@ -7,7 +7,7 @@
 //! (combat). Neighborhood queries go through Avian's broad-phase (no homemade
 //! structure, cf. §5).
 
-use crate::components::{Agent, Reserve, Species};
+use crate::components::{Action, Agent, Reserve, Species};
 use crate::config::SimConfig;
 use crate::nutrients::Nutrients;
 use avian2d::prelude::*;
@@ -20,6 +20,14 @@ use bevy::prelude::*;
 /// targets of the right species **within reach** (Avian's broad-phase): each one
 /// takes a demand of `rate · dt`, and if the relation transfers, the actor gains
 /// its share of what is *actually* drawn.
+///
+/// **Deliberate eating (SIM Law 8).** The primitive is *brain-driven*: an actor only
+/// acts this tick if its [`Action::act`] intent is positive; otherwise it abstains
+/// from **all** its interactions (eating *and* combat). The hand-written brains hold
+/// `1.0` (reflex — so every non-MLP scenario is byte-identical), the MLP learns it
+/// (a 3rd output), and *holding* the intent is priced by the `act_cost` gene in
+/// [`crate::ecology::metabolize`] (SIM Law 7). The primitive stays one verb — only its
+/// *triggering* moved from automatic-in-range to decided.
 ///
 /// **Reach = a surface-to-surface clearance.** The relation's `range` is the gap
 /// between the two bodies' edges: the actor reaches a target while that gap is
@@ -68,7 +76,10 @@ pub fn interact(
     spatial: SpatialQuery,
     time: Res<Time>,
     config: Res<SimConfig>,
-    actors: Query<(Entity, &Transform, &Species), With<Agent>>,
+    // The actor's motor command carries its **eat/attack intent** (`Action::act`):
+    // deliberate eating (SIM Law 8) gates the primitive on it. Hand-written brains set
+    // `1.0` (reflex → byte-identical), the MLP learns it.
+    actors: Query<(Entity, &Transform, &Species, &Action), With<Agent>>,
     species_of: Query<&Species>,
     mut reserves: Query<&mut Reserve>,
     // The prey's nutrient store, carried up the chain by predation (T3). Read in
@@ -110,7 +121,14 @@ pub fn interact(
 
     // Pass 1: tally the draws (actor, target, amount, transfer) and the total
     // **demand** per target. We do not touch the reserves yet.
-    for (actor, transform, species) in &actors {
+    for (actor, transform, species, action) in &actors {
+        // Deliberate eating (SIM Law 8): the brain gates the primitive. Without the
+        // intent this tick, the actor abstains from **all** its interactions (no
+        // demand, no draw) — for eating *and* combat, the one primitive (§3). The
+        // hand-written brains hold `1.0` → always act → byte-identical.
+        if action.act <= 0.0 {
+            continue;
+        }
         let origin = transform.translation.truncate();
         // We never act on ourselves; the filter excludes the actor (it does not
         // depend on the relation). `Local` reused: we just re-insert the excluded

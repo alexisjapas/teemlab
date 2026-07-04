@@ -131,8 +131,9 @@ pub enum BrainKind {
     Sessile,
     /// [`Brain::Mlp`] — evolved multilayer perceptron (item 18b). `hidden`: the
     /// width of each **hidden layer** (designer data, editable). The input
-    /// (perception channels) and the output (2) are fixed by the contract → only
-    /// the hidden topology is free (variable/NEAT topology remains deferred, §2).
+    /// (perception channels) and the output (`OUTPUTS`: the steering vector + the
+    /// eat/attack intent) are fixed by the contract → only the hidden topology is
+    /// free (variable/NEAT topology remains deferred, §2).
     Mlp { hidden: Vec<usize> },
 }
 
@@ -233,6 +234,9 @@ impl WanderBrain {
         Action {
             dir: Vec2::new(self.heading.cos(), self.heading.sin()),
             throttle: 1.0,
+            // A reflex forager: it eats on contact as before (byte-identical). Only
+            // the MLP *decides* whether to act (deliberate eating).
+            act: 1.0,
         }
     }
 }
@@ -310,7 +314,12 @@ impl HunterBrain {
         } else {
             dir
         };
-        Action { dir, throttle: 1.0 }
+        // Reflex: the hunter eats/attacks on contact as before (byte-identical).
+        Action {
+            dir,
+            throttle: 1.0,
+            act: 1.0,
+        }
     }
 }
 
@@ -329,6 +338,11 @@ impl SessileBrain {
         Action {
             dir: perception.heading,
             throttle: 0.0,
+            // A plant "acts" reflexively (`1.0`, not `0.0`): a flora's Plant→Plant
+            // self-competition is a *sessile actor* relation (§3), and gating it off
+            // would break flora self-limitation (`flora.ron`). Deliberate eating is an
+            // MLP capability, not a sessile one → byte-identical.
+            act: 1.0,
         }
     }
 }
@@ -410,10 +424,13 @@ impl Layer {
 /// by the MLP at item 18b): the learned brain now therefore receives what it needs
 /// to *learn* to flee, where the hunter applies a hard-wired reflex. The
 /// proprioceptive channels let it modulate on its own state (eat when hungry — the
-/// substrate for restraint, `docs/persistent-ecosystems.md` §2). **Output**: 2
-/// neurons read as a steering vector *in body frame*, rotated to the world by the
-/// heading → orientation-equivariant (the network need not learn the absolute
-/// orientation, as the hunter reads "ray i" relative to the heading).
+/// substrate for restraint, `docs/persistent-ecosystems.md` §2). **Output**: 3
+/// neurons — the first 2 a steering vector *in body frame*, rotated to the world by
+/// the heading → orientation-equivariant (the network need not learn the absolute
+/// orientation, as the hunter reads "ray i" relative to the heading); the 3rd the
+/// **eat/attack intent** ([`crate::components::Action::act`], gated in `interact`),
+/// the *deliberate* half of the interaction primitive (SIM Law 8) that pairs with
+/// the proprioceptive input to make **restraint** expressible.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MlpBrain {
     /// Dense layers, input→output. Hidden topology frozen at construction
@@ -427,8 +444,12 @@ pub struct MlpBrain {
 }
 
 impl MlpBrain {
-    /// Number of output neurons: the egocentric steering vector (x, y).
-    pub const OUTPUTS: usize = 2;
+    /// Number of output neurons: the egocentric steering vector (x, y) **plus** the
+    /// eat/attack intent ([`crate::components::Action::act`], item "deliberate
+    /// eating"). Growing this widens the network's last layer (more Xavier draws) →
+    /// MLP scenarios shift and their captures must be regenerated, exactly as
+    /// widening the *input* did for threat/proprioception.
+    pub const OUTPUTS: usize = 3;
     /// Scale of a weight-mutation step (multiplied by `mutation_rate`).
     const WEIGHT_STEP: f32 = 0.6;
     /// Number of **per-ray** perception channels wired into the input: `vision`
@@ -456,10 +477,10 @@ impl MlpBrain {
     /// labels is a compile error.
     pub const SELF_LABELS: [&'static str; Perception::SELF_CHANNELS] = ["nrg", "nut", "spd"];
     /// Names of the output neurons, in order: the body-frame steering vector (forward,
-    /// side), cf. [`MlpBrain::think`]. The output-column counterpart of
-    /// [`CHANNEL_LABELS`](Self::CHANNEL_LABELS) — same single-source role, length pinned
-    /// to `OUTPUTS`.
-    pub const OUTPUT_LABELS: [&'static str; Self::OUTPUTS] = ["fwd", "side"];
+    /// side) then the eat/attack intent, cf. [`MlpBrain::think`]. The output-column
+    /// counterpart of [`CHANNEL_LABELS`](Self::CHANNEL_LABELS) — same single-source role,
+    /// length pinned to `OUTPUTS`.
+    pub const OUTPUT_LABELS: [&'static str; Self::OUTPUTS] = ["fwd", "side", "act"];
 
     /// Size of the input layer for `vision_rays` rays: the per-ray `vision`,
     /// `target` AND `threat` channels concatenated (`CHANNELS × vision_rays`), plus
@@ -587,15 +608,20 @@ impl MlpBrain {
             // Robust to a wrongly-sized perception (shape changed between runs): if
             // the fan-in does not match, we keep the heading (network mute this tick).
             if signal.len() != layer.inputs {
-                return Action {
-                    dir: perception.heading,
-                    throttle: 0.0,
-                };
+                return Self::mute(perception);
             }
             signal = layer.forward(&signal);
         }
-        // 2 outputs = steering vector in body frame, rotated to the world by the
-        // heading (the body's +X points toward `heading`).
+        // A stale capture serialized before the output grew to `OUTPUTS` would have a
+        // narrower last layer → reading `signal[2]` below would panic. Go **inert**
+        // (mute) rather than crash; the committed captures are regenerated under the
+        // new contract, so this only shields a hand-loaded old brain.
+        if signal.len() < Self::OUTPUTS {
+            return Self::mute(perception);
+        }
+        // Outputs 0-1 = steering vector in body frame, rotated to the world by the
+        // heading (the body's +X points toward `heading`); output 2 = the eat/attack
+        // intent (`Action::act`), the *deliberate* half of the primitive (SIM Law 8).
         let body = Vec2::new(signal[0], signal[1]);
         let world = perception.heading.rotate(body);
         let dir = world.normalize_or_zero();
@@ -607,6 +633,18 @@ impl MlpBrain {
         Action {
             dir,
             throttle: body.length().min(1.0),
+            act: signal[2],
+        }
+    }
+
+    /// A mute action (keep the heading, no throttle, **no** eat intent) for when the
+    /// network cannot run this tick — a perception of the wrong fan-in or a stale,
+    /// too-narrow capture (cf. [`MlpBrain::think`]).
+    fn mute(perception: &Perception) -> Action {
+        Action {
+            dir: perception.heading,
+            throttle: 0.0,
+            act: 0.0,
         }
     }
 
@@ -963,6 +1001,30 @@ mod tests {
             brain.think(&full).dir,
             brain.think(&empty).dir,
             "the proprioceptive channels must influence the MLP's decision"
+        );
+    }
+
+    /// The MLP now emits a **3rd output** — the eat/attack intent
+    /// ([`crate::components::Action::act`], the *deliberate* half of the interaction
+    /// primitive, SIM Law 8, gated in `interact`). Falsifiable proof it is a **live
+    /// output** of the network, not a constant: two different perceptions yield
+    /// different `act` values, and the scalar stays in `tanh`'s range (the gate reads
+    /// its sign). The output-side analogue of the input-channel proofs above — we do
+    /// not prescribe *when* the random network chooses to act, only that the intent is
+    /// wired; learning to eat *well* is up to selection, as for steering.
+    #[test]
+    fn mlp_emits_act_output() {
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let a = brain.think(&mlp_perception(Vec2::X, [0.2, 0.7, 0.1], [0.0, 0.7, 0.0]));
+        let b = brain.think(&mlp_perception(Vec2::X, [0.9, 0.1, 0.5], [0.5, 0.0, 0.3]));
+        assert_ne!(
+            a.act, b.act,
+            "the act output must be a live function of perception"
+        );
+        assert!(
+            a.act.is_finite() && a.act.abs() <= 1.0,
+            "the act intent is a bounded tanh scalar (got {})",
+            a.act
         );
     }
 

@@ -377,6 +377,37 @@ open work in §9.
   *expressible* — an agent that can weigh its own hunger is the prerequisite for **deliberate,
   costed eating** (the substrate's part 2, §9), the endogenous stabiliser of
   `docs/persistent-ecosystems.md` §2.
+- **Deliberate eating — brain-driven, costed interaction (the cognitive substrate, part 2;
+  `docs/persistent-ecosystems.md` §2, §9)**: the interaction primitive's *triggering* moves from
+  automatic-in-range to **brain-driven** (SIM Law 8 — the primitive stays one verb; only *when* it
+  fires changes). [`Action`] gains an **eat/attack intent** (`act`); `interact` **gates** on it (an
+  actor with `act ≤ 0` abstains from **all** its interactions — eating *and* combat, the one
+  primitive §3), and holding the intent **costs** energy — a new **`act_cost` gene** (energy/s,
+  charged in `metabolize` as an *effort*, food in range or not) so indiscriminate always-on eating
+  is wasteful and **restraint** pays (SIM Law 7). The **exact same method as threat/proprioception**
+  (item 18e→18g): extend the contract, wire the learned brain, keep the hand-written ones reflexive.
+  The **MLP grows a 3rd output** (`OUTPUTS 2 → 3`, the `act` intent after the steering vector — more
+  Xavier draws, its captures regenerated like the input-widening did); **Wander/Hunter/Sessile hold
+  `act = 1.0`** (reflex — and Sessile *must*, so a flora's Plant→Plant self-competition, a sessile
+  actor relation, is untouched). **A deliberate no-cost by default**: `act_cost` is appended **last**
+  in `Genotype`/`TRAITS`, defaults `0.0` (inert, opted into by the showcase — like the flora/nutrient
+  genes) and is **non-mutable** (it *is* the pressure) → `mutate`'s draw stream unchanged and **every
+  pre-existing scenario byte-identical** (verified: the non-MLP chaos drivers stay green unchanged;
+  hand-written actors at `1.0`, `act_cost 0`, pay nothing). Only the MLP scenarios widen; the trained
+  showcase was **regenerated** — the `train` bin now captures the **best MLP seen over the whole run**
+  (peak generation, not the fading population's dying remnant) over a longer default run, and its
+  seed is re-pinned (`08_mlp_train.ron` seed **77** → a generation-9 forager); `tests/mlp`
+  **revalidated** (parity across the 5 seeds under the widened output). **Drivers**
+  `tests/deliberate_eating.rs`: the **gate** (an actor with intent off draws **nothing** from an
+  in-range target; with intent it grazes), the **cost** (holding the intent drains `act_cost·time`,
+  and nothing when it is off), and the **showcase persistence** (below); unit
+  `mlp_emits_act_output` (the 3rd output is a live function of perception — the falsifiable analogue
+  of `mlp_reads_self_state_channel`). **Playable showcase** `scenarios/examples/16_deliberate_eating.ron`:
+  an MLP population evolving on the oasis flora with eating **priced** (`act_cost 1.5`) — it gates
+  its eating (the `act` output, legible in the inspector's network graph) and **persists** across
+  seeds over the observation window (the honest §7 target: coexistence, not domination). **Why:**
+  with proprioception (part 1) this completes the minimal substrate for **restraint** — an
+  endogenous stabiliser of persistent ecosystems — to be *expressible* and selectable.
 
 **Remaining.**
 
@@ -1239,19 +1270,26 @@ and *scaling* work.
   the science must separate an *irreversible* collapse from a *reversible* trough (a collapse
   metric + running past the first trough), and induce collapses via **single-factor gradients**
   — the `sweep` bin (§0/§6) is its first brick.
-- **Eating / attacking as a *deliberate, costed* action — not automatic on contact
-  (PRIORITISED near-term; touches Law 8)**: today `interaction::interact` fires on *every*
-  actor that has a valid target in range — predation is a reflex. The richer model: the
-  **brain decides** whether to act (an output of `Action`), and the act **costs** something
-  (energy/effort), so attacking/eating becomes a strategic choice weighed against its
-  cost — and, with the `nutrients` web, *what* to eat follows from *which nutrients are
-  needed*. A real change to the one-primitive semantics (Law 8: the primitive stays, its
-  *triggering* moves from automatic-in-range to brain-driven). **Why prioritised:** *not
-  eating everything* is behavioural **restraint**, an endogenous stabiliser of the ecosystem
-  — selectable only under **spatial viscosity** (limited dispersal, so offspring inherit the
-  environment their parent degraded/preserved; ties to `seed_dispersal` and the spatial-refuge
-  lesson of item 17). It pairs with **proprioception** (next bullet): the two together are the
-  minimal substrate for restraint to be *expressible* (cf. `docs/persistent-ecosystems.md` §2).
+- **Eating / attacking as a *deliberate, costed* action — DONE (cf. §0).** `interaction::interact`
+  no longer fires on *every* actor with a target in range; the **brain decides** ([`Action::act`], a
+  3rd MLP output, gated in `interact`) and the act **costs** energy (gene **`act_cost`**, energy/s
+  while the intent is held, charged in `metabolize` — SIM Law 7). A real change to the one-primitive
+  semantics (Law 8: the primitive stays one verb, its *triggering* moves from automatic-in-range to
+  brain-driven), extended the threat/proprioception way (item 18e→18g): the hand-written brains hold
+  `act = 1.0` (reflex, Sessile included so flora self-competition is untouched) → **non-MLP scenarios
+  byte-identical** (`act_cost` appended last, default 0, non-mutable → `mutate`'s draw stream
+  unchanged; the chaos drivers stay green). MLP showcase regenerated (`train` captures the peak-gen
+  brain over the run; `08_mlp_train` seed re-pinned to 77), `tests/mlp` revalidated. Drivers
+  `tests/deliberate_eating.rs` (gate + cost + showcase persistence) + unit `mlp_emits_act_output`;
+  playable `scenarios/examples/16_deliberate_eating.ron` (`act_cost 1.5`, persists across seeds). **Why:**
+  *not eating everything* is behavioural **restraint**, an endogenous stabiliser — selectable only
+  under **spatial viscosity** (limited dispersal, so offspring inherit the environment their parent
+  degraded/preserved; ties to `seed_dispersal` and the item-17 spatial-refuge lesson). With
+  **proprioception** (done), the two are the minimal substrate for restraint to be *expressible*
+  (`docs/persistent-ecosystems.md` §2). **Remaining (the payoff, not the substrate):** demonstrate
+  restraint is actually *selected* under spatial viscosity (a research scenario, not a mechanism), and
+  — with the `nutrients` web — *need-driven targeting* (what to eat follows from which nutrients are
+  needed, SIM Law 8 emergent targeting, §9 "Phase 3").
 - **Proprioception — self-state perception channels (extends Law 3/Law 4) — DONE (cf. §0).**
   The brain's inputs were only its exteroception (vision/target/threat); it now also reads
   **self-referential** channels — energy reserve, nutrient store, current speed

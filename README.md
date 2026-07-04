@@ -90,9 +90,10 @@ editor long-tail (library management, catalog metadata). Cf. [`ROADMAP.md`](ROAD
 §0/§8/§9.
 
 **Near-term orientation.** The near-term goal is **rich, non-collapsing** ecosystems (with a
-downstream *science of collapse factors*); the prioritised work is a **cognitive substrate** —
-deliberate, costed eating + **proprioception** — that makes behavioural *restraint* expressible,
-alongside **component emission** (corpses, waste, toxicity, communication as one agent →
+downstream *science of collapse factors*). The **cognitive substrate** that makes behavioural
+*restraint* expressible — **proprioception** + **deliberate, costed eating** — is now **built**
+(cf. `16_deliberate_eating`); next come **demonstrating restraint is selected** under spatial
+viscosity and **component emission** (corpses, waste, toxicity, communication as one agent →
 environment mechanism). Synthesis:
 [`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md).
 
@@ -106,7 +107,7 @@ environment mechanism). Synthesis:
 src/
   lib.rs          SimPlugin: the shared render-agnostic core.
   config.rs       SimConfig: the scenario (RON) + loading; Archetype (first-order species: body + brain + genes), species import/export; relation table; gene bounds.
-  components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat channels) / Action = the brain's contract; genealogy (Generation/Age).
+  components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat + proprioceptive self_state channels) / Action (steering + eat/attack intent) = the brain's contract; genealogy (Generation/Age).
   brain.rs        Brain (enum, static dispatch): Wander (wandering) · Hunter (hunt + flight) · Sessile (flora) · Mlp (learned, neuroevolution); BrainKind = scenario choice.
   genotype.rs     Heritable Genotype (generic TRAITS table) + mutation; genotype→phenotype compilation (§2).
   nutrients.rs    NutrientField (the substrate: a concentration grid + diffusion, outside Law 11) + Nutrients/Emits + emit/diffuse/absorb systems: the T2 second axis (gates reproduction, not survival).
@@ -132,7 +133,7 @@ src/
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
   bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
   bin/sweep.rs    Headless `sweep`: runs a scenario many times and scores each final world by biodiversity (a seed or parameter sweep) — the search for a coexistence band.
-  bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora and writes the evolved variant + the 07_mlp_brain / 09_mlp_evolved showcase.
+  bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora, captures the best brain seen over the whole run (peak generation, before the living-food population fades), and writes the evolved variant + the 07_mlp_brain / 09_mlp_evolved showcase.
   bin/breed.rs    Headless `breed` (generator, P5): drives the generational Orchestrator on a scenario's `batch`, prints fitness per generation per faction, captures the best genome into the catalog (species/saved/).
 scenarios/        Two categories (Open ▸ Examples / Saved); only examples are committed.
   examples/       Curated, committed example scenarios:
@@ -157,6 +158,8 @@ scenarios/        Two categories (Open ▸ Examples / Saved); only examples are 
     13_mlp_breed.ron    Breed a forager MLP: a cohort of headless matches per generation, scored by standing biomass (Population); the best is re-seeded into the next cohort.
     14_battle_breed.ron Battle: breed ONE faction (Azure) to dominate a rival (Crimson) via mutual transfer:false combat, scored by Dominance.
     15_red_queen.ron    Co-evolution (Red Queen): breed BOTH factions at once (scored_species: [0, 1]) — each scored against the other, so neither pulls permanently ahead.
+    # The COGNITIVE SUBSTRATE (continuous regime): deliberate, costed eating (SIM Law 8) + proprioception.
+    16_deliberate_eating.ron  Deliberate eating: the MLP DECIDES whether to eat (a 3rd output, gated in `interact`) and holding the intent COSTS energy (act_cost) → it gates its eating (watch `act` in the inspector graph) and persists on the oasis. Cf. tests/deliberate_eating.rs.
   saved/          Your saved scenarios (editor Save / Save As land here); gitignored — not committed.
 species/
   examples/       Committed reusable species (library):

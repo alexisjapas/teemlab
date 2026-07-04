@@ -2,8 +2,10 @@
 //!
 //! Step 3's *generator* in the MLP learning story (mlp_brain = naive baseline;
 //! mlp_train = the training ground; mlp_evolved = the trained variant in action). It
-//! runs the training scenario **headless**, captures the best-evolved MLP (the highest
-//! generation, tie-broken by current reserve), and writes:
+//! runs the training scenario **headless**, captures the best-evolved MLP seen **over
+//! the whole run** (highest generation, tie-broken by current reserve — sampled
+//! periodically, so the peak-generation lineage is caught before the living-food
+//! population fades, not the dying remnant at the final tick), and writes:
 //!   - `species/examples/mlp_trained.ron` — the reusable catalog **variant** (the
 //!     evolved genotype + the frozen `captured_brain`), as if exported from the
 //!     inspector's "Save as variant";
@@ -30,7 +32,7 @@ fn main() {
         .get(1)
         .cloned()
         .unwrap_or_else(|| "scenarios/examples/08_mlp_train.ron".into());
-    let ticks: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(6000);
+    let ticks: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(12000);
     let seed: Option<u64> = args.get(3).and_then(|s| s.parse().ok());
 
     let mut config = SimConfig::from_ron_file(&scenario).expect("load training scenario");
@@ -49,27 +51,26 @@ fn main() {
     app.add_plugins(SimPlugin::new(config.clone()));
     app.finish();
     app.cleanup();
-    for _ in 0..ticks {
-        app.update();
-    }
-
-    // Capture the best-evolved MLP: highest generation, tie-broken by reserve.
-    let world = app.world_mut();
-    let mut q =
-        world.query_filtered::<(&Species, &Generation, &Reserve, &Genotype, &Brain), With<Agent>>();
+    // Capture the **best MLP seen over the whole run** — highest generation,
+    // tie-broken by reserve — sampled periodically rather than only at the final
+    // tick. On living food the population peaks then fades (Lotka–Volterra), so the
+    // final-tick survivors are a *dying remnant* (a poor forager to embody); the
+    // peak-generation lineage, which existed mid-run, is the strongest evolved
+    // brain. Tracking the best-ever lets us run past the peak (to reach a higher
+    // generation) without capturing the collapse.
     let mut best: Option<(u32, f32, Genotype, Brain)> = None;
-    for (species, generation, reserve, genotype, brain) in q.iter(world) {
-        if species.0 != 0 || !matches!(brain, Brain::Mlp(_)) {
-            continue;
-        }
-        let key = (generation.0, reserve.current);
-        if best.as_ref().is_none_or(|b| (b.0, b.1) < key) {
-            best = Some((generation.0, reserve.current, *genotype, brain.clone()));
+    for tick in 0..ticks {
+        app.update();
+        // Sampling every 50 ticks (≈ 0.8 s) is ample — a generation spans many ticks
+        // — and keeps the scan cost negligible against the sim.
+        if tick % 50 == 0 {
+            scan_best(app.world_mut(), &mut best);
         }
     }
+    scan_best(app.world_mut(), &mut best);
     let (generation, reserve, genotype, brain) = best.expect(
-        "no MLP survived the training run — re-run with a different seed or fewer ticks \
-         (the population fades on living food; capture before it does)",
+        "no MLP ever lived during the training run — re-run with a different seed \
+         (the population must survive long enough to evolve a forager)",
     );
     println!("captured MLP: generation {generation}, reserve {reserve:.1}");
 
@@ -164,4 +165,22 @@ fn main() {
         "wrote species/examples/mlp_trained.ron + scenarios/examples/09_mlp_evolved.ron + \
          scenarios/examples/07_mlp_brain.ron"
     );
+}
+
+/// Update `best` with the strongest MLP of species 0 currently alive — highest
+/// [`Generation`], tie-broken by current [`Reserve`] — cloning its genotype + brain
+/// when it improves on the running best. Called periodically so the *peak*-generation
+/// lineage is captured even if the population later fades (cf. the loop above).
+fn scan_best(world: &mut World, best: &mut Option<(u32, f32, Genotype, Brain)>) {
+    let mut q =
+        world.query_filtered::<(&Species, &Generation, &Reserve, &Genotype, &Brain), With<Agent>>();
+    for (species, generation, reserve, genotype, brain) in q.iter(world) {
+        if species.0 != 0 || !matches!(brain, Brain::Mlp(_)) {
+            continue;
+        }
+        let key = (generation.0, reserve.current);
+        if best.as_ref().is_none_or(|b| (b.0, b.1) < key) {
+            *best = Some((generation.0, reserve.current, *genotype, brain.clone()));
+        }
+    }
 }

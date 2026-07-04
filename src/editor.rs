@@ -1032,8 +1032,9 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
 }
 
 /// **Numeric** editing of an MLP's architecture (item 18b, core): the number of
-/// hidden layers and the width of each. The input (`3 × rays`: vision, target,
-/// threat) and the output (2) are *constrained* by the contract and only displayed.
+/// hidden layers and the width of each. The input (`3 × rays` + self-state: vision,
+/// target, threat, proprioception) and the output (steering + eat/attack intent) are
+/// *constrained* by the contract and only displayed.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
     help::hint(
         ui,
