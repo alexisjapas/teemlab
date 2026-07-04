@@ -177,6 +177,21 @@ eating reflexively on contact.
 
 → concepts: [brains: Grazer](./model/brains.md#grazer--restraint) · [interactions](./model/interactions.md) · [the economy](./model/economy.md)
 
+## `18` · Pheromones
+
+**Component emission — an evolvable communication substrate.** The first use of the
+agent→environment write (the symmetric of absorption): the oasis MLP foragers **emit** a
+"Pheromone" component — a chemical field that spreads (diffusion) and **fades** (decay) —
+and **sense** its local concentration as an extra brain input. Toggle the Pheromone heatmap
+(View ▸ Layers) to watch trails bloom around the foragers and fade behind them. A toxin and
+a pheromone are the *same* mechanism — the relation decides (this one is sensed, not
+harmful). What is proven: the sensed concentration reaches the decision (the
+`mlp_reads_field_state_channel` unit test); what is *not* claimed: that these from-random
+brains evolve to coordinate (emergent signalling is neuroevolution-hard, §7) — the scene
+persists on the oasis; the study is a research follow-on.
+
+→ concepts: [components & the field-relations table](./model/nutrients.md#emission--sensing-pheromones) · [brains](./model/brains.md)
+
 ---
 
 ## Make your own

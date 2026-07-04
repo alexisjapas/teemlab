@@ -107,11 +107,11 @@ environment mechanism). Synthesis:
 ```
 src/
   lib.rs          SimPlugin: the shared render-agnostic core.
-  config.rs       SimConfig: the scenario (RON) + loading; Archetype (first-order species: body + brain + genes), species import/export; relation table; gene bounds.
-  components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat + proprioceptive self_state channels) / Action (steering + eat/attack intent) = the brain's contract; genealogy (Generation/Age).
+  config.rs       SimConfig: the scenario (RON) + loading; Archetype (first-order species: body + brain + genes), species import/export; relation table + components + the FieldRelation table (agent↔component: absorb/emit/sense/…); gene bounds.
+  components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat + proprioceptive self_state + sensed field_state channels) / Action (steering + eat/attack intent) = the brain's contract; genealogy (Generation/Age).
   brain.rs        Brain (enum, static dispatch): Wander (wandering) · Hunter (hunt + flight) · Grazer (hunger-gated hunter — restraint) · Sessile (flora) · Mlp (learned, neuroevolution); BrainKind = scenario choice.
   genotype.rs     Heritable Genotype (generic TRAITS table) + mutation; genotype→phenotype compilation (§2).
-  nutrients.rs    NutrientField (the substrate: a concentration grid + diffusion, outside Law 11) + Nutrients/Emits + emit/diffuse/absorb systems: the T2 second axis (gates reproduction, not survival).
+  nutrients.rs    Component fields (Field + decay, in a Fields vec, outside Law 11) fed by sources AND agent emission (Emits); Nutrients store; emit/diffuse/decay/absorb systems + the sensed field_state channel — the substrate for nutrients, pheromones and toxins (semantics from the FieldRelation table).
   movement.rs     perceive / decide / act systems (FixedUpdate, chained).
   interaction.rs  Single interaction primitive (predation / combat / competition), conserved under contention, + relation table.
   ecology.rs      Economy: metabolize (expenses + photosynthesis), die, age, reproduce (local seeding).

@@ -40,15 +40,16 @@ spiral*. Splitting them fixes it:
 
 - A plant **lives on the sun** (energy) regardless of the nutrient, so it never starves
   for lack of mineral.
-- But it can only **breed** where it can absorb nutrient and pay `offspring_nutrient`
-  per child. No nutrient ⇒ it simply stops reproducing, and waits.
+- But it can only **breed** where it can absorb nutrient and pay its `repro_cost` per
+  child (its nutrient [field relation](./nutrients.md#how-a-species-relates-to-a-component-the-field_relations-table)).
+  No nutrient ⇒ it simply stops reproducing, and waits.
 
 The result is a self-limiting population: growth is throttled by a finite resource, but
 a shortage causes a *pause*, not a collapse. See [The nutrient substrate](./nutrients.md)
 for the field, sources, diffusion, the food web and recycling.
 
-> **Fauna and the nutrient.** A grazer usually has `nutrient_absorption: 0` — it cannot
-> pull mineral from the ground. Instead it acquires nutrient by **eating**: a bite
+> **Fauna and the nutrient.** A grazer usually has no `absorb` relation — it cannot pull
+> mineral from the ground. Instead it acquires nutrient by **eating**: a bite
 > carries a share of the prey's nutrient store up the food chain. So a predator's
 > reproduction is coupled to the nutrient flowing up from the plants, and the whole
 > chain stays bounded with no overshoot.

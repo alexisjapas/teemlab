@@ -459,6 +459,35 @@ open work in §9.
   stronger spatial structure (near-immobile foragers / isolated patches) — the deferred open thread
   (§9). So the substrate demonstrably makes restraint an ecological **stabiliser**; making it *evolve*
   stays the §2 open problem.
+- **Component emission — the agent↔component redesign + pheromones (byte-identical;
+  [`docs/component-emission-plan.md`](docs/component-emission-plan.md))**: the entity↔component
+  relationship — a single-nutrient hack crammed into the flat `Genotype` — is dissolved into a
+  **declarative `FieldRelation` table** (the environmental twin of the interaction `relations`), and
+  the **agent→environment write** (the *symmetric of absorption*) is built, unlocking
+  pheromones/toxicity/turnover from **one** mechanism (Law 11). **Substrate**: the single
+  `NutrientField` → **`Field`** (+ a `decay` step — a fading pheromone / decomposing detritus) in a
+  **`Fields(Vec)`**; `nutrient: NutrientConfig` → **`field_resolution`** +
+  **`components: Vec<ComponentConfig{name,diffusion,decay}>`**; `Source.component`. **The table**: a
+  **bundled row per (species, component)** with combinable, independent verbs `absorb / capacity /
+  emit / emit_at_death / sense / affect / repro_cost` (any subset at once — e.g. affect-*without*-sense
+  = an odourless toxin, humans↔CO) **replaces** the three scalar nutrient genes (removed from
+  `Genotype`/`TRAITS`/`Mutability`/`*_bounds`/`GeneCategory`); `SimConfig::nutrient_of` reads it.
+  **Pheromones** (the first use-case): `emit_components` writes a component into its field; the `sense`
+  verb fills [`Perception::field_state`] (saturating-normalised local concentration), appended to the
+  MLP input after the proprioceptive block (`input_size(rays, n_sensed)`, `resize_input_fan` carrying
+  the ray-independent scalar tail) — the exact threat/proprioception method (hand-written brains ignore
+  it). **Byte-identical throughout** (`tests/mlp` green at every one of the six sub-commits): removing
+  the *non-mutable* nutrient genes leaves `mutate`'s draw stream untouched (it skips non-mutable genes)
+  → **no capture regeneration, no re-baseline** (the plan's "breaking" fear was wrong). Staged **P1**
+  (substrate) → **P2** (table + de-hack: gene-shim → author rows → strip genes) → **P3** (emit + sense).
+  Falsifiable unit `mlp_reads_field_state_channel`; playable `scenarios/examples/18_pheromones.ron` (MLP
+  foragers emit + sense a diffusing/decaying pheromone on the oasis) + driver `tests/pheromones.rs`
+  (persists **and** the field is written). **Decided deferral** (§8, no near-term need): per-component
+  `Stores` — only nutrients hold a store (pheromones emit/sense, toxins affect), so the single
+  `Nutrients` store is kept, the nutrient being component `0`. **Emergent communication not claimed**
+  (neuroevolution-hard, §7) — the wiring is proven, the trail legible (Pheromone heatmap). **Remaining
+  on this axis**: **toxicity** (`affect`) and **turnover/corpses** (`emit_at_death`) are now
+  *config-only* on this substrate (Law 11).
 
 **Remaining.**
 
@@ -1222,7 +1251,7 @@ and *scaling* work.
     is worth building: it must stay **conservative** (the new body is *built from* the
     consumed nutrients, never free — Law 9), and it **dilutes natural selection** (cheap
     re-emergence lowers the cost of extinction — the project's core pressure), so dose it.
-- **Emission of components — agent → environment (planned; the symmetric of absorption)**:
+- **Emission of components — agent → environment (DONE — cf. §0 "Component emission"; the symmetric of absorption)**:
   two current gaps are one missing mechanism — an agent cannot **die without disappearing**
   (no corpses) nor **emit components during life** (organic waste, excretions). Both are an
   **agent → environment** write, the **symmetric of absorption** (which already reads

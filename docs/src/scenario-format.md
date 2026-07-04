@@ -21,8 +21,10 @@ builds load it identically.
     archetypes: [ … ],          // the species — the central data (see below)
     relations:  [ … ],          // who may act on whom (see Interactions)
 
-    nutrient: ( … ),            // the substrate field
-    sources:  [ … ],            // nutrient emitters
+    field_resolution: 256,      // grid cells per side of every component field
+    components: [ … ],          // the diffusible substrates (nutrient, pheromone, …)
+    sources:  [ … ],            // fixed component emitters (vents)
+    field_relations: [ … ],     // how each species relates to each component
 
     // Per-gene bounds (global): each is `(min: …, max: …)`. They clamp both mutation
     // and the editor sliders.
@@ -43,8 +45,10 @@ builds load it identically.
 | `seed`              | int (hex ok)| Seeds the deterministic RNG. Same seed + config ⇒ same *experiment*. |
 | `archetypes`        | list        | The species. **Order matters**: an index is a species' identity. |
 | `relations`         | list        | The interaction table. |
-| `nutrient`          | record      | The substrate field parameters. |
-| `sources`           | list        | Nutrient emitters. |
+| `field_resolution`  | int         | Grid cells per side of every [component](./model/nutrients.md) field. |
+| `components`        | list        | The diffusible substrates (nutrient, pheromone, …): `(name, diffusion, decay)`. |
+| `sources`           | list        | Fixed component emitters (vents). |
+| `field_relations`   | list        | How each species relates to each component (absorb / emit / sense / …). |
 | `*_bounds`          | record      | `(min, max)` for each gene. |
 | `play_area_color` / `off_game_color` | rgb | Background tints (rendering only). |
 
@@ -125,21 +129,29 @@ gains), `false` = combat/competition (destruction). `rate` is reserve/second of 
 `range` is the surface-to-surface gap (`0` = touch). See
 [Interactions](./model/interactions.md).
 
-## Nutrient field & sources
+## Components, sources & field relations
 
 ```ron
-nutrient: (
-    resolution: 256,   // grid cells per side
-    diffusion: 0.3,    // spread per tick, in [0, 1] (0 = no spreading)
-),
+field_resolution: 256,        // grid cells per side of every field
+components: [
+    (name: "Nutrient",  diffusion: 0.3, decay: 0.0),   // conserved (a mineral)
+    (name: "Pheromone", diffusion: 0.2, decay: 0.05),  // spreads AND fades (a trail)
+],
 sources: [
-    (pos: (-220.0, 220.0), nutrient: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    (pos: (-220.0, 220.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+],
+field_relations: [
+    (species: 1, component: 0, absorb: 1.5, capacity: 8.0, repro_cost: 8.0),  // a plant
+    (species: 0, component: 1, emit: 2.0, sense: true),                       // a pheromone
 ],
 ```
 
-`pos` is world coordinates; `rate` is emission per second; `nutrient` is the index
-(always `0` for now); `color`/`radius` are the vent's visual only. See
-[The nutrient substrate](./model/nutrients.md).
+A **component** is a diffusible substrate (a nutrient, a pheromone, a toxin), one field
+each — `diffusion` spreads it, `decay` fades it (`0` = conserved). A **source** emits one
+into its field (`component` is the index; `color`/`radius` are the vent's visual only). A
+**field relation** declares how a species relates to a component — any subset of `absorb` /
+`capacity` / `emit` / `emit_at_death` / `sense` / `affect` / `repro_cost`. See
+[Components: the environmental substrate](./model/nutrients.md).
 
 ## Tips
 

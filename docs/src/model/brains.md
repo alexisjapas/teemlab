@@ -74,11 +74,14 @@ wearing this brain.
 brain: Mlp(hidden: [10])
 ```
 
-A small **multi-layer perceptron**, learned by **neuroevolution** (no backprop). It
-reads the same per-ray `vision` / `target` / `threat` channels as inputs (so its input
-layer has `3 × rays` neurons), runs them through the hidden layer(s) you specify, and
-outputs the motor command. Because the channels are the same ones the `Hunter` reads, an
-MLP *can* learn to forage and to flee — but it has to discover how.
+A small **multi-layer perceptron**, learned by **neuroevolution** (no backprop). Its input
+is the per-ray `vision` / `target` / `threat` channels (`3 × rays`), then the scalar
+**proprioceptive** channels (its own energy / nutrient / speed) and any **field-sense**
+channels (the local concentration of a [component](./nutrients.md#emission--sensing-pheromones)
+it senses — a pheromone). It runs them through the hidden layer(s) you specify and outputs
+the motor command (steering + the eat/attack intent). Because the exteroceptive channels are
+the same ones the `Hunter` reads, an MLP *can* learn to forage and to flee — but it has to
+discover how; the extra channels let it also weigh its own state and read chemical trails.
 
 How it learns:
 

@@ -75,15 +75,13 @@ These are inert (`0`) for fauna; a plant scenario turns them on.
 | `photosynthesis` |    0    | 0 … 30         |  —    | ❌       | Energy/s **gained** passively — a sessile creature's food, the counterpart of eating. |
 | `seed_dispersal` |    0    | 0 … 200        |  —    | ❌       | Distance a seed is dropped from the parent. `0` ⇒ a close default (clustered). |
 
-### Nutrients
+### Not a gene: the nutrient (and every component)
 
-The second resource axis (see [The economy](./economy.md)). Inert by default.
-
-| Gene                  | Default | Default bounds | Cost? | Mutates? | What it does |
-| --------------------- | ------: | -------------- | ----- | -------- | ------------ |
-| `nutrient_absorption` |    0    | 0 … 20         |  —    | ❌       | Rate at which the entity pulls nutrient from the field into its store. |
-| `nutrient_capacity`   |    0    | 0 … 200        |  —    | ❌       | Size of the per-entity nutrient store. |
-| `offspring_nutrient`  |    0    | 0 … 120        |  —    | ❌       | Nutrient **spent and consumed** per child — the child is born with an *empty* store. Makes the nutrient a true limiting resource. |
+A species' relationship to the nutrient — and to any [component](./nutrients.md) (a
+pheromone, a toxin) — is **not** a gene. It lives in the scenario's declarative
+`field_relations` table (absorb / capacity / emit / sense / reproduction-cost), the
+environmental twin of the interaction relations. See
+[Components: the environmental substrate](./nutrients.md#how-a-species-relates-to-a-component-the-field_relations-table).
 
 ## Mutation
 

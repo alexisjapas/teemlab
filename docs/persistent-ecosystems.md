@@ -93,6 +93,15 @@ costed action"; "Proprioception").
 
 ## 3. Emission of components into the environment
 
+> **Status — the mechanism is BUILT** (`docs/component-emission-plan.md`): a declarative
+> **`FieldRelation`** table (per (species, component): absorb / emit / sense / affect /
+> emit_at_death / repro_cost) over per-component diffusing, **decaying** fields — no per-kind
+> code (Law 11). **Emission** (`emit`, agent→field, the symmetric of absorption) and **sensing**
+> (`sense` → a brain input channel) are wired and shown by the `pheromones` scenario. What
+> remains is **config-only** on this substrate: **toxicity** (`affect < 0`, a new endogenous
+> collapse mode) and **turnover / corpses** (`emit_at_death` — a decomposing biomass field, the
+> flat-carrying-capacity lever). The paragraphs below record the original design, now realised.
+
 Two current gaps point at a single missing mechanism: agents cannot **die without disappearing**
 (so there are no corpses), and they cannot **emit components during life** (organic waste,
 excretions). Both are the same absent capability: an **agent → environment** emission — writing a
@@ -179,8 +188,9 @@ Law 7 — if so). This restates the roadmap's existing performance positions (§
    foragers — the remaining open thread. (`scenarios/examples/17_restraint.ron`, `tests/restraint.rs`.)
 2. **High-leverage for persistence:** turnover (via emission / corpses, §3) and spatial refuges —
    the latter also the condition that makes restraint selectable.
-3. **Emission of components** via per-component layers (§3), unlocking turnover, toxicity and
-   communication at once; the audio/wave case left open.
+3. **Emission of components** via per-component fields (§3) — **DONE**: the `FieldRelation`
+   table + `emit` / `sense` (the `pheromones` scenario). Turnover (`emit_at_death`) and toxicity
+   (`affect`) are now *config-only* on this substrate; the audio/wave case is still left open.
 4. **Downstream:** the collapse-factor science instrument (§4).
 5. **Far horizon:** species as an emergent cluster; de-hardcoded identity (§5).
 
