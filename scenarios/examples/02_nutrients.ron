@@ -112,6 +112,9 @@
             radius: 12.0,
         ),
     ],
+    field_relations: [
+        (species: 0, component: 0, absorb: 1.5, capacity: 8.0, repro_cost: 8.0),
+    ],
     speed_bounds: (
         min: 40.0,
         max: 260.0,
