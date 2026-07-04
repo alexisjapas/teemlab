@@ -66,7 +66,10 @@
           pkg-config
           # Documentation site (docs/): `mdbook serve docs --open` previews it,
           # `mdbook build docs` renders it. The Pages workflow builds the same book.
+          # `mdbook-mermaid` is the preprocessor that renders the architecture diagrams
+          # (```mermaid blocks) — book.toml declares it, so a build without it fails.
           mdbook
+          mdbook-mermaid
           # License compliance: `cargo about generate about.hbs` produces the
           # THIRD-PARTY-LICENSES bundle the release ships (see .github/workflows).
           cargo-about

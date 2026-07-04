@@ -1,0 +1,5 @@
+# Vendored mdbook-mermaid assets (the docs site's diagram renderer) — upstream
+# artifacts, not our source: keep them out of GitHub's language stats, and don't
+# diff the minified bundle.
+docs/mermaid.min.js  linguist-vendored -diff
+docs/mermaid-init.js linguist-vendored

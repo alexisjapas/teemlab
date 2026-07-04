@@ -23,6 +23,15 @@ and minimal, and the **interesting variety lives entirely in data**. A scenario 
 only what it changes; everything else falls back to engine defaults. Adding a field
 never breaks an existing scenario.
 
+```mermaid
+flowchart LR
+    ron["a scenario<br/>(RON data)"] -->|"the only thing that changes"| engine["the engine — fixed and minimal<br/>perceive → decide → act<br/>+ economy · interactions · fields · birth · death"]
+    engine --> w1["natural selection"]
+    engine --> w2["a predator–prey chase"]
+    engine --> w3["a faction war"]
+    engine --> w4["an MLP learning to forage"]
+```
+
 That single constraint pays off everywhere:
 
 - A **food source** is not a special type — it is just an agent with a *sessile* brain

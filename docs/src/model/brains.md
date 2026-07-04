@@ -9,6 +9,21 @@ exhaustive `match` so adding another is a compile error to resolve everywhere).
 You choose a species' brain in the [editor](../editor.md) (the **Brain** card) or in the
 [scenario file](../scenario-format.md#brain) (`brain: …`).
 
+```mermaid
+flowchart LR
+    P["Perception"] --> pick{"brain enum<br/>one per species, inherited"}
+    pick -->|Wander| w["random walk<br/>(ignores perception)"]
+    pick -->|Hunter| h["reflex: chase target,<br/>flee threat"]
+    pick -->|Grazer| g["Hunter + eat by hunger<br/>(reads self-state)"]
+    pick -->|Sessile| s["do nothing<br/>(a plant)"]
+    pick -->|Mlp| m["neural net<br/>(evolved weights)"]
+    w --> A["Action { dir, throttle }"]
+    h --> A
+    g --> A
+    s --> A
+    m --> A
+```
+
 ## `Wander` — the naive control
 
 ```ron

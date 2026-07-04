@@ -74,6 +74,28 @@ The verbs — any subset per row, all independent:
 | **`sense`** | field → brain | the local concentration becomes a **brain input** channel |
 | **`affect`** | field → reserve | the concentration changes energy (`< 0` a toxin, `> 0` a boon) |
 
+Each verb is one directed arrow between an agent and a field — the whole substrate is
+this handful of edges (the same five verbs whether the component is a nutrient, a
+pheromone, a toxin or a corpse):
+
+```mermaid
+flowchart LR
+    src["sources<br/>(fixed vents)"] -->|emit| conc
+    subgraph fieldg["a component field — a grid that diffuses · decays"]
+        conc["concentration"]
+    end
+    conc -->|absorb| store
+    conc -->|sense| chan
+    conc -->|"affect ±"| reserve
+    body -->|"emit · emit_at_death"| conc
+    subgraph agentg["an agent — its relation is declared per species"]
+        body["body"]
+        store["Nutrients store<br/>→ gates reproduction"]
+        chan["a brain input channel"]
+        reserve["Reserve (energy)"]
+    end
+```
+
 Because a child is born with an *empty* store, a component gated by `repro_cost` is a
 genuine *limiting* resource (Liebig): a species must keep acquiring it to keep breeding.
 And because the verbs are independent, one component can be *sensed and harmful* (an

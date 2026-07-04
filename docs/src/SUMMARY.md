@@ -23,5 +23,6 @@
 
 # Project
 
+- [Architecture](./architecture.md)
 - [Building & development](./development.md)
 - [The laws & rules](./laws.md)

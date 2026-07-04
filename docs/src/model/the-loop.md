@@ -18,6 +18,20 @@ simulation — rendering and UI never touch it. This is teemlab's cardinal invar
 it is what makes a headless multi-seed test a trustworthy proxy for what you see on
 screen.
 
+The three stages talk only through two small data contracts — a `Perception` in, an
+`Action` out — which is exactly what keeps the brain and the body interchangeable:
+
+```mermaid
+flowchart LR
+    rays["the body<br/>casts vision rays"] -->|"Perception — normalized floats in"| brain["the brain<br/>(swappable decider)"]
+    brain -->|"Action { dir, throttle } — floats out"| act["act → velocity<br/>bounded by max_speed and agility,<br/>burns energy"]
+    act --> phys["Avian integrates motion,<br/>resolves collisions"]
+    phys -. "next tick" .-> rays
+```
+
+For the wider machine this loop sits inside — the schedule, the full tick pipeline and
+the modules — see [Architecture](../architecture.md).
+
 ## 1. Perceive
 
 Each agent casts a fan of **vision rays** (their number and spread are genes —
