@@ -97,6 +97,9 @@ pub fn interact(
     mut demand: Local<HashMap<Entity, f32>>,
     mut deltas: Local<HashMap<Entity, f32>>,
     mut nut_deltas: Local<HashMap<Entity, f32>>,
+    // Reach colliders, one per relation — cached across ticks (rebuilt only when the
+    // scenario changes, cf. below): the shape is scenario data, not per-tick state.
+    mut reaches: Local<Vec<Collider>>,
 ) {
     if config.relations.is_empty() {
         return;
@@ -108,16 +111,24 @@ pub fn interact(
     deltas.clear();
     nut_deltas.clear();
 
-    // One reach collider per relation, built **only once**: the shape depends
-    // only on the relation (the actor's species radius is fixed per relation), not
-    // on the individual actor. Building a parry collider is not free; doing it per
-    // (actor × relation × tick) was wasteful. The radius is `range + actor_radius`
-    // so the configured `range` is a surface-to-surface clearance (0 = contact).
-    let reaches: Vec<Collider> = config
-        .relations
-        .iter()
-        .map(|r| Collider::circle(r.range + config.agent_radius_of(r.actor)))
-        .collect();
+    // One reach collider per relation, **cached across ticks** and rebuilt only when
+    // the scenario changes. The shape depends only on the relation (the actor's species
+    // radius is fixed per relation), not on the individual actor, and the relations /
+    // radii are scenario data — so building a (non-free) parry collider every tick was
+    // wasteful. `config.is_changed()` fires on the first run and on any edit/reset (which
+    // is where a relation's `range` or an actor's radius could move); the length guard
+    // is a safety net for the first build. The radius is `range + actor_radius` so the
+    // configured `range` is a surface-to-surface clearance (0 = contact). Byte-identical
+    // (same colliders, same order as `relations`).
+    if config.is_changed() || reaches.len() != config.relations.len() {
+        reaches.clear();
+        reaches.extend(
+            config
+                .relations
+                .iter()
+                .map(|r| Collider::circle(r.range + config.agent_radius_of(r.actor))),
+        );
+    }
 
     // Pass 1: tally the draws (actor, target, amount, transfer) and the total
     // **demand** per target. We do not touch the reserves yet.
@@ -135,7 +146,7 @@ pub fn interact(
         // entity, instead of rebuilding one per actor and per tick.
         filter.excluded_entities.clear();
         filter.excluded_entities.insert(actor);
-        for (relation, reach) in config.relations.iter().zip(&reaches) {
+        for (relation, reach) in config.relations.iter().zip(reaches.iter()) {
             if relation.actor != species.0 {
                 continue;
             }
