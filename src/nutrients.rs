@@ -140,32 +140,71 @@ impl NutrientField {
             return;
         }
         let res = self.res;
-        for y in 0..res {
-            for x in 0..res {
-                let i = y * res + x;
+        // **Interior** cells (all four neighbours in-grid, `deg = 4`): a *branchless*
+        // fast path — the overwhelming bulk of the grid (`(res-2)²` of `res²`). The
+        // expression is identical to [`stencil_general`](Self::stencil_general) for an
+        // interior cell (`0.0 + a == a`, `deg == 4.0`), so the result is **byte-for-byte**
+        // the same as the old per-cell branchy loop (a `diffuse_matches_general_stencil`
+        // test pins this).
+        for y in 1..res.saturating_sub(1) {
+            let base = y * res;
+            for x in 1..res - 1 {
+                let i = base + x;
                 let c = self.cells[i];
-                let mut sum = 0.0;
-                let mut deg = 0.0;
-                if x > 0 {
-                    sum += self.cells[i - 1];
-                    deg += 1.0;
-                }
-                if x + 1 < res {
-                    sum += self.cells[i + 1];
-                    deg += 1.0;
-                }
-                if y > 0 {
-                    sum += self.cells[i - res];
-                    deg += 1.0;
-                }
-                if y + 1 < res {
-                    sum += self.cells[i + res];
-                    deg += 1.0;
-                }
-                self.scratch[i] = c + self.diffusion * (sum - deg * c) / 4.0;
+                let sum = self.cells[i - 1]
+                    + self.cells[i + 1]
+                    + self.cells[i - res]
+                    + self.cells[i + res];
+                self.scratch[i] = c + self.diffusion * (sum - 4.0 * c) / 4.0;
             }
         }
+        // **Border ring** (fewer neighbours): the general stencil with in-grid degree
+        // checks. Top/bottom rows, then the left/right columns between them.
+        for x in 0..res {
+            let v = self.stencil_general(x, 0);
+            self.scratch[x] = v;
+            if res > 1 {
+                let v = self.stencil_general(x, res - 1);
+                self.scratch[(res - 1) * res + x] = v;
+            }
+        }
+        for y in 1..res.saturating_sub(1) {
+            let v = self.stencil_general(0, y);
+            self.scratch[y * res] = v;
+            let v = self.stencil_general(res - 1, y);
+            self.scratch[y * res + res - 1] = v;
+        }
         std::mem::swap(&mut self.cells, &mut self.scratch);
+    }
+
+    /// The general 4-neighbour diffusion stencil for cell `(x, y)`, counting only
+    /// in-grid neighbours (`deg` = 2 at a corner, 3 on an edge, 4 inside). This is the
+    /// exact per-cell computation the old [`diffuse`](Self::diffuse) ran for **every**
+    /// cell; [`diffuse`](Self::diffuse) now uses it only on the border ring and a
+    /// branchless equivalent on the interior.
+    fn stencil_general(&self, x: usize, y: usize) -> f32 {
+        let res = self.res;
+        let i = y * res + x;
+        let c = self.cells[i];
+        let mut sum = 0.0;
+        let mut deg = 0.0;
+        if x > 0 {
+            sum += self.cells[i - 1];
+            deg += 1.0;
+        }
+        if x + 1 < res {
+            sum += self.cells[i + 1];
+            deg += 1.0;
+        }
+        if y > 0 {
+            sum += self.cells[i - res];
+            deg += 1.0;
+        }
+        if y + 1 < res {
+            sum += self.cells[i + res];
+            deg += 1.0;
+        }
+        c + self.diffusion * (sum - deg * c) / 4.0
     }
 }
 
@@ -343,5 +382,28 @@ mod tests {
         let snapshot = f.cells.clone();
         f.diffuse();
         assert_eq!(f.cells, snapshot, "diffusion 0 → no change");
+    }
+
+    /// The optimised `diffuse` (branchless interior + border ring, B4) must produce the
+    /// **exact same** field, cell for cell, as applying the general stencil to every
+    /// cell (the old whole-grid path) — the byte-identical guarantee of the split.
+    #[test]
+    fn diffuse_matches_general_stencil() {
+        // A non-uniform, non-negative field so every cell has a distinct neighbourhood.
+        let mut f = NutrientField::new(7, 10.0, 0.37);
+        for (i, c) in f.cells.iter_mut().enumerate() {
+            *c = (i as f32 * 1.3).sin().abs() * 10.0;
+        }
+        // Reference = the general stencil applied to every cell, in row-major order,
+        // read from the *pre-diffuse* field.
+        let reference: Vec<f32> = (0..f.res)
+            .flat_map(|y| (0..f.res).map(move |x| (x, y)))
+            .map(|(x, y)| f.stencil_general(x, y))
+            .collect();
+        f.diffuse();
+        assert_eq!(
+            f.cells, reference,
+            "the interior fast path must match the general stencil bit-for-bit"
+        );
     }
 }
