@@ -43,12 +43,17 @@ pub struct SimConfig {
     /// **archetype indices**. Empty by default → no interaction (inert world, as
     /// before item 7).
     pub relations: Vec<Relation>,
-    /// **Nutrient field** parameters (the substrate, T2): grid resolution and
-    /// diffusion. Default = inert (diffusion 0) → existing scenarios unchanged. The
-    /// field bounds plant *reproduction* by Liebig's law (ROADMAP §9,
-    /// `docs/nutrients-t2-plan.md`), the second axis next to energy.
-    pub nutrient: NutrientConfig,
-    /// **Substrate sources** (e.g. volcanic vents) that emit a nutrient into the
+    /// Cells-per-side of **every** component [`Field`](crate::nutrients::Field) (one
+    /// shared grid resolution over the arena). Default 48; only meaningful when
+    /// [`components`](Self::components) is non-empty.
+    pub field_resolution: usize,
+    /// The scenario's **components** — diffusible substrates (a nutrient, a toxin, a
+    /// pheromone, biomass), each a concentration field. A *distinct category* from
+    /// archetypes; how a species relates to each (absorb/emit/sense/…) is declared by
+    /// the (species, component) relations, never by a type (Law 11). Empty by default
+    /// → no field (inert), existing scenarios unchanged.
+    pub components: Vec<ComponentConfig>,
+    /// **Substrate sources** (e.g. volcanic vents) that emit a component into its
     /// field; diffusion then makes gradients. A *distinct category*, **not**
     /// archetypes: spawned as **non-`Agent`** entities ignored by the life
     /// machinery. Empty by default → no source (inert), existing scenarios
@@ -533,41 +538,46 @@ pub struct Relation {
     pub range: f32,
 }
 
-/// Parameters of the [`NutrientField`](crate::nutrients::NutrientField): grid
-/// resolution and diffusion rate. The substrate (the "T2" layer): not a life form,
-/// not a spatial-query structure — pure environment. `Default` is **inert**
-/// (`diffusion: 0.0`), so a scenario that does not mention it changes nothing.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// A **component**: a diffusible substrate (nutrient / toxin / pheromone / biomass),
+/// rendered as a [`Field`](crate::nutrients::Field). Differentiated only by the
+/// (species, component) relations that reference it (Law 11), never by a type. The
+/// grid resolution is shared ([`SimConfig::field_resolution`]); per-component are its
+/// `diffusion` (spreading) and `decay` (dissipation — a pheromone fades, detritus
+/// decomposes; `0` = a conserved nutrient). See `docs/component-emission-plan.md`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct NutrientConfig {
-    /// Cells per side of the square field over the arena.
-    pub resolution: usize,
-    /// Rebalance fraction per tick, in `[0, 1]` — the *local vs global* limitation
-    /// knob (`0` → the field never spreads).
+pub struct ComponentConfig {
+    /// Display name (editor, heatmap legend).
+    pub name: String,
+    /// Rebalance fraction per tick, in `[0, 1]` — the *local vs global* knob (`0` →
+    /// never spreads).
     pub diffusion: f32,
+    /// Per-tick fractional decay, in `[0, 1]` (`0` → conserved, a nutrient).
+    pub decay: f32,
 }
 
-impl Default for NutrientConfig {
+impl Default for ComponentConfig {
     fn default() -> Self {
         Self {
-            resolution: 48,
+            name: "Component".to_string(),
             diffusion: 0.0,
+            decay: 0.0,
         }
     }
 }
 
-/// A substrate **source**: a fixed point that emits a nutrient into the field. A
+/// A substrate **source**: a fixed point that emits a component into its field. A
 /// *distinct category* from [`Archetype`] (it is not a life form): spawned as a
 /// **non-`Agent`** entity ([`crate::spawn::spawn_sources`]) carrying
 /// [`Emits`](crate::nutrients::Emits), with no collider (intangible) but a visual.
-/// In T2, sources are hand-edited in the RON (GUI editing of sources is roadmapped).
+/// Sources are hand-edited in the RON (GUI editing is roadmapped).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Source {
     /// World position (the cell it emits into).
     pub pos: [f32; 2],
-    /// Nutrient index (T2: always `0`).
-    pub nutrient: usize,
+    /// Component index (into [`SimConfig::components`]).
+    pub component: usize,
     /// Emission per second of simulated time.
     pub rate: f32,
     /// Visual color (linear sRGB, `[r, g, b]` in `[0, 1]`).
@@ -652,7 +662,8 @@ impl Default for SimConfig {
             arena_half_extent: 400.0,
             archetypes: vec![Archetype::new_agent(0)],
             relations: Vec::new(),
-            nutrient: NutrientConfig::default(),
+            field_resolution: 48,
+            components: Vec::new(),
             sources: Vec::new(),
             speed_bounds: Bounds {
                 min: 40.0,

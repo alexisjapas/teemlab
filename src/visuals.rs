@@ -10,7 +10,7 @@
 
 use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
 use crate::config::SimConfig;
-use crate::nutrients::NutrientField;
+use crate::nutrients::{Field, Fields};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
 use bevy::prelude::*;
@@ -264,7 +264,7 @@ struct NutrientLayer {
 /// with **alpha ∝ concentration** (normalized to the field's current max), so empty
 /// cells are transparent and whatever is behind shows through. World +Y is mapped to
 /// the image's **top** row (vertical flip).
-fn paint_nutrient_image(image: &mut Image, field: &NutrientField, color: Srgba) {
+fn paint_nutrient_image(image: &mut Image, field: &Field, color: Srgba) {
     let res = field.resolution();
     let cells = field.cells();
     let max = cells.iter().copied().fold(0.0_f32, f32::max).max(1e-6);
@@ -282,7 +282,7 @@ fn paint_nutrient_image(image: &mut Image, field: &NutrientField, color: Srgba) 
 }
 
 /// A fresh res×res heatmap image (linear-sampled → a smooth map, not blocky cells).
-fn make_nutrient_image(field: &NutrientField, color: Srgba) -> Image {
+fn make_nutrient_image(field: &Field, color: Srgba) -> Image {
     let res = field.resolution().max(1) as u32;
     let mut image = Image::new_fill(
         Extent3d {
@@ -300,16 +300,15 @@ fn make_nutrient_image(field: &NutrientField, color: Srgba) -> Image {
     image
 }
 
-/// Rendering only: the nutrient **heatmap layer(s)** (background, *behind* the
-/// agents at `z = -5`, above the play-area at `z = -10`). Off by default; toggled
-/// per nutrient via [`Layers`]. Active nutrient layers **share** an opacity budget
-/// (`N` active ⇒ `1/N` each), so several stacked maps blend without saturating the
-/// background. T2 has a single nutrient field ([`NutrientField`]); the body
-/// generalizes to several fields in T3.
+/// Rendering only: the component **heatmap layers** (background, *behind* the agents
+/// at `z = -5`, above the play-area at `z = -10`). Off by default; toggled per
+/// component via [`Layers`]. Active layers **share** an opacity budget (`N` active ⇒
+/// `1/N` each), so several stacked maps blend without saturating the background. One
+/// quad ([`NutrientLayer`]) per [`Fields`] entry, hued by [`nutrient_color`].
 fn render_nutrient_layers(
     mut commands: Commands,
     layers: Res<Layers>,
-    field: Res<NutrientField>,
+    fields: Res<Fields>,
     config: Res<SimConfig>,
     mut images: ResMut<Assets<Image>>,
     mut quads: Query<(
@@ -319,53 +318,53 @@ fn render_nutrient_layers(
         &mut Transform,
     )>,
 ) {
-    // Shared opacity: a full budget split across the *active* nutrient layers.
+    // Shared opacity: a full budget split across the *active* layers.
     let active = layers.nutrients.iter().filter(|&&on| on).count().max(1);
     let opacity = 1.0 / active as f32;
     let side = 2.0 * config.arena_half_extent;
 
-    // T2: a single nutrient field, index 0.
-    let index = 0usize;
-    let enabled = layers.nutrients.get(index).copied().unwrap_or(false);
-    let color = nutrient_color(index);
+    for (index, field) in fields.iter().enumerate() {
+        let enabled = layers.nutrients.get(index).copied().unwrap_or(false);
+        let color = nutrient_color(index);
 
-    if let Some((mut layer, mut sprite, mut vis, mut tf)) =
-        quads.iter_mut().find(|(l, ..)| l.index == index)
-    {
-        *vis = if enabled {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-        if !enabled {
-            return; // hidden: skip the texture repaint.
-        }
-        sprite.color = Color::srgba(1.0, 1.0, 1.0, opacity);
-        sprite.custom_size = Some(Vec2::splat(side));
-        tf.translation.z = -5.0 - index as f32 * 0.1;
-        if layer.res == field.resolution() {
-            if let Some(mut img) = images.get_mut(&sprite.image) {
-                paint_nutrient_image(&mut img, &field, color);
+        if let Some((mut layer, mut sprite, mut vis, mut tf)) =
+            quads.iter_mut().find(|(l, ..)| l.index == index)
+        {
+            *vis = if enabled {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+            if !enabled {
+                continue; // hidden: skip the texture repaint.
             }
-        } else {
-            // The grid changed (scenario reload): rebuild the texture to fit.
-            sprite.image = images.add(make_nutrient_image(&field, color));
-            layer.res = field.resolution();
+            sprite.color = Color::srgba(1.0, 1.0, 1.0, opacity);
+            sprite.custom_size = Some(Vec2::splat(side));
+            tf.translation.z = -5.0 - index as f32 * 0.1;
+            if layer.res == field.resolution() {
+                if let Some(mut img) = images.get_mut(&sprite.image) {
+                    paint_nutrient_image(&mut img, field, color);
+                }
+            } else {
+                // The grid changed (scenario reload): rebuild the texture to fit.
+                sprite.image = images.add(make_nutrient_image(field, color));
+                layer.res = field.resolution();
+            }
+        } else if enabled {
+            let handle = images.add(make_nutrient_image(field, color));
+            commands.spawn((
+                NutrientLayer {
+                    index,
+                    res: field.resolution(),
+                },
+                Sprite {
+                    image: handle,
+                    custom_size: Some(Vec2::splat(side)),
+                    color: Color::srgba(1.0, 1.0, 1.0, opacity),
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, -5.0 - index as f32 * 0.1),
+            ));
         }
-    } else if enabled {
-        let handle = images.add(make_nutrient_image(&field, color));
-        commands.spawn((
-            NutrientLayer {
-                index,
-                res: field.resolution(),
-            },
-            Sprite {
-                image: handle,
-                custom_size: Some(Vec2::splat(side)),
-                color: Color::srgba(1.0, 1.0, 1.0, opacity),
-                ..default()
-            },
-            Transform::from_xyz(0.0, 0.0, -5.0 - index as f32 * 0.1),
-        ));
     }
 }

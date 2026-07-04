@@ -237,7 +237,7 @@ fn spawn_sources(commands: &mut Commands, config: &SimConfig) {
     for source in &config.sources {
         commands.spawn((
             Emits {
-                nutrient: source.nutrient,
+                component: source.component,
                 rate: source.rate,
             },
             Transform::from_translation(Vec2::from(source.pos).extend(0.0)),

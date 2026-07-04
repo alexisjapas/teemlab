@@ -72,10 +72,14 @@
             range: 28.0,
         ),
     ],
-    nutrient: (
-        resolution: 48,
-        diffusion: 0.0,
-    ),
+    field_resolution: 48,
+    components: [
+        (
+            name: "Nutrient",
+            diffusion: 0.0,
+            decay: 0.0,
+        ),
+    ],
     sources: [],
     speed_bounds: (
         min: 40.0,

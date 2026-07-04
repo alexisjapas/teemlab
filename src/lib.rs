@@ -64,14 +64,10 @@ impl Plugin for SimPlugin {
             // The sim's random stream (seeding, mutations, …), seeded separately
             // from population so the two are not correlated.
             .insert_resource(ecology::SimRng::from_config(&self.config))
-            // The nutrient field (T2 substrate): a concentration grid over the
-            // arena, sized from the scenario. Inert (never touched) when no source
-            // emits and diffusion is 0 → existing scenarios byte-identical.
-            .insert_resource(nutrients::NutrientField::new(
-                self.config.nutrient.resolution,
-                self.config.arena_half_extent,
-                self.config.nutrient.diffusion,
-            ))
+            // The component fields (the substrate): one concentration grid per
+            // declared component, sized from the scenario. Empty (no component) or
+            // inert (no source, diffusion/decay 0) → existing scenarios byte-identical.
+            .insert_resource(nutrients::Fields::from_config(&self.config))
             .add_systems(Startup, spawn::setup_world)
             // perceive → decide → act, strictly within FixedUpdate.
             // `interact` extends "act" (eat/attack); then the energy economy:
@@ -87,11 +83,11 @@ impl Plugin for SimPlugin {
             // nutrient to the field (link 2 — the conserving loop), inert (the field
             // untouched) when the store is empty → existing scenarios byte-identical.
             //
-            // The **nutrient** sub-pipeline (T2) sits after metabolize and before
+            // The **component** sub-pipeline sits after metabolize and before
             // reproduce, so the store is filled before reproduction reads it: sources
-            // emit → the field diffuses → agents absorb into their store; reproduce
-            // then gates a child on `offspring_nutrient`. All three early-return when
-            // inert (no source / diffusion 0 / no absorber) → byte-identical.
+            // emit → the fields diffuse and decay → agents absorb into their store;
+            // reproduce then gates a child on `offspring_nutrient`. All early-return
+            // when inert (no source / diffusion & decay 0 / no absorber) → byte-identical.
             .add_systems(
                 FixedUpdate,
                 (
@@ -103,6 +99,7 @@ impl Plugin for SimPlugin {
                     ecology::metabolize,
                     nutrients::emit_nutrients,
                     nutrients::diffuse_nutrients,
+                    nutrients::decay_nutrients,
                     nutrients::absorb_nutrients,
                     ecology::age_agents,
                     ecology::reproduce,

@@ -19,9 +19,9 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, Mutability};
 use teemlab::genotype::Genotype;
-use teemlab::nutrients::{NutrientField, Nutrients};
+use teemlab::nutrients::{Fields, Nutrients};
 use teemlab::spawn::spawn_agent;
 
 mod common;
@@ -64,9 +64,14 @@ fn one_agent_config() -> SimConfig {
             captured_from: None,
         }],
         // No relations, no sources: the field is inert except for what recycling
-        // deposits. Diffusion stays 0 (default) → the deposit stays put, `total()`
-        // is exact.
+        // deposits. A single nutrient component (index 0) is where `reap` recycles;
+        // diffusion & decay 0 → the deposit stays put, `total()` is exact.
         relations: vec![],
+        components: vec![ComponentConfig {
+            name: "Nutrient".into(),
+            diffusion: 0.0,
+            decay: 0.0,
+        }],
         ..SimConfig::default()
     }
 }
@@ -115,7 +120,7 @@ fn a_dead_body_recycles_its_nutrient_to_the_field() {
 
     // Before death: the body holds all the nutrient, the field is empty.
     assert_eq!(
-        app.world().resource::<NutrientField>().total(),
+        app.world().resource::<Fields>()[0].total(),
         0.0,
         "the field starts empty"
     );
@@ -129,7 +134,7 @@ fn a_dead_body_recycles_its_nutrient_to_the_field() {
     assert_eq!(agent_count(&mut app), 0, "the starved body must have died");
     // …and the field holds **exactly** the nutrient it carried — conservation
     // across death (no creation, no destruction; diffusion 0 → the deposit is exact).
-    let field_total = app.world().resource::<NutrientField>().total();
+    let field_total = app.world().resource::<Fields>()[0].total();
     assert!(
         (field_total - stored).abs() < 1e-3,
         "the field must recover the body's whole store ({stored}), got {field_total:.3}"
@@ -149,7 +154,7 @@ fn an_empty_body_creates_no_nutrient() {
 
     assert_eq!(agent_count(&mut app), 0, "the starved body must have died");
     assert_eq!(
-        app.world().resource::<NutrientField>().total(),
+        app.world().resource::<Fields>()[0].total(),
         0.0,
         "an empty body must leave the field empty (no nutrient conjured from death)"
     );

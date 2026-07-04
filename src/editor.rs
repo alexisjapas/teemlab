@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, GrazerBrain, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{Archetype, BatchConfig, Fitness, Relation, Source, SpeciesEntry};
+use teemlab::config::{
+    Archetype, BatchConfig, ComponentConfig, Fitness, Relation, Source, SpeciesEntry,
+};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
@@ -1382,47 +1384,90 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// (no source ⇒ inert layer), so it folds away while keeping the sibling card frame.
 fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
-        egui::CollapsingHeader::new("Nutrients")
+        egui::CollapsingHeader::new("Components")
             .default_open(false)
             .show(ui, |ui| {
                 help::hint(
                     ui,
-                    "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
-                 survival (the sun). The field is fed by the sources below and spread \
-                 by diffusion into gradients. All (reset): applied on the next Reset.",
+                    "Components are diffusible substrates — a nutrient (bounds REPRODUCTION by \
+                 Liebig, decoupled from survival), a toxin, a pheromone, … Each is a field fed \
+                 by the sources below, spread by diffusion and thinned by decay. All (reset): \
+                 applied on the next Reset.",
                 );
-                egui::Grid::new("nutrient_fields")
+                egui::Grid::new("field_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
                     .show(ui, |ui| {
                         ui.label("grid resolution (reset)");
                         fonts::value(ui, |ui| {
                             ui.add(
-                                egui::DragValue::new(&mut config.nutrient.resolution)
+                                egui::DragValue::new(&mut config.field_resolution)
                                     .range(8..=256)
                                     .speed(1.0),
                             )
-                            .on_hover_text("Cells per side of the nutrient field over the arena.")
-                        });
-                        ui.end_row();
-
-                        ui.label("diffusion (reset)");
-                        fonts::value(ui, |ui| {
-                            ui.add(egui::Slider::new(&mut config.nutrient.diffusion, 0.0..=1.0))
-                                .on_hover_text(
-                                    "Per-tick spread toward neighbours (the local↔global knob); \
-                                 0 = no spread.",
-                                )
+                            .on_hover_text(
+                                "Cells per side of every component field over the arena.",
+                            )
                         });
                         ui.end_row();
                     });
 
                 ui.separator();
-                ui.strong("Sources (emit nutrient into the field)");
+                ui.strong("Components (diffusible substrates)");
+                let mut comp_to_remove = None;
+                for (i, comp) in config.components.iter_mut().enumerate() {
+                    card(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("#{i}"));
+                            fonts::value(ui, |ui| ui.text_edit_singleline(&mut comp.name));
+                            if ui
+                                .button(fonts::icon(icons::TRASH))
+                                .on_hover_text("Remove this component")
+                                .clicked()
+                            {
+                                comp_to_remove = Some(i);
+                            }
+                        });
+                        egui::Grid::new(("component_fields", i))
+                            .num_columns(2)
+                            .spacing([8.0, 6.0])
+                            .show(ui, |ui| {
+                                ui.label("diffusion (reset)");
+                                fonts::value(ui, |ui| {
+                                    ui.add(egui::Slider::new(&mut comp.diffusion, 0.0..=1.0))
+                                        .on_hover_text(
+                                            "Per-tick spread toward neighbours; 0 = no spread.",
+                                        )
+                                });
+                                ui.end_row();
+                                ui.label("decay (reset)");
+                                fonts::value(ui, |ui| {
+                                    ui.add(egui::Slider::new(&mut comp.decay, 0.0..=1.0))
+                                        .on_hover_text(
+                                            "Per-tick fractional loss; 0 = conserved (a nutrient).",
+                                        )
+                                });
+                                ui.end_row();
+                            });
+                    });
+                }
+                if let Some(i) = comp_to_remove {
+                    config.components.remove(i);
+                }
+                if ui
+                    .button(fonts::icon_label(icons::PLUS, "Add a component"))
+                    .clicked()
+                {
+                    config.components.push(ComponentConfig::default());
+                }
+
+                ui.separator();
+                ui.strong("Sources (emit a component into its field)");
                 help::hint(
                     ui,
-                    "A fixed point emitting `rate`/s of nutrient at its position.",
+                    "A fixed point emitting `rate`/s of its component at its position.",
                 );
+                let n_components = config.components.len().max(1);
                 let mut to_remove = None;
                 for (i, src) in config.sources.iter_mut().enumerate() {
                     card(ui, |ui| {
@@ -1466,6 +1511,17 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                                 });
                                 ui.end_row();
 
+                                ui.label("component");
+                                fonts::value(ui, |ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut src.component)
+                                            .range(0..=n_components.saturating_sub(1))
+                                            .speed(1.0),
+                                    )
+                                    .on_hover_text("Which component this source emits.")
+                                });
+                                ui.end_row();
+
                                 ui.label("visual radius");
                                 fonts::value(ui, |ui| {
                                     ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
@@ -1481,10 +1537,10 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     .button(fonts::icon_label(icons::PLUS, "Add a source"))
                     .clicked()
                 {
-                    // T2: a single nutrient (index 0). Sensible defaults at the center.
+                    // Sensible defaults at the center, emitting component 0.
                     config.sources.push(Source {
                         pos: [0.0, 0.0],
-                        nutrient: 0,
+                        component: 0,
                         rate: 10.0,
                         color: [1.0, 0.6, 0.2],
                         radius: 12.0,

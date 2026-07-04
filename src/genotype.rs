@@ -88,7 +88,7 @@ pub struct Genotype {
     /// 0). `0` by default (inert). Appended at the **end** (draw stream).
     pub agility_cost: f32,
     /// **Nutrient gene** (T2): rate at which the entity **absorbs** nutrient from
-    /// the local field ([`crate::nutrients::NutrientField`]) into its store
+    /// the local field ([`crate::nutrients::Field`]) into its store
     /// ([`crate::nutrients::Nutrients`]), per second. `0` → no absorption (fauna,
     /// and every pre-T2 scenario). The nutrient axis gates *reproduction* only, not
     /// survival (the two-axis design, ROADMAP §9). Appended at the **end** and

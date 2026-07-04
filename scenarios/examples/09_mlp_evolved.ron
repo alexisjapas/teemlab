@@ -718,35 +718,39 @@
             range: 16.0,
         ),
     ],
-    nutrient: (
-        resolution: 256,
-        diffusion: 0.3,
-    ),
+    field_resolution: 256,
+    components: [
+        (
+            name: "Nutrient",
+            diffusion: 0.3,
+            decay: 0.0,
+        ),
+    ],
     sources: [
         (
             pos: (-220.0, 220.0),
-            nutrient: 0,
+            component: 0,
             rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (220.0, 220.0),
-            nutrient: 0,
+            component: 0,
             rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (-220.0, -220.0),
-            nutrient: 0,
+            component: 0,
             rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,
         ),
         (
             pos: (220.0, -220.0),
-            nutrient: 0,
+            component: 0,
             rate: 14.0,
             color: (1.0, 0.55, 0.2),
             radius: 12.0,

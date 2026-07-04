@@ -1,40 +1,38 @@
-//! The **nutrient field**: an environmental concentration field (the "substrate").
+//! **Component fields**: environmental concentration fields (the "substrate").
 //!
-//! Plant reproduction (T2) is bounded by a *finite* nutrient, not by sunlight
-//! alone (which is infinite → carpeting). This is the resource-limitation bound of
-//! **Liebig's law of the minimum** (ROADMAP §9 "Generic nutrients layer";
-//! `docs/nutrients-t2-plan.md`). Two axes (the T2 design): **energy** (the existing
-//! [`Reserve`](crate::components::Reserve), sun-fed) governs *survival*; this
-//! **nutrient** axis governs *reproduction only* — so a plant with no nutrient
-//! simply does not reproduce (it lives on the sun → no death spiral), the fix to
-//! the T1 fragility (the early single-axis mineral prototype, where lacking the
-//! nutrient meant *death* → a collapse spiral).
+//! A *component* is any diffusible substance laid over the arena — a nutrient, a
+//! toxin, a pheromone, biomass — differentiated **only by its relations** (Law 11),
+//! not by a type. Each is a [`Field`] (a concentration grid); the set lives in
+//! [`Fields`]. The engine treats them uniformly; the scenario declares, per
+//! (species, component), how a species relates to each (absorb / emit / sense /
+//! affect / reproduce). See [`docs/component-emission-plan.md`].
 //!
-//! The field is the **environment**, not a life form: it is **outside SIM Law 11**
-//! (it runs none of the agent systems) and it is **not** a spatial-query structure
-//! (no §5 conflict — it never searches neighbours; position → cell is a direct
-//! hash). One nutrient in T2; the shape (a grid of `f32`) generalizes to a
-//! `Vec<NutrientField>` in T3.
+//! The historical first use (T2, `docs/nutrients-t2-plan.md`) is the **nutrient
+//! axis**: plant reproduction is bounded by a *finite* nutrient (Liebig's law of the
+//! minimum), not by sunlight alone (infinite → carpeting). Two axes: **energy** (the
+//! [`Reserve`](crate::components::Reserve), sun-fed) governs *survival*; a **nutrient**
+//! component governs *reproduction only* — so a plant with no nutrient simply does not
+//! reproduce (it lives on the sun → no death spiral).
 //!
-//! This module is **step 1** of the T2 plan: a pure-data resource with its own
-//! unit tests, wired into no system yet (emission / diffusion / absorption come in
-//! later steps). Every existing scenario stays byte-identical: with no source and
-//! `diffusion = 0`, the field is allocated but never touched.
+//! The fields are the **environment**, not life forms: **outside SIM Law 11** (they
+//! run no agent system) and **not** spatial-query structures (no §5 conflict — a
+//! `pos → cell` is a direct hash, never a neighbour search).
 
 use crate::components::Agent;
 use crate::genotype::Genotype;
 use bevy::prelude::*;
 
-/// A concentration field for **one** nutrient: a square `res × res` grid of `f32`
+/// A concentration field for **one** component: a square `res × res` grid of `f32`
 /// concentrations laid over the arena (`[-half_extent, half_extent]²`), row-major
 /// (`index = y * res + x`).
 ///
 /// Conservation is the contract: [`add`](Self::add) deposits, [`take`](Self::take)
 /// removes *exactly* what it returns, and [`diffuse`](Self::diffuse) preserves the
-/// total mass (a graph-Laplacian relaxation with reflecting boundaries). Nothing
-/// here creates or destroys nutrient outside `add`.
-#[derive(Resource, Clone, Debug)]
-pub struct NutrientField {
+/// total mass (a graph-Laplacian relaxation with reflecting boundaries). The one
+/// non-conservative operation is [`decay_step`](Self::decay_step) — a *deliberate*
+/// dissipation (a pheromone fading, detritus decomposing), inert when `decay == 0`.
+#[derive(Clone, Debug)]
+pub struct Field {
     /// `res * res` concentrations, row-major (`y * res + x`).
     cells: Vec<f32>,
     /// Cells per side.
@@ -44,22 +42,27 @@ pub struct NutrientField {
     /// Rebalance fraction per [`diffuse`](Self::diffuse) step, in `[0, 1]` — the
     /// *local vs global* limitation knob. `0` → the field never spreads (inert).
     diffusion: f32,
+    /// Per-tick fractional decay (`c *= 1 - decay`), in `[0, 1]`: a component that
+    /// **dissipates** (a pheromone fading, detritus decomposing). `0` → the field
+    /// never decays (a conserved nutrient). Applied by [`decay_step`](Self::decay_step).
+    decay: f32,
     /// Double-buffer for [`diffuse`](Self::diffuse) (a relaxation reads the whole
     /// field then writes the new one; an in-place update would bias the stencil).
     scratch: Vec<f32>,
 }
 
-impl NutrientField {
+impl Field {
     /// A fresh, empty field of `res × res` cells over `[-half_extent, half_extent]²`.
     /// `res` is forced to at least 1 (a degenerate single cell rather than a panic
     /// on an empty `Vec`).
-    pub fn new(res: usize, half_extent: f32, diffusion: f32) -> Self {
+    pub fn new(res: usize, half_extent: f32, diffusion: f32, decay: f32) -> Self {
         let res = res.max(1);
         Self {
             cells: vec![0.0; res * res],
             res,
             half_extent,
             diffusion,
+            decay,
             scratch: vec![0.0; res * res],
         }
     }
@@ -90,16 +93,16 @@ impl NutrientField {
         self.cells[self.cell_index(pos)]
     }
 
-    /// Deposit `amount` into the cell containing `pos` (source emission, later
-    /// recycling). The single point that *creates* nutrient.
+    /// Deposit `amount` into the cell containing `pos` (source or agent emission,
+    /// recycling). The single point that *creates* concentration.
     pub fn add(&mut self, pos: Vec2, amount: f32) {
         let i = self.cell_index(pos);
         self.cells[i] += amount;
     }
 
     /// Remove up to `amount` from the cell containing `pos`, returning the amount
-    /// **actually** taken (`min(amount, cell)`). Conservation: a plant gains exactly
-    /// what the cell loses.
+    /// **actually** taken (`min(amount, cell)`). Conservation: an absorber gains
+    /// exactly what the cell loses.
     pub fn take(&mut self, pos: Vec2, amount: f32) -> f32 {
         let i = self.cell_index(pos);
         let taken = amount.min(self.cells[i]).max(0.0);
@@ -107,8 +110,8 @@ impl NutrientField {
         taken
     }
 
-    /// Total nutrient mass in the field (the conserved quantity — used by the tests
-    /// and, later, by diagnostics).
+    /// Total concentration mass in the field (the conserved quantity under
+    /// add/take/diffuse — used by the tests and diagnostics).
     pub fn total(&self) -> f32 {
         self.cells.iter().sum()
     }
@@ -177,6 +180,20 @@ impl NutrientField {
         std::mem::swap(&mut self.cells, &mut self.scratch);
     }
 
+    /// One **decay** step: every cell loses the fraction `decay` (`c *= 1 - decay`).
+    /// Unlike diffusion this is **not** mass-conserving — it is the deliberate
+    /// dissipation a fading pheromone / decomposing detritus needs. Inert (early
+    /// return) when `decay == 0` (a conserved nutrient → byte-identical).
+    pub fn decay_step(&mut self) {
+        if self.decay == 0.0 {
+            return;
+        }
+        let factor = 1.0 - self.decay;
+        for c in &mut self.cells {
+            *c *= factor;
+        }
+    }
+
     /// The general 4-neighbour diffusion stencil for cell `(x, y)`, counting only
     /// in-grid neighbours (`deg` = 2 at a corner, 3 on an edge, 4 inside). This is the
     /// exact per-cell computation the old [`diffuse`](Self::diffuse) ran for **every**
@@ -208,8 +225,50 @@ impl NutrientField {
     }
 }
 
+/// The scenario's **component fields**, one [`Field`] per declared component (indexed
+/// like [`crate::config::SimConfig::components`]). Built at [`SimPlugin`](crate::SimPlugin)
+/// build + at hot reset. Empty (no component declared) → every field system is a no-op
+/// → byte-identical for a scenario without a substrate.
+#[derive(Resource, Default)]
+pub struct Fields(pub Vec<Field>);
+
+impl std::ops::Deref for Fields {
+    type Target = Vec<Field>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Fields {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Fields {
+    /// Build the fields from the scenario's component configs (one grid each, the
+    /// shared `resolution`, per-component `diffusion`/`decay`). The single source for
+    /// the plugin build and the hot reset.
+    pub fn from_config(config: &crate::config::SimConfig) -> Self {
+        Self(
+            config
+                .components
+                .iter()
+                .map(|c| {
+                    Field::new(
+                        config.field_resolution,
+                        config.arena_half_extent,
+                        c.diffusion,
+                        c.decay,
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
 /// A per-agent **nutrient store** (the second axis of T2): filled by
-/// [`absorb_nutrients`] from the [`NutrientField`], spent at reproduction
+/// [`absorb_nutrients`] from the nutrient [`Field`], spent at reproduction
 /// ([`crate::ecology::reproduce`]) to pay for a child. Attached to **every** agent
 /// at spawn; with the nutrient genes at `0` it is inert (`max == 0`, nothing
 /// absorbed, nothing paid) → byte-identical for existing scenarios.
@@ -217,6 +276,10 @@ impl NutrientField {
 /// Deliberately distinct from [`Reserve`](crate::components::Reserve) (energy,
 /// sun-/food-fed → *survival*): a missing nutrient stops **reproduction**, it never
 /// causes death — the two-axis design that fixes the T1 death spiral.
+///
+/// **NB (component-emission plan, Phase 2):** this single store becomes a per-component
+/// `Stores` when the declarative `FieldRelation` table lands; Phase 1 keeps it, and the
+/// nutrient is the field of index `0` by convention.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Nutrients {
     /// Current amount stored.
@@ -239,52 +302,68 @@ impl Nutrients {
 }
 
 /// Emission of a substrate **source** (e.g. a submarine volcanic vent): deposits
-/// `rate` per second of nutrient `nutrient` into the field cell under it (cf.
+/// `rate` per second of component `component` into the field cell under it (cf.
 /// [`emit_nutrients`]). Carried by a **non-`Agent`** entity (spawned by
 /// [`crate::spawn::spawn_sources`]) → the whole life machinery (every system queries
 /// `With<Agent>`) ignores it *by construction*: no metabolism, death, reproduction
-/// or decision. T2 uses a single field, so `nutrient` is always `0` (reserved for
-/// the multi-nutrient T3).
+/// or decision.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Emits {
-    /// Nutrient index (T2: always `0`).
-    pub nutrient: usize,
+    /// Component index (into [`Fields`] / `SimConfig::components`).
+    pub component: usize,
     /// Emission per second of simulated time.
     pub rate: f32,
 }
 
-/// EMIT: each substrate source deposits `rate · dt` into the field cell under it.
+/// EMIT: each substrate source deposits `rate · dt` into its component's field cell.
 /// The source is **not** an `Agent`; only this system reads [`Emits`]. A scenario
-/// with no source has an empty query → no-op (byte-identical).
+/// with no source has an empty query → no-op (byte-identical); an out-of-range
+/// component index is skipped.
 pub fn emit_nutrients(
     time: Res<Time>,
-    mut field: ResMut<NutrientField>,
+    mut fields: ResMut<Fields>,
     sources: Query<(&Transform, &Emits)>,
 ) {
     let dt = time.delta_secs();
     for (transform, emits) in &sources {
-        field.add(transform.translation.truncate(), emits.rate * dt);
+        if let Some(field) = fields.get_mut(emits.component) {
+            field.add(transform.translation.truncate(), emits.rate * dt);
+        }
     }
 }
 
-/// DIFFUSE: one relaxation step of the field toward the neighbour average
-/// ([`NutrientField::diffuse`]) — this is what turns point emission into
-/// **gradients** (life clusters around sources). Mass-conserving; inert (early
-/// return inside `diffuse`) when `diffusion == 0`.
-pub fn diffuse_nutrients(mut field: ResMut<NutrientField>) {
-    field.diffuse();
+/// DIFFUSE: one relaxation step of **every** field toward the neighbour average
+/// ([`Field::diffuse`]) — this is what turns point emission into **gradients** (life
+/// clusters around sources). Mass-conserving; each field inert (early return inside
+/// `diffuse`) when its `diffusion == 0`.
+pub fn diffuse_nutrients(mut fields: ResMut<Fields>) {
+    for field in fields.iter_mut() {
+        field.diffuse();
+    }
 }
 
-/// ABSORB: each agent pulls nutrient from the field cell under it into its
-/// [`Nutrients`] store, capped by its absorption rate and its remaining capacity.
-/// Conservation: the store gains exactly what the cell loses
-/// ([`NutrientField::take`]). An agent with `nutrient_absorption == 0` (every
-/// existing scenario) is skipped → byte-identical.
+/// DECAY: one dissipation step of **every** field ([`Field::decay_step`]) — a fading
+/// pheromone / decomposing detritus. Each field inert (early return) when its
+/// `decay == 0` (a conserved nutrient) → byte-identical for T2 scenarios.
+pub fn decay_nutrients(mut fields: ResMut<Fields>) {
+    for field in fields.iter_mut() {
+        field.decay_step();
+    }
+}
+
+/// ABSORB: each agent pulls nutrient from the **nutrient field** (component `0`, by
+/// the Phase-1 convention) into its [`Nutrients`] store, capped by its absorption
+/// rate and remaining capacity. Conservation: the store gains exactly what the cell
+/// loses ([`Field::take`]). An agent with `nutrient_absorption == 0` (every existing
+/// scenario) is skipped, and no component `0` → no-op → byte-identical.
 pub fn absorb_nutrients(
     time: Res<Time>,
-    mut field: ResMut<NutrientField>,
+    mut fields: ResMut<Fields>,
     mut agents: Query<(&Transform, &Genotype, &mut Nutrients), With<Agent>>,
 ) {
+    let Some(field) = fields.get_mut(0) else {
+        return;
+    };
     let dt = time.delta_secs();
     for (transform, genotype, mut store) in &mut agents {
         if genotype.nutrient_absorption <= 0.0 {
@@ -303,9 +382,9 @@ pub fn absorb_nutrients(
 mod tests {
     use super::*;
 
-    /// A 4×4 grid over `[-10, 10]²` (cell size 5), no diffusion by default.
-    fn field() -> NutrientField {
-        NutrientField::new(4, 10.0, 0.0)
+    /// A 4×4 grid over `[-10, 10]²` (cell size 5), no diffusion, no decay by default.
+    fn field() -> Field {
+        Field::new(4, 10.0, 0.0, 0.0)
     }
 
     /// A position far outside the arena still maps to a *valid* edge cell, and the
@@ -353,7 +432,7 @@ mod tests {
     /// uniform**: a spike spreads, its peak drops, the field flattens.
     #[test]
     fn diffuse_conserves_mass_and_relaxes() {
-        let mut f = NutrientField::new(8, 10.0, 0.5);
+        let mut f = Field::new(8, 10.0, 0.5, 0.0);
         f.add(Vec2::ZERO, 100.0);
         let before = f.total();
         let center = f.cell_index(Vec2::ZERO);
@@ -384,13 +463,36 @@ mod tests {
         assert_eq!(f.cells, snapshot, "diffusion 0 → no change");
     }
 
+    /// `decay_step` removes the fraction `decay` from every cell (a fading pheromone),
+    /// and is **inert** when `decay == 0` (a conserved nutrient, byte-identical).
+    #[test]
+    fn decay_scales_cells_and_is_inert_at_zero() {
+        // decay 0.25: a cell of 8 → 6 after one step; total scales likewise.
+        let mut f = Field::new(4, 10.0, 0.0, 0.25);
+        f.add(Vec2::ZERO, 8.0);
+        f.add(Vec2::new(3.0, 3.0), 4.0);
+        let before = f.total();
+        f.decay_step();
+        assert!(
+            (f.total() - before * 0.75).abs() < 1e-6,
+            "each cell loses 25%"
+        );
+
+        // decay 0 → no change (the conserved-nutrient path).
+        let mut g = field();
+        g.add(Vec2::ZERO, 5.0);
+        let snap = g.cells.clone();
+        g.decay_step();
+        assert_eq!(g.cells, snap, "decay 0 → inert");
+    }
+
     /// The optimised `diffuse` (branchless interior + border ring, B4) must produce the
     /// **exact same** field, cell for cell, as applying the general stencil to every
     /// cell (the old whole-grid path) — the byte-identical guarantee of the split.
     #[test]
     fn diffuse_matches_general_stencil() {
         // A non-uniform, non-negative field so every cell has a distinct neighbourhood.
-        let mut f = NutrientField::new(7, 10.0, 0.37);
+        let mut f = Field::new(7, 10.0, 0.37, 0.0);
         for (i, c) in f.cells.iter_mut().enumerate() {
             *c = (i as f32 * 1.3).sin().abs() * 10.0;
         }
