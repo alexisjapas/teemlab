@@ -31,7 +31,8 @@ Design and implementation order: [`ROADMAP.md`](ROADMAP.md).
 - **Brains** (`Brain`, a statically-dispatched enum), **per species** and
   **inherited** at reproduction: `Wander` (naive control), `Hunter` (competent
   control — charge toward the perceived target **and flee threats**: the *target* /
-  *threat* channels of perception), `Sessile` (flora), **`Mlp`** (homemade
+  *threat* channels of perception), `Grazer` (a hunter that eats only when hungry —
+  the deterministic **restraint** control), `Sessile` (flora), **`Mlp`** (homemade
   perceptron **learned by neuroevolution**, reading the same *vision/target/threat*
   channels — so it can *learn* to flee —, with an activation graph in the inspector).
   Brain selector in the editor.
@@ -108,7 +109,7 @@ src/
   lib.rs          SimPlugin: the shared render-agnostic core.
   config.rs       SimConfig: the scenario (RON) + loading; Archetype (first-order species: body + brain + genes), species import/export; relation table; gene bounds.
   components.rs   Agent body; Vision (raycast); Species/Reserve; Perception (vision/target/threat + proprioceptive self_state channels) / Action (steering + eat/attack intent) = the brain's contract; genealogy (Generation/Age).
-  brain.rs        Brain (enum, static dispatch): Wander (wandering) · Hunter (hunt + flight) · Sessile (flora) · Mlp (learned, neuroevolution); BrainKind = scenario choice.
+  brain.rs        Brain (enum, static dispatch): Wander (wandering) · Hunter (hunt + flight) · Grazer (hunger-gated hunter — restraint) · Sessile (flora) · Mlp (learned, neuroevolution); BrainKind = scenario choice.
   genotype.rs     Heritable Genotype (generic TRAITS table) + mutation; genotype→phenotype compilation (§2).
   nutrients.rs    NutrientField (the substrate: a concentration grid + diffusion, outside Law 11) + Nutrients/Emits + emit/diffuse/absorb systems: the T2 second axis (gates reproduction, not survival).
   movement.rs     perceive / decide / act systems (FixedUpdate, chained).

@@ -25,7 +25,7 @@ The engine core (`SimPlugin`) is render-agnostic and shared by every binary:
 | ---------------- | -------------- |
 | `config.rs`      | `SimConfig` (the scenario) + loading; the `Archetype`, `Relation`, `Bounds` types. |
 | `components.rs`  | the agent body; `Vision`, `Perception`, `Action` — the brain's contract; genealogy. |
-| `brain.rs`       | the `Brain` enum: Wander · Hunter · Sessile · Mlp. |
+| `brain.rs`       | the `Brain` enum: Wander · Hunter · Grazer · Sessile · Mlp. |
 | `genotype.rs`    | the heritable `Genotype` + the `TRAITS` table + mutation. |
 | `movement.rs`    | the `perceive → decide → act` systems (FixedUpdate, chained). |
 | `interaction.rs` | the single interaction primitive + the relation table. |

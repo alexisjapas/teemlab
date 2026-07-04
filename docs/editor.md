@@ -130,8 +130,9 @@ deselecting). The selected archetype, in three cards:
   checked ⇒ the gene drifts at reproduction, unchecked ⇒ transmitted but frozen at
   the founder’s value. Inert genes (locomotion, vision) stay hidden for an immobile
   entity — a section left with none disappears.
-- **Brain** — the decider: **Wander**, **Hunter** (hunt + flee), **Sessile**
-  (flora), or **Network (MLP)** (learned by neuroevolution). For the MLP you edit
+- **Brain** — the decider: **Wander**, **Hunter** (hunt + flee), **Grazer** (hunt,
+  eat only when hungry — restraint), **Sessile** (flora), or **Network (MLP)**
+  (learned by neuroevolution). For the MLP you edit
   the hidden-layer architecture (input/output are fixed by the contract) and see a
   structure graph; captured weights can be cleared.
 

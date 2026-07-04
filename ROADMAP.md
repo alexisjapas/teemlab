@@ -433,6 +433,32 @@ open work in §9.
   seeds over the observation window (the honest §7 target: coexistence, not domination). **Why:**
   with proprioception (part 1) this completes the minimal substrate for **restraint** — an
   endogenous stabiliser of persistent ecosystems — to be *expressible* and selectable.
+- **Restraint as a stability lever — the cognitive substrate's payoff (`Grazer` control brain;
+  `docs/persistent-ecosystems.md` §2)**: the deliberate-eating + proprioception substrate made
+  behavioural **restraint** *expressible*; this **demonstrates its ecological value** with the
+  project's deterministic-control method (§4.2/§8 — validate the pressure on a hand-written brain
+  before a learned one discovers it). A new **`Brain::Grazer { hunger_threshold }`** forages with
+  the **exact** hunter steering (extracted into a shared `HunterBrain::steer` → hunter
+  byte-identical) but gates its eat/attack intent (`Action::act`) on its **own hunger**
+  (proprioception, the `self_state` energy fraction): a *prudent* grazer (low threshold) leaves food
+  uneaten once sated, a *greedy* one (`1.0`) eats reflexively like the hunter. **Additive /
+  byte-identical** — a new enum variant with its exhaustive arms + editor selector + appetite slider,
+  drawing **no RNG** at reproduction (like the other hand-written brains) → every existing scenario
+  and the `tests/mlp` tripwire unchanged. Two robust results on `scenarios/examples/17_restraint.ron`
+  (greedy vs prudent, same body/economy, eating **free** so the appetite gate is the *only*
+  difference; reproduction **nutrient-capped** like predator_prey → no overshoot): **(A) restraint
+  is a stability lever** — a **prudent monoculture persists** and its flora thrives (190 → ~2000)
+  where a **greedy monoculture overshoots and collapses to extinction** (~90 s); **(B) the tragedy of
+  the commons** — in a **mixed** world greed is individually superior (eats more → harvests more
+  nutrient → more offspring) and **out-competes** prudence, then the greed-dominated system boom-busts.
+  Driver `tests/restraint.rs` (`restraint_prevents_collapse` + `greed_outcompetes_restraint`,
+  multi-seed). **Finding**: the hoped-for **viscosity-*selection*** (`seed_dispersal` making restraint
+  *evolve* — §2's *hypothesis*, explicitly hedged) proved **inert** with mobile foragers — adult
+  roaming homogenises impact and swamps offspring-locality, and prudence is out-competed *early*,
+  before the diffuse, delayed commons benefit can repay it. Making restraint *selectable* needs much
+  stronger spatial structure (near-immobile foragers / isolated patches) — the deferred open thread
+  (§9). So the substrate demonstrably makes restraint an ecological **stabiliser**; making it *evolve*
+  stays the §2 open problem.
 
 **Remaining.**
 
@@ -1316,10 +1342,15 @@ and *scaling* work.
   under **spatial viscosity** (limited dispersal, so offspring inherit the environment their parent
   degraded/preserved; ties to `seed_dispersal` and the item-17 spatial-refuge lesson). With
   **proprioception** (done), the two are the minimal substrate for restraint to be *expressible*
-  (`docs/persistent-ecosystems.md` §2). **Remaining (the payoff, not the substrate):** demonstrate
-  restraint is actually *selected* under spatial viscosity (a research scenario, not a mechanism), and
-  — with the `nutrients` web — *need-driven targeting* (what to eat follows from which nutrients are
-  needed, SIM Law 8 emergent targeting, §9 "Phase 3").
+  (`docs/persistent-ecosystems.md` §2). **Payoff demonstrated (§0):** the `Grazer`
+  deterministic control (a new `Brain` variant that forages like the hunter but gates eating on its
+  own hunger) shows restraint is a **stability lever** — a prudent monoculture persists where a greedy
+  one overshoots and collapses — and that greed **out-competes** it in a mixed world (tragedy of the
+  commons): `scenarios/examples/17_restraint.ron` + `tests/restraint.rs`. **Still open:** restraint's
+  actual *selection* under spatial viscosity — `seed_dispersal` proved **inert** with mobile foragers
+  (adult roaming swamps offspring-locality; §2's *hedged hypothesis*), needing near-immobile foragers /
+  isolated patches; and — with the `nutrients` web — *need-driven targeting* (SIM Law 8 emergent
+  targeting, §9 "Phase 3").
 - **Proprioception — self-state perception channels (extends Law 3/Law 4) — DONE (cf. §0).**
   The brain's inputs were only its exteroception (vision/target/threat); it now also reads
   **self-referential** channels — energy reserve, nutrient store, current speed

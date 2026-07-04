@@ -3,8 +3,8 @@
 A **brain** is an agent's decider: it reads a [`Perception`](./the-loop.md#1-perceive)
 and writes an `Action` (`dir` + `throttle`). Its internals are interchangeable behind
 that contract, so you pick one per species and it is inherited by offspring. teemlab
-ships four, stored as a single `enum` (static dispatch, clean serialization, and an
-exhaustive `match` so adding a fifth is a compile error to resolve everywhere).
+ships five, stored as a single `enum` (static dispatch, clean serialization, and an
+exhaustive `match` so adding another is a compile error to resolve everywhere).
 
 You choose a species' brain in the [editor](../editor.md) (the **Brain** card) or in the
 [scenario file](../scenario-format.md#brain) (`brain: …`).
@@ -37,6 +37,25 @@ the *same* `Hunter` brain makes one species a herbivore (its target is a plant),
 a carnivore (its target is the herbivore), and a prey that flees (its threat is the
 carnivore) — all decided by the relations, not by the brain. It is the *competent*
 control: a learned brain that cannot beat it has learned nothing.
+
+## `Grazer` — restraint
+
+```ron
+brain: Grazer(hunger_threshold: 0.6)
+```
+
+The `Hunter`'s prudent cousin. It forages with the **exact same** steering (toward
+`target`, away from `threat`) but eats **deliberately**: it holds its eat/attack intent
+only while its own energy reserve is below `hunger_threshold` — reading the
+**proprioceptive** `self_state` — and abstains once sated. The threshold *is* the
+strategy: `1.0` is **greedy** (it eats whatever is in range, exactly like the hunter),
+a lower value is **prudent** (it leaves food uneaten when comfortable).
+
+That single knob is the difference between a persistent ecosystem and a dead one: a
+prudent grazer's time-averaged draw on its food is only ~what it needs, so a prudent
+population lives sustainably where a greedy one overshoots and collapses. It is the
+*deterministic control for restraint* — for deliberate eating what the `Hunter` is for
+foraging. See [`17 · Restraint`](../scenarios.md#16-17--the-cognitive-substrate).
 
 ## `Sessile` — the plant
 
@@ -84,6 +103,7 @@ walks through the whole arc: naive → trained → reused.
 | --------- | ------------------------------------------------------------------------ |
 | `Wander`  | the parent's `turn_rate`, with a fresh random seed.                      |
 | `Hunter`  | nothing to carry — deterministic, simply cloned.                        |
+| `Grazer`  | the parent's `hunger_threshold` (a fixed strategy, not mutated).         |
 | `Sessile` | nothing — cloned.                                                       |
 | `Mlp`     | the hidden topology, the weights (mutated), input layer resized to rays. |
 

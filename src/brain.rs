@@ -38,6 +38,15 @@ pub enum Brain {
     /// beat it has learned nothing (§4) — and the 2nd variant that makes the brain
     /// selector falsifiable.
     Hunter(HunterBrain),
+    /// **Grazer** — the deterministic control for **restraint**. Forages exactly
+    /// like [`Brain::Hunter`] (shared steering field) but eats *deliberately*: it
+    /// gates its eat/attack intent on its own **hunger** (proprioception — the
+    /// `self_state` energy fraction) against a `hunger_threshold`, so a *prudent*
+    /// grazer leaves food uneaten once sated. It is to restraint what the hunter is
+    /// to foraging (§4.2 "validate on the control before the learned brain"): it
+    /// makes the selective value of restraint under spatial viscosity legible before
+    /// a learned brain is asked to discover it (`docs/persistent-ecosystems.md` §2).
+    Grazer(GrazerBrain),
     /// **Sessile** (Phase 3): does not decide, does not move — the trivial brain of
     /// *flora*. "Stub the behavior, never the schema" (§8): a legitimate behavior
     /// shell, for an entity that lives on photosynthesis and reproduces by seeding,
@@ -57,6 +66,7 @@ impl Brain {
         match self {
             Brain::Wander(b) => b.think(perception),
             Brain::Hunter(b) => b.think(perception),
+            Brain::Grazer(b) => b.think(perception),
             Brain::Sessile(b) => b.think(perception),
             Brain::Mlp(b) => b.think(perception),
         }
@@ -67,6 +77,7 @@ impl Brain {
         match self {
             Brain::Wander(_) => "Wander",
             Brain::Hunter(_) => "Hunter",
+            Brain::Grazer(_) => "Grazer",
             Brain::Sessile(_) => "Sessile",
             Brain::Mlp(_) => "MLP",
         }
@@ -79,7 +90,7 @@ impl Brain {
     /// variant forces a decision here, like [`Brain::think`].
     pub fn neuron_count(&self) -> usize {
         match self {
-            Brain::Wander(_) | Brain::Hunter(_) | Brain::Sessile(_) => 0,
+            Brain::Wander(_) | Brain::Hunter(_) | Brain::Grazer(_) | Brain::Sessile(_) => 0,
             Brain::Mlp(m) => m.neuron_count(),
         }
     }
@@ -114,6 +125,11 @@ impl Brain {
         match self {
             Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
             Brain::Hunter(_) => Brain::Hunter(HunterBrain),
+            // Deterministic, stateless save its threshold param: the child grazes with
+            // the same hunger rule (a designer strategy, not a mutated gene — the
+            // evolvable `hunger_threshold` gene is deferred, §9). Draws no RNG, like the
+            // other hand-written brains → non-MLP RNG stream intact.
+            Brain::Grazer(g) => Brain::Grazer(g.clone()),
             Brain::Sessile(_) => Brain::Sessile(SessileBrain),
             Brain::Mlp(m) => Brain::Mlp(m.reproduced(rng, rate, n_inputs)),
         }
@@ -138,6 +154,12 @@ pub enum BrainKind {
     Wander { turn_rate: f32 },
     /// [`Brain::Hunter`] — deterministic reflex, no parameter.
     Hunter,
+    /// [`Brain::Grazer`] — deterministic hunger-gated forager (the **restraint**
+    /// control). `hunger_threshold`: eat while the energy reserve fraction is below
+    /// it — `1.0` = greedy (always eats, exactly the hunter's reflex), a lower value
+    /// = prudent (leaves food uneaten once sated). A designer strategy fixed at the
+    /// founder (**not** mutated), like `Wander`'s `turn_rate`.
+    Grazer { hunger_threshold: f32 },
     /// [`Brain::Sessile`] — immobile flora (Phase 3), no parameter.
     Sessile,
     /// [`Brain::Mlp`] — evolved multilayer perceptron (item 18b). `hidden`: the
@@ -169,6 +191,9 @@ impl BrainKind {
                 Brain::Wander(WanderBrain::new(seed, heading, *turn_rate))
             }
             BrainKind::Hunter => Brain::Hunter(HunterBrain),
+            BrainKind::Grazer { hunger_threshold } => {
+                Brain::Grazer(GrazerBrain::new(*hunger_threshold))
+            }
             BrainKind::Sessile => Brain::Sessile(SessileBrain),
             BrainKind::Mlp { hidden } => Brain::Mlp(MlpBrain::random(seed, n_inputs, hidden)),
         }
@@ -179,6 +204,7 @@ impl BrainKind {
         match self {
             BrainKind::Wander { .. } => "Wander",
             BrainKind::Hunter => "Hunter",
+            BrainKind::Grazer { .. } => "Grazer",
             BrainKind::Sessile => "Sessile",
             BrainKind::Mlp { .. } => "Network (MLP)",
         }
@@ -199,6 +225,13 @@ impl BrainKind {
                  repelled by any threat (a species that can attack it) — relation \
                  table. Skirts walls and conspecifics without fleeing them; with no \
                  memory, out of range it explores. The competent control group."
+            }
+            BrainKind::Grazer { .. } => {
+                "Forages exactly like the hunter, but eats DELIBERATELY: it holds its \
+                 eat/attack intent only while hungry (energy below its threshold), so a \
+                 prudent grazer leaves food uneaten once sated. The deterministic \
+                 control for behavioural restraint — a lever of ecosystem persistence \
+                 under spatial viscosity."
             }
             BrainKind::Sessile => {
                 "Does not decide, does not move: the brain of flora. Lives on \
@@ -299,7 +332,13 @@ impl HunterBrain {
     /// predator has entered the near third of my vision".
     const FLEE_THRESHOLD: f32 = 0.35;
 
-    fn think(&self, perception: &Perception) -> Action {
+    /// The **shared steering field** (foraging + flight-by-subsumption), returning
+    /// the desired world direction. Extracted so the prudent [`GrazerBrain`] reuses
+    /// the **exact** hunter locomotion and differs only in *when it eats*: the hunter
+    /// and the grazer forage identically; only the `act` gate differs. Moving the
+    /// computation verbatim keeps the hunter **byte-identical** (its unit tests guard
+    /// this).
+    fn steer(perception: &Perception) -> Vec2 {
         // Subsumption (§4): a CLOSE enough threat switches to flight, which
         // *suspends* foraging. A distant predator (below the threshold) interrupts
         // nothing → the item 16 foraging mode stays strictly intact for scenarios
@@ -320,16 +359,79 @@ impl HunterBrain {
         }
         let dir = steer.normalize_or_zero();
         // Surrounded (all occluded) or blind (zero rays): we keep the heading.
-        let dir = if dir == Vec2::ZERO {
+        if dir == Vec2::ZERO {
             perception.heading
         } else {
             dir
-        };
-        // Reflex: the hunter eats/attacks on contact as before (byte-identical).
+        }
+    }
+
+    fn think(&self, perception: &Perception) -> Action {
+        // Reflex: the hunter always holds the intent (`act: 1.0`) — it eats/attacks on
+        // contact as before (byte-identical). The grazer reuses `steer` but gates the
+        // intent on hunger (deliberate eating).
         Action {
-            dir,
+            dir: Self::steer(perception),
             throttle: 1.0,
             act: 1.0,
+        }
+    }
+}
+
+/// **Grazer** brain — the deterministic control for behavioural **restraint**
+/// (`docs/persistent-ecosystems.md` §2). It forages with the **exact** hunter steering
+/// field ([`HunterBrain::steer`]) — same locomotion, same flight reflex — and differs
+/// in a single respect: *when it eats*. Where the hunter reflexively holds `act = 1.0`
+/// (eat whatever is in range), a grazer holds its eat/attack intent only while
+/// **hungry** — its energy reserve fraction (proprioception,
+/// [`Perception::self_state`]`[0]`) at or below `hunger_threshold` — and abstains once
+/// sated, leaving the resource it does not need.
+///
+/// The threshold *is* the strategy: `1.0` is **greedy** (the energy fraction is always
+/// ≤ 1, so it eats exactly like the hunter), a lower value is **prudent** (stops eating
+/// earlier, preserving the local food). Prudence is *individually costly* (less energy,
+/// slower reproduction) yet *collectively* stabilising — and it becomes selectable only
+/// under **spatial viscosity** (limited `seed_dispersal`, so a lineage inherits the
+/// patch it preserved or exhausted; §2, item 17's spatial lesson). No state, no RNG —
+/// like the other hand-written brains, so it draws nothing at reproduction (the non-MLP
+/// stream stays intact).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GrazerBrain {
+    /// Eat while the energy reserve fraction is at or below this, in `[0, 1]`. `1.0` =
+    /// greedy (the hunter's reflex), lower = prudent. A designer strategy fixed at the
+    /// founder — **not** a mutated gene (the evolvable `hunger_threshold` gene is
+    /// deferred, §9).
+    hunger_threshold: f32,
+}
+
+impl GrazerBrain {
+    /// Default appetite for a freshly-created grazer (editor): moderately **prudent**
+    /// — eats until roughly two-thirds full, then coasts. A visible contrast with the
+    /// greedy reflex, without starving the lineage.
+    pub const DEFAULT_HUNGER: f32 = 0.6;
+
+    pub fn new(hunger_threshold: f32) -> Self {
+        Self { hunger_threshold }
+    }
+
+    fn think(&self, perception: &Perception) -> Action {
+        // Deliberate eating (SIM Law 8), gated on proprioception: hold the intent only
+        // while hungry (energy fraction ≤ threshold). `self_state[0]` is the energy
+        // reserve fraction (`perceive`; `SELF_LABELS[0] == "nrg"`). A sated grazer sets
+        // `act ≤ 0`, so `interact` makes it abstain from ALL its interactions this tick
+        // — it leaves the food it does not need. The steering is the hunter's,
+        // unchanged: it still moves toward food and flees threats; it simply does not
+        // *draw* when comfortable.
+        let energy = perception.self_state[0];
+        let act = if energy <= self.hunger_threshold {
+            1.0
+        } else {
+            -1.0
+        };
+        Action {
+            dir: HunterBrain::steer(perception),
+            throttle: 1.0,
+            act,
         }
     }
 }
@@ -979,6 +1081,83 @@ mod tests {
             Rng::new(0),
             "non-MLP brains do not touch the RNG stream"
         );
+    }
+
+    /// The grazer **forages exactly like the hunter** (it reuses `HunterBrain::steer`):
+    /// the same perception yields the same steering direction. Only *when it eats*
+    /// differs — the whole point of the restraint control.
+    #[test]
+    fn grazer_forages_like_the_hunter() {
+        // A near target on -Y (proximity 0.9), open elsewhere.
+        let p = perception([0.3, 0.0, 0.9], [0.3, 0.0, 0.9], [0.0; 3]);
+        let grazer = GrazerBrain::new(0.6);
+        assert_eq!(
+            grazer.think(&p).dir,
+            HunterBrain.think(&p).dir,
+            "the grazer's locomotion is the hunter's"
+        );
+    }
+
+    /// **Deliberate eating gated on hunger** (the restraint substrate): a prudent
+    /// grazer (threshold 0.6) holds its eat intent when hungry (energy 0.3 ≤ 0.6) and
+    /// **abstains** when sated (energy 0.9 > 0.6) — reading its own proprioceptive
+    /// `self_state[0]`. This is what lets it leave food uneaten, the behaviour whose
+    /// selective value under spatial viscosity the scenario demonstrates.
+    #[test]
+    fn grazer_gates_eating_on_hunger() {
+        let grazer = GrazerBrain::new(0.6);
+        let mut hungry = perception([0.0, 0.0, 0.5], [0.0, 0.0, 0.5], [0.0; 3]);
+        hungry.self_state[0] = 0.3;
+        let mut sated = perception([0.0, 0.0, 0.5], [0.0, 0.0, 0.5], [0.0; 3]);
+        sated.self_state[0] = 0.9;
+        assert!(
+            grazer.think(&hungry).act > 0.0,
+            "a hungry grazer eats (holds the intent)"
+        );
+        assert!(
+            grazer.think(&sated).act <= 0.0,
+            "a sated grazer abstains (releases the intent)"
+        );
+    }
+
+    /// A **greedy** grazer (threshold 1.0) is behaviourally the hunter: the energy
+    /// fraction is always ≤ 1, so it always holds the intent — its `Action` matches the
+    /// hunter's exactly, even at a full reserve. Greed is thus one end of the appetite
+    /// axis, prudence the other.
+    #[test]
+    fn greedy_grazer_matches_the_hunter_reflex() {
+        let mut full = perception([0.2, 0.0, 0.7], [0.2, 0.0, 0.7], [0.0; 3]);
+        full.self_state[0] = 1.0; // full reserve
+        let greedy = GrazerBrain::new(1.0);
+        let h = HunterBrain.think(&full);
+        let g = greedy.think(&full);
+        assert_eq!(g.act, h.act, "the greedy grazer eats like the hunter");
+        assert_eq!(g.dir, h.dir);
+        assert_eq!(g.throttle, h.throttle);
+    }
+
+    /// Grazer inheritance: the child keeps the parent's appetite (a designer strategy,
+    /// not mutated) and, like the other hand-written brains, **draws no RNG** at
+    /// reproduction (the non-MLP stream stays intact). `BrainKind::Grazer` builds a
+    /// grazer carrying its threshold, and a grazer has zero decision neurons (no cost).
+    #[test]
+    fn grazer_is_inherited_without_touching_the_rng() {
+        let mut rng = Rng::new(0);
+        match Brain::Grazer(GrazerBrain::new(0.6)).reproduce(1, 0.0, &mut rng, 0.1, 6) {
+            Brain::Grazer(child) => assert_eq!(child.hunger_threshold, 0.6),
+            other => panic!("expected Grazer, got {other:?}"),
+        }
+        assert_eq!(rng, Rng::new(0), "the grazer does not draw from the RNG");
+
+        match (BrainKind::Grazer {
+            hunger_threshold: 0.4,
+        })
+        .build(1, 0.0, 0)
+        {
+            Brain::Grazer(g) => assert_eq!(g.hunger_threshold, 0.4),
+            other => panic!("expected Grazer, got {other:?}"),
+        }
+        assert_eq!(Brain::Grazer(GrazerBrain::new(0.5)).neuron_count(), 0);
     }
 
     /// A 3-ray perception for the MLP tests: 12 inputs (vision ++ target ++ threat ++

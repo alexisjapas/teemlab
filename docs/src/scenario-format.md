@@ -76,7 +76,7 @@ the relation table targets.
 | `radius`         | Body size (also the physics collider). |
 | `reserve_max`    | Maximum energy the body can hold. |
 | `genotype`       | The founding [genes](./model/genes.md). Partial — omit a gene to take its default. |
-| `brain`          | The [brain](./model/brains.md): `Wander(turn_rate: …)`, `Hunter`, `Sessile`, or `Mlp(hidden: […])`. |
+| `brain`          | The [brain](./model/brains.md): `Wander(turn_rate: …)`, `Hunter`, `Grazer(hunger_threshold: …)`, `Sessile`, or `Mlp(hidden: […])`. |
 | `mutable`        | A record of booleans, one per gene — may that gene drift in this species? |
 | `source`         | *(optional)* the library file this was imported from (kept for re-sync). |
 | `captured_brain` | *(optional)* concrete frozen weights, so founders are born already trained. |

@@ -153,6 +153,30 @@ inner match is the byte-identical engine; only the breeding sits on top.
 
 → concepts: [the agent loop](./model/the-loop.md) · [combat](./model/interactions.md#three-behaviours-from-one-verb) · [brains (MLP)](./model/brains.md)
 
+## `16`-`17` · The cognitive substrate
+
+The last pair returns to the **continuous** regime to close the loop on *how* an agent
+decides — the substrate of behavioural **restraint**. An agent now senses its own state
+(**proprioception**) and *chooses whether to eat* (a priced `act` intent) instead of
+eating reflexively on contact.
+
+- **`16` · Deliberate eating** — eating becomes a **costed choice**. An MLP population
+  forages the oasis flora with `act_cost > 0`, so holding the eat intent everywhere bleeds
+  energy: selection keeps the brains that *gate* their eating. Click an agent to watch its
+  `act` output toggle in the network graph. It persists over the window.
+- **`17` · Restraint** — the payoff, shown on a deterministic control: the
+  [`Grazer`](./model/brains.md#grazer--restraint) forages like the hunter but eats only
+  while hungry, so a *prudent* grazer leaves food uneaten. Two lessons, same body and
+  economy — only the appetite gate differs. **Restraint is a stability lever:** a prudent
+  monoculture persists and its flora thrives where a greedy one overshoots and **collapses**
+  to extinction. Yet in a **mixed** world greed out-competes prudence — the **tragedy of the
+  commons**: restraint stabilises but is not, on its own, individually selected. The scene
+  you watch is that tragedy — crimson (greedy) displaces teal (prudent), then busts its own
+  flora. (Making restraint *evolve* would need spatial viscosity strong enough that a lineage
+  inherits the patch it kept or spent — an open thread.)
+
+→ concepts: [brains: Grazer](./model/brains.md#grazer--restraint) · [interactions](./model/interactions.md) · [the economy](./model/economy.md)
+
 ---
 
 ## Make your own

@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
-use teemlab::brain::{Brain, BrainKind, MlpBrain};
+use teemlab::brain::{Brain, BrainKind, GrazerBrain, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
 use teemlab::config::{Archetype, BatchConfig, Fitness, Relation, Source, SpeciesEntry};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
@@ -1008,6 +1008,12 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
                 if ui.selectable_label(is_hunter, "Hunter").clicked() && !is_hunter {
                     *kind = BrainKind::Hunter;
                 }
+                let is_grazer = matches!(kind, BrainKind::Grazer { .. });
+                if ui.selectable_label(is_grazer, "Grazer").clicked() && !is_grazer {
+                    *kind = BrainKind::Grazer {
+                        hunger_threshold: GrazerBrain::DEFAULT_HUNGER,
+                    };
+                }
                 let is_sessile = matches!(kind, BrainKind::Sessile);
                 if ui.selectable_label(is_sessile, "Sessile").clicked() && !is_sessile {
                     *kind = BrainKind::Sessile;
@@ -1027,6 +1033,18 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
             });
         }
         BrainKind::Hunter | BrainKind::Sessile => {}
+        BrainKind::Grazer { hunger_threshold } => {
+            ui.horizontal(|ui| {
+                fonts::value(ui, |ui| {
+                    ui.add(egui::Slider::new(hunger_threshold, 0.0..=1.0))
+                })
+                .on_hover_text(
+                    "Eat while the energy reserve is below this fraction. 1.0 = greedy \
+                     (always eats); lower = prudent (leaves food uneaten once sated).",
+                );
+                ui.label("appetite (eat below)");
+            });
+        }
         BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
     }
     help::hint(ui, kind.description());

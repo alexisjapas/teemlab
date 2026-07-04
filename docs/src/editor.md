@@ -76,7 +76,7 @@ The selected species, in three cards:
   *kind*: for fauna the mobile axes open, for a plant the flora/nutrient axes do. Costs
   sort to the bottom of each section. The **Edit mutability** toggle reveals a per-gene
   "mutable?" checkbox beside each slider. Inert genes (e.g. vision on a plant) hide.
-- **Brain** — [Wander, Hunter, Sessile, or MLP](./model/brains.md). For an MLP you edit
+- **Brain** — [Wander, Hunter, Grazer, Sessile, or MLP](./model/brains.md). For an MLP you edit
   the hidden-layer topology and see a structure graph; captured weights can be cleared.
 
 ## Analysis panel

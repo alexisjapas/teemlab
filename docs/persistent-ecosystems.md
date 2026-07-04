@@ -171,8 +171,12 @@ Law 7 — if so). This restates the roadmap's existing performance positions (§
 
 ## 7. Priority summary
 
-1. **Prioritised now — the cognitive substrate:** deliberate (brain-driven, costed) eating +
-   proprioception (§2). Makes restraint *expressible*, and enriches behaviour.
+1. **Done — the cognitive substrate + its payoff:** deliberate (brain-driven, costed) eating +
+   proprioception (§2) are built; the `Grazer` deterministic control then demonstrated the payoff —
+   restraint is a **stability lever** (a prudent monoculture persists where a greedy one collapses),
+   though it is **not** individually selected in a well-mixed world (the tragedy of the commons), and
+   its *selection* under spatial viscosity (§2's hedged hypothesis) proved out of reach for mobile
+   foragers — the remaining open thread. (`scenarios/examples/17_restraint.ron`, `tests/restraint.rs`.)
 2. **High-leverage for persistence:** turnover (via emission / corpses, §3) and spatial refuges —
    the latter also the condition that makes restraint selectable.
 3. **Emission of components** via per-component layers (§3), unlocking turnover, toxicity and
