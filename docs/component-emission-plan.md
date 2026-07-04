@@ -109,23 +109,27 @@ substrate whose meaning is evolved** (an emitter writes, a perceiver reads).
 
 ## 2. Phased implementation
 
-Each phase ends green (`fmt`/`clippy`/tests). Phase 1 stays byte-identical; Phase 2 is the
-**deliberate** breaking change (DEV Rule 3), staged like the Food-dissolution refactor.
+Each phase ends green (`fmt`/`clippy`/tests). **Phases 1 & 2 are DONE and byte-identical** —
+removing the (non-mutable) nutrient genes leaves the mutation RNG stream untouched (`mutate()`
+skips non-mutable genes), so the `tests/mlp` tripwire never needed a re-baseline (the earlier
+"breaking" framing was pessimistic).
 
-- **Phase 1 — multi-component substrate (byte-identical).** `Field` (+`decay`), `Fields(Vec)`,
-  `components`/`field_resolution` config, `Source.component`; `emit_nutrients`/`diffuse` loop
-  over fields; heatmap renders N fields (shared opacity budget — already envisioned). A
-  single-component scenario (every existing one, migrated mechanically: `nutrient:` →
-  `components: [(…)]`) is **byte-identical**. Unit tests for decay + multi-field.
-- **Phase 2 — the `FieldRelation` table + `Stores` + de-hack (BREAKING).** Add
-  `field_relations`; `Stores` per component; rewrite `absorb_nutrients` → `absorb_components`,
-  the `reproduce` gate, and `reap` recycling to read the table; **remove**
-  `nutrient_absorption`/`nutrient_capacity`/`offspring_nutrient` from
-  `Genotype`/`TRAITS`/`Mutability`/`*_bounds`. Also fold the **T3 trophic transfer**
-  (`interaction.rs` moves `Nutrients` on predation) onto `Stores`. Migrate **all** component
-  scenarios + `species/*`; **re-baseline `tests/mlp`** and green the nutrient drivers
-  (`nutrients`, `trophic`, `recycling`, `predator_prey`, `deliberate_eating`, `restraint`,
-  `flora`). Inspector/editor updated to the table + per-component stores.
+- **Phase 1 — multi-component substrate (DONE, byte-identical; `0d01f7d`).** `Field` (+`decay`),
+  `Fields(Vec)`, `components`/`field_resolution` config, `Source.component`; the field systems
+  (+ a new `decay_nutrients`) and the heatmap loop over N fields. Every scenario migrated
+  (`nutrient:` → `field_resolution` + one `Nutrient` component). Unit test for decay.
+- **Phase 2 — the `FieldRelation` table + de-hack (DONE, byte-identical; `e336bfd`, `628b200`,
+  `93002c7`).** Added `field_relations` (a bundled row per (species, component));
+  `absorb_nutrients`, the spawn store-cap and `reproduce`'s nutrient gate read
+  `SimConfig::nutrient_of` (the row's `absorb`/`capacity`/`repro_cost`); **removed** the three
+  scalar nutrient genes from `Genotype`/`TRAITS`/`Mutability`/`*_bounds`/`GeneCategory`. Every
+  scenario authors its rows; the nutrient drivers (`nutrients`, `trophic`, `recycling`,
+  `predator_prey`, `deliberate_eating`, `restraint`, `flora`) + the `mlp` tripwire stay green
+  **unchanged** (no re-baseline). Staged 2a (table+shim) → 2b-i (author rows) → 2b-ii (strip
+  genes), each byte-identical. **Deferred (§8, no near-term need):** per-component `Stores`
+  (only nutrients hold a store — pheromones emit/sense, toxins affect — so the single
+  `Nutrients` store is kept, the nutrient being component 0); and wiring `emit_at_death` /
+  `affect` (recycling stays the `reap` special-case; toxicity is a later config-only use).
 - **Phase 3 — emission (alive) + the pheromone `sense` channel.** `emit_components` system
   (agent→field, alive, from the `emit` verb); `Perception.field_state` + MLP input widen
   (`input_size`, `resize_input_fan` carries the field block, labels, inspector graph);
