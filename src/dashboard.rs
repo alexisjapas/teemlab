@@ -374,17 +374,24 @@ fn dashboard_section(
         });
     }
 
-    // Fitness vs generation — **one line per bred faction** (the shared homemade plotter,
+    // Fitness vs generation — **one line per bred faction** (the shared plot widget,
     // X = generation index). Drawn once at least two generations give a line; the Y range
-    // follows the data (a `Dominance` run goes negative — the Red Queen reads as the lines
-    // crossing / tracking near 0).
-    let (curves, y_min, y_max) = session.fitness_curves(config);
+    // auto-scales to the data without forcing zero, so a `Dominance` run that goes negative
+    // still fills the plot (the Red Queen reads as the lines crossing / tracking near 0).
+    let (curves, ..) = session.fitness_curves(config);
     if curves.iter().any(|c| c.pts.len() >= 2) {
         ui.add_space(4.0);
         ui.weak("fitness / generation");
-        let pad = (y_max - y_min).max(1.0) * 0.1;
-        crate::hud::plot(ui, 90.0, &curves, y_min - pad, y_max + pad, "");
-        crate::hud::legend(ui, &curves);
+        let cfg = crate::plot::PlotConfig {
+            height: 90.0,
+            y: crate::plot::YAxis::Auto {
+                include_zero: false,
+                pad: 0.1,
+            },
+            x_unit: "",
+        };
+        crate::plot::plot(ui, &cfg, &curves);
+        crate::plot::legend(ui, &curves);
     }
 
     // Leaderboard — the selected faction's ranked cohort (returns a genome to save).

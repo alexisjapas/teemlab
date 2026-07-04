@@ -18,6 +18,7 @@ mod inspector;
 mod keymap;
 mod layout;
 mod panels;
+mod plot;
 mod recorder;
 mod runs;
 mod status;

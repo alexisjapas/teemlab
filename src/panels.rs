@@ -599,9 +599,13 @@ pub fn dock(
     // width** they leave free. The evolution **curves** with the unified **status line**.
     // Created **before** the conditional `archetype_editor` so toggling that panel never
     // shifts this one's egui ids, and so the editor docks above these curves (which keep
-    // the full central width).
+    // the full central width). Height-**resizable** now: `hud_section` fills whatever
+    // height the panel gets between the two plots (cf. `hud`). The floor is set so the
+    // two plots at their minimum height plus the labels/legends still fit (no clipping).
     egui::Panel::bottom("bottom_panel")
-        .resizable(false)
+        .resizable(true)
+        .default_size(300.0)
+        .size_range(260.0..=520.0)
         .show_inside(&mut root, |ui| {
             if !state.ui_status.message.is_empty() {
                 ui.weak(&state.ui_status.message);
