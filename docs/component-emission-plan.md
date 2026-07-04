@@ -130,15 +130,22 @@ skips non-mutable genes), so the `tests/mlp` tripwire never needed a re-baseline
   (only nutrients hold a store — pheromones emit/sense, toxins affect — so the single
   `Nutrients` store is kept, the nutrient being component 0); and wiring `emit_at_death` /
   `affect` (recycling stays the `reap` special-case; toxicity is a later config-only use).
-- **Phase 3 — emission (alive) + the pheromone `sense` channel.** `emit_components` system
-  (agent→field, alive, from the `emit` verb); `Perception.field_state` + MLP input widen
-  (`input_size`, `resize_input_fan` carries the field block, labels, inspector graph);
-  regenerate the trained-MLP captures if input widened. Falsifiable unit
-  `mlp_reads_field_state_channel` (two perceptions differing only in a sensed component →
-  different actions). Playable `scenarios/examples/18_pheromones.ron` + `tests/pheromones.rs`.
-- **Phase 4 — docs + memory.** ROADMAP §0/§8/§9, `persistent-ecosystems.md` §3/§7,
-  `docs/src/model/*` (nutrients→components, the new table, the sense channel), scenario
-  catalog, `scenario-format.md`. Retire this plan's "done" phases.
+- **Phase 3 — emission (alive) + the pheromone `sense` channel (DONE, byte-identical;
+  `0d60c3f`).** `emit_components` (agent→field, the symmetric of absorption, from the
+  `emit` verb, alongside the source emission); the `sense` verb → `Perception.field_state`
+  (saturating-normalized local concentration `c/(c+1)`), appended to the MLP input after
+  `self_state` (`input_size(rays, n_sensed)`; `resize_input_fan` carries the scalar tail —
+  proprioception + field-sense — unchanged, n_sensed being per-species constant). Existing
+  MLP scenarios (n_sensed 0) byte-identical → **no capture regeneration**. Falsifiable unit
+  `mlp_reads_field_state_channel`; playable `18_pheromones.ron` (MLP foragers emit AND sense
+  a diffusing/decaying pheromone on the oasis) + `tests/pheromones.rs` (persists AND the
+  pheromone field is written). **Deferred:** graph labels for the field-sense input nodes
+  (the renderer skips them safely, no panic); an emission cost.
+- **Phase 4 — docs + memory (REMAINING — the only open thread here).** ROADMAP §0/§8/§9,
+  `persistent-ecosystems.md` §3/§7, `docs/src/model/*` (nutrients→components, the
+  FieldRelation table, the emit/sense channel), the scenario catalog (`18_pheromones`),
+  `scenario-format.md`. Then **toxicity** (`affect`) and **turnover/corpses**
+  (`emit_at_death`) are config-only on this substrate (Law 11).
 
 ## 3. Order-of-battle & invariants
 
