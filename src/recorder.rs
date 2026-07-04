@@ -39,8 +39,6 @@ pub struct RecorderPanel {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
-    /// Whether the floating "Export video" window is open (toggled from the top bar).
-    pub open: bool,
     /// The `record` subprocess while it runs (otherwise `None`).
     child: Option<Child>,
     /// Launch requested by the UI, handled at the next `Update`.
@@ -65,7 +63,6 @@ impl Default for RecorderPanel {
             // Visualizer overlaid by default (cf. `record --hud`).
             hud: true,
             hud_interval: 6.0,
-            open: false,
             child: None,
             launch_requested: false,
         }
@@ -137,15 +134,9 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
             });
             ui.end_row();
 
-            ui.label("Follow agent");
+            ui.label("Follow (video)");
             ui.horizontal(|ui| {
-                egui::ComboBox::from_id_salt("rec_select")
-                    .selected_text(panel.select.label())
-                    .show_ui(ui, |ui| {
-                        for m in SelectionRoll::ALL {
-                            ui.selectable_value(&mut panel.select, m, m.label());
-                        }
-                    });
+                crate::inspector::follow_combo(ui, "rec_select", &mut panel.select);
                 // Keeps an agent highlighted (ring + rays) in the video.
                 if panel.select.rolls() {
                     ui.add(

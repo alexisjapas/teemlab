@@ -269,21 +269,30 @@ pub fn draw(
     mut palette: ResMut<Palette>,
     runs_panel: Res<RunsPanel>,
     mut ui_status: ResMut<UiStatus>,
+    mut windows: ResMut<crate::panels::UiWindows>,
 ) -> Result {
-    // Gate on the fonts (an icon would panic before its family is bound) and on a batch
-    // regime being present (the dashboard is meaningless for a continuous scenario).
-    if !fonts_ready.0 || config.batch.is_none() {
+    // Gate on the fonts (an icon would panic before its family is bound), on a batch
+    // regime being present (the dashboard is meaningless for a continuous scenario —
+    // its data precondition), and on the user toggle (top-bar Breeding button).
+    if !fonts_ready.0 || config.batch.is_none() || !windows.breeding {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
     let mut to_save = None;
+    // A local `open` mirrors the toggle so the window's [x] closes it (the top-bar
+    // button reopens it) — the same pattern as the Export window.
+    let mut open = true;
     egui::Window::new(fonts::icon_label(icons::SPARKLE, "Breeding"))
         .collapsible(true)
         .resizable(false)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 44.0))
+        .open(&mut open)
         .show(ctx, |ui| {
             to_save = dashboard_section(ui, &mut session, &config, &mut vtime);
         });
+    if !open {
+        windows.breeding = false;
+    }
 
     // Save-as-variant (outside the closure, where the catalog resources are free): capture
     // the genome under the scored species' base archetype and write it to the catalog —
@@ -455,8 +464,8 @@ fn leaderboard_section(
             editor::draw_mlp_graph(ui, &m.layer_sizes(), Some(m), None);
         }
         if ui
-            .button(fonts::icon_label(icons::FLOPPY, "Save as variant"))
-            .on_hover_text("Capture this genome into the species catalog (species/saved/)")
+            .button(fonts::icon_label(icons::FLOPPY, "Save to library"))
+            .on_hover_text("Save this genome as a variant in the library (species/saved/).")
             .clicked()
         {
             save = Some(elite);

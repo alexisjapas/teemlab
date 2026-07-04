@@ -49,6 +49,7 @@ use teemlab::visuals::Layers;
 use crate::controls::{self, SimControls};
 use crate::editor::{self, Palette};
 use crate::fonts::{self, icons};
+use crate::help;
 use crate::hud;
 use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
@@ -72,14 +73,60 @@ pub struct DockLayout {
     ctrl_width: f32,
 }
 
+/// Visibility of the **user-toggleable floating surfaces** — the one convention for
+/// "what's open": a bool per surface on a single resource. (egui memory holds only
+/// per-widget presentation state like collapsing headers; `Option`-presence stays
+/// reserved for genuine *selection*, e.g. `palette.selected`, never for visibility;
+/// a scenario's `batch` being set is a data *precondition* for the breeding window,
+/// not its toggle.)
+#[derive(Resource)]
+pub struct UiWindows {
+    /// The video **Export** window (top-bar Export button).
+    pub export: bool,
+    /// The **Breeding** dashboard — also gated on `config.batch.is_some()` (its data
+    /// precondition); default open so it still appears with a batch, as before, but
+    /// now dismissable and re-openable from the top bar.
+    pub breeding: bool,
+    /// The keyboard-shortcuts **cheatsheet** (`?` / Help menu).
+    pub shortcuts: bool,
+}
+
+impl Default for UiWindows {
+    fn default() -> Self {
+        Self {
+            export: false,
+            breeding: true,
+            shortcuts: false,
+        }
+    }
+}
+
+/// UI **preferences** (not scenario data): the source of truth for the dismissable
+/// inline help. `dock` mirrors it into egui memory each frame so `help::hint` keeps
+/// its zero-threading ergonomics (cf. `help`).
+#[derive(Resource)]
+pub struct UiPrefs {
+    /// Show the explanatory hints in the panels (default on — discoverable).
+    pub inline_help: bool,
+}
+
+impl Default for UiPrefs {
+    fn default() -> Self {
+        Self { inline_help: true }
+    }
+}
+
 /// Cross-panel resources [`dock`] writes, bundled into one [`SystemParam`] so the
 /// system stays within Bevy's 16-parameter limit (like [`ObsParams`]): the scenario
-/// document model, the recorder toggle/settings and the unified status line.
+/// document model, the recorder settings, the unified status line, the window toggles
+/// and the UI preferences.
 #[derive(SystemParam)]
 pub struct DockState<'w> {
     pub runs_panel: ResMut<'w, RunsPanel>,
     pub recorder_panel: ResMut<'w, RecorderPanel>,
     pub ui_status: ResMut<'w, UiStatus>,
+    pub windows: ResMut<'w, UiWindows>,
+    pub prefs: ResMut<'w, UiPrefs>,
 }
 
 /// **Observation** state of the right panel, bundled into one [`SystemParam`] so
@@ -187,6 +234,39 @@ fn archetype_detail(
     deselect
 }
 
+/// The keyboard-shortcuts cheatsheet body: the keyboard [`crate::keymap::BINDINGS`]
+/// then the [`crate::keymap::MOUSE`] gestures, as two-column grids. Reads the same
+/// tables the tooltips do, so it can never drift from the real controls.
+fn shortcuts_cheatsheet(ui: &mut egui::Ui) {
+    use crate::keymap::{BINDINGS, MOUSE};
+    egui::Grid::new("keyboard_shortcuts")
+        .num_columns(2)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            for b in BINDINGS {
+                ui.strong(b.keys_text);
+                if b.when.is_empty() {
+                    ui.label(b.label);
+                } else {
+                    ui.label(format!("{}  ({})", b.label, b.when));
+                }
+                ui.end_row();
+            }
+        });
+    ui.separator();
+    ui.weak("Mouse");
+    egui::Grid::new("mouse_gestures")
+        .num_columns(2)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            for (gesture, label) in MOUSE {
+                ui.strong(*gesture);
+                ui.label(*label);
+                ui.end_row();
+            }
+        });
+}
+
 /// Builds the whole docked layout in one pass: one background-layer root `Ui`, then
 /// each panel `show_inside` it. Chained **before** the interaction systems
 /// (`pick_agent`, `resolve_drag`, …) and `set_sim_camera`, all of which read the free
@@ -234,6 +314,10 @@ pub fn dock(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
+    // Mirror the inline-help preference into egui memory so `help::hint` reads it
+    // without every panel threading the flag (cf. `help`). A one-frame lag on a toggle
+    // is imperceptible.
+    ctx.data_mut(|d| d.insert_temp(crate::help::id(), state.prefs.inline_help));
     // A single root viewport `Ui` on the background layer, shared by every panel
     // (bevy_egui 0.40 `examples/ui.rs`). `show_inside` then docks each panel into it.
     let mut root = egui::Ui::new(
@@ -280,8 +364,9 @@ pub fn dock(
                         .rect
                         .width();
                     layout.ctrl_width = measured;
-                    // RIGHT (emitted right→left): Export rightmost, then the View menu, so
-                    // reading order is View · Export.
+                    // RIGHT (emitted right→left, so reading order is View · Help ·
+                    // [Breeding] · Export): Export rightmost, then the Breeding toggle
+                    // (only with a batch regime), the Help menu, and the View menu.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .button(fonts::icon_label(icons::RECORD, "Export…"))
@@ -290,8 +375,35 @@ pub fn dock(
                             )
                             .clicked()
                         {
-                            state.recorder_panel.open = !state.recorder_panel.open;
+                            state.windows.export = !state.windows.export;
                         }
+                        // Breeding dashboard toggle — shown only when the scenario carries a
+                        // batch regime (the window's data precondition).
+                        if config.batch.is_some() {
+                            let on = state.windows.breeding;
+                            if ui
+                                .selectable_label(on, fonts::icon_label(icons::SPARKLE, "Breeding"))
+                                .on_hover_text("Show / hide the breeding dashboard.")
+                                .clicked()
+                            {
+                                state.windows.breeding = !on;
+                            }
+                        }
+                        ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "Help"), |ui| {
+                            help::toggle(ui, &mut state.prefs.inline_help);
+                            if ui
+                                .button(crate::keymap::tooltip(
+                                    "Keyboard shortcuts…",
+                                    crate::keymap::UiAction::ToggleShortcuts,
+                                ))
+                                .clicked()
+                            {
+                                state.windows.shortcuts = !state.windows.shortcuts;
+                                ui.close();
+                            }
+                        })
+                        .response
+                        .on_hover_text("Inline help and the keyboard-shortcuts cheatsheet.");
                         ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
                             editor::layers_section(ui, &mut layers)
                         })
@@ -305,7 +417,7 @@ pub fn dock(
     // Floating "Export video" window, toggled by the Export button. Driven through a
     // local `open` (the window's [x]) so it does not alias the `&mut recorder_panel`
     // the section needs — same pattern as the scenario "save as" dialog.
-    if state.recorder_panel.open {
+    if state.windows.export {
         let mut open = true;
         egui::Window::new("Export video")
             .collapsible(true)
@@ -316,7 +428,23 @@ pub fn dock(
                 recorder::recorder_section(ui, &mut state.recorder_panel);
             });
         if !open {
-            state.recorder_panel.open = false;
+            state.windows.export = false;
+        }
+    }
+
+    // Keyboard-shortcuts cheatsheet (toggled by `?` / F1 / Help menu). A floating
+    // window over [`crate::keymap::BINDINGS`] + [`crate::keymap::MOUSE`] — the same
+    // table the tooltips read, so it cannot drift from the actual controls.
+    if state.windows.shortcuts {
+        let mut open = true;
+        egui::Window::new(fonts::icon_label(icons::CARET_DOWN, "Keyboard shortcuts"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .open(&mut open)
+            .show(root.ctx(), shortcuts_cheatsheet);
+        if !open {
+            state.windows.shortcuts = false;
         }
     }
 
@@ -400,7 +528,7 @@ pub fn dock(
                             palette.selected = Some(config.archetypes.len() - 1);
                             state
                                 .ui_status
-                                .set(format!("Archetype captured from {from}."));
+                                .set(format!("Captured to scenario (from {from})."));
                         }
                         // Save variant → write it to the library (species/saved/).
                         Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
@@ -553,4 +681,21 @@ pub fn dock(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_windows_defaults() {
+        let w = UiWindows::default();
+        assert!(!w.export, "Export starts closed");
+        assert!(
+            w.breeding,
+            "Breeding starts open (appears with a batch, as before)"
+        );
+        assert!(!w.shortcuts, "the cheatsheet starts closed");
+        assert!(UiPrefs::default().inline_help, "inline help starts on");
+    }
 }

@@ -16,6 +16,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 
 use crate::fonts::{self, icons};
+use crate::keymap::{self, UiAction};
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Wall};
 use teemlab::ecology::SimRng;
@@ -63,15 +64,16 @@ pub(crate) fn controls_section(
     controls: &mut SimControls,
     vtime: &mut Time<Virtual>,
 ) {
-    let paused = vtime.is_paused();
-    let play_pause = if paused {
-        fonts::icon_label(icons::PLAY, "Play")
-    } else {
-        fonts::icon_label(icons::PAUSE, "Pause")
+    // Play/Pause and Step are **icon-only, fixed-size** buttons: their width no longer
+    // changes with the label ("Play" ↔ "Pause"), so the whole group's width is constant
+    // and the top-bar centering (which pads by the last-frame width) never visibly shifts.
+    let icon_button = |ui: &mut egui::Ui, glyph: char| {
+        ui.add(egui::Button::new(fonts::icon(glyph)).min_size(egui::vec2(30.0, 22.0)))
     };
-    if ui
-        .button(play_pause)
-        .on_hover_text("Play / pause  ·  Space")
+    let paused = vtime.is_paused();
+    let play_glyph = if paused { icons::PLAY } else { icons::PAUSE };
+    if icon_button(ui, play_glyph)
+        .on_hover_text(keymap::tooltip("Play / pause", UiAction::PlayPause))
         .clicked()
     {
         if paused {
@@ -82,9 +84,11 @@ pub(crate) fn controls_section(
     }
     // Single-stepping only makes sense when stopped.
     ui.add_enabled_ui(paused, |ui| {
-        if ui
-            .button(fonts::icon_label(icons::STEP, "Step"))
-            .on_hover_text("Advance one tick  ·  → (when paused)")
+        if icon_button(ui, icons::STEP)
+            .on_hover_text(keymap::tooltip(
+                "Advance one tick (when paused)",
+                UiAction::StepOnce,
+            ))
             .clicked()
         {
             controls.steps_pending += 1;
@@ -92,7 +96,9 @@ pub(crate) fn controls_section(
     });
 
     ui.separator();
-    // Logarithmic-scale slider: fine tuning from x0.1 to x10 on a single handle.
+    // Logarithmic-scale slider (fixed width so the group stays a constant size): fine
+    // tuning from ×0.1 to ×10 on a single handle, with a `×1` reset beside it.
+    ui.spacing_mut().slider_width = 120.0;
     if ui
         .add(
             egui::Slider::new(&mut controls.speed, 0.1..=10.0)
@@ -103,21 +109,22 @@ pub(crate) fn controls_section(
     {
         vtime.set_relative_speed(controls.speed);
     }
-    // Quick presets next to the slider — the active one stays highlighted.
-    for s in [1.0_f32, 2.0, 5.0, 10.0] {
-        if ui
-            .selectable_label((controls.speed - s).abs() < 1e-3, format!("×{s:.0}"))
-            .clicked()
-        {
-            controls.speed = s;
-            vtime.set_relative_speed(s);
-        }
+    if ui
+        .add_enabled((controls.speed - 1.0).abs() > 1e-3, egui::Button::new("×1"))
+        .on_hover_text("Reset the speed to ×1")
+        .clicked()
+    {
+        controls.speed = 1.0;
+        vtime.set_relative_speed(1.0);
     }
 
     ui.separator();
     if ui
         .button(fonts::icon_label(icons::RESET, "Reset"))
-        .on_hover_text("Rebuild the world from the current config  ·  R")
+        .on_hover_text(keymap::tooltip(
+            "Rebuild the world from the current config",
+            UiAction::ResetWorld,
+        ))
         .clicked()
     {
         controls.reset_requested = true;

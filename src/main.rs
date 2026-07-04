@@ -15,6 +15,7 @@ mod fonts;
 mod help;
 mod hud;
 mod inspector;
+mod keymap;
 mod layout;
 mod panels;
 mod recorder;
@@ -70,6 +71,10 @@ fn main() {
         // recomposing the view would break the UI (cf. memory).
         .init_resource::<controls::SimControls>()
         .init_resource::<recorder::RecorderPanel>()
+        // Visibility of the toggleable floating surfaces (Export / Breeding / shortcuts)
+        // and the UI preferences (inline help) — the one convention for "what's open".
+        .init_resource::<panels::UiWindows>()
+        .init_resource::<panels::UiPrefs>()
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()
@@ -146,23 +151,26 @@ fn main() {
         .run();
 }
 
-/// Keyboard shortcuts mirroring the transport controls: **Space** play/pause, **→**
-/// single-step (when paused), **R** reset (world), **Home** reset *view* (pan/zoom).
-/// They only set `Time<Virtual>` / the `SimControls` flags / `ViewControl` (the same
-/// paths as the buttons). We respect egui's keyboard focus: when a text input (a RON
-/// path, a name…) has focus we let it keep the keys.
+/// Keyboard shortcuts mirroring the transport controls, routed through [`keymap`] (the
+/// single binding source, so tooltips and the cheatsheet can't drift): play/pause,
+/// single-step (when paused), reset world, reset *view*, and the shortcuts cheatsheet.
+/// They only set `Time<Virtual>` / the `SimControls` flags / `ViewControl` / a UI
+/// toggle (the same paths as the buttons). We respect egui's keyboard focus: when a
+/// text input (a RON path, a name…) has focus we let it keep the keys.
 fn keyboard_shortcuts(
     mut contexts: EguiContexts,
     keys: Res<ButtonInput<KeyCode>>,
     mut vtime: ResMut<Time<Virtual>>,
     mut controls: ResMut<controls::SimControls>,
     mut view: ResMut<ViewControl>,
+    mut windows: ResMut<panels::UiWindows>,
 ) -> Result {
+    use keymap::UiAction;
     let ctx = contexts.ctx_mut()?;
     if ctx.egui_wants_keyboard_input() {
         return Ok(());
     }
-    if keys.just_pressed(KeyCode::Space) {
+    if keymap::pressed(&keys, UiAction::PlayPause) {
         if vtime.is_paused() {
             vtime.unpause();
         } else {
@@ -170,15 +178,18 @@ fn keyboard_shortcuts(
         }
     }
     // Single-step only makes sense while paused (mirrors the disabled Step button).
-    if keys.just_pressed(KeyCode::ArrowRight) && vtime.is_paused() {
+    if keymap::pressed(&keys, UiAction::StepOnce) && vtime.is_paused() {
         controls.steps_pending += 1;
     }
-    if keys.just_pressed(KeyCode::KeyR) {
+    if keymap::pressed(&keys, UiAction::ResetWorld) {
         controls.reset_requested = true;
     }
     // Recenter the view on the whole arena (mirrors the "Reset view" button).
-    if keys.just_pressed(KeyCode::Home) {
+    if keymap::pressed(&keys, UiAction::ResetView) {
         *view = ViewControl::default();
+    }
+    if keymap::pressed(&keys, UiAction::ToggleShortcuts) {
+        windows.shortcuts = !windows.shortcuts;
     }
     Ok(())
 }

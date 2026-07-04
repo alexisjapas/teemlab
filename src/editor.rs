@@ -448,9 +448,10 @@ fn species_library_section(
             // Save the selected scenario archetype into the catalog (scenario → catalog).
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
                 if ui
-                    .button(fonts::icon_label(icons::UPLOAD, "Export to catalog"))
+                    .button(fonts::icon_label(icons::FLOPPY, "Save to library"))
                     .on_hover_text(
-                        "Exports the selected archetype as a reusable base in species/saved/.",
+                        "Save the selected archetype as a reusable base in the library \
+                         (species/saved/).",
                     )
                     .clicked()
                 {
@@ -661,8 +662,8 @@ fn export_species(arch: &Archetype) -> String {
     base.captured_from = None;
     let path = format!("{SAVED_LIB}/{}.ron", sanitize_filename(&arch.name));
     match SpeciesEntry::base(base).save_ron_file(&path) {
-        Ok(()) => format!("Species exported → {path}"),
-        Err(e) => format!("Export failed: {e}"),
+        Ok(()) => format!("Saved to library → {path}"),
+        Err(e) => format!("Save to library failed: {e}"),
     }
 }
 
@@ -723,7 +724,7 @@ pub(crate) fn save_variant(
         .any(|s| s.name == base_name && s.base.is_some());
     if !has_base {
         let msg = export_species(base_arch);
-        if msg.starts_with("Export failed") {
+        if msg.starts_with("Save to library failed") {
             return msg;
         }
         palette.catalog = scan_library();
@@ -738,8 +739,8 @@ pub(crate) fn save_variant(
     // File named after the BASE (groups variants visually): `<base>--<scenario>-<n>.ron`.
     let path = format!("{SAVED_LIB}/{}--{id}.ron", sanitize_filename(&base_name));
     let result = match entry.save_ron_file(&path) {
-        Ok(()) => format!("Variant saved → {path}"),
-        Err(e) => format!("Variant save failed: {e}"),
+        Ok(()) => format!("Saved to library → {path}"),
+        Err(e) => format!("Save to library failed: {e}"),
     };
     palette.catalog = scan_library();
     result
@@ -1273,10 +1274,6 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
             ui.checkbox(on, format!("Nutrient {i}"));
         }
     }
-    // The dismissable-help toggle lives in this View menu (a view concern, like the
-    // layers) rather than the scenario data.
-    ui.separator();
-    help::toggle(ui);
 }
 
 /// "World" section: the **scenario** parameters (everything but the per-species

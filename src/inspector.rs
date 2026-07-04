@@ -107,7 +107,7 @@ pub fn delete_under_cursor(
     windows: Query<&Window>,
     bodies: Query<(Entity, &Transform, &Radius)>,
 ) -> Result {
-    if !(keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace)) {
+    if !crate::keymap::pressed(&keys, crate::keymap::UiAction::DeleteUnderCursor) {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
@@ -129,6 +129,20 @@ pub fn delete_under_cursor(
     Ok(())
 }
 
+/// The **follow-mode** combo box (a [`SelectionRoll`] picker), shared by the live
+/// *Observation* panel and the video *Export* panel. The two are **different
+/// settings** (what the live view follows vs. what the render follows), so only the
+/// widget is shared — each caller keeps its own label and interval control.
+pub(crate) fn follow_combo(ui: &mut egui::Ui, id_salt: &str, roll: &mut SelectionRoll) {
+    egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(roll.label())
+        .show_ui(ui, |ui| {
+            for mode in SelectionRoll::ALL {
+                ui.selectable_value(roll, mode, mode.label());
+            }
+        });
+}
+
 /// **Observation controls** (windowed): the *follow* mode — the **same options as
 /// the video recorder** ([`SelectionRoll`]) — plus the camera **Reset view**. All
 /// rendering-side: it writes the auto-follow mode and the [`crate::ViewControl`],
@@ -142,17 +156,14 @@ pub(crate) fn observation_section(
     view: &mut crate::ViewControl,
 ) {
     ui.horizontal(|ui| {
-        ui.label("Follow:");
-        egui::ComboBox::from_id_salt("follow_mode")
-            .selected_text(auto.roll.label())
-            .show_ui(ui, |ui| {
-                for mode in SelectionRoll::ALL {
-                    ui.selectable_value(&mut auto.roll, mode, mode.label());
-                }
-            });
+        ui.label("Follow (view):");
+        follow_combo(ui, "follow_mode", &mut auto.roll);
         if ui
             .button(fonts::icon_label(icons::RESET, "Reset view"))
-            .on_hover_text("Recenter on the whole arena (pan / zoom)  ·  Home")
+            .on_hover_text(crate::keymap::tooltip(
+                "Recenter on the whole arena (pan / zoom)",
+                crate::keymap::UiAction::ResetView,
+            ))
             .clicked()
         {
             *view = crate::ViewControl::default();
@@ -371,10 +382,10 @@ pub(crate) fn inspector_section(
     if ui
         .add_enabled(
             named,
-            egui::Button::new(fonts::icon_label(icons::UPLOAD, "Export as variant")),
+            egui::Button::new(fonts::icon_label(icons::FLOPPY, "Save to library…")),
         )
         .on_hover_text(
-            "Export this evolved agent as a named variant in the species library \
+            "Save this evolved agent as a named variant of its species in the library \
                  (species/saved/), reusable in any scenario.",
         )
         .clicked()

@@ -1,14 +1,16 @@
 //! **Dismissable inline help.** The panels carry explanatory hints (what a control
 //! does, how to interact). They help a newcomer but clutter once the tool is known,
-//! so a single flag — toggled from the top-bar **View** menu ([`toggle`]) — gates them
-//! all through [`hint`]. The flag lives in egui's own memory (a temp value keyed by
-//! [`id`]), so no boolean has to be threaded through every panel function. Default
+//! so a single flag — toggled from the top-bar **Help** menu ([`toggle`]) — gates them
+//! all through [`hint`]. The flag's source of truth is `panels::UiPrefs::inline_help`,
+//! which `panels::dock` **mirrors** into egui memory (a temp value keyed by [`id`])
+//! each frame, so no boolean has to be threaded through every panel function. Default
 //! **on** (discoverable); off hides every hint at once.
 
 use bevy_egui::egui;
 
-/// egui memory key for the "show inline help" flag.
-fn id() -> egui::Id {
+/// egui memory key for the "show inline help" flag (written by `panels::dock` from
+/// `UiPrefs`, read by [`enabled`]).
+pub(crate) fn id() -> egui::Id {
     egui::Id::new("teemlab_show_help")
 }
 
@@ -26,14 +28,10 @@ pub fn hint(ui: &mut egui::Ui, text: impl Into<String>) {
     }
 }
 
-/// The **Inline help** toggle, for the View menu. Reads/writes the flag in egui memory.
-pub fn toggle(ui: &mut egui::Ui) {
-    let mut show = enabled(ui);
-    if ui
-        .checkbox(&mut show, "Inline help")
-        .on_hover_text("Show the explanatory hints in the panels.")
-        .changed()
-    {
-        ui.data_mut(|d| d.insert_temp(id(), show));
-    }
+/// The **Inline help** toggle, for the Help menu. Bound directly to the preference
+/// (`panels::UiPrefs::inline_help`); `panels::dock` mirrors it into egui memory next
+/// frame, where [`enabled`] / [`hint`] read it.
+pub fn toggle(ui: &mut egui::Ui, inline_help: &mut bool) {
+    ui.checkbox(inline_help, "Inline help")
+        .on_hover_text("Show the explanatory hints in the panels.");
 }
