@@ -486,7 +486,10 @@ open work in §9.
   `Stores` — only nutrients hold a store (pheromones emit/sense, toxins affect), so the single
   `Nutrients` store is kept, the nutrient being component `0`. **Emergent communication not claimed**
   (neuroevolution-hard, §7) — the wiring is proven, the trail legible (Pheromone heatmap). **Remaining
-  on this axis**: **toxicity** (`affect`) and **turnover/corpses** (`emit_at_death`) are now
+  on this axis**: **toxicity DONE** (the `affect` verb wired — `scenarios/examples/19_toxicity.ron`
+  + `tests/toxicity.rs`: a self-poisoning emitter monoculture blooms then collapses to extinction
+  where the emission-off control persists, the §1 *destabiliser* mirroring the restraint
+  *stabiliser* — both poles now demonstrable); **turnover/corpses** (`emit_at_death`) remains
   *config-only* on this substrate (Law 11).
 
 **Remaining.**

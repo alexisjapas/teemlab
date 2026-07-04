@@ -98,9 +98,11 @@ costed action"; "Proprioception").
 > emit_at_death / repro_cost) over per-component diffusing, **decaying** fields — no per-kind
 > code (Law 11). **Emission** (`emit`, agent→field, the symmetric of absorption) and **sensing**
 > (`sense` → a brain input channel) are wired and shown by the `pheromones` scenario. What
-> remains is **config-only** on this substrate: **toxicity** (`affect < 0`, a new endogenous
-> collapse mode) and **turnover / corpses** (`emit_at_death` — a decomposing biomass field, the
-> flat-carrying-capacity lever). The paragraphs below record the original design, now realised.
+> remains: **toxicity is now BUILT** (the `affect < 0` verb wired — the `19_toxicity` scenario: a
+> self-poisoning monoculture blooms then collapses to extinction where the emission-off control
+> persists, a new endogenous collapse mode). Still **config-only** on this substrate: **turnover /
+> corpses** (`emit_at_death` — a decomposing biomass field, the flat-carrying-capacity lever). The
+> paragraphs below record the original design, now realised.
 
 Two current gaps point at a single missing mechanism: agents cannot **die without disappearing**
 (so there are no corpses), and they cannot **emit components during life** (organic waste,
@@ -189,8 +191,9 @@ Law 7 — if so). This restates the roadmap's existing performance positions (§
 2. **High-leverage for persistence:** turnover (via emission / corpses, §3) and spatial refuges —
    the latter also the condition that makes restraint selectable.
 3. **Emission of components** via per-component fields (§3) — **DONE**: the `FieldRelation`
-   table + `emit` / `sense` (the `pheromones` scenario). Turnover (`emit_at_death`) and toxicity
-   (`affect`) are now *config-only* on this substrate; the audio/wave case is still left open.
+   table + `emit` / `sense` (the `pheromones` scenario), and **toxicity** (`affect`, the
+   `19_toxicity` self-poisoning scenario — the §1 destabiliser). **Turnover / corpses**
+   (`emit_at_death`) remains *config-only*; the audio/wave case is still left open.
 4. **Downstream:** the collapse-factor science instrument (§4).
 5. **Far horizon:** species as an emergent cluster; de-hardcoded identity (§5).
 

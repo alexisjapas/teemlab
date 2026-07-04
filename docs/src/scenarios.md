@@ -192,6 +192,23 @@ persists on the oasis; the study is a research follow-on.
 
 → concepts: [components & the field-relations table](./model/nutrients.md#emission--sensing-pheromones) · [brains](./model/brains.md)
 
+## `19` · Toxicity
+
+**Emission's dark twin — self-poisoning as an endogenous collapse mode.** A prudent-grazer
+monoculture that *persists* on the oasis flora (as in restraint) here also **emits a "Toxin"**
+and is **harmed by it** (`emit` + `affect < 0` on the same (species, component) — the
+combinable facets). The toxin barely diffuses and clears slowly, so it **accumulates where
+the crowd clusters**: as the population blooms, the dose it inflicts on itself rises with
+density until it **crashes to extinction** — eutrophication (bloom → toxic build-up → dead
+zone). The falsifiable contrast: the *same* world with the emission switched off does **not**
+collapse — the destabiliser is endogenous, not the ecology. This is the mirror of restraint
+(17): the two poles of persistence a population *produces* — a stabiliser and a destabiliser —
+now both demonstrable, **config-only** on the emission substrate (a toxin and a pheromone
+differ only by their relation). Watch the Toxin heatmap bloom over the oases as the crowd
+poisons itself.
+
+→ concepts: [components: emission & affect](./model/nutrients.md#emission--sensing-pheromones) · [the economy](./model/economy.md)
+
 ---
 
 ## Make your own

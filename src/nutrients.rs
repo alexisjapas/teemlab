@@ -18,7 +18,7 @@
 //! run no agent system) and **not** spatial-query structures (no §5 conflict — a
 //! `pos → cell` is a direct hash, never a neighbour search).
 
-use crate::components::{Agent, Species};
+use crate::components::{Agent, Reserve, Species};
 use crate::config::SimConfig;
 use bevy::prelude::*;
 
@@ -410,6 +410,43 @@ pub fn absorb_nutrients(
         }
         let got = field.take(transform.translation.truncate(), want);
         store.current += got;
+    }
+}
+
+/// AFFECT: a component whose [`FieldRelation`](crate::config::FieldRelation) has
+/// `affect != 0` changes the agent's [`Reserve`] by `affect · concentration · dt` at its
+/// cell — a **toxin** (`affect < 0`, drains energy) or a boon (`affect > 0`). This is the
+/// field→agent effect that makes an emitted component **harmful**: a toxin and a pheromone
+/// differ *only* by their relation (Law 11 — no per-kind code). Paired with `emit` on the
+/// same (species, component), it is **self-poisoning** — an endogenous collapse mode
+/// (`docs/persistent-ecosystems.md` §1/§3). A scenario with no `affect` relation is a
+/// no-op (early return) → byte-identical. Death at zero is left to [`crate::ecology::reap`]
+/// (next tick, as for the metabolic drain).
+pub fn affect_agents(
+    time: Res<Time>,
+    config: Res<SimConfig>,
+    fields: Res<Fields>,
+    mut agents: Query<(&Transform, &Species, &mut Reserve), With<Agent>>,
+) {
+    if !config.field_relations.iter().any(|f| f.affect != 0.0) {
+        return;
+    }
+    let dt = time.delta_secs();
+    for (transform, species, mut reserve) in &mut agents {
+        let pos = transform.translation.truncate();
+        let mut delta = 0.0;
+        for fr in config
+            .field_relations
+            .iter()
+            .filter(|f| f.species == species.0 && f.affect != 0.0)
+        {
+            if let Some(field) = fields.get(fr.component) {
+                delta += fr.affect * field.sample(pos);
+            }
+        }
+        if delta != 0.0 {
+            reserve.current = (reserve.current + delta * dt).clamp(0.0, reserve.max);
+        }
     }
 }
 

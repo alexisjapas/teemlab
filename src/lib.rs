@@ -102,6 +102,7 @@ impl Plugin for SimPlugin {
                     nutrients::diffuse_nutrients,
                     nutrients::decay_nutrients,
                     nutrients::absorb_nutrients,
+                    nutrients::affect_agents,
                     ecology::age_agents,
                     ecology::reproduce,
                 )

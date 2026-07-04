@@ -1,0 +1,236 @@
+// Toxicity — an emitted component that poisons its own emitter: an ENDOGENOUS collapse
+// mode (self-poisoning / eutrophication). The destabiliser POLE of persistent-ecosystems
+// §1, the mirror of the restraint stabiliser (17_restraint) — both now demonstrable, and
+// config-only on the component-emission substrate (Law 11: a toxin and a pheromone differ
+// ONLY by their relation — this one is `affect`-ed, not `sense`d).
+//
+// A PRUDENT-grazer monoculture that (from 17_restraint) PERSISTS on the oasis flora, here
+// also EMITS a "Toxin" component and is HARMED by it (`emit` + `affect < 0` on the same
+// (species, component) — the combinable facets). As the population grows and clusters on
+// the oases, the toxin ACCUMULATES faster than it decays, so the local dose — and the
+// energy it drains — rises with density: a self-limiting COLLAPSE that a non-emitting
+// control (the restraint-persist baseline) does not suffer. tests/toxicity.rs makes the
+// contrast falsifiable (toxic collapses; the same world with emission off persists). Watch
+// the Toxin heatmap bloom over the oases as the crowd poisons itself.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 540.0,
+    archetypes: [
+        (
+            name: "Emitter",
+            color: (0.7, 0.5, 0.9),
+            count: 16,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 50.0,
+                agility: 0.12,
+                vision_range: 140.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 55.0,
+                offspring_energy: 30.0,
+                mutation_rate: 0.0,
+                base_metabolism: 3.0,
+                move_cost: 2.0,
+                vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 15.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+                act_cost: 0.0,
+            ),
+            // A PRUDENT grazer (eats only while below 60 % full) — the monoculture that
+            // PERSISTS in 17_restraint. Here the poisoning, not the appetite, is the story.
+            brain: Grazer(
+                hunger_threshold: 0.6,
+            ),
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                act_cost: false,
+            ),
+        ),
+        // Base of the chain — a flora clustering into oases around the nutrient sources.
+        (
+            name: "Flora",
+            color: (0.4, 0.85, 0.4),
+            count: 190,
+            radius: 6.0,
+            reserve_max: 80.0,
+            genotype: (
+                max_speed: 0.0,
+                agility: 0.12,
+                vision_range: 30.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 60.0,
+                offspring_energy: 30.0,
+                mutation_rate: 0.0,
+                base_metabolism: 1.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
+                photosynthesis: 5.0,
+                seed_dispersal: 25.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
+                act_cost: 0.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+                act_cost: false,
+            ),
+        ),
+    ],
+    relations: [
+        (
+            actor: 0,
+            target: 1,
+            transfer: true,
+            rate: 45.0,
+            range: 16.0,
+        ),
+    ],
+    field_resolution: 256,
+    components: [
+        // Component 0 — the nutrient (the oases), conserved.
+        (
+            name: "Nutrient",
+            diffusion: 0.3,
+            decay: 0.0,
+        ),
+        // Component 1 — the TOXIN: emitted by the crowd (no source), spreads and clears
+        // slowly (low decay), so it ACCUMULATES where the population is dense.
+        (
+            name: "Toxin",
+            diffusion: 0.0,
+            decay: 0.01,
+        ),
+    ],
+    sources: [
+        (
+            pos: (-240.0, 240.0),
+            component: 0,
+            rate: 20.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (240.0, 240.0),
+            component: 0,
+            rate: 20.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (-240.0, -240.0),
+            component: 0,
+            rate: 20.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+        (
+            pos: (240.0, -240.0),
+            component: 0,
+            rate: 20.0,
+            color: (1.0, 0.55, 0.2),
+            radius: 12.0,
+        ),
+    ],
+    field_relations: [
+        // The emitter gets nutrient by eating (absorb 0), gated on it (like predator_prey).
+        (species: 0, component: 0, absorb: 0.0, capacity: 30.0, repro_cost: 8.0),
+        // …and EMITS the toxin (component 1) while being HARMED by it (affect < 0) — the
+        // self-poisoning: emit + affect on the SAME (species, component), combinable facets.
+        (species: 0, component: 1, emit: 5.0, affect: -25.0),
+        // The flora absorbs the nutrient to reproduce (oases).
+        (species: 1, component: 0, absorb: 1.5, capacity: 8.0, repro_cost: 8.0),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 30.0,
+        max: 320.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 600.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    act_cost_bounds: (
+        min: 0.0,
+        max: 10.0,
+    ),
+    play_area_color: (0.07, 0.07, 0.09),
+    off_game_color: (0.17, 0.17, 0.19),
+    seed: 19,
+)
