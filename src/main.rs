@@ -15,6 +15,7 @@ mod fonts;
 mod help;
 mod hud;
 mod inspector;
+mod layout;
 mod panels;
 mod recorder;
 mod runs;

@@ -1,5 +1,7 @@
-//! **Docked** layout of the windowed build: fixed egui panels around the central
-//! simulation area, assembled by a **single** system ([`dock`]).
+//! **Docked** layout of the windowed build: resizable egui panels around the central
+//! simulation area, assembled by a **single** system ([`dock`]). The side panels
+//! resize within a range that always reserves the sim's minimum width, and the
+//! archetype editor folds into the left panel on a narrow window (cf. [`crate::layout`]).
 //!
 //! A module of the windowed *binary* only. We invent nothing: each panel calls the
 //! reusable `*_section(ui, …)` already exposed by its tool module (`controls`,
@@ -53,20 +55,32 @@ use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 use crate::status::UiStatus;
 
-/// Fixed width (egui points) of **both** side panels (Edit / Analysis). They are
-/// **non-resizable**: an egui side panel cannot shrink-wrap its content's width
-/// (sliders and scroll areas fill whatever width they are given — there is no natural
-/// width to collapse to, unlike the bottom panel's content-driven *height*), so we
-/// pick a width that comfortably fits the densest content (the gene editor). Kept
-/// **equal** left and right so the centered sim stays centered.
-///
-/// Every docked panel also sets `.resizable(false)` explicitly: an egui `Panel`
-/// defaults to *resizable*, and `exact_size` only pins the width range to a point — it
-/// does **not** clear that flag. Left resizable, the panel still runs the resize
-/// interaction, flipping the pointer to a resize cursor and highlighting the separator
-/// on hover, while a drag changes nothing (the range is a point). Disabling it removes
-/// that dead affordance and leaves only the dim, static separator line.
-const SIDE_PANEL_WIDTH: f32 = 370.0;
+/// Last frame's measured panel widths and the left-region mode — the inputs the
+/// [`crate::layout`] rules need this frame (a one-frame lag, harmless for sizing).
+/// A single [`Local`] so [`dock`] adds no system parameter.
+#[derive(Default)]
+pub struct DockLayout {
+    /// Left panel (`left_tools`) width, feeding the right panel's range.
+    left_w: f32,
+    /// Right panel width, feeding the left panels' ranges.
+    right_w: f32,
+    /// Archetype-editor column width (two-column mode), a `left_mode` input.
+    editor_w: f32,
+    /// Left-region mode (master/detail vs single column) — the hysteresis carrier.
+    mode: crate::layout::LeftMode,
+    /// Measured width of the centered transport controls (for centering — see below).
+    ctrl_width: f32,
+}
+
+/// Cross-panel resources [`dock`] writes, bundled into one [`SystemParam`] so the
+/// system stays within Bevy's 16-parameter limit (like [`ObsParams`]): the scenario
+/// document model, the recorder toggle/settings and the unified status line.
+#[derive(SystemParam)]
+pub struct DockState<'w> {
+    pub runs_panel: ResMut<'w, RunsPanel>,
+    pub recorder_panel: ResMut<'w, RecorderPanel>,
+    pub ui_status: ResMut<'w, UiStatus>,
+}
 
 /// **Observation** state of the right panel, bundled into one [`SystemParam`] so
 /// [`dock`] stays within Bevy's 16-parameter limit: the current [`Selection`]
@@ -117,6 +131,62 @@ pub fn pointer_over_ui(ctx: &egui::Context, central: egui::Rect) -> bool {
     }
 }
 
+/// The archetype-editor **detail** view: a header then the editor itself, shared by
+/// the two-column second panel and the single-column in-place swap. Returns `true` if
+/// the user asked to close (deselect the archetype).
+///
+/// `with_switcher` (single-column layout, where the master list is not visible beside
+/// it) adds a **back** button to the list and a **combo** to jump between archetypes
+/// without going back; otherwise the header is a plain "Archetype editor" title. Both
+/// carry a close `X`.
+fn archetype_detail(
+    ui: &mut egui::Ui,
+    palette: &mut Palette,
+    config: &mut SimConfig,
+    with_switcher: bool,
+) -> bool {
+    let mut deselect = false;
+    ui.horizontal(|ui| {
+        if with_switcher {
+            if ui
+                .button("‹  Archetypes")
+                .on_hover_text("Back to the archetypes list")
+                .clicked()
+            {
+                deselect = true;
+            }
+            let current = palette
+                .selected
+                .and_then(|i| config.archetypes.get(i))
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
+            egui::ComboBox::from_id_salt("archetype_switcher")
+                .selected_text(current)
+                .show_ui(ui, |ui| {
+                    for (i, a) in config.archetypes.iter().enumerate() {
+                        ui.selectable_value(&mut palette.selected, Some(i), &a.name);
+                    }
+                });
+        } else {
+            ui.strong("Archetype editor");
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button(fonts::icon(icons::X))
+                .on_hover_text("Close (deselect the archetype)")
+                .clicked()
+            {
+                deselect = true;
+            }
+        });
+    });
+    ui.separator();
+    egui::ScrollArea::vertical()
+        .id_salt("archetype_detail_scroll")
+        .show(ui, |ui| editor::editor_section(ui, palette, config));
+    deselect
+}
+
 /// Builds the whole docked layout in one pass: one background-layer root `Ui`, then
 /// each panel `show_inside` it. Chained **before** the interaction systems
 /// (`pick_agent`, `resolve_drag`, …) and `set_sim_camera`, all of which read the free
@@ -126,20 +196,18 @@ pub fn pointer_over_ui(ctx: &egui::Context, central: egui::Rect) -> bool {
 pub fn dock(
     mut contexts: EguiContexts,
     mut central: ResMut<CentralRect>,
-    mut runs_panel: ResMut<RunsPanel>,
-    mut recorder_panel: ResMut<RecorderPanel>,
+    mut state: DockState,
     mut config: ResMut<SimConfig>,
     mut layers: ResMut<Layers>,
     mut palette: ResMut<Palette>,
     mut sim_controls: ResMut<SimControls>,
     mut vtime: ResMut<Time<Virtual>>,
     mut history: ResMut<History>,
-    mut ui_status: ResMut<UiStatus>,
     // Gate: don't render until the UI fonts are live (cf. `fonts`), so an icon is never
     // drawn before its Phosphor family is bound (egui binds fonts only next-pass).
     fonts_ready: Res<crate::fonts::FontsReady>,
-    // Last frame's measured width of the centered transport controls (for centering).
-    mut ctrl_width: Local<f32>,
+    // Last frame's panel widths + left-region mode + transport width (cf. [`DockLayout`]).
+    mut layout: Local<DockLayout>,
     // Observation: selection + auto-follow mode + the sim view's pan/zoom (bundled to
     // keep `dock` within the 16-param system limit — cf. [`ObsParams`]).
     mut obs: ObsParams,
@@ -191,7 +259,12 @@ pub fn dock(
                     let full_w = ui.available_width();
                     // LEFT: scenario IO.
                     ui.push_id("scenario_bar", |ui| {
-                        runs::scenario_section(ui, &mut runs_panel, &mut config, &mut ui_status);
+                        runs::scenario_section(
+                            ui,
+                            &mut state.runs_panel,
+                            &mut config,
+                            &mut state.ui_status,
+                        );
                     });
                     // CENTER: the transport controls, centered on the **whole bar**. egui
                     // can't center a *group* along the main axis in immediate mode (it only
@@ -199,14 +272,14 @@ pub fn dock(
                     // measured last frame (`ctrl_width`, 1-frame lag, clamped so it never
                     // collides with the scenario group). `scope` measures this frame's width.
                     let left_w = full_w - ui.available_width();
-                    let pad = (full_w * 0.5 - *ctrl_width * 0.5 - left_w).max(8.0);
+                    let pad = (full_w * 0.5 - layout.ctrl_width * 0.5 - left_w).max(8.0);
                     ui.add_space(pad);
                     let measured = ui
                         .scope(|ui| controls::controls_section(ui, &mut sim_controls, &mut vtime))
                         .response
                         .rect
                         .width();
-                    *ctrl_width = measured;
+                    layout.ctrl_width = measured;
                     // RIGHT (emitted right→left): Export rightmost, then the View menu, so
                     // reading order is View · Export.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -217,7 +290,7 @@ pub fn dock(
                             )
                             .clicked()
                         {
-                            recorder_panel.open = !recorder_panel.open;
+                            state.recorder_panel.open = !state.recorder_panel.open;
                         }
                         ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
                             editor::layers_section(ui, &mut layers)
@@ -232,7 +305,7 @@ pub fn dock(
     // Floating "Export video" window, toggled by the Export button. Driven through a
     // local `open` (the window's [x]) so it does not alias the `&mut recorder_panel`
     // the section needs — same pattern as the scenario "save as" dialog.
-    if recorder_panel.open {
+    if state.recorder_panel.open {
         let mut open = true;
         egui::Window::new("Export video")
             .collapsible(true)
@@ -240,121 +313,170 @@ pub fn dock(
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 36.0))
             .open(&mut open)
             .show(root.ctx(), |ui| {
-                recorder::recorder_section(ui, &mut recorder_panel);
+                recorder::recorder_section(ui, &mut state.recorder_panel);
             });
         if !open {
-            recorder_panel.open = false;
+            state.recorder_panel.open = false;
         }
     }
 
-    // Whether the archetype editor (the second left column, below) is open. When it is,
-    // the world panel **drops its right separator** so the two left columns read as one
-    // contiguous editing surface rather than being split by a line + doubled side margins.
+    // Whether an archetype is selected → the editor's **detail** half is shown. On a
+    // wide window it opens a second left column ([`layout::LeftMode::TwoColumn`]); on a
+    // narrow one it folds into the left panel in place ([`layout::LeftMode::SingleColumn`]),
+    // so the sim never drops below [`layout::CENTRAL_MIN`] (cf. `layout`).
     let editor_open = palette
         .selected
         .is_some_and(|i| i < config.archetypes.len());
 
-    // Left column, **fixed width, non-resizable** (width via [`SIDE_PANEL_WIDTH`] — egui
-    // side panels can't fit their width to content, so no drag handle): **the world** —
-    // the scenario parameters (*World*) and the entities list (*Archetypes*, with the
-    // species library). Editing *one* archetype lives in its own panel (below), opened on
-    // click — a master/detail split that keeps this panel about the scenario as a whole.
-    egui::Panel::left("left_tools")
-        .exact_size(SIDE_PANEL_WIDTH)
-        .resizable(false)
-        .show_separator_line(!editor_open)
-        .show_inside(&mut root, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::CollapsingHeader::new("World")
-                    .default_open(true)
-                    .show(ui, |ui| editor::world_section(ui, &mut config));
-                egui::CollapsingHeader::new("Archetypes")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        editor::selector_section(ui, &mut palette, &mut config, &mut ui_status)
-                    });
-            });
-        });
+    // Left-region mode, from last frame's widths (a `SIDE_DEFAULT` fallback before a
+    // panel has rendered, so a freshly opened editor picks its mode without a one-frame
+    // flash). Only meaningful while `editor_open`, but tracked every frame for hysteresis.
+    let viewport_w = root.ctx().viewport_rect().width();
+    let est = |w: f32| {
+        if w > 1.0 {
+            w
+        } else {
+            crate::layout::SIDE_DEFAULT
+        }
+    };
+    let mode = crate::layout::left_mode(
+        layout.mode,
+        viewport_w,
+        est(layout.right_w),
+        est(layout.left_w),
+        est(layout.editor_w),
+    );
+    layout.mode = mode;
+    let detail_in_left = editor_open && mode == crate::layout::LeftMode::SingleColumn;
+    let two_column_editor = editor_open && mode == crate::layout::LeftMode::TwoColumn;
 
-    // Right column, **fixed width, non-resizable** (same [`SIDE_PANEL_WIDTH`] as the
-    // left, so the sim stays centered): **Analysis** of the current state — live
-    // *stats* (means) on top, then the agent *inspector*. (The evolution curves — a
-    // time series — stay at the bottom.)
-    egui::Panel::right("right_panel")
-        .exact_size(SIDE_PANEL_WIDTH)
-        .resizable(false)
+    // Right column — **Analysis** of the current state: live *stats* (means) then the
+    // agent *inspector*, with *Observation* pinned above the scroll. Resizable within a
+    // range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other side" is
+    // last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
+    // before the left panels so their ranges can read this frame's fresh right width.
+    let mut deselect = false;
+    let right_w = egui::Panel::right("right_panel")
+        .default_size(crate::layout::SIDE_DEFAULT)
+        .resizable(true)
+        .size_range(crate::layout::side_range(viewport_w, layout.left_w))
         .show_inside(&mut root, |ui| {
-            // The whole panel scrolls as one (like the left column), so a tall expanded
-            // section (e.g. Live stats with every gene mean, or the inspector's vision
-            // rays) never overflows the window instead of being clipped.
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                // Three collapsible sections, uniform with the left panel (no bare `strong`
-                // title sitting among collapsibles): Observation — how the highlight follows
-                // agents + the view reset — then the live stats, then the agent inspector.
-                egui::CollapsingHeader::new("Observation")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view)
-                    });
-                egui::CollapsingHeader::new("Live stats")
-                    .default_open(false)
-                    .show(ui, |ui| editor::stats_section(ui, &stats_agents));
-                // `inspector_section` **returns** any capture request (a derived archetype);
-                // `body_returned` is `Some` only while the header is expanded, so `flatten`
-                // maps the collapsed case to `None`. We apply it *after* the call (it borrows
-                // `config` shared) → the mutable borrow is then allowed.
-                let inspector_action = egui::CollapsingHeader::new("Agent inspector")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        inspector::inspector_section(
-                            ui,
-                            &obs.selection,
-                            &config,
-                            &mut palette.variant_name,
-                            &inspector_agents,
-                        )
-                    })
-                    .body_returned
-                    .flatten();
-                match inspector_action {
-                    // Capture → add the derived archetype to the current scenario.
-                    Some(inspector::InspectorAction::Capture(arch)) => {
-                        let from = arch.captured_from.clone().unwrap_or_default();
-                        config.archetypes.push(arch);
-                        palette.selected = Some(config.archetypes.len() - 1);
-                        ui_status.set(format!("Archetype captured from {from}."));
+            // Observation (small: follow mode + view reset) stays pinned; only the tall
+            // sections below scroll, so each working surface keeps its own scroll offset.
+            egui::CollapsingHeader::new("Observation")
+                .default_open(true)
+                .show(ui, |ui| {
+                    inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view)
+                });
+            egui::ScrollArea::vertical()
+                .id_salt("analysis_scroll")
+                .show(ui, |ui| {
+                    egui::CollapsingHeader::new("Live stats")
+                        .default_open(false)
+                        .show(ui, |ui| editor::stats_section(ui, &stats_agents));
+                    // `inspector_section` **returns** any capture request (a derived
+                    // archetype); `body_returned` is `Some` only while the header is
+                    // expanded, so `flatten` maps the collapsed case to `None`. Applied
+                    // *after* the call (it borrows `config` shared) → the mutable borrow
+                    // is then allowed.
+                    let inspector_action = egui::CollapsingHeader::new("Agent inspector")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            inspector::inspector_section(
+                                ui,
+                                &obs.selection,
+                                &config,
+                                &mut palette.variant_name,
+                                &inspector_agents,
+                            )
+                        })
+                        .body_returned
+                        .flatten();
+                    match inspector_action {
+                        // Capture → add the derived archetype to the current scenario.
+                        Some(inspector::InspectorAction::Capture(arch)) => {
+                            let from = arch.captured_from.clone().unwrap_or_default();
+                            config.archetypes.push(arch);
+                            palette.selected = Some(config.archetypes.len() - 1);
+                            state
+                                .ui_status
+                                .set(format!("Archetype captured from {from}."));
+                        }
+                        // Save variant → write it to the library (species/saved/).
+                        Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
+                            let scenario = state.runs_panel.origin_label();
+                            let msg = editor::save_variant(
+                                &mut palette,
+                                &config,
+                                species as usize,
+                                variant,
+                                &scenario,
+                            );
+                            palette.variant_name.clear();
+                            state.ui_status.set(msg);
+                        }
+                        None => {}
                     }
-                    // Save variant → write it to the library (species/saved/) under its base.
-                    Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
-                        let scenario = runs_panel.origin_label();
-                        let msg = editor::save_variant(
-                            &mut palette,
-                            &config,
-                            species as usize,
-                            variant,
-                            &scenario,
-                        );
-                        palette.variant_name.clear();
-                        ui_status.set(msg);
-                    }
-                    None => {}
-                }
-            });
-        });
+                });
+        })
+        .response
+        .rect
+        .width();
 
-    // Bottom panel reserved **after** the side columns (`left_tools`/`right_panel`) so it
-    // spans only the **central width** they leave free, not the full window. The evolution
-    // **curves** (a time series) with the unified **status line** folded in. Created
-    // **before** the conditional `archetype_editor` (below) for two reasons: toggling that
-    // panel then never shifts this one's egui ids, and the editor docks into the rect
-    // *above* these curves — so the curves keep the full central width, the editor sitting
-    // over them rather than narrowing them. Non-resizable and not wrapped in a
-    // `ScrollArea`, so it sizes to exactly the content's height.
+    // Left column — **the world** (scenario params + the *Archetypes* list/library). On a
+    // narrow window with an archetype selected, its content becomes the archetype editor
+    // in place (single column); otherwise it stays the master list and the editor gets its
+    // own column below. Resizable, reserving the sim's minimum against this frame's right
+    // width. Drops its right separator in two-column mode so the world and the editor read
+    // as one contiguous surface.
+    let left_w = egui::Panel::left("left_tools")
+        .default_size(crate::layout::SIDE_DEFAULT)
+        .resizable(true)
+        .size_range(crate::layout::side_range(viewport_w, right_w))
+        .show_separator_line(!two_column_editor)
+        .show_inside(&mut root, |ui| {
+            if detail_in_left {
+                // Detail view swapped in place — under its own id scope so its widgets
+                // never share auto-ids with the master content (stable ids on the swap).
+                ui.push_id("detail", |ui| {
+                    if archetype_detail(ui, &mut palette, &mut config, true) {
+                        deselect = true;
+                    }
+                });
+            } else {
+                ui.push_id("master", |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        egui::CollapsingHeader::new("World")
+                            .default_open(true)
+                            .show(ui, |ui| editor::world_section(ui, &mut config));
+                        egui::CollapsingHeader::new("Archetypes")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                editor::selector_section(
+                                    ui,
+                                    &mut palette,
+                                    &mut config,
+                                    &mut state.ui_status,
+                                )
+                            });
+                    });
+                });
+            }
+        })
+        .response
+        .rect
+        .width();
+
+    // Bottom panel reserved **after** the side columns so it spans only the **central
+    // width** they leave free. The evolution **curves** with the unified **status line**.
+    // Created **before** the conditional `archetype_editor` so toggling that panel never
+    // shifts this one's egui ids, and so the editor docks above these curves (which keep
+    // the full central width).
     egui::Panel::bottom("bottom_panel")
         .resizable(false)
         .show_inside(&mut root, |ui| {
-            if !ui_status.message.is_empty() {
-                ui.weak(&ui_status.message);
+            if !state.ui_status.message.is_empty() {
+                ui.weak(&state.ui_status.message);
                 ui.separator();
             }
             // Framed like the other sections (Body/Genes/Brain, the World cards): the
@@ -365,53 +487,44 @@ pub fn dock(
             });
         });
 
-    // Archetype editor — the **detail** half: a second left column that docks to the
-    // left of the central area (i.e. right of the world panel, above the central-width
-    // curves) and opens **only when an archetype is selected** (clicked in the list).
-    // Created **last**, after every unconditional panel: an egui child panel's id mixes
-    // in the parent's running auto-id counter ([`egui::Ui::new_child`]), so a
-    // *conditional* panel inserted earlier would shift the *later* panels' widget ids
-    // each time it toggles → egui's "changed id between passes" warnings (and lost
-    // widget state). Created last, the others keep stable ids; only this panel's own
-    // widgets come and go, which is expected. Its left-docking position is unchanged by
-    // the order (it takes the left edge of whatever rect the other panels leave free).
-    let mut deselect = false;
-    if editor_open {
+    // Archetype editor — the **detail** half as a second left column, **two-column mode
+    // only** (in single column the detail lives in `left_tools` above). Created **last**,
+    // after every unconditional panel: an egui child panel's id mixes in the parent's
+    // running auto-id counter ([`egui::Ui::new_child`]), so a *conditional* panel inserted
+    // earlier would shift the *later* panels' widget ids each time it toggles → egui's
+    // "changed id between passes" warnings. Created last, the others keep stable ids.
+    let mut editor_w = 0.0;
+    if two_column_editor {
         // Zero left inner margin: the editor's content butts against the world panel's
-        // (separator-less) right edge, so the two columns share a single ~8 px seam — the
-        // world panel's own right padding — instead of the 16 px of doubled side margins.
+        // (separator-less) right edge, so the two columns share a single ~8 px seam.
         let editor_frame = egui::Frame::side_top_panel(root.style()).inner_margin(egui::Margin {
             left: 0,
             right: 8,
             top: 2,
             bottom: 2,
         });
-        egui::Panel::left("archetype_editor")
-            .exact_size(SIDE_PANEL_WIDTH)
-            .resizable(false)
+        editor_w = egui::Panel::left("archetype_editor")
+            .default_size(crate::layout::SIDE_DEFAULT)
+            .resizable(true)
+            .size_range(crate::layout::side_range(viewport_w, right_w + left_w))
             .frame(editor_frame)
             .show_inside(&mut root, |ui| {
-                ui.horizontal(|ui| {
-                    ui.strong("Archetype editor");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(fonts::icon(icons::X))
-                            .on_hover_text("Close (deselect the archetype)")
-                            .clicked()
-                        {
-                            deselect = true;
-                        }
-                    });
-                });
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    editor::editor_section(ui, &mut palette, &mut config)
-                });
-            });
+                if archetype_detail(ui, &mut palette, &mut config, false) {
+                    deselect = true;
+                }
+            })
+            .response
+            .rect
+            .width();
     }
     if deselect {
         palette.selected = None;
     }
+
+    // Remember this frame's widths + mode for next frame's ranges and mode decision.
+    layout.left_w = left_w;
+    layout.right_w = right_w;
+    layout.editor_w = editor_w;
 
     // The region left free by the panels: the central area where the sim is framed.
     // Non-deprecated successor of `ctx.available_rect()`.
