@@ -59,6 +59,11 @@ pub struct SimConfig {
     /// machinery. Empty by default → no source (inert), existing scenarios
     /// unchanged.
     pub sources: Vec<Source>,
+    /// How each species relates to each **component** (absorb / emit / sense / affect /
+    /// reproduce) — the environmental analogue of [`relations`](Self::relations)
+    /// (`docs/component-emission-plan.md`), bundled one row per (species, component).
+    /// Empty by default; a species with no row ignores the substrate.
+    pub field_relations: Vec<FieldRelation>,
     /// Bounds of the maximum-speed gene.
     pub speed_bounds: Bounds,
     /// Bounds of the agility gene.
@@ -586,6 +591,55 @@ pub struct Source {
     pub radius: f32,
 }
 
+/// How a **species relates to a component** — the environmental analogue of the
+/// interaction [`Relation`] table (`docs/component-emission-plan.md`). One **bundled
+/// row per (species, component)**: any subset of its verbs may be non-zero at once (a
+/// species can `sense` a component **and** be `affect`-ed by it, or be affected
+/// **without** sensing it — humans ↔ CO). The scenario declares the topology; the
+/// engine runs the verbs uniformly, differentiating components only here (Law 11).
+/// Sparse: only the pairs that interact carry a row; `#[serde(default)]` → a row lists
+/// only its non-zero verbs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FieldRelation {
+    /// Archetype index of the species.
+    pub species: u16,
+    /// Component index (into [`SimConfig::components`]).
+    pub component: usize,
+    /// Field → store, per second (`0` = does not absorb).
+    pub absorb: f32,
+    /// This species' store capacity for the component (`0` = holds none).
+    pub capacity: f32,
+    /// Store/body → field, per second — **alive** emission (Phase 3; `0` = none).
+    pub emit: f32,
+    /// Fraction `[0, 1]` of this component's store returned to the field **at death**
+    /// (recycling; generalizes the nutrient loop).
+    pub emit_at_death: f32,
+    /// Local concentration → a **brain perception channel** (Phase 3 — pheromones).
+    pub sense: bool,
+    /// Concentration → [`Reserve`](crate::components::Reserve), per second (a **toxin**
+    /// `< 0`, a boon `> 0`; later, config-only on this substrate).
+    pub affect: f32,
+    /// Store spent per child — the **reproduction gate** (`0` = no gate).
+    pub repro_cost: f32,
+}
+
+impl Default for FieldRelation {
+    fn default() -> Self {
+        Self {
+            species: 0,
+            component: 0,
+            absorb: 0.0,
+            capacity: 0.0,
+            emit: 0.0,
+            emit_at_death: 0.0,
+            sense: false,
+            affect: 0.0,
+            repro_cost: 0.0,
+        }
+    }
+}
+
 /// **Generational ("batched repro") regime** parameters — §4 axis A (reproduction at a
 /// generation boundary) × axis B (explicit fitness). Carried on [`SimConfig::batch`] as
 /// an `Option`, **absent by default** so every continuous scenario is byte-identical.
@@ -665,6 +719,7 @@ impl Default for SimConfig {
             field_resolution: 48,
             components: Vec::new(),
             sources: Vec::new(),
+            field_relations: Vec::new(),
             speed_bounds: Bounds {
                 min: 40.0,
                 max: 260.0,
@@ -790,6 +845,30 @@ impl SimConfig {
             .get(species as usize)
             .map(|a| a.genotype.max_speed)
             .unwrap_or_else(|| Genotype::default().max_speed)
+    }
+
+    /// The **effective nutrient relationship** of `species` to the nutrient (component
+    /// `0`) — `(absorb, capacity, repro_cost)`. The authored [`FieldRelation`] row if
+    /// present, **else** derived from the scalar nutrient genes (the Phase-2 shim,
+    /// `docs/component-emission-plan.md`): it lets the systems read the table before the
+    /// scenarios are migrated, **byte-identically** (the nutrient genes are non-mutable,
+    /// so the founding value equals every agent's). Phase 2b authors the rows and
+    /// removes the genes + this fallback.
+    pub fn nutrient_of(&self, species: u16) -> (f32, f32, f32) {
+        if let Some(fr) = self
+            .field_relations
+            .iter()
+            .find(|f| f.species == species && f.component == 0)
+        {
+            (fr.absorb, fr.capacity, fr.repro_cost)
+        } else {
+            let g = self.genotype_of(species);
+            (
+                g.nutrient_absorption,
+                g.nutrient_capacity,
+                g.offspring_nutrient,
+            )
+        }
     }
 
     /// The founding **brain type** of archetype `species` (the decision's author,

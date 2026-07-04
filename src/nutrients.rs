@@ -18,8 +18,8 @@
 //! run no agent system) and **not** spatial-query structures (no §5 conflict — a
 //! `pos → cell` is a direct hash, never a neighbour search).
 
-use crate::components::Agent;
-use crate::genotype::Genotype;
+use crate::components::{Agent, Species};
+use crate::config::SimConfig;
 use bevy::prelude::*;
 
 /// A concentration field for **one** component: a square `res × res` grid of `f32`
@@ -249,7 +249,7 @@ impl Fields {
     /// Build the fields from the scenario's component configs (one grid each, the
     /// shared `resolution`, per-component `diffusion`/`decay`). The single source for
     /// the plugin build and the hot reset.
-    pub fn from_config(config: &crate::config::SimConfig) -> Self {
+    pub fn from_config(config: &SimConfig) -> Self {
         Self(
             config
                 .components
@@ -352,24 +352,29 @@ pub fn decay_nutrients(mut fields: ResMut<Fields>) {
 }
 
 /// ABSORB: each agent pulls nutrient from the **nutrient field** (component `0`, by
-/// the Phase-1 convention) into its [`Nutrients`] store, capped by its absorption
-/// rate and remaining capacity. Conservation: the store gains exactly what the cell
-/// loses ([`Field::take`]). An agent with `nutrient_absorption == 0` (every existing
-/// scenario) is skipped, and no component `0` → no-op → byte-identical.
+/// the Phase-1 convention) into its [`Nutrients`] store, capped by its **absorb**
+/// [`FieldRelation`](crate::config::FieldRelation) rate and remaining capacity.
+/// Conservation: the store gains exactly what the cell loses ([`Field::take`]). An
+/// agent whose nutrient relation has `absorb == 0` is skipped; no component `0` →
+/// no-op → byte-identical.
 pub fn absorb_nutrients(
     time: Res<Time>,
+    config: Res<SimConfig>,
     mut fields: ResMut<Fields>,
-    mut agents: Query<(&Transform, &Genotype, &mut Nutrients), With<Agent>>,
+    mut agents: Query<(&Transform, &Species, &mut Nutrients), With<Agent>>,
 ) {
     let Some(field) = fields.get_mut(0) else {
         return;
     };
     let dt = time.delta_secs();
-    for (transform, genotype, mut store) in &mut agents {
-        if genotype.nutrient_absorption <= 0.0 {
+    for (transform, species, mut store) in &mut agents {
+        // The absorption rate is the species' nutrient FieldRelation (component 0); the
+        // store cap (`store.max`) was set at spawn from the same table.
+        let absorb = config.nutrient_of(species.0).0;
+        if absorb <= 0.0 {
             continue;
         }
-        let want = (genotype.nutrient_absorption * dt).min(store.max - store.current);
+        let want = (absorb * dt).min(store.max - store.current);
         if want <= 0.0 {
             continue;
         }

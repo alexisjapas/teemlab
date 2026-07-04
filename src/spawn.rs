@@ -189,7 +189,8 @@ pub fn spawn_agent_with_brain(
             Age(age),
             Nutrients {
                 current: nutrients,
-                max: genotype.nutrient_capacity,
+                // Store capacity from the species' nutrient FieldRelation (component 0).
+                max: config.nutrient_of(species.0).1,
             },
         ),
         genotype.locomotion(),

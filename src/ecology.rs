@@ -228,18 +228,21 @@ pub fn reproduce(
         // `offspring_energy` → energy created out of nothing, and a "low threshold
         // / expensive child" lineage would be *favored* (runaway). The guard makes
         // conservation **unconditional**: we never pay more than we have.
+        // The nutrient reproduction cost is the species' FieldRelation `repro_cost`
+        // (component 0), not a gene.
+        let repro_cost = config.nutrient_of(species.0).2;
         if genotype.reproduction_threshold <= 0.0
             || reserve.current < genotype.reproduction_threshold
             || reserve.current < genotype.offspring_energy
-            || nutrients.current < genotype.offspring_nutrient
+            || nutrients.current < repro_cost
         {
             continue;
         }
         reserve.current -= genotype.offspring_energy;
         // Spend the nutrient cost from the parent's store — it is **consumed**, not
         // handed to the child (which is born empty, see below): this is what makes
-        // the nutrient a true limiting resource. `0` for a pre-T2 scenario → no-op.
-        nutrients.current -= genotype.offspring_nutrient;
+        // the nutrient a true limiting resource. `0` (no nutrient relation) → no-op.
+        nutrients.current -= repro_cost;
         let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
         // The child is born offset. The distance is the **seed-dispersal** gene
         // (flora) if non-zero, otherwise the default close offset (radius × 2.5) —
