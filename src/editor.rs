@@ -1063,7 +1063,7 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
             "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
              output {} (contract). The input layer then adapts to each individual's \
              visual precision (gene \"Rays\").",
-            MlpBrain::input_size(vision_rays),
+            MlpBrain::input_size(vision_rays, 0),
             MlpBrain::OUTPUTS,
         ),
     );
@@ -1095,7 +1095,7 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
     // Structural preview of the network (item 18b-viz): input → hidden → output. No
     // activations here (we edit a *type*, not a living brain) — it is the inspector
     // that shows the network in action.
-    let mut sizes = vec![MlpBrain::input_size(vision_rays)];
+    let mut sizes = vec![MlpBrain::input_size(vision_rays, 0)];
     sizes.extend_from_slice(hidden);
     sizes.push(MlpBrain::OUTPUTS);
     draw_mlp_graph(ui, &sizes, None, None);

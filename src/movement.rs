@@ -28,6 +28,7 @@ use bevy::prelude::*;
 pub fn perceive(
     spatial: SpatialQuery,
     config: Res<SimConfig>,
+    fields: Res<crate::nutrients::Fields>,
     mut agents: Query<
         (
             Entity,
@@ -47,6 +48,9 @@ pub fn perceive(
     // reallocating an `EntityHashSet` for every agent and every tick.
     mut filter: Local<SpatialQueryFilter>,
 ) {
+    // Any field-sense relation in the scenario? Computed once; a scenario with none
+    // does no per-agent field-sense work (byte-identical, no perf cost).
+    let any_sense = config.field_relations.iter().any(|f| f.sense);
     for (entity, transform, velocity, species, vision, loco, reserve, nutrients, mut perception) in
         &mut agents
     {
@@ -81,6 +85,23 @@ pub fn perceive(
             nutrients.fraction(),
             (velocity.0.length() / loco.max_speed).clamp(0.0, 1.0),
         ];
+
+        // FIELD SENSE (pheromones / chemoreception): the local concentration of each
+        // component the species senses, saturating-normalized to `[0, 1)` (`c/(c+1)` —
+        // scenario-independent, monotonic), appended after `self_state` in the MLP
+        // input. Read-only, no RNG → a non-sensing species keeps an empty `field_state`
+        // and the input is byte-identical.
+        if any_sense {
+            let sensed = config.sensed_components(species.0);
+            if perception.field_state.len() != sensed.len() {
+                perception.field_state = vec![0.0; sensed.len()].into_boxed_slice();
+            }
+            let pos = transform.translation.truncate();
+            for (k, &c) in sensed.iter().enumerate() {
+                let conc = fields.get(c).map(|f| f.sample(pos)).unwrap_or(0.0).max(0.0);
+                perception.field_state[k] = conc / (conc + 1.0);
+            }
+        }
 
         // Buffers of the right size (the species may have changed shape between
         // two runs; at steady state this is a no-op). The three channels share

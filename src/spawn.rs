@@ -139,7 +139,10 @@ pub fn spawn_agent(
     // `n_inputs` sizes the MLP's input layer (= the perception channels), drawn
     // from this agent's visual-precision **gene** (item 3) rather than from a
     // scenario setting.
-    let n_inputs = MlpBrain::input_size(genotype.ray_count());
+    let n_inputs = MlpBrain::input_size(
+        genotype.ray_count(),
+        config.sensed_components(species.0).len(),
+    );
     let brain = config
         .brain_of(species.0)
         .build(brain_seed, heading, n_inputs);

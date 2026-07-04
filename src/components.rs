@@ -185,6 +185,15 @@ pub struct Perception {
     /// evolvable magnitudes; the *use* is already priced through the decision
     /// network's `brain_cost`). The hand-written brains ignore it.
     pub self_state: [f32; Self::SELF_CHANNELS],
+    /// **Field-sense** channels — the local concentration (saturating-normalized to
+    /// `[0, 1)`) of each **component** the species senses (a `FieldRelation` with
+    /// `sense: true`, in component order; cf.
+    /// [`crate::config::SimConfig::sensed_components`]). Written by `perceive`, appended
+    /// to the MLP input **after** [`self_state`](Self::self_state) — the pheromone /
+    /// chemoreception substrate (`docs/component-emission-plan.md`). Empty when the
+    /// species senses nothing → the input is unchanged (byte-identical). The
+    /// hand-written brains ignore it; only the MLP reads it.
+    pub field_state: Box<[f32]>,
     /// **World** direction (unit) of each ray, situating the ray channels above.
     /// `perceive` already derives it to cast the raycast; exposing it spares the
     /// brain from knowing [`Vision`]'s geometry (fov, ray count): a reflex

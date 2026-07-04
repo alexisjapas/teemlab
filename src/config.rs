@@ -822,6 +822,23 @@ impl SimConfig {
             .unwrap_or((0.0, 0.0, 0.0))
     }
 
+    /// The components `species` **senses** (a [`FieldRelation`] with `sense: true`),
+    /// sorted by component index — the order in which their local concentrations fill
+    /// [`Perception::field_state`](crate::components::Perception::field_state) and the
+    /// tail of the MLP input. Empty → the species senses no field (byte-identical: no
+    /// extra input channels).
+    pub fn sensed_components(&self, species: u16) -> Vec<usize> {
+        let mut v: Vec<usize> = self
+            .field_relations
+            .iter()
+            .filter(|f| f.species == species && f.sense)
+            .map(|f| f.component)
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     /// The founding **brain type** of archetype `species` (the decision's author,
     /// §1). Falls back to wandering for an out-of-list index. Beyond the founder,
     /// the brain is transmitted by inheritance at reproduction
@@ -1031,7 +1048,7 @@ mod tests {
             vision_range: 123.0, // a genome distinct from the default
             ..Genotype::default()
         };
-        let brain = Brain::Mlp(MlpBrain::random(7, MlpBrain::input_size(3), &[6]));
+        let brain = Brain::Mlp(MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6]));
 
         let captured = source.capture(evolved, brain.clone(), 42);
 
@@ -1068,7 +1085,7 @@ mod tests {
     /// scenarios stay unchanged.
     #[test]
     fn captured_brain_survives_ron_round_trip() {
-        let brain = Brain::Mlp(MlpBrain::random(3, MlpBrain::input_size(4), &[5]));
+        let brain = Brain::Mlp(MlpBrain::random(3, MlpBrain::input_size(4, 0), &[5]));
         let captured = Archetype::new_agent(0).capture(Genotype::default(), brain, 1);
         let ron = captured.to_ron_string().expect("serializable");
         let back = Archetype::from_ron_str(&ron).expect("deserializable");

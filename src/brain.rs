@@ -121,6 +121,7 @@ impl Brain {
         rng: &mut Rng,
         rate: f32,
         n_inputs: usize,
+        n_sensed: usize,
     ) -> Brain {
         match self {
             Brain::Wander(w) => Brain::Wander(WanderBrain::new(seed, heading, w.turn_rate)),
@@ -131,7 +132,7 @@ impl Brain {
             // other hand-written brains → non-MLP RNG stream intact.
             Brain::Grazer(g) => Brain::Grazer(g.clone()),
             Brain::Sessile(_) => Brain::Sessile(SessileBrain),
-            Brain::Mlp(m) => Brain::Mlp(m.reproduced(rng, rate, n_inputs)),
+            Brain::Mlp(m) => Brain::Mlp(m.reproduced(rng, rate, n_inputs, n_sensed)),
         }
     }
 }
@@ -607,12 +608,14 @@ impl MlpBrain {
     /// length pinned to `OUTPUTS`.
     pub const OUTPUT_LABELS: [&'static str; Self::OUTPUTS] = ["fwd", "side", "act"];
 
-    /// Size of the input layer for `vision_rays` rays: the per-ray `vision`,
-    /// `target` AND `threat` channels concatenated (`CHANNELS × vision_rays`), plus
-    /// the scalar **proprioceptive** channels ([`Perception::SELF_CHANNELS`]) appended
-    /// at the tail — hence `CHANNELS × vision_rays + SELF_CHANNELS`.
-    pub fn input_size(vision_rays: usize) -> usize {
-        Self::CHANNELS * vision_rays + Perception::SELF_CHANNELS
+    /// Size of the input layer: the per-ray `vision`, `target` AND `threat` channels
+    /// (`CHANNELS × vision_rays`), then the scalar **proprioceptive** channels
+    /// ([`Perception::SELF_CHANNELS`]), then the `n_sensed` **field-sense** channels
+    /// (pheromones, [`Perception::field_state`]) — hence `CHANNELS × vision_rays +
+    /// SELF_CHANNELS + n_sensed`. The two scalar tails are ray-count-independent (carried
+    /// over unchanged when visual precision drifts, cf. [`resize_input_fan`]).
+    pub fn input_size(vision_rays: usize, n_sensed: usize) -> usize {
+        Self::CHANNELS * vision_rays + Perception::SELF_CHANNELS + n_sensed
     }
 
     /// Network with **random** weights: dims = `[n_inputs] ++ hidden ++ [OUTPUTS]`.
@@ -648,7 +651,7 @@ impl MlpBrain {
     /// When `n_inputs` is unchanged, no resizing draw occurs and the result
     /// coincides bit-for-bit with `mutated` (the RNG stream of fixed-precision
     /// scenarios preserved).
-    pub fn reproduced(&self, rng: &mut Rng, rate: f32, n_inputs: usize) -> Self {
+    pub fn reproduced(&self, rng: &mut Rng, rate: f32, n_inputs: usize, n_sensed: usize) -> Self {
         let std = rate * Self::WEIGHT_STEP;
         let layers = self
             .layers
@@ -658,7 +661,7 @@ impl MlpBrain {
                 // Only the first layer sees the perception vector: it is the only
                 // one whose fan-in depends on the number of rays.
                 let adapted = if idx == 0 && layer.inputs != n_inputs {
-                    Self::resize_input_fan(layer, rng, n_inputs)
+                    Self::resize_input_fan(layer, rng, n_inputs, n_sensed)
                 } else {
                     layer.clone()
                 };
@@ -677,13 +680,16 @@ impl MlpBrain {
     /// (child sees more finely), so the kept weights stay **aligned on the right
     /// channel**; the self block is **ray-count-independent** and its weights are
     /// carried over **unchanged**. The biases (per output neuron) are unchanged.
-    fn resize_input_fan(layer: &Layer, rng: &mut Rng, n_inputs: usize) -> Layer {
+    fn resize_input_fan(layer: &Layer, rng: &mut Rng, n_inputs: usize, n_sensed: usize) -> Layer {
         let outputs = layer.outputs();
         let old_in = layer.inputs;
-        // Strip the trailing self block to recover the per-ray counts on both sides.
-        let old_rays = (old_in - Perception::SELF_CHANNELS) / Self::CHANNELS;
-        let new_rays = (n_inputs - Perception::SELF_CHANNELS) / Self::CHANNELS;
-        let old_self_start = Self::CHANNELS * old_rays; // where the self block begins
+        // The scalar tail (proprioception + field-sense) is ray-count-independent; strip
+        // it to recover the per-ray counts on both sides. `n_sensed` is per-species
+        // constant, so the tail size is the same on parent and child.
+        let tail = Perception::SELF_CHANNELS + n_sensed;
+        let old_rays = (old_in - tail) / Self::CHANNELS;
+        let new_rays = (n_inputs - tail) / Self::CHANNELS;
+        let old_tail_start = Self::CHANNELS * old_rays; // where the scalar tail begins
         let scale = 1.0 / (n_inputs.max(1) as f32).sqrt();
         let mut weights = Vec::with_capacity(n_inputs * outputs);
         for o in 0..outputs {
@@ -699,10 +705,10 @@ impl MlpBrain {
                     });
                 }
             }
-            // The proprioceptive block: fixed size, carried over unchanged (its
-            // channels do not depend on the ray count).
-            for s in 0..Perception::SELF_CHANNELS {
-                weights.push(row[old_self_start + s]);
+            // The scalar tail (proprioception + field-sense): fixed size, carried over
+            // unchanged (its channels do not depend on the ray count).
+            for s in 0..tail {
+                weights.push(row[old_tail_start + s]);
             }
         }
         Layer {
@@ -731,6 +737,7 @@ impl MlpBrain {
         out.extend(perception.target.iter().copied());
         out.extend(perception.threat.iter().copied());
         out.extend(perception.self_state.iter().copied());
+        out.extend(perception.field_state.iter().copied());
     }
 
     fn think(&self, perception: &Perception) -> Action {
@@ -856,7 +863,7 @@ mod tests {
     use super::*;
 
     /// The graph renderers' channel/output labels stay pinned to the MLP I/O contract:
-    /// one input label per perception channel (`input_size(1) == CHANNELS`) and one
+    /// one input label per perception channel (`input_size(1, 0) == CHANNELS`) and one
     /// output label per output neuron. (The array lengths are already `CHANNELS` /
     /// `OUTPUTS` at compile time; this guards the relationship through the public API.)
     #[test]
@@ -865,7 +872,7 @@ mod tests {
         // the full single-ray input width.
         assert_eq!(
             MlpBrain::CHANNEL_LABELS.len() + MlpBrain::SELF_LABELS.len(),
-            MlpBrain::input_size(1)
+            MlpBrain::input_size(1, 0)
         );
         assert_eq!(MlpBrain::SELF_LABELS.len(), Perception::SELF_CHANNELS);
         assert_eq!(MlpBrain::OUTPUT_LABELS.len(), MlpBrain::OUTPUTS);
@@ -881,6 +888,7 @@ mod tests {
             target: target.into(),
             threat: threat.into(),
             self_state: [0.0; Perception::SELF_CHANNELS],
+            field_state: Box::default(),
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -1026,7 +1034,7 @@ mod tests {
 
         let mut rng = Rng::new(0);
         assert!(matches!(
-            Brain::Sessile(SessileBrain).reproduce(1, 0.0, &mut rng, 0.1, 6),
+            Brain::Sessile(SessileBrain).reproduce(1, 0.0, &mut rng, 0.1, 6, 0),
             Brain::Sessile(_)
         ));
         assert_eq!(rng, Rng::new(0), "the sessile does not draw from the RNG");
@@ -1059,13 +1067,13 @@ mod tests {
         // Hunter → Hunter (deterministic, cloned). `n_inputs` ignored by Hunter.
         let hunter = Brain::Hunter(HunterBrain);
         assert!(matches!(
-            hunter.reproduce(7, 1.0, &mut rng, 0.1, 6),
+            hunter.reproduce(7, 1.0, &mut rng, 0.1, 6, 0),
             Brain::Hunter(_)
         ));
 
         // Wander → Wander, turn_rate inherited, distinct RNG state (seed ≠).
         let parent = Brain::Wander(WanderBrain::new(1, 0.0, 0.37));
-        match parent.reproduce(2, 0.5, &mut rng, 0.1, 6) {
+        match parent.reproduce(2, 0.5, &mut rng, 0.1, 6, 0) {
             Brain::Wander(child) => {
                 assert_eq!(child.turn_rate, 0.37, "the parent's turn_rate is inherited");
                 let Brain::Wander(p) = &parent else {
@@ -1143,7 +1151,7 @@ mod tests {
     #[test]
     fn grazer_is_inherited_without_touching_the_rng() {
         let mut rng = Rng::new(0);
-        match Brain::Grazer(GrazerBrain::new(0.6)).reproduce(1, 0.0, &mut rng, 0.1, 6) {
+        match Brain::Grazer(GrazerBrain::new(0.6)).reproduce(1, 0.0, &mut rng, 0.1, 6, 0) {
             Brain::Grazer(child) => assert_eq!(child.hunger_threshold, 0.6),
             other => panic!("expected Grazer, got {other:?}"),
         }
@@ -1170,6 +1178,7 @@ mod tests {
             target: target.into(),
             threat: [0.0; 3].into(),
             self_state: [0.0; Perception::SELF_CHANNELS],
+            field_state: Box::default(),
             ray_dirs: vec![Vec2::Y, Vec2::X, Vec2::NEG_Y].into_boxed_slice(),
         }
     }
@@ -1182,7 +1191,7 @@ mod tests {
     /// that it does; learning to flee *well* is up to selection, as for foraging.)
     #[test]
     fn mlp_reads_threat_channel() {
-        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6]);
         let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
 
         let calm = brain.think(&mlp_perception(Vec2::X, vision, target));
@@ -1206,7 +1215,7 @@ mod tests {
     /// hungry) is up to selection, exactly as for the exteroceptive channels.
     #[test]
     fn mlp_reads_self_state_channel() {
-        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6]);
         let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
 
         let mut full = mlp_perception(Vec2::X, vision, target);
@@ -1221,6 +1230,30 @@ mod tests {
         );
     }
 
+    /// The **field-sense** channels are wired into the MLP's input (Phase 3, pheromones):
+    /// two perceptions identical except for `field_state` produce **different** actions —
+    /// the chemoreception analogue of `mlp_reads_self_state_channel`. Falsifiable proof
+    /// the sensed local concentration reaches the decision (using it *well* — following
+    /// or fleeing a trail — is up to selection). Emit + sense on a shared component is
+    /// then a communication substrate whose meaning is evolved.
+    #[test]
+    fn mlp_reads_field_state_channel() {
+        // One field-sense channel (n_sensed = 1): input = 3×rays + 3 self + 1 field.
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 1), &[6]);
+        let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
+
+        let mut quiet = mlp_perception(Vec2::X, vision, target);
+        quiet.field_state = vec![0.0].into_boxed_slice(); // no pheromone here
+        let mut scented = mlp_perception(Vec2::X, vision, target);
+        scented.field_state = vec![0.8].into_boxed_slice(); // a strong local trail
+
+        assert_ne!(
+            brain.think(&quiet).dir,
+            brain.think(&scented).dir,
+            "the field-sense channel must influence the MLP's decision"
+        );
+    }
+
     /// The MLP now emits a **3rd output** — the eat/attack intent
     /// ([`crate::components::Action::act`], the *deliberate* half of the interaction
     /// primitive, SIM Law 8, gated in `interact`). Falsifiable proof it is a **live
@@ -1231,7 +1264,7 @@ mod tests {
     /// wired; learning to eat *well* is up to selection, as for steering.
     #[test]
     fn mlp_emits_act_output() {
-        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6]);
         let a = brain.think(&mlp_perception(Vec2::X, [0.2, 0.7, 0.1], [0.0, 0.7, 0.0]));
         let b = brain.think(&mlp_perception(Vec2::X, [0.9, 0.1, 0.5], [0.5, 0.0, 0.3]));
         assert_ne!(
@@ -1250,7 +1283,7 @@ mod tests {
     /// output = `OUTPUTS`, hidden layers as requested.
     #[test]
     fn brainkind_mlp_builds_with_contract_io() {
-        let n_inputs = MlpBrain::input_size(3); // 12 = 3 channels × 3 rays + 3 self
+        let n_inputs = MlpBrain::input_size(3, 0); // 12 = 3 channels × 3 rays + 3 self
         let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![5] }).build(42, 0.0, n_inputs) else {
             panic!("expected an MLP");
         };
@@ -1277,7 +1310,7 @@ mod tests {
     /// the hand-written brains, having no network, count zero.
     #[test]
     fn neuron_count_is_hidden_plus_output() {
-        let n_inputs = MlpBrain::input_size(7); // 24 inputs (7 rays × 3 + 3 self) — must NOT be counted
+        let n_inputs = MlpBrain::input_size(7, 0); // 24 inputs (7 rays × 3 + 3 self) — must NOT be counted
         let Brain::Mlp(m) = (BrainKind::Mlp { hidden: vec![8] }).build(42, 0.0, n_inputs) else {
             panic!("expected an MLP");
         };
@@ -1308,7 +1341,7 @@ mod tests {
     /// give an action rotated by the same amount (the decision lives in body frame).
     #[test]
     fn mlp_is_deterministic_and_orientation_equivariant() {
-        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6]);
         let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
 
         let a1 = brain.think(&mlp_perception(Vec2::X, vision, target));
@@ -1332,7 +1365,7 @@ mod tests {
     #[test]
     fn mlp_mutation_perturbs_weights_keeps_topology() {
         let mut rng = Rng::new(3);
-        let parent = MlpBrain::random(11, MlpBrain::input_size(4), &[8, 4]);
+        let parent = MlpBrain::random(11, MlpBrain::input_size(4, 0), &[8, 4]);
 
         // Zero rate → faithful clone. Equality carries only topology + weights (the
         // brain has no other state: the activations are recomputed on demand).
@@ -1359,18 +1392,18 @@ mod tests {
     #[test]
     fn mlp_reproduce_resizes_input_layer_to_child_rays() {
         let mut rng = Rng::new(5);
-        let parent = MlpBrain::random(11, MlpBrain::input_size(3), &[8, 4]); // 12 inputs (3×3 + 3 self)
+        let parent = MlpBrain::random(11, MlpBrain::input_size(3, 0), &[8, 4]); // 12 inputs (3×3 + 3 self)
 
         // Unchanged precision + zero rate = faithful clone.
-        let same = parent.reproduced(&mut rng, 0.0, MlpBrain::input_size(3));
+        let same = parent.reproduced(&mut rng, 0.0, MlpBrain::input_size(3, 0), 0);
         assert_eq!(same, parent, "constant precision, zero rate → identity");
 
         // Child that sees more finely: 5 rays → 18 inputs (5×3 + 3 self; input layer enlarged).
-        let grown = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(5));
+        let grown = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(5, 0), 0);
         assert_eq!(grown.layer_sizes(), vec![18, 8, 4, MlpBrain::OUTPUTS]);
 
         // Child that sees more coarsely: 2 rays → 9 inputs (2×3 + 3 self; input layer shrunk).
-        let shrunk = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(2));
+        let shrunk = parent.reproduced(&mut rng, 0.1, MlpBrain::input_size(2, 0), 0);
         assert_eq!(shrunk.layer_sizes(), vec![9, 8, 4, MlpBrain::OUTPUTS]);
     }
 
@@ -1381,7 +1414,7 @@ mod tests {
     /// what lets `think` memorize nothing anymore.
     #[test]
     fn forward_activations_match_topology_and_think() {
-        let brain = MlpBrain::random(7, MlpBrain::input_size(3), &[6, 4]);
+        let brain = MlpBrain::random(7, MlpBrain::input_size(3, 0), &[6, 4]);
         let (vision, target) = ([0.2, 0.7, 0.1], [0.0, 0.7, 0.0]);
         let p = mlp_perception(Vec2::X, vision, target);
 
@@ -1414,7 +1447,7 @@ mod tests {
     /// coloring the missing nodes neutral.
     #[test]
     fn forward_activations_is_robust_to_wrong_input_size() {
-        let brain = MlpBrain::random(1, MlpBrain::input_size(3), &[5]); // expects 12 inputs
+        let brain = MlpBrain::random(1, MlpBrain::input_size(3, 0), &[5]); // expects 12 inputs
         // 2-ray perception → 9 inputs (2×3 + 3 self ≠ 12): the first product does not match.
         let p = Perception {
             heading: Vec2::X,
@@ -1422,6 +1455,7 @@ mod tests {
             target: [0.0, 0.0].into(),
             threat: [0.0, 0.0].into(),
             self_state: [0.0; Perception::SELF_CHANNELS],
+            field_state: Box::default(),
             ray_dirs: vec![Vec2::X, Vec2::Y].into_boxed_slice(),
         };
         let acts = brain.forward_activations(&p);

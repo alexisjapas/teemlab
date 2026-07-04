@@ -48,7 +48,7 @@ fn world(captured: Option<Brain>, count: usize) -> SimConfig {
 /// founder with the default genotype receives).
 fn mlp_brain(seed: u64) -> Brain {
     let rays = Genotype::default().ray_count();
-    Brain::Mlp(MlpBrain::random(seed, MlpBrain::input_size(rays), &[6]))
+    Brain::Mlp(MlpBrain::random(seed, MlpBrain::input_size(rays, 0), &[6]))
 }
 
 /// All living agents' brains, after population.

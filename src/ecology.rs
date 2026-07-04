@@ -276,13 +276,15 @@ pub fn reproduce(
         // item 3); if it differs from the parent's, `reproduce` adapts the input
         // layer. Without an MLP, this is ignored → non-MLP scenarios' RNG stream
         // intact.
-        let n_inputs = MlpBrain::input_size(child.ray_count());
+        let n_sensed = config.sensed_components(species.0).len();
+        let n_inputs = MlpBrain::input_size(child.ray_count(), n_sensed);
         let child_brain = brain.reproduce(
             brain_seed,
             heading,
             &mut rng.0,
             genotype.mutation_rate,
             n_inputs,
+            n_sensed,
         );
         spawn_agent_with_brain(
             &mut commands,

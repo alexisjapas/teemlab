@@ -98,6 +98,7 @@ impl Plugin for SimPlugin {
                     ecology::reap,
                     ecology::metabolize,
                     nutrients::emit_nutrients,
+                    nutrients::emit_components,
                     nutrients::diffuse_nutrients,
                     nutrients::decay_nutrients,
                     nutrients::absorb_nutrients,

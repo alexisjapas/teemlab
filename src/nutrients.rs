@@ -332,6 +332,36 @@ pub fn emit_nutrients(
     }
 }
 
+/// EMIT (agents): each agent whose species has an `emit` [`FieldRelation`] deposits
+/// `emit · dt` of that component into the field cell under it — the **symmetric of
+/// absorption** (`docs/component-emission-plan.md` §3): the agent→environment write
+/// (organic waste / pheromone / toxin). Runs alongside the source emission
+/// ([`emit_nutrients`]), before diffusion/decay. A scenario with no `emit` relation is
+/// a no-op (early return) → byte-identical.
+pub fn emit_components(
+    time: Res<Time>,
+    config: Res<SimConfig>,
+    mut fields: ResMut<Fields>,
+    agents: Query<(&Transform, &Species), With<Agent>>,
+) {
+    if !config.field_relations.iter().any(|f| f.emit > 0.0) {
+        return;
+    }
+    let dt = time.delta_secs();
+    for (transform, species) in &agents {
+        let pos = transform.translation.truncate();
+        for fr in config
+            .field_relations
+            .iter()
+            .filter(|f| f.species == species.0 && f.emit > 0.0)
+        {
+            if let Some(field) = fields.get_mut(fr.component) {
+                field.add(pos, fr.emit * dt);
+            }
+        }
+    }
+}
+
 /// DIFFUSE: one relaxation step of **every** field toward the neighbour average
 /// ([`Field::diffuse`]) — this is what turns point emission into **gradients** (life
 /// clusters around sources). Mass-conserving; each field inert (early return inside
