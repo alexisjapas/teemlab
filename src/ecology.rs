@@ -134,19 +134,40 @@ pub fn metabolize(
 /// core system, §8); a gradual decomposition would be a later refinement.
 pub fn reap(
     mut commands: Commands,
+    config: Res<SimConfig>,
     mut fields: ResMut<Fields>,
-    agents: Query<(Entity, &Reserve, &Transform, &Nutrients), With<Agent>>,
+    agents: Query<(Entity, &Reserve, &Transform, &Nutrients, &Species), With<Agent>>,
 ) {
-    for (entity, reserve, transform, nutrients) in &agents {
+    // Corpse/carrion deposits (the `emit_at_death` verb) — computed once; a scenario with
+    // none does no per-death work (byte-identical).
+    let any_corpse = config.field_relations.iter().any(|f| f.emit_at_death > 0.0);
+    for (entity, reserve, transform, nutrients, species) in &agents {
         if reserve.current <= 0.0 {
-            // Return the accumulated nutrient to the substrate at the body's cell
+            let pos = transform.translation.truncate();
+            // Return the accumulated nutrient store to the substrate at the body's cell
             // (the conserving loop — into the nutrient field, component 0, the Phase-1
-            // convention). Gated on `> 0` so an inert (pre-T3) store never touches the
-            // field → byte-identical.
+            // convention). Gated on `> 0` so an inert store never touches the field →
+            // byte-identical.
             if nutrients.current > 0.0
                 && let Some(field) = fields.get_mut(0)
             {
-                field.add(transform.translation.truncate(), nutrients.current);
+                field.add(pos, nutrients.current);
+            }
+            // Corpse / carrion (TURNOVER): `emit_at_death` deposits a fixed biomass of a
+            // component into its field at death — the agent→environment write AT death, the
+            // detritus a decomposer / scavenger lives on and the matter a closed loop
+            // returns (`docs/component-emission-plan.md` §3; Law 11 — no per-kind code).
+            // Inert (no such relation) → byte-identical.
+            if any_corpse {
+                for fr in config
+                    .field_relations
+                    .iter()
+                    .filter(|f| f.species == species.0 && f.emit_at_death > 0.0)
+                {
+                    if let Some(field) = fields.get_mut(fr.component) {
+                        field.add(pos, fr.emit_at_death);
+                    }
+                }
             }
             commands.entity(entity).despawn();
         }
