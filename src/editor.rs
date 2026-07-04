@@ -455,7 +455,7 @@ fn species_library_section(
                     )
                     .clicked()
                 {
-                    status.set(export_species(&config.archetypes[i]));
+                    status.set_result(export_species(&config.archetypes[i]));
                     palette.catalog = scan_library();
                 }
             } else {
@@ -593,7 +593,7 @@ fn catalog_section(
     }
 
     if let Some(path) = to_import {
-        status.set(import_species(config, &path));
+        status.set_result(import_species(config, &path));
         palette.selected = Some(config.archetypes.len().saturating_sub(1));
         palette.catalog = scan_library();
     }

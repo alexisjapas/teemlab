@@ -305,7 +305,7 @@ pub fn draw(
             let variant = base.capture(genome.genotype, genome.brain, genome.generation);
             let scenario = runs_panel.origin_label();
             let msg = editor::save_variant(&mut palette, &config, species, variant, &scenario);
-            ui_status.set(msg);
+            ui_status.set_result(msg);
         }
     }
     Ok(())

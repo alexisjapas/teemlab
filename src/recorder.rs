@@ -200,16 +200,16 @@ pub fn drive_recorder(
         match child.try_wait() {
             Ok(Some(exit)) => {
                 panel.child = None;
-                status.set(if exit.success() {
-                    format!("Video written → {}", panel.out)
+                if exit.success() {
+                    status.ok(format!("Video written → {}", panel.out));
                 } else {
-                    format!("record failed ({exit}). See the console.")
-                });
+                    status.error(format!("record failed ({exit}). See the console."));
+                }
             }
             Ok(None) => {} // still running
             Err(e) => {
                 panel.child = None;
-                status.set(format!("Cannot monitor the process: {e}"));
+                status.error(format!("Cannot monitor the process: {e}"));
             }
         }
     }
@@ -225,7 +225,7 @@ pub fn drive_recorder(
     // so that `record` re-renders exactly what is seen configured.
     let scenario = std::env::temp_dir().join("teemlab_record_scenario.ron");
     if let Err(e) = config.save_ron_file(&scenario) {
-        status.set(format!("Failed to write the temporary scenario: {e}"));
+        status.error(format!("Failed to write the temporary scenario: {e}"));
         return;
     }
 
@@ -269,7 +269,7 @@ pub fn drive_recorder(
             status.set(format!("Recording in progress → {out}"));
         }
         Err(e) => {
-            status.set(format!(
+            status.error(format!(
                 "Cannot launch ({e}). Are `record` and `ffmpeg` present?"
             ));
         }

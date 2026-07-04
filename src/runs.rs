@@ -187,11 +187,11 @@ fn write_scenario(path: &str, config: &SimConfig, status: &mut UiStatus) -> bool
     }
     match config.save_ron_file(path) {
         Ok(()) => {
-            status.set(format!("Saved → {path}"));
+            status.ok(format!("Saved → {path}"));
             true
         }
         Err(e) => {
-            status.set(format!("Failed: {e}"));
+            status.error(format!("Failed: {e}"));
             false
         }
     }
@@ -362,14 +362,14 @@ fn confirm_modal(
     let Some(confirm) = panel.confirm.take() else {
         return;
     };
-    let mut window_open = true;
     let mut choice = Choice::Pending;
-    egui::Window::new("Scenario")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .open(&mut window_open)
-        .show(ui.ctx(), |ui| match &confirm {
+    // A real modal: it dims the app behind it and swallows clicks, so a confirm can no
+    // longer be bypassed by clicking the sim underneath; Esc / click-outside dismiss it
+    // (`should_close`), the same as Cancel.
+    let response = egui::Modal::new(egui::Id::new("scenario_confirm")).show(ui.ctx(), |ui| {
+        ui.strong("Scenario");
+        ui.separator();
+        match &confirm {
             Confirm::DiscardThen(_) => {
                 ui.label("You have unsaved edits. Discard them?");
                 ui.horizontal(|ui| {
@@ -413,7 +413,9 @@ fn confirm_modal(
                     }
                 });
             }
-        });
+        }
+    });
+    let dismissed = response.should_close();
 
     match (choice, confirm) {
         (Choice::Proceed, Confirm::DiscardThen(action)) => panel.pending = Some(action),
@@ -426,8 +428,8 @@ fn confirm_modal(
         }
         // "Rename…" on an existing target → reopen Save As with the same name.
         (Choice::SaveCopy, Confirm::OverwriteExisting(_)) => panel.save_dialog_open = true,
-        // No button yet and not closed via [x] → keep the modal up.
-        (Choice::Pending, c) if window_open => panel.confirm = Some(c),
+        // No button yet and not dismissed (Esc / click-outside) → keep the modal up.
+        (Choice::Pending, c) if !dismissed => panel.confirm = Some(c),
         // Cancelled, dismissed, or an impossible pairing → drop it.
         _ => {}
     }
@@ -445,22 +447,18 @@ fn save_as_dialog(
         return;
     }
     let mut name = panel.save_dialog_name.clone();
-    let mut window_open = true;
     let mut do_save = false;
     let mut cancel = false;
-    egui::Window::new("Save scenario as…")
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .open(&mut window_open)
-        .show(ui.ctx(), |ui| {
-            ui.label("File name (.ron — saved to scenarios/saved/ if no folder given):");
-            ui.text_edit_singleline(&mut name);
-            ui.horizontal(|ui| {
-                do_save = ui.button("Save").clicked();
-                cancel = ui.button("Cancel").clicked();
-            });
+    let response = egui::Modal::new(egui::Id::new("scenario_save_as")).show(ui.ctx(), |ui| {
+        ui.strong("Save scenario as…");
+        ui.separator();
+        ui.label("File name (.ron — saved to scenarios/saved/ if no folder given):");
+        ui.text_edit_singleline(&mut name);
+        ui.horizontal(|ui| {
+            do_save = ui.button("Save").clicked();
+            cancel = ui.button("Cancel").clicked();
         });
+    });
     panel.save_dialog_name = name;
     if do_save {
         let path = normalize_scenario_path(&panel.save_dialog_name);
@@ -478,7 +476,7 @@ fn save_as_dialog(
             panel.examples = ron_files(EXAMPLES_DIR);
             panel.saved = ron_files(SAVED_DIR);
         }
-    } else if cancel || !window_open {
+    } else if cancel || response.should_close() {
         panel.save_dialog_open = false;
     }
 }
@@ -520,7 +518,7 @@ pub fn apply_scenario_load(
                 panel.owns_loaded = false; // opened from disk → protected on Save
                 status.set(format!("Scenario loaded (paused) ← {path}"));
             }
-            Err(e) => status.set(format!("Failed: {e}")),
+            Err(e) => status.error(format!("Failed: {e}")),
         },
         RunAction::NewEmpty => {
             *config = SimConfig::empty();

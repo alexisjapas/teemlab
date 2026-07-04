@@ -286,6 +286,9 @@ pub fn dock(
     // Gate: don't render until the UI fonts are live (cf. `fonts`), so an icon is never
     // drawn before its Phosphor family is bound (egui binds fonts only next-pass).
     fonts_ready: Res<crate::fonts::FontsReady>,
+    // Real (unpausable) time — stamps the status line so info/success messages expire
+    // (presentation only, never the sim clock).
+    time: Res<Time<Real>>,
     // Last frame's panel widths + left-region mode + transport width (cf. [`DockLayout`]).
     mut layout: Local<DockLayout>,
     // Observation: selection + auto-follow mode + the sim view's pan/zoom (bundled to
@@ -318,6 +321,9 @@ pub fn dock(
     // without every panel threading the flag (cf. `help`). A one-frame lag on a toggle
     // is imperceptible.
     ctx.data_mut(|d| d.insert_temp(crate::help::id(), state.prefs.inline_help));
+    // Stamp a freshly-set status message with the current real time so it can expire.
+    let now = time.elapsed_secs_f64();
+    state.ui_status.stamp(now);
     // A single root viewport `Ui` on the background layer, shared by every panel
     // (bevy_egui 0.40 `examples/ui.rs`). `show_inside` then docks each panel into it.
     let mut root = egui::Ui::new(
@@ -541,7 +547,7 @@ pub fn dock(
                                 &scenario,
                             );
                             palette.variant_name.clear();
-                            state.ui_status.set(msg);
+                            state.ui_status.set_result(msg);
                         }
                         None => {}
                     }
@@ -607,8 +613,15 @@ pub fn dock(
         .default_size(300.0)
         .size_range(260.0..=520.0)
         .show_inside(&mut root, |ui| {
-            if !state.ui_status.message.is_empty() {
-                ui.weak(&state.ui_status.message);
+            // The status line, coloured by kind and shown only while unexpired (info /
+            // success fade after a few seconds; errors persist — cf. `status`).
+            if state.ui_status.visible(now) {
+                let color = match state.ui_status.kind {
+                    crate::status::StatusKind::Success => crate::theme::SUCCESS,
+                    crate::status::StatusKind::Error => crate::theme::ERROR,
+                    crate::status::StatusKind::Info => crate::theme::INK_MUTED,
+                };
+                ui.colored_label(color, &state.ui_status.message);
                 ui.separator();
             }
             // Framed like the other sections (Body/Genes/Brain, the World cards): the
@@ -663,28 +676,90 @@ pub fn dock(
     central.0 = root.available_rect_before_wrap();
 
     // Sim-state overlay over that central area (egui composites over the Bevy sim):
-    // the run time and speed always, a prominent PAUSED banner when frozen. The run
-    // time comes from the history's latest sample (so it resets with the world).
+    // the run time (+ speed when not ×1), a paused chip, and a first-steps hint on an
+    // empty arena. The run time comes from the history's latest sample (resets with the
+    // world). Themed, so it matches the rest of the UI (cf. `theme`).
     let painter = root.painter().with_clip_rect(central.0);
-    let cx = central.0.center().x;
-    let run_time = history.latest_time();
+    central_overlay(
+        &painter,
+        central.0,
+        history.latest_time(),
+        sim_controls.speed,
+        vtime.is_paused(),
+        stats_agents.is_empty(),
+        !config.archetypes.is_empty(),
+    );
+    Ok(())
+}
+
+/// The run-time / speed read-out shown at the top of the sim area. The speed suffix is
+/// dropped at ×1 (the default is noise). Pure, so it is unit-tested.
+fn overlay_label(t: f32, speed: f32) -> String {
+    if (speed - 1.0).abs() < 1e-3 {
+        format!("t = {t:.1} s")
+    } else {
+        format!("t = {t:.1} s   ·   ×{speed:.1}")
+    }
+}
+
+/// Paints the sim-area overlay: the [`overlay_label`] read-out, an accent **paused
+/// chip** (which doubles as a "Space to run" affordance), and — on an empty arena — a
+/// discreet hint on how to begin.
+fn central_overlay(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    run_time: f32,
+    speed: f32,
+    paused: bool,
+    agents_empty: bool,
+    has_archetypes: bool,
+) {
+    let cx = rect.center().x;
     painter.text(
-        egui::pos2(cx, central.0.top() + 6.0),
+        egui::pos2(cx, rect.top() + 6.0),
         egui::Align2::CENTER_TOP,
-        format!("t = {run_time:.1} s   ·   ×{:.1}", sim_controls.speed),
-        egui::FontId::monospace(12.0),
+        overlay_label(run_time, speed),
+        egui::FontId::monospace(11.0),
         crate::theme::INK_MUTED,
     );
-    if vtime.is_paused() {
+    if paused {
+        let text = "Paused — Space to run";
+        let font = egui::FontId::proportional(14.0);
+        let galley = painter.layout_no_wrap(text.to_owned(), font.clone(), crate::theme::ACCENT);
+        let top = rect.top() + 26.0;
+        let chip = egui::Rect::from_center_size(
+            egui::pos2(cx, top + galley.size().y * 0.5),
+            galley.size() + egui::vec2(20.0, 8.0),
+        );
+        painter.rect_filled(chip, 6.0, crate::theme::ACCENT.gamma_multiply(0.15));
+        painter.rect_stroke(
+            chip,
+            6.0,
+            egui::Stroke::new(1.0, crate::theme::ACCENT),
+            egui::StrokeKind::Inside,
+        );
         painter.text(
-            egui::pos2(cx, central.0.top() + 24.0),
+            egui::pos2(cx, top),
             egui::Align2::CENTER_TOP,
-            "PAUSED",
-            egui::FontId::proportional(20.0),
+            text,
+            font,
             crate::theme::ACCENT,
         );
     }
-    Ok(())
+    if agents_empty {
+        let hint = if has_archetypes {
+            "Drag a species from Archetypes into the arena"
+        } else {
+            "Scenario ▸ Open, or add an archetype to begin"
+        };
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            hint,
+            egui::FontId::proportional(13.0),
+            crate::theme::INK_FAINT,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -701,5 +776,15 @@ mod tests {
         );
         assert!(!w.shortcuts, "the cheatsheet starts closed");
         assert!(UiPrefs::default().inline_help, "inline help starts on");
+    }
+
+    #[test]
+    fn overlay_label_hides_unit_speed() {
+        // At ×1 (the default) the speed suffix is dropped as noise.
+        let at_one = overlay_label(12.34, 1.0);
+        assert_eq!(at_one, "t = 12.3 s");
+        assert!(!at_one.contains('×'));
+        // Off-default speed is shown.
+        assert!(overlay_label(12.0, 2.0).contains("×2.0"));
     }
 }
