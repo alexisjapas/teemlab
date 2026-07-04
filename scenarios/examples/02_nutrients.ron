@@ -39,9 +39,6 @@
                 seed_dispersal: 22.0,
                 brain_cost: 0.0,
                 agility_cost: 0.0,
-                nutrient_absorption: 1.5,
-                nutrient_capacity: 8.0,
-                offspring_nutrient: 8.0,
             ),
             brain: Sessile,
             // A sessile plant: the locomotion/vision genes are FROZEN (their founder
@@ -62,9 +59,6 @@
                 seed_dispersal: false,
                 brain_cost: false,
                 agility_cost: false,
-                nutrient_absorption: false,
-                nutrient_capacity: false,
-                offspring_nutrient: false,
             ),
         ),
     ],
@@ -170,18 +164,6 @@
     agility_cost_bounds: (
         min: 0.0,
         max: 2.0,
-    ),
-    nutrient_absorption_bounds: (
-        min: 0.0,
-        max: 20.0,
-    ),
-    nutrient_capacity_bounds: (
-        min: 0.0,
-        max: 200.0,
-    ),
-    offspring_nutrient_bounds: (
-        min: 0.0,
-        max: 120.0,
     ),
     play_area_color: (0.07, 0.07, 0.09),
     off_game_color: (0.17, 0.17, 0.19),

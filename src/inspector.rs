@@ -284,9 +284,9 @@ pub(crate) fn inspector_section(
     // the scenarios that ignore nutrients entirely (no "0 / 0" noise on plain fauna).
     let scenario_uses_nutrients = !config.sources.is_empty()
         || config
-            .archetypes
+            .field_relations
             .iter()
-            .any(|a| a.genotype.nutrient_capacity > 0.0);
+            .any(|f| f.capacity > 0.0 || f.absorb > 0.0 || f.repro_cost > 0.0);
     if nutrients.max > 0.0 || scenario_uses_nutrients {
         card(ui, |ui| {
             ui.strong("Nutrient store");

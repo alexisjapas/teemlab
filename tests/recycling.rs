@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, ComponentConfig, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::{Fields, Nutrients};
 use teemlab::spawn::spawn_agent;
@@ -40,9 +40,6 @@ fn dying_genotype() -> Genotype {
         photosynthesis: 0.0,         // nothing refills the reserve → it dies
         reproduction_threshold: 0.0, // does not reproduce
         mutation_rate: 0.0,
-        nutrient_absorption: 0.0, // cannot pull from the field
-        nutrient_capacity: 100.0,
-        offspring_nutrient: 0.0,
         ..Genotype::default()
     }
 }
@@ -71,6 +68,14 @@ fn one_agent_config() -> SimConfig {
             name: "Nutrient".into(),
             diffusion: 0.0,
             decay: 0.0,
+        }],
+        // The Body (species 0) holds nutrient (capacity 100) — the store recycling
+        // returns to the field at death. Declared in the field-relations table.
+        field_relations: vec![FieldRelation {
+            species: 0,
+            component: 0,
+            capacity: 100.0,
+            ..default()
         }],
         ..SimConfig::default()
     }

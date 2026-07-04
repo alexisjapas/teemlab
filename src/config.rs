@@ -96,14 +96,6 @@ pub struct SimConfig {
     /// Bounds of the agility-cost gene (energy per unit of maneuvering effort
     /// `|Δv|`). Drives the editor slider; non-mutable by default.
     pub agility_cost_bounds: Bounds,
-    /// Bounds of the nutrient-absorption gene (field → store rate per second, T2).
-    /// Drives the editor slider; non-mutable by default.
-    pub nutrient_absorption_bounds: Bounds,
-    /// Bounds of the nutrient-capacity gene (the per-plant store's max, T2).
-    pub nutrient_capacity_bounds: Bounds,
-    /// Bounds of the nutrient-per-child gene (nutrient paid per offspring, the
-    /// analogue of `offspring_energy`, T2).
-    pub offspring_nutrient_bounds: Bounds,
     /// Bounds of the act-cost gene (energy/s while the eat/attack intent is held,
     /// deliberate eating). Drives the editor slider; non-mutable by default.
     pub act_cost_bounds: Bounds,
@@ -435,9 +427,6 @@ pub struct Mutability {
     pub seed_dispersal: bool,
     pub brain_cost: bool,
     pub agility_cost: bool,
-    pub nutrient_absorption: bool,
-    pub nutrient_capacity: bool,
-    pub offspring_nutrient: bool,
     pub act_cost: bool,
 }
 
@@ -460,9 +449,6 @@ impl Mutability {
             seed_dispersal: false,
             brain_cost: false,
             agility_cost: false,
-            nutrient_absorption: false,
-            nutrient_capacity: false,
-            offspring_nutrient: false,
             act_cost: false,
         }
     }
@@ -499,14 +485,6 @@ impl Default for Mutability {
             // absent from the draw stream.
             brain_cost: false,
             agility_cost: false,
-            // Nutrient genes (T2), non-mutable by default: they preserve the RNG
-            // stream of existing scenarios (a non-mutable gene does not draw in
-            // [`Genotype::mutate`]), and like the other "economy" genes they have no
-            // cost coupling that would bound an upward drift. A nutrient scenario
-            // enables them.
-            nutrient_absorption: false,
-            nutrient_capacity: false,
-            offspring_nutrient: false,
             // Deliberate-eating cost: like the other costs, non-mutable by default
             // (evolvable, it would be whittled to 0 and the restraint pressure would
             // vanish) and absent from the draw stream.
@@ -773,21 +751,6 @@ impl Default for SimConfig {
             // mean |Δv| an agent applies while tracking; a small coefficient already
             // bites, so a modest ceiling.
             agility_cost_bounds: Bounds { min: 0.0, max: 2.0 },
-            // Nutrient genes (T2), non-mutable by default: min 0 (the default gene
-            // is 0 → inert). Editor-slider ranges, of the same order as the energy
-            // analogues (capacity ~ a reserve, per-child ~ offspring_energy).
-            nutrient_absorption_bounds: Bounds {
-                min: 0.0,
-                max: 20.0,
-            },
-            nutrient_capacity_bounds: Bounds {
-                min: 0.0,
-                max: 200.0,
-            },
-            offspring_nutrient_bounds: Bounds {
-                min: 0.0,
-                max: 120.0,
-            },
             // Deliberate-eating cost, non-mutable by default: min 0 (default gene 0 →
             // inert). An editor-slider range of the same order as base_metabolism —
             // enough for the act cost to bite against the food it buys.
@@ -847,28 +810,16 @@ impl SimConfig {
             .unwrap_or_else(|| Genotype::default().max_speed)
     }
 
-    /// The **effective nutrient relationship** of `species` to the nutrient (component
-    /// `0`) — `(absorb, capacity, repro_cost)`. The authored [`FieldRelation`] row if
-    /// present, **else** derived from the scalar nutrient genes (the Phase-2 shim,
-    /// `docs/component-emission-plan.md`): it lets the systems read the table before the
-    /// scenarios are migrated, **byte-identically** (the nutrient genes are non-mutable,
-    /// so the founding value equals every agent's). Phase 2b authors the rows and
-    /// removes the genes + this fallback.
+    /// The **nutrient relationship** of `species` to the nutrient (component `0`) —
+    /// `(absorb, capacity, repro_cost)` from its [`FieldRelation`] row, or `(0, 0, 0)`
+    /// if it has none (the species is outside the nutrient axis). The declarative table
+    /// is the single source (`docs/component-emission-plan.md`).
     pub fn nutrient_of(&self, species: u16) -> (f32, f32, f32) {
-        if let Some(fr) = self
-            .field_relations
+        self.field_relations
             .iter()
             .find(|f| f.species == species && f.component == 0)
-        {
-            (fr.absorb, fr.capacity, fr.repro_cost)
-        } else {
-            let g = self.genotype_of(species);
-            (
-                g.nutrient_absorption,
-                g.nutrient_capacity,
-                g.offspring_nutrient,
-            )
-        }
+            .map(|fr| (fr.absorb, fr.capacity, fr.repro_cost))
+            .unwrap_or((0.0, 0.0, 0.0))
     }
 
     /// The founding **brain type** of archetype `species` (the decision's author,

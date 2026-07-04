@@ -20,9 +20,6 @@
             seed_dispersal: 0.0,
             brain_cost: 0.0,
             agility_cost: 0.02,
-            nutrient_absorption: 0.0,
-            nutrient_capacity: 30.0,
-            offspring_nutrient: 8.0,
             act_cost: 0.0,
         ),
         brain: Mlp(
@@ -45,9 +42,6 @@
             seed_dispersal: false,
             brain_cost: false,
             agility_cost: false,
-            nutrient_absorption: false,
-            nutrient_capacity: false,
-            offspring_nutrient: false,
             act_cost: false,
         ),
         captured_brain: Some(Mlp((

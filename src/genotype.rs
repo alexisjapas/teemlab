@@ -87,28 +87,6 @@ pub struct Genotype {
     /// **not mutable by default** like the other costs (evolvable, it would fall to
     /// 0). `0` by default (inert). Appended at the **end** (draw stream).
     pub agility_cost: f32,
-    /// **Nutrient gene** (T2): rate at which the entity **absorbs** nutrient from
-    /// the local field ([`crate::nutrients::Field`]) into its store
-    /// ([`crate::nutrients::Nutrients`]), per second. `0` → no absorption (fauna,
-    /// and every pre-T2 scenario). The nutrient axis gates *reproduction* only, not
-    /// survival (the two-axis design, ROADMAP §9). Appended at the **end** and
-    /// **not mutable by default** → [`mutate`](Genotype::mutate)'s draw stream and
-    /// the sim stay byte-identical.
-    pub nutrient_absorption: f32,
-    /// **Nutrient gene** (T2): the **capacity** of the per-entity nutrient store.
-    /// `0` (default) → an inert store. Appended at the **end**, not mutable by
-    /// default (draw stream preserved).
-    pub nutrient_capacity: f32,
-    /// **Nutrient gene** (T2): nutrient **spent per child** at reproduction.
-    /// Reproduction is gated on `nutrients.current >= offspring_nutrient`; on success
-    /// it is deducted from the parent and **consumed** — the child is born with an
-    /// **empty** store and must absorb its own (unlike
-    /// [`offspring_energy`](Self::offspring_energy), which is carried over). This is
-    /// what makes the nutrient a genuine *limiting* resource rather than a self-
-    /// perpetuating endowment (cf. [`crate::ecology::reproduce`]). `0` (default) →
-    /// the gate always passes spending nothing → pre-T2 reproduction unchanged.
-    /// Appended at the **end**, not mutable by default (draw stream preserved).
-    pub offspring_nutrient: f32,
     /// **Deliberate-eating cost**: energy drained **per second** while the agent
     /// holds its eat/attack intent ([`crate::components::Action::act`] `> 0`, gated in
     /// [`crate::interaction::interact`]). The Law-7 price of the *act* itself — the
@@ -163,9 +141,6 @@ impl Default for Genotype {
             agility_cost: 0.02,
             // Nutrient genes (T2) inert by default: no absorption, no store, no
             // nutrient cost per child → the reproduction gate always passes.
-            nutrient_absorption: 0.0,
-            nutrient_capacity: 0.0,
-            offspring_nutrient: 0.0,
             // Deliberate-eating cost inert by default (like the flora/nutrient genes):
             // acting is free → the interaction economy of every pre-existing scenario
             // is unchanged. A deliberate-eating scenario opts in with a non-zero value.
@@ -274,8 +249,6 @@ pub enum GeneCategory {
     Reproduction,
     /// The sessile life: passive gain and seeding.
     Flora,
-    /// The substrate axis (T2): absorbing and spending nutrient.
-    Nutrients,
 }
 
 impl GeneCategory {
@@ -283,13 +256,12 @@ impl GeneCategory {
     /// each, the [`TRAITS`] filtered by `category` — so a new category must be
     /// listed here to appear (the counterpart, for the grouping, of adding a gene
     /// to `TRAITS`).
-    pub const ALL: [GeneCategory; 6] = [
+    pub const ALL: [GeneCategory; 5] = [
         GeneCategory::Locomotion,
         GeneCategory::Vision,
         GeneCategory::Metabolism,
         GeneCategory::Reproduction,
         GeneCategory::Flora,
-        GeneCategory::Nutrients,
     ];
 
     /// The section's display label.
@@ -300,7 +272,6 @@ impl GeneCategory {
             GeneCategory::Metabolism => "Metabolism",
             GeneCategory::Reproduction => "Reproduction",
             GeneCategory::Flora => "Flora",
-            GeneCategory::Nutrients => "Nutrients",
         }
     }
 
@@ -313,7 +284,7 @@ impl GeneCategory {
     /// out of focus); **metabolism / reproduction** are always relevant.
     pub fn default_open(self, immobile: bool) -> bool {
         match self {
-            GeneCategory::Flora | GeneCategory::Nutrients => immobile,
+            GeneCategory::Flora => immobile,
             GeneCategory::Locomotion | GeneCategory::Vision => !immobile,
             GeneCategory::Metabolism | GeneCategory::Reproduction => true,
         }
@@ -371,7 +342,7 @@ pub struct TraitSpec {
 /// seeded config — whence the addition at the **end** of the table, which leaves
 /// the pre-existing traits' stream intact). A constant table shared by all
 /// agents.
-pub const TRAITS: [TraitSpec; 18] = [
+pub const TRAITS: [TraitSpec; 15] = [
     TraitSpec {
         name: "Max speed",
         category: GeneCategory::Locomotion,
@@ -571,49 +542,6 @@ pub const TRAITS: [TraitSpec; 18] = [
         inert_when_immobile: true,
     },
     TraitSpec {
-        name: "Nutrient absorb/s",
-        category: GeneCategory::Nutrients,
-        is_cost: false,
-        get: |g| g.nutrient_absorption,
-        set: |g, v| g.nutrient_absorption = v,
-        bounds: |c| c.nutrient_absorption_bounds,
-        bounds_mut: |c| &mut c.nutrient_absorption_bounds,
-        mutable: |m| m.nutrient_absorption,
-        set_mutable: |m, b| m.nutrient_absorption = b,
-        decimals: 2,
-        // Absorbing nutrient from the substrate: precisely a (sessile) plant's
-        // behavior — relevant on an immobile entity.
-        inert_when_immobile: false,
-    },
-    TraitSpec {
-        name: "Nutrient capacity",
-        category: GeneCategory::Nutrients,
-        is_cost: false,
-        get: |g| g.nutrient_capacity,
-        set: |g, v| g.nutrient_capacity = v,
-        bounds: |c| c.nutrient_capacity_bounds,
-        bounds_mut: |c| &mut c.nutrient_capacity_bounds,
-        mutable: |m| m.nutrient_capacity,
-        set_mutable: |m, b| m.nutrient_capacity = b,
-        decimals: 0,
-        // The store's size: relevant for a plant.
-        inert_when_immobile: false,
-    },
-    TraitSpec {
-        name: "Nutrient/child",
-        category: GeneCategory::Nutrients,
-        is_cost: false,
-        get: |g| g.offspring_nutrient,
-        set: |g, v| g.offspring_nutrient = v,
-        bounds: |c| c.offspring_nutrient_bounds,
-        bounds_mut: |c| &mut c.offspring_nutrient_bounds,
-        mutable: |m| m.offspring_nutrient,
-        set_mutable: |m, b| m.offspring_nutrient = b,
-        decimals: 0,
-        // Nutrient endowment of a seed: relevant for flora reproduction.
-        inert_when_immobile: false,
-    },
-    TraitSpec {
         name: "Act cost/s",
         // No "Interaction" category — an energy expense, filed with Metabolism (its
         // pragmatic home; revisit only if a 2nd interaction-cost gene appears).
@@ -676,10 +604,8 @@ mod tests {
         assert!(GeneCategory::Locomotion.default_open(false));
         assert!(GeneCategory::Vision.default_open(false));
         assert!(!GeneCategory::Flora.default_open(false));
-        assert!(!GeneCategory::Nutrients.default_open(false));
-        // Plant (immobile): the sessile axes open, the mobile axes collapsed.
+        // Plant (immobile): the sessile axis opens, the mobile axes collapsed.
         assert!(GeneCategory::Flora.default_open(true));
-        assert!(GeneCategory::Nutrients.default_open(true));
         assert!(!GeneCategory::Locomotion.default_open(true));
         assert!(!GeneCategory::Vision.default_open(true));
         // Metabolism / reproduction are always open.
@@ -751,9 +677,8 @@ mod tests {
         assert!(g.move_cost > 0.0);
         assert!(g.brain_cost > 0.0);
         assert!(g.agility_cost > 0.0);
-        // Flora / nutrient genes stay inert (a plant / nutrient scenario opts in).
+        // Flora genes stay inert (a plant scenario opts in).
         assert_eq!(g.photosynthesis, 0.0);
-        assert_eq!(g.nutrient_absorption, 0.0);
     }
 
     /// Immobility is read from the locomotion phenotype (zero max speed): it is
@@ -841,9 +766,6 @@ mod tests {
             seed_dispersal: 14.0,
             brain_cost: 15.0,
             agility_cost: 16.0,
-            nutrient_absorption: 17.0,
-            nutrient_capacity: 18.0,
-            offspring_nutrient: 19.0,
             act_cost: 20.0,
         };
         // Rebuild through ONLY the TRAITS accessors, starting from the defaults (whose

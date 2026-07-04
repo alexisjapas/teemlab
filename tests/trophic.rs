@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, Mutability, Relation};
+use teemlab::config::{Archetype, FieldRelation, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::Nutrients;
 use teemlab::spawn::spawn_agent;
@@ -41,11 +41,6 @@ fn inert_genotype() -> Genotype {
         photosynthesis: 0.0,
         reproduction_threshold: 0.0, // does not reproduce
         mutation_rate: 0.0,
-        // The forager cannot pull nutrient from the substrate — the falsifiable
-        // distinction: any nutrient it ends up with came from **eating**.
-        nutrient_absorption: 0.0,
-        nutrient_capacity: 100.0, // room to receive without clamping
-        offspring_nutrient: 0.0,
         ..Genotype::default()
     }
 }
@@ -94,6 +89,22 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
             rate: 100.0,
             range: 30.0,
         }],
+        // The forager (species 0) can hold nutrient (capacity 100) — the store it eats
+        // into, without clamping. Declared in the field-relations table, not a gene.
+        field_relations: vec![
+            FieldRelation {
+                species: 0,
+                component: 0,
+                capacity: 100.0,
+                ..default()
+            },
+            FieldRelation {
+                species: 1,
+                component: 0,
+                capacity: 100.0,
+                ..default()
+            },
+        ],
         ..SimConfig::default()
     };
 
@@ -229,6 +240,20 @@ fn destruction_without_transfer_moves_no_nutrient() {
             rate: 100.0,
             range: 30.0,
         }],
+        field_relations: vec![
+            FieldRelation {
+                species: 0,
+                component: 0,
+                capacity: 100.0,
+                ..default()
+            },
+            FieldRelation {
+                species: 1,
+                component: 0,
+                capacity: 100.0,
+                ..default()
+            },
+        ],
         ..SimConfig::default()
     };
 

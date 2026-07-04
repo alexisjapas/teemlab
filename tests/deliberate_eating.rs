@@ -41,9 +41,6 @@ fn inert_genotype(act_cost: f32) -> Genotype {
         vision_rays: 0.0, // blind → zero vision cost, so act_cost is the sole drain
         reproduction_threshold: 0.0, // does not reproduce
         mutation_rate: 0.0,
-        nutrient_absorption: 0.0,
-        nutrient_capacity: 0.0,
-        offspring_nutrient: 0.0,
         act_cost,
         ..Genotype::default()
     }
