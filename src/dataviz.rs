@@ -377,7 +377,11 @@ fn draw_viz(
     font: Res<VizFont>,
     config: Res<SimConfig>,
     history: Res<History>,
-    selection: Res<Selection>,
+    // `Optional`: [`Selection`] is only inserted when `--select != off`
+    // (`SelectionRenderPlugin`). Taking it as a required `Res` panicked the whole
+    // visualizer under `--select off` even on the curves page (the inspector page has
+    // nothing to show then). We fall back to curves when it is absent.
+    selection: Option<Res<Selection>>,
     stats_q: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
     inspect_q: Query<
         (
@@ -404,13 +408,21 @@ fn draw_viz(
 
     draw_stats(&mut commands, font, &stats_q);
 
-    match viz.page {
-        0 => draw_curves(&mut commands, &mut gizmos, font, &history, &config),
-        _ => draw_inspector(&mut commands, &mut gizmos, font, &selection, &inspect_q),
+    // The inspector page needs a tracked [`Selection`]; with `--select off` there is
+    // none, so we show the curves instead (and label accordingly below).
+    let selection = selection.as_deref();
+    let show_inspector = viz.page != 0 && selection.is_some();
+    match (show_inspector, selection) {
+        (true, Some(sel)) => draw_inspector(&mut commands, &mut gizmos, font, sel, &inspect_q),
+        _ => draw_curves(&mut commands, &mut gizmos, font, &history, &config),
     }
 
     // Page indicator (bottom-right corner).
-    let label = if viz.page == 0 { "curves" } else { "inspector" };
+    let label = if show_inspector {
+        "inspector"
+    } else {
+        "curves"
+    };
     text(
         &mut commands,
         font,
