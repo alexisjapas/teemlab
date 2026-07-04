@@ -428,7 +428,7 @@ pub fn dock(
         egui::Align2::CENTER_TOP,
         format!("t = {run_time:.1} s   ·   ×{:.1}", sim_controls.speed),
         egui::FontId::monospace(12.0),
-        egui::Color32::from_gray(140),
+        crate::theme::INK_MUTED,
     );
     if vtime.is_paused() {
         painter.text(
@@ -436,7 +436,7 @@ pub fn dock(
             egui::Align2::CENTER_TOP,
             "PAUSED",
             egui::FontId::proportional(20.0),
-            egui::Color32::from_rgb(240, 180, 80),
+            crate::theme::ACCENT,
         );
     }
     Ok(())

@@ -27,6 +27,7 @@ use crate::files::ron_files;
 use crate::fonts::{self, icons};
 use crate::help;
 use crate::status::UiStatus;
+use crate::theme;
 
 /// The palette / the editor's state. The **archetype list** now lives in
 /// [`SimConfig::archetypes`] (the central data); the palette only keeps the
@@ -63,8 +64,7 @@ pub struct Palette {
 
 /// egui color of an archetype, from its stored color (`[r, g, b]` ∈ [0, 1]).
 fn archetype_color32(a: &Archetype) -> egui::Color32 {
-    let q = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
-    egui::Color32::from_rgb(q(a.color[0]), q(a.color[1]), q(a.color[2]))
+    theme::rgb(a.color)
 }
 
 /// A color button that writes back **only on a real edit**. egui's
@@ -282,13 +282,13 @@ pub(crate) fn selector_section(
         // weights (cf. `Archetype::capture`).
         let color = archetype_color32(arch);
         let icon_fmt = egui::TextFormat {
-            font_id: egui::FontId::new(14.0, fonts::phosphor()),
+            font_id: egui::FontId::new(theme::BODY_SIZE, fonts::phosphor()),
             color,
             valign: egui::Align::Center,
             ..Default::default()
         };
         let text_fmt = egui::TextFormat {
-            font_id: egui::FontId::new(14.0, egui::FontFamily::Proportional),
+            font_id: egui::FontId::new(theme::BODY_SIZE, egui::FontFamily::Proportional),
             color,
             valign: egui::Align::Center,
             ..Default::default()
@@ -838,7 +838,7 @@ fn archetype_editor(
             });
         help::hint(
             ui,
-            "Count, radius and reserve are baked at spawn, applied on the next reset (⟲).",
+            "Count, radius and reserve are baked at spawn, applied on the next Reset.",
         );
     });
 
@@ -1086,16 +1086,15 @@ fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_ra
 /// preview, without activation).
 fn activation_color(v: Option<f32>) -> egui::Color32 {
     let Some(v) = v else {
-        return egui::Color32::from_gray(110);
+        return theme::ACT_NEUTRAL;
     };
     let t = v.clamp(-1.0, 1.0).abs();
-    let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
-    let base = 60; // resting gray
-    if v >= 0.0 {
-        egui::Color32::from_rgb(lerp(base, 240), lerp(base, 150), lerp(base, 40)) // warm
+    let pole = if v >= 0.0 {
+        theme::ACT_WARM
     } else {
-        egui::Color32::from_rgb(lerp(base, 60), lerp(base, 140), lerp(base, 240)) // cold
-    }
+        theme::ACT_COLD
+    };
+    theme::ACT_REST.lerp_to_gamma(pole, t)
 }
 
 /// Draws an MLP as a **graph** (item 18b-viz): one column of nodes per layer (input
@@ -1162,13 +1161,13 @@ pub(crate) fn draw_mlp_graph(
                         let wt = w[o * fan_in + i];
                         let a = (wt.abs() * 0.9).clamp(0.04, 0.9);
                         let c = if wt >= 0.0 {
-                            egui::Color32::from_rgb(230, 150, 60)
+                            theme::EDGE_POS
                         } else {
-                            egui::Color32::from_rgb(70, 140, 230)
+                            theme::EDGE_NEG
                         };
                         Stroke::new(1.0, c.gamma_multiply(a))
                     }
-                    _ => Stroke::new(0.5, egui::Color32::from_gray(80)),
+                    _ => Stroke::new(0.5, theme::INK_FAINT),
                 };
                 painter.line_segment([pos(col, i, from_n), pos(col + 1, o, to_n)], stroke);
             }
@@ -1210,11 +1209,7 @@ pub(crate) fn draw_mlp_graph(
             };
             let center = pos(col, node, n);
             painter.circle_filled(center, radius, activation_color(act));
-            painter.circle_stroke(
-                center,
-                radius,
-                Stroke::new(0.6, egui::Color32::from_gray(25)),
-            );
+            painter.circle_stroke(center, radius, Stroke::new(0.6, theme::SURFACE));
         }
     }
 
@@ -1224,7 +1219,7 @@ pub(crate) fn draw_mlp_graph(
     // the steering in body frame (forward, side). Drawn in the reserved margins on
     // either side, at the height of each relevant node.
     let font = egui::FontId::monospace(8.0);
-    let ink = egui::Color32::from_gray(165);
+    let ink = theme::INK;
     let n_in = sizes[0];
     // Channel names from the MLP contract (`MlpBrain::CHANNEL_LABELS`): the input is one
     // block of `rays` per channel (vision ++ target ++ threat).
@@ -1321,7 +1316,7 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     });
                 help::hint(
                     ui,
-                    "Seed and arena walls apply on the next Reset (⟲). Population, bodies and \
+                    "Seed and arena walls apply on the next Reset. Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
                 );
             });
@@ -1379,7 +1374,7 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     ui,
                     "A finite nutrient bounds REPRODUCTION (Liebig), decoupled from \
                  survival (the sun). The field is fed by the sources below and spread \
-                 by diffusion into gradients. All (reset): applied at ⟲.",
+                 by diffusion into gradients. All (reset): applied on the next Reset.",
                 );
                 egui::Grid::new("nutrient_fields")
                     .num_columns(2)

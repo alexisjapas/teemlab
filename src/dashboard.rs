@@ -317,10 +317,10 @@ fn dashboard_section(
 
     // Status + progress.
     let (label, color) = match view.status {
-        BreedingStatus::Idle => ("Idle", egui::Color32::GRAY),
-        BreedingStatus::Running => ("Running…", egui::Color32::from_rgb(240, 180, 80)),
-        BreedingStatus::Done => ("Done", egui::Color32::from_rgb(120, 200, 120)),
-        BreedingStatus::Stopped => ("Stopped", egui::Color32::GRAY),
+        BreedingStatus::Idle => ("Idle", crate::theme::INK_MUTED),
+        BreedingStatus::Running => ("Running…", crate::theme::ACCENT),
+        BreedingStatus::Done => ("Done", crate::theme::SUCCESS),
+        BreedingStatus::Stopped => ("Stopped", crate::theme::INK_MUTED),
     };
     ui.colored_label(color, label);
     if view.total > 0 {

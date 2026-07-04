@@ -19,6 +19,7 @@ mod panels;
 mod recorder;
 mod runs;
 mod status;
+mod theme;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};

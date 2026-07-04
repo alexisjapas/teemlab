@@ -297,7 +297,7 @@ pub(crate) fn scenario_section(
     // marker (e.g. "●"): the embedded DejaVu subset renders some symbols as tofu.
     let name = loaded_name(loaded_path.as_deref());
     let text = if dirty {
-        egui::RichText::new(format!("{name} *")).color(egui::Color32::from_rgb(240, 180, 80))
+        egui::RichText::new(format!("{name} *")).color(crate::theme::ACCENT)
     } else {
         egui::RichText::new(name)
     };

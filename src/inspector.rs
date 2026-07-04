@@ -229,7 +229,7 @@ pub(crate) fn inspector_section(
     )) = agents.get(entity)
     else {
         ui.colored_label(
-            egui::Color32::from_rgb(255, 140, 120),
+            crate::theme::ERROR,
             "The selected agent no longer exists (dead?).",
         );
         ui.weak("Click another agent, or in the void to deselect.");
@@ -441,13 +441,13 @@ pub(crate) fn inspector_section(
                     ui.add(
                         egui::ProgressBar::new(target)
                             .desired_width(width(85.0))
-                            .fill(egui::Color32::from_rgb(220, 130, 40))
+                            .fill(crate::theme::TARGET)
                             .text(format!("{target:.2}")),
                     );
                     ui.add(
                         egui::ProgressBar::new(threat)
                             .desired_width(width(85.0))
-                            .fill(egui::Color32::from_rgb(210, 60, 60))
+                            .fill(crate::theme::THREAT)
                             .text(format!("{threat:.2}")),
                     );
                 });

@@ -18,12 +18,7 @@ use teemlab::genotype::TRAITS;
 use teemlab::metrics::{Curve, History, population_curves, trait_curves};
 
 use crate::fonts::{self, icons};
-
-/// Converts an sRGB color `[r, g, b] ∈ [0, 1]` (backend-agnostic) to `Color32`.
-fn rgb(c: [f32; 3]) -> egui::Color32 {
-    let q = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-    egui::Color32::from_rgb(q(c[0]), q(c[1]), q(c[2]))
-}
+use crate::theme::{self, rgb};
 
 /// The evolution curves — population per species then normalized gene drift.
 /// Rendered in the bottom panel. Read-only over the history (and over `config`
@@ -125,11 +120,7 @@ pub(crate) fn plot(
     let width = ui.available_width().max(64.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(
-        rect,
-        egui::CornerRadius::same(2),
-        egui::Color32::from_gray(18),
-    );
+    painter.rect_filled(rect, egui::CornerRadius::same(2), theme::SURFACE);
 
     let (mut x_min, mut x_max) = (f32::MAX, f32::MIN);
     for c in curves {
@@ -145,7 +136,7 @@ pub(crate) fn plot(
             egui::Align2::CENTER_CENTER,
             "…",
             egui::FontId::monospace(12.0),
-            egui::Color32::from_gray(90),
+            theme::INK_FAINT,
         );
         return;
     }
@@ -166,8 +157,8 @@ pub(crate) fn plot(
     };
 
     // Light grid + axis labels. Y is fractional (gene drift, ≤1) or integer (counts).
-    let grid = egui::Stroke::new(1.0, egui::Color32::from_gray(36));
-    let tick = egui::Color32::from_gray(130);
+    let grid = egui::Stroke::new(1.0, theme::GRID);
+    let tick = theme::INK_MUTED;
     let font = egui::FontId::monospace(9.0);
     let y_dec = if y_max <= 1.5 { 2 } else { 0 };
     const DIVS: usize = 4;
@@ -233,7 +224,7 @@ pub(crate) fn plot(
         let hx = inner.left() + (t - x_min) / x_span * inner.width();
         painter.line_segment(
             [egui::pos2(hx, inner.top()), egui::pos2(hx, inner.bottom())],
-            egui::Stroke::new(1.0, egui::Color32::from_gray(90)),
+            egui::Stroke::new(1.0, theme::INK_FAINT),
         );
         for c in curves {
             if let Some(p) = nearest(&c.pts, t) {

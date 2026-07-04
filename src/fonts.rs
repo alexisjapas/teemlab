@@ -82,7 +82,7 @@ pub fn icon(glyph: char) -> egui::RichText {
 /// family, so we build a two-section `LayoutJob`. Both use [`egui::Color32::PLACEHOLDER`]
 /// (egui's sentinel) so the widget recolours them per state (hover / disabled).
 pub fn icon_label(glyph: char, label: &str) -> egui::WidgetText {
-    let size = 14.0; // body size; egui buttons use the body text style.
+    let size = crate::theme::BODY_SIZE; // egui buttons use the body text style.
     let fmt = |family: egui::FontFamily| egui::TextFormat {
         font_id: egui::FontId::new(size, family),
         color: egui::Color32::PLACEHOLDER,
@@ -170,26 +170,36 @@ pub fn setup_ui_fonts(
             .or_default()
             .insert(0, DEPARTURE.0.to_owned());
     }
+    // A dedicated family (opt-in), NOT a Proportional fallback: Inter maps some PUA
+    // codepoints and would shadow our icons there. Icons are drawn only via this
+    // family ([`icon`] / [`icon_label`]), gated on [`FontsReady`] so they are never
+    // requested before egui binds the family (next pass).
+    //
+    // Phosphor sits **first** (its icon codepoints win), with the Proportional fonts
+    // appended **behind** it purely as a glyph fallback. Without that fallback, an
+    // icon-only font has no replacement character ('◻'/'?') and epaint logs
+    // "Failed to find replacement characters …" when it builds this family. The
+    // fallback never shadows an icon (Phosphor is queried first) and we never draw
+    // text through this family, so it is invisible in practice — it only silences
+    // the warning.
+    //
+    // The family is registered even when the file is **missing**: it is then a pure
+    // alias of the Proportional list, so `icon` degrades to the replacement glyph
+    // instead of panicking on an unknown family — the app stays usable without the
+    // asset.
+    let mut family = Vec::new();
     if load(&mut fonts, PHOSPHOR) {
-        // A dedicated family (opt-in), NOT a Proportional fallback: Inter maps some PUA
-        // codepoints and would shadow our icons there. Icons are drawn only via this
-        // family ([`icon`] / [`icon_label`]), gated on [`FontsReady`] so they are never
-        // requested before egui binds the family (next pass).
-        //
-        // Phosphor sits **first** (its icon codepoints win), with the Proportional fonts
-        // appended **behind** it purely as a glyph fallback. Without that fallback, an
-        // icon-only font has no replacement character ('◻'/'?') and epaint logs
-        // "Failed to find replacement characters …" when it builds this family. The
-        // fallback never shadows an icon (Phosphor is queried first) and we never draw
-        // text through this family, so it is invisible in practice — it only silences
-        // the warning.
-        let mut family = vec![PHOSPHOR.0.to_owned()];
-        if let Some(proportional) = fonts.families.get(&egui::FontFamily::Proportional) {
-            family.extend(proportional.iter().cloned());
-        }
-        fonts.families.insert(phosphor(), family);
+        family.push(PHOSPHOR.0.to_owned());
     }
+    if let Some(proportional) = fonts.families.get(&egui::FontFamily::Proportional) {
+        family.extend(proportional.iter().cloned());
+    }
+    fonts.families.insert(phosphor(), family);
 
+    // The global style (semantic colors, corner radii, text sizes — cf. `theme`).
+    // Set here, next to the fonts, so the whole look is installed in one place;
+    // unlike fonts it applies immediately, so it needs no `FontsReady` step.
+    crate::theme::apply(ctx);
     ctx.set_fonts(fonts);
     Ok(())
 }
