@@ -810,6 +810,56 @@ mod tests {
         }
     }
 
+    /// **Coverage guard:** every [`Genotype`] gene must have a [`TRAITS`] entry —
+    /// otherwise the gene silently never mutates ([`Genotype::mutate`] loops `TRAITS`)
+    /// and never appears in the editor. Two layers: (1) the **exhaustive struct
+    /// literal** below has no `..default()`, so *adding a `Genotype` field breaks this
+    /// test at compile time* — the author must acknowledge the new gene here; (2)
+    /// rebuilding the genotype through **only** the `TRAITS` get/set accessors (from a
+    /// distinct baseline) then asserting equality fails at runtime if a gene has no
+    /// entry (its field keeps the baseline value). The *Mutability* and *bounds* sides
+    /// need no runtime check: each `TRAITS` entry's `mutable`/`set_mutable` and
+    /// `bounds`/`bounds_mut` closures name a `Mutability` / `SimConfig` field, so a
+    /// `TRAITS` entry cannot compile without them — coverage there is guaranteed by the
+    /// type system.
+    #[test]
+    fn traits_cover_every_genotype_gene() {
+        // Exhaustive literal (no `..default()`) with a distinct value per field, none
+        // equal to that field's `Default` value (the rebuilt baseline below).
+        let src = Genotype {
+            max_speed: 1.0,
+            agility: 2.0,
+            vision_range: 3.0,
+            vision_fov_deg: 5.0,
+            reproduction_threshold: 6.0,
+            offspring_energy: 7.0,
+            mutation_rate: 8.0,
+            base_metabolism: 9.0,
+            move_cost: 11.0,
+            vision_rays: 12.0,
+            photosynthesis: 13.0,
+            seed_dispersal: 14.0,
+            brain_cost: 15.0,
+            agility_cost: 16.0,
+            nutrient_absorption: 17.0,
+            nutrient_capacity: 18.0,
+            offspring_nutrient: 19.0,
+            act_cost: 20.0,
+        };
+        // Rebuild through ONLY the TRAITS accessors, starting from the defaults (whose
+        // values `src` deliberately avoids). A gene missing from TRAITS keeps its
+        // default → the equality below fails.
+        let mut rebuilt = Genotype::default();
+        for t in &TRAITS {
+            (t.set)(&mut rebuilt, (t.get)(&src));
+        }
+        assert_eq!(
+            rebuilt, src,
+            "a Genotype gene has no TRAITS entry (it would silently never mutate / \
+             be absent from the editor)"
+        );
+    }
+
     /// Any mutation leaves **every** [`TRAITS`] gene within its bounds — even
     /// repeated, even starting from a value at the edge. Generic: a new trait is
     /// covered without touching this test.
