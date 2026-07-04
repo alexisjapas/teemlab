@@ -78,7 +78,7 @@ an explicit `Fitness` (`BestEvolved` / `Population` / **`Dominance`** — combat
 the top survivors and **re-seeds** them as the next cohort's founders. Two faces: a headless
 **`breed` bin** (a generator that captures the best genome into the catalog) and a **windowed
 dashboard** (Run/Stop + progress, a fitness-vs-generation curve, a leaderboard with the
-genome's MLP graph + Save-as-variant). Carriers: `13_mlp_breed` (breed a forager MLP),
+genome's MLP graph + Save to library). Carriers: `13_mlp_breed` (breed a forager MLP),
 `14_battle_breed` (breed one faction to dominate a rival) and **`15_red_queen`** (breed
 **both** factions at once — co-evolution, the Red Queen, with a *per-faction* curve +
 leaderboard). Cf. [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
@@ -118,14 +118,18 @@ src/
   rng.rs          Minimal deterministic PRNG (SplitMix64) + Gaussian draw.
   spawn.rs        Population: arena + agents; spawn_agent (compiles a genotype into a living phenotype).
   main.rs         Windowed binary → `teemlab`: wires the docked panels + frames the sim in the central area (set_sim_camera).
-  panels.rs       DOCKED layout of the windowed build: ONE show_inside dock (top: scenario menu · centered transport controls · View · Export — left "Edit": World + Entities — right "Analysis": live stats + inspector — bottom: curves), each region calling its tool module's *_section. User guide: docs/editor.md.
+  panels.rs       DOCKED layout of the windowed build: ONE show_inside dock (top: scenario menu · centered transport controls · View · Help · Export — left "Edit": World + Entities — right "Analysis": live stats + inspector — bottom: curves), each region calling its tool module's *_section. Side panels RESIZABLE within a range that always reserves a minimum sim width; the archetype editor opens a second left column on a wide window and folds into the left panel (single column) on a narrow one (cf. layout.rs). Also paints the themed central overlay (run time, a Paused chip, an empty-arena hint) and the shortcuts cheatsheet. User guide: docs/editor.md.
+  layout.rs       Pure layout math (windowed only): the side-panel width ranges (min-central guarantee) and the two-/single-column mode of the left region, with hysteresis. Unit-tested; panels.rs is a thin caller.
+  theme.rs        Windowed-UI theme: semantic color tokens (one accent, an ink ramp, the perception/MLP encodings) + the global egui Style, installed once at startup. Every color resolves here.
+  keymap.rs       Single source of truth for the keyboard/mouse bindings: the input handlers, the button tooltips and the `?` cheatsheet all read one table, so they can't drift.
   editor.rs       egui UI (windowed only): the View-menu Layers toggles, the palette (create / duplicate / reorder / delete, drag-and-drop placement, Delete removes), species library (species/*.ron), the archetype editor (body / genes / brain), and the World editor (arena, seed, gene bounds, relations, nutrient field + sources, appearance).
-  hud.rs          egui HUD (windowed only): population curves + gene drift (read-only).
+  hud.rs          egui HUD (windowed only): population curves + gene drift (read-only), composed over the shared plot widget.
+  plot.rs         Shared plot widget (windowed only): the homemade time-series plotter with autoscale, round grid steps and label-sized margins; reused by the HUD curves and the breeding dashboard.
   controls.rs     egui controls (windowed only): pause / speed / step / reset (time control; reset rebuilds the world — agents, sources, the nutrient field — and re-applies tick_hz).
   inspector.rs    egui inspector (windowed only): click → genotype / energy / perception / action / MLP graph / genealogy (read-only).
-  runs.rs         egui management (windowed only): scenario selector, hot reload, run save/load.
+  runs.rs         egui management (windowed only): scenario selector, hot reload, run save/load (modal confirm / Save-As dialogs).
   recorder.rs     egui menu (windowed only): configures and launches the `record` binary as a subprocess.
-  dashboard.rs    egui breeding dashboard (windowed only, P5): drives the generational Orchestrator on a BACKGROUND thread (so the render loop stays responsive); a floating window with Run/Stop + progress, a fitness-vs-generation curve and a PER-FACTION leaderboard (inspect a genome's MLP graph + Save-as-variant). Shown only for a scenario with a `batch`.
+  dashboard.rs    egui breeding dashboard (windowed only, P5): drives the generational Orchestrator on a BACKGROUND thread (so the render loop stays responsive); a floating window with Run/Stop + progress, a fitness-vs-generation curve and a PER-FACTION leaderboard (inspect a genome's MLP graph + Save to library). Requires a scenario with a `batch`; toggled from the top-bar Breeding button.
   metrics.rs      MetricsPlugin: shared metrics (History + sampling) — population / trait curves, live stats; one source for the egui HUD and the native visualizer.
   visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder; toggleable Layers (agents + nutrient heatmaps, shared opacity).
   dataviz.rs      DataVizPlugin: the NATIVE Bevy visualizer (Text2d / Sprite / gizmos) for the VIDEO (stats / curves / inspector, 9:16) — reserved to `record`.
@@ -253,15 +257,20 @@ flame [scenario.ron]                  # flamegraph of the headless sim → outpu
 > follows `teemlab`, debug as well as release.
 
 The windowed build adds, on top of the sim, the egui tooling as **docked panels**
-that frame the central simulation area (cf. `panels.rs`): **scenario + recording** in
-the top strip; a **left** column with the **Layers** toggles (agents + nutrient
-heatmaps) and the **World** editor (arena, rate, seed, gene bounds, relation table,
-**nutrient field + sources**); a **right** column with the **archetype** palette
-(drag-and-drop to place, **Delete** to remove the entity under the cursor) and the
-editor of the selected archetype; a **bottom** strip with controls + stats, then the
-HUD curves and the agent inspector. The panels *reserve* the edges, so the sim is
-always framed and fully visible in the center. All this tooling lives outside
-`FixedUpdate` (rendering / UI); the headless build embeds none of it.
+that frame the central simulation area (cf. `panels.rs`): **scenario menu · centered
+transport · View · Help · Export** in the top strip; a **left** column with the
+**World** editor (arena, rate, seed, gene bounds, relation table, **nutrient field +
+sources**) and the **archetype** palette (drag-and-drop to place, **Delete** to remove
+the entity under the cursor); a **right** "Analysis" column with live stats and the
+agent inspector; a **bottom** strip with the HUD curves. Editing an archetype opens its
+editor as a second left column (or, on a narrow window, in place of the list). The side
+panels are **resizable**, always reserving a minimum width for the sim, so the panels
+*reserve* the edges and the simulation stays framed and fully visible in the center.
+The **View** menu holds the layer toggles (agents + nutrient heatmaps); the **Help**
+menu the inline-help switch and a keyboard-shortcuts cheatsheet (`?`). A single theme
+(`theme.rs`) and one keybinding table (`keymap.rs`) keep the look and the shortcuts
+consistent. All this tooling lives outside `FixedUpdate` (rendering / UI); the headless
+build embeds none of it.
 
 ## License
 

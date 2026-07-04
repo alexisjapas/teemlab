@@ -237,6 +237,30 @@ open work in §9.
   one `UiStatus` shown once in the bottom bar. (The deferred *pan/zoom + view reset* and
   windowed *follow modes* are now done — cf. the observation bullet below; only minor
   per-panel polish remains.)
+- **UI rework — ergonomics & elegance** (windowed build, sim untouched; stays **egui** —
+  the native migration remains shelved, §9). Five independently-shipped passes over the
+  same `panels::dock`. **`theme.rs`**: semantic color tokens (one accent, an ink ramp,
+  the perception/MLP encodings) + a global egui `Style`, installed once at startup; the
+  ~25 scattered `Color32` literals (the amber re-hardcoded in four modules) now resolve
+  to named tokens, and a missing Phosphor font degrades to a fallback glyph instead of
+  panicking. **`layout.rs`**: the fixed 370 pt side panels become **resizable** within a
+  range that always reserves a minimum central width (no more 1110 pt of chrome squeezing
+  the sim on a laptop), and the archetype editor **folds into the left panel** on a narrow
+  window (single column, with a back button + switcher) instead of forcing a second column
+  — the *different layout that sidesteps the all-or-nothing docked-panel constraint* §9
+  anticipated, with hysteresis so resizing the window doesn't flicker. **`keymap.rs`**: one
+  binding table feeds the input handlers, the tooltips **and** a `?` cheatsheet, so they
+  cannot drift; the top bar gains a **Help** menu (inline-help switch + cheatsheet), the
+  breeding dashboard a real toggle (was appear-with-batch, undismissable), and the four
+  capture/persist actions unify on two verbs (*Capture* / *Save to library*). **`plot.rs`**:
+  the homemade plotter becomes one shared, autoscaled widget (round grid steps,
+  label-sized margins) reused by the HUD and the dashboard; the curves panel is
+  height-resizable. **Overlay & feedback**: the hand-painted `PAUSED` banner becomes a
+  themed run-time read-out + a *Paused* chip + an empty-arena hint; the `UiStatus` line
+  gains kinds (info/success/**error**) and expiry (info/success fade, errors persist);
+  the confirm / Save-As dialogs become real `egui::Modal`s (dim the app, swallow clicks).
+  All pure logic (theme, layout math, keymap coverage, plot scaling, status expiry) is
+  unit-tested; `fmt`/`clippy` clean, `tests/mlp.rs` untouched.
 - **Scenario management — document model.** The scattered scenario IO (a combo +
   `⟲ Reload`, a free-text Load path, a silent `💾 Save`) becomes a single **Scenario
   menu** (New / Open ▸ / Save / Save As) with the current file name and a
@@ -257,16 +281,17 @@ open work in §9.
   follow the entity's **kind** (a plant opens flora/nutrients and collapses the mobile
   axes; `GeneCategory`/`is_cost` are presentation-only → RNG stream intact). **Body** is
   an aligned grid; **Brain** a clearer "decider" selector with a body↔brain coherence
-  warning. Side panels are **fixed-width, non-resizable** (egui can't shrink-wrap a side
-  panel to its content), and the editor split into **master / detail**: a *World* panel
+  warning. The editor split into **master / detail**: a *World* panel
   (params + the archetypes list / library) and a separate **archetype editor** panel
   that opens on selection (a 2nd left column above the full-width curves), created
-  **last** so a conditional panel doesn't churn the other panels' egui ids. **Typography**:
-  a real type system on the egui context — **Inter** (text), **Departure Mono** (values,
-  via `fonts::value`), **Phosphor** (icons, a dedicated named family; v2.1 codepoints
-  verified by rendering) — replacing the tofu / emoji glyphs across every panel.
-  **Dismissable inline help** (`help::hint`, one egui-memory flag toggled from View)
-  declutters for the expert. Every bundled font carries its licence (Inter / Departure =
+  **last** so a conditional panel doesn't churn the other panels' egui ids. (Side panels
+  were fixed-width here; the *UI rework — ergonomics & elegance* bullet later made them
+  resizable and added the narrow-window single-column fold — cf. `layout.rs`.)
+  **Typography**: a real type system on the egui context — **Inter** (text),
+  **Departure Mono** (values, via `fonts::value`), **Phosphor** (icons, a dedicated
+  named family; v2.1 codepoints verified by rendering) — replacing the tofu / emoji
+  glyphs across every panel. **Dismissable inline help** (`help::hint`, one egui-memory
+  flag; the toggle later moved to the top-bar **Help** menu) declutters for the expert. Every bundled font carries its licence (Inter / Departure =
   OFL, Phosphor = MIT, DejaVu recovered verbatim from the font's `name` table).
 - **Editor — next pass: archetype library (thread 2, done).** The Species library
   (item 4) is reworked from a combo + button into a **browsable list** — each
@@ -321,9 +346,9 @@ open work in §9.
   Surfaced two ways: a headless **`breed` bin** (prints fitness/generation, captures the
   best genome into the catalog — the multi-generation extension of `train`), and a
   **windowed dashboard** (`dashboard.rs`): a floating window (shown when a `batch` is set)
-  with Run/Stop + progress, the **fitness-vs-generation curve** (the shared `hud::plot`,
-  generalized with an `x_unit`), and a **leaderboard** of the cohort (inspect an MLP
-  genome's network via the 18b-viz graph + Save-as-variant); the `BatchConfig` is authored
+  with Run/Stop + progress, the **fitness-vs-generation curve** (the shared `plot::plot`,
+  with an `x_unit` and auto Y-axis), and a **leaderboard** of the cohort (inspect an MLP
+  genome's network via the 18b-viz graph + Save to library); the `BatchConfig` is authored
   in the World panel (`editor::batch_section`). First carrier `scenarios/examples/13_mlp_breed.ron`
   (breed a forager MLP — the founder-diversity answer to the item-18b variance finding).
   **Driver `tests/breeding.rs`** tests the orchestrator *mechanism* (it runs every
@@ -568,7 +593,7 @@ of these pieces, never a special case.
 |---|---|---|
 | ECS / engine | **Bevy 0.19** | suited to heavy simulations |
 | Physics | **Avian 0.7** | Bevy-native; collisions **and** occlusion raycasting |
-| HUD / curves | **bevy_egui** | population, trait drift in real time — *native `bevy_ui`/feathers migration attempted & shelved, see §9* |
+| Windowed UI | **bevy_egui** | docked panels, HUD curves (shared `plot.rs` widget), one `theme.rs` + `keymap.rs` — *native `bevy_ui`/feathers migration attempted & shelved, see §9* |
 | Serialization | **serde + RON** | readable archetypes; binary for the snapshots |
 | Brain | **homemade** (MLP + mutation/crossover) | ML libs aim at the big GPU network, the opposite of the need |
 | Video | **ffmpeg** | fed by re-render (§7) |
@@ -1246,11 +1271,16 @@ and *scaling* work.
     truth; forward = entity-scoped `ValueChange`/`Activate` observers, reverse = a system
     pushing values back) — clean, but the dense editor (~40 live-bound fields + color +
     dynamic lists) is the **bulk of the cost**, and the result's ergonomics did not carry.
-  - Meanwhile the egui deprecations stay carried behind documented `#[allow(deprecated)]`
-    (top-level `Panel::show(ctx, …)` in `panels`, `ctx.available_rect()` in
-    `main::set_sim_camera` — egui 0.34 offers no replacement for "the area left after
-    panels"). Revisit the whole direction later (perhaps once feathers matures, or with a
-    different layout that sidesteps the all-or-nothing docked-panel constraint).
+  - The egui-0.34 deprecations that motivated part of this (top-level `Panel::show(ctx, …)`,
+    `ctx.available_rect()`) were since cleared by the *UI rework — foundation* pass
+    (`show_inside` + `available_rect_before_wrap` into `CentralRect`), so no
+    `#[allow(deprecated)]` remains. And the closing lesson — *a different layout that
+    sidesteps the all-or-nothing docked-panel constraint* — was **realized within egui** by
+    the *UI rework — ergonomics & elegance* pass: resizable side panels with a guaranteed
+    minimum sim width and a narrow-window single-column fold (`layout.rs`). That removed the
+    ergonomic pain (fixed 370 pt columns squeezing the sim) that was a chief motivation for
+    going native, so the native migration is **further deprioritized** — revisit only if
+    feathers matures enough to also win on the dense editor (the bulk of the cost above).
 - **Known bug — `record --select off --no-hud` crashes (low priority)**: with the HUD
   disabled *and* selection off, `dataviz::draw_viz` still runs and reads
   `Res<Selection>`, which only `SelectionRenderPlugin` inserts (added solely when
@@ -1444,7 +1474,7 @@ and *scaling* work.
   home that can grow (cf. *for later* below). A species in the catalog is a **base + its
   variants**, grouped by name across libraries; a **dropdown** picks the form (base by
   default), **Import** copies the chosen one, and a **search** filters by name / id. An
-  **evolved variant** is saved from the **inspector** ("Save as variant", a named
+  **evolved variant** is saved from the **inspector** ("Save to library", a named
   snapshot = `Archetype::capture` — evolved genotype + frozen brain) into `saved/` with id
   **`"<scenario>-<n>"`** (`unsaved` when the origin scenario is unsaved; `n` per
   (base, scenario)); if no base exists for that species, the **standard form is
