@@ -62,6 +62,7 @@ fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig, hei
             pad: 0.05,
         },
         x_unit: "s",
+        marker_x: None,
     };
     plot::plot(ui, &cfg, &curves);
     plot::legend(ui, &curves);
@@ -90,6 +91,7 @@ fn draw_traits(ui: &mut egui::Ui, history: &History, config: &SimConfig, height:
         height,
         y: YAxis::Fixed { min: 0.0, max: 1.0 },
         x_unit: "s",
+        marker_x: None,
     };
     plot::plot(ui, &cfg, &curves);
     plot::legend(ui, &curves);

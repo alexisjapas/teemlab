@@ -47,6 +47,7 @@ use teemlab::selection::{AutoSelect, Selection};
 use teemlab::visuals::Layers;
 
 use crate::controls::{self, SimControls};
+use crate::dashboard::{self, BreedingSession};
 use crate::editor::{self, Palette};
 use crate::fonts::{self, icons};
 use crate::help;
@@ -127,6 +128,10 @@ pub struct DockState<'w> {
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
     pub prefs: ResMut<'w, UiPrefs>,
+    /// The breeding session (P5) — the docked breeding panel (right column, replacing
+    /// Analysis when the Breeding toggle is on) reads/drives it. Bundled here so `dock`
+    /// stays within Bevy's 16-parameter limit.
+    pub breeding: ResMut<'w, BreedingSession>,
 }
 
 /// **Observation** state of the right panel, bundled into one [`SystemParam`] so
@@ -389,7 +394,10 @@ pub fn dock(
                             let on = state.windows.breeding;
                             if ui
                                 .selectable_label(on, fonts::icon_label(icons::SPARKLE, "Breeding"))
-                                .on_hover_text("Show / hide the breeding dashboard.")
+                                .on_hover_text(
+                                    "Show the breeding dashboard in the right panel (replaces \
+                                     Analysis while on).",
+                                )
                                 .clicked()
                             {
                                 state.windows.breeding = !on;
@@ -484,17 +492,42 @@ pub fn dock(
     let detail_in_left = editor_open && mode == crate::layout::LeftMode::SingleColumn;
     let two_column_editor = editor_open && mode == crate::layout::LeftMode::TwoColumn;
 
-    // Right column — **Analysis** of the current state: live *stats* (means) then the
-    // agent *inspector*, with *Observation* pinned above the scroll. Resizable within a
-    // range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other side" is
-    // last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
+    // Right column — **Analysis** of the current state (live *stats* + the agent
+    // *inspector*), OR the **Breeding dashboard** when its toggle is on and the scenario
+    // carries a `batch` (P5): the docked home of the generational loop — config lives in the
+    // left World panel, this column runs it and shows the per-generation results + Replay.
+    // Docking it here (not a floating popup over the sim) is deliberate: during a run the
+    // live world is paused/unused, and a Replay shows in the still-centered sim. Resizable
+    // within a range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other
+    // side" is last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
     // before the left panels so their ranges can read this frame's fresh right width.
     let mut deselect = false;
+    let breeding_active = config.batch.is_some() && state.windows.breeding;
     let right_w = egui::Panel::right("right_panel")
         .default_size(crate::layout::SIDE_DEFAULT)
         .resizable(true)
         .size_range(crate::layout::side_range(viewport_w, layout.left_w))
         .show_inside(&mut root, |ui| {
+            if breeding_active {
+                egui::ScrollArea::vertical()
+                    .id_salt("breeding_scroll")
+                    .show(ui, |ui| {
+                        if let Some(act) =
+                            dashboard::breeding_panel(ui, &mut state.breeding, &config, &mut vtime)
+                        {
+                            dashboard::apply_action(
+                                act,
+                                &mut config,
+                                &mut palette,
+                                &state.runs_panel,
+                                &mut state.ui_status,
+                                &mut sim_controls,
+                                &mut vtime,
+                            );
+                        }
+                    });
+                return;
+            }
             // Observation (small: follow mode + view reset) stays pinned; only the tall
             // sections below scroll, so each working surface keeps its own scroll offset.
             egui::CollapsingHeader::new("Observation")

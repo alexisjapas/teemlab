@@ -133,6 +133,57 @@ pub fn best_individual(individuals: &[Individual], scored_species: u16) -> Optio
         })
 }
 
+/// **Seeds a live-runnable scenario from a generation's cohort** — the mechanism the
+/// windowed dashboard uses to **replay** any generation in the live world. It sets
+/// `species`' founders to a **diverse pool** drawn from `elites` (a bred faction's ranked
+/// genomes): founder 0 is the top elite intact, the rest are mutated variants cycled over
+/// the whole cohort — the same founder-diversity the orchestrator seeds a match with, so the
+/// live world re-renders a cohort *like* that generation's (a fresh re-render: Law 10 forbids
+/// exact replay). A no-op if `elites` is empty. Leaves `batch` untouched (the live sim
+/// ignores it, so the breeding panel stays open); the founders live in
+/// [`SimConfig::founder_pools`], consumed at the next reset by `spawn`.
+pub fn seed_founders(config: &mut SimConfig, species: u16, elites: &[Individual], seed: u64) {
+    let Some(top) = elites.first() else {
+        return;
+    };
+    // One body for the whole pool (a single input size); the diversity is in the weights.
+    let genotype = top.genotype;
+    let n_sensed = config.sensed_components(species).len();
+    let n_inputs = MlpBrain::input_size(genotype.ray_count(), n_sensed);
+    let count = config
+        .archetypes
+        .get(species as usize)
+        .map_or(0, |a| a.count);
+    let mut rng = Rng::new(seed ^ (species as u64).wrapping_mul(0x9E37_79B1));
+    let founders: Vec<Brain> = (0..count)
+        .map(|k| {
+            if k == 0 {
+                top.brain.clone() // the champion, intact (its size matches `genotype`).
+            } else {
+                // Cycle over the WHOLE cohort, each variant re-homed to the shared input
+                // size (`reproduce` adapts a differing ray count) and jittered at its own
+                // rate — a diverse founding population representing the generation.
+                let base = &elites[k % elites.len()];
+                let s = rng.next_u64();
+                let heading = rng.next_f32() * std::f32::consts::TAU;
+                base.brain.reproduce(
+                    s,
+                    heading,
+                    &mut rng,
+                    base.genotype.mutation_rate,
+                    n_inputs,
+                    n_sensed,
+                )
+            }
+        })
+        .collect();
+    if let Some(arch) = config.archetypes.get_mut(species as usize) {
+        arch.genotype = genotype;
+        arch.captured_brain = Some(top.brain.clone());
+    }
+    config.founder_pools.insert(species, founders);
+}
+
 /// One **bred faction's** outcome in a generation — the data the dashboard's per-faction
 /// curve + leaderboard read. (`best` is `elites.first()`; absent when the faction died out
 /// in every match.)
@@ -205,6 +256,10 @@ impl Orchestrator {
         let batch = config.batch.clone()?;
         let mut base = config;
         base.batch = None;
+        // A live replay may have left founder pools on the config; the orchestrator seeds
+        // its own per match, so start from a clean slate (a bred species is re-seeded, a
+        // non-bred one must not inherit a stale replay pool).
+        base.founder_pools.clear();
         let factions = batch.scored_species.len();
         Some(Self {
             base,
@@ -533,6 +588,46 @@ mod tests {
             (m0.best_evolved, m0.population, m0.mean_reserve),
             (0.0, 0.0, 0.0)
         );
+    }
+
+    /// [`seed_founders`] (the replay mechanism) fills a `count`-sized founder pool led by the
+    /// champion **intact**, the rest diversified, and re-homes the bred species' genotype.
+    #[test]
+    fn seed_founders_builds_a_pool_led_by_the_champion() {
+        use crate::brain::MlpBrain;
+        let mut config = SimConfig::default();
+        config.archetypes[0].count = 5;
+        let genotype = config.archetypes[0].genotype;
+        let n_inputs = MlpBrain::input_size(genotype.ray_count(), 0);
+        let champ = Brain::Mlp(MlpBrain::random(1, n_inputs, &[4]));
+        let elites = vec![
+            Individual {
+                species: 0,
+                generation: 3,
+                reserve: 50.0,
+                genotype,
+                brain: champ.clone(),
+            },
+            Individual {
+                species: 0,
+                generation: 2,
+                reserve: 40.0,
+                genotype,
+                brain: Brain::Mlp(MlpBrain::random(2, n_inputs, &[4])),
+            },
+        ];
+        seed_founders(&mut config, 0, &elites, 7);
+        let pool = config.founder_pools.get(&0).expect("a founder pool");
+        assert_eq!(pool.len(), 5, "one founder per archetype count");
+        assert_eq!(pool[0], champ, "founder 0 is the champion, intact");
+        assert!(
+            pool[1..].iter().any(|b| *b != champ),
+            "the rest are diversified variants of the cohort"
+        );
+        // An empty cohort is a no-op (no pool inserted).
+        let mut c2 = SimConfig::default();
+        seed_founders(&mut c2, 0, &[], 7);
+        assert!(c2.founder_pools.is_empty());
     }
 
     /// `Dominance` = own survivors − living rivals (other **non-sessile** species); food

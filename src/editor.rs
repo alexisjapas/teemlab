@@ -1706,15 +1706,18 @@ fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// (default closed — most scenarios are continuous).
 fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
+        // Open by default once a batch exists, so every breeding parameter is visible where
+        // the scenario is configured (the header stays collapsed for continuous scenarios,
+        // an unobtrusive entry point). Run it from the right-panel Breeding dashboard.
         egui::CollapsingHeader::new("Breeding (generational)")
-            .default_open(false)
+            .default_open(config.batch.is_some())
             .show(ui, |ui| {
                 let mut enabled = config.batch.is_some();
                 if ui
                     .checkbox(&mut enabled, "generational regime")
                     .on_hover_text(
-                        "Run → score → breed across generations (the Breeding window, or \
-                         the `breed` bin headless).",
+                        "Run → score → breed across generations (the right-panel Breeding \
+                         dashboard, or the `breed` bin headless).",
                     )
                     .changed()
                 {

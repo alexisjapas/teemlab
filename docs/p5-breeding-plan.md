@@ -348,6 +348,46 @@ variant = `mlp_evolved` reaching (then beating) parity.
    Step-generation deferred); the live world is paused on Run. The leaderboard is fed by a
    new `GenerationReport.elites` (the ranked per-match bests). Every piece **visually
    verified** via the Bevy screenshot API (`docs`/memory).
+5b. **Dashboard — generation-history navigation + multi-metric diagnostics + save tools
+   (done).** The dashboard was extended from a *latest-generation-only* view to browse the
+   **whole retained history** and read a cohort several ways:
+   - **Generation navigator** — a slider inspects any completed generation (its readout,
+     metrics table and leaderboard), or *follow the latest* live (default). The history was
+     already retained in `BreedingShared.reports`; the UI now reads a selected index instead
+     of `.last()`. The read methods are generation-parametrised (`*_at(gen)`).
+   - **Enriched curve** — **best + mean per faction** (mean dimmed) with an **accent marker**
+     at the inspected generation (a new `PlotConfig::marker_x`, `None` at the time-series call
+     sites → byte-identical there).
+   - **Per-match metrics table** — a new pure core `breeding::MatchMetrics` computes **every**
+     metric per match in one pass (`Fitness::of` selects the selection scalar, so `score`
+     delegates and its unit tests are unchanged); `FactionReport.match_metrics` carries them,
+     and the table accents the column that **drives** selection (`batch.fitness`). This is the
+     "several metrics between simulations" ask — the selection stays single-metric; the rest
+     are diagnostics.
+   - **Save tools** — the existing `save_variant` now saves from **any** browsed generation
+     (falls out of the navigator), plus a one-click **Save best of run** (`best_of_run` scans
+     all generations for the top-scoring champion). Visually verified via the screenshot API.
+5c. **Dashboard — docked panel + generation replay + config in the editor (done).** Reworked
+   from a floating popup over the play area (unacceptable UX) into a first-class docked panel:
+   - **Docked, not floating.** `dashboard::draw` (a floating `egui::Window`) was replaced by
+     `dashboard::breeding_panel`, called from `panels::dock` inside the shared root `Ui` — it
+     **replaces the right *Analysis* column** while the Breeding toggle is on (during a run the
+     live world is paused/unused; a Replay plays out in the still-centred sim). `BreedingSession`
+     moved into the `DockState` `SystemParam` bundle (16-param limit); the panel returns a
+     `BreedingAction` the dock applies via `apply_action` (it holds the catalog + live-world
+     resources).
+   - **Replay any generation.** A per-generation **Replay** button re-seeds the live world's
+     founders from that generation's whole cohort (`breeding::seed_founders` — founder 0 the
+     champion intact, the rest diversified variants cycled over the elites, into
+     `SimConfig::founder_pools`) and triggers a reset — the deferred "live spectator" (§9), as a
+     **fresh re-render** (Law 10 forbids exact seed replay). Reuses the reset path + the
+     founder-pool spawn already proven headless.
+   - **All params in the editor.** `editor::batch_section` already exposed every `BatchConfig`
+     field; it now opens by default once a batch exists (discoverable where the scenario is
+     configured), so config lives in the left World panel and the right panel runs it — no
+     chicken-and-egg (the *enable* toggle must stay always-reachable, not only inside a
+     batch-gated panel). Unit-tested `seed_founders`; the docked panel + Replay button visually
+     verified via the screenshot API.
 6. **Item 20 — cross-match parallelism (done).** `Orchestrator::step` runs the cohort on
    **scoped OS threads** (one per match) over isolated `World`s, sharing Bevy's global task
    pool — the feared nested-`App` contention **did not materialize** (concurrent
@@ -360,9 +400,10 @@ variant = `mlp_evolved` reaching (then beating) parity.
 
 ## 9. Open questions (deferred, not v1)
 
-- **Live spectator** (decision 1 deferred): re-render the best genome's match in the
-  windowed live world — the analog of `record`'s "fresh re-render of the best genome" (§7),
-  since parallelism forbids exact seed replay.
+- **Live spectator (done — step 5c):** the docked panel's **Replay** button re-renders any
+  generation's cohort in the windowed live world (`seed_founders` → founder pools → reset), the
+  analog of `record`'s "fresh re-render" (§7), since parallelism forbids exact seed replay.
+  *Still open:* an in-panel spectator that replays a *specific match* with its own seed.
 - **Richer terminal conditions** (`match_ticks` → an enum: extinction / score threshold /
   Red-Queen stop) — when item 19's battle needs them.
 - **Crossover** on NN weights (the permutation/competing-conventions problem, §9) — v1 is

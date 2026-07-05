@@ -136,10 +136,6 @@ fn main() {
                 // context once, before any panel renders (cf. `fonts`).
                 fonts::setup_ui_fonts,
                 panels::dock,
-                // Breeding dashboard window (P5) — after `dock` (same egui context), a
-                // floating window that does not touch the dock's central rect, so the sim
-                // framing and the interaction systems below stay correct.
-                dashboard::draw,
                 inspector::pick_agent,
                 inspector::delete_under_cursor,
                 editor::resolve_drag,

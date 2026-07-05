@@ -36,6 +36,9 @@ pub struct PlotConfig {
     pub height: f32,
     pub y: YAxis,
     pub x_unit: &'static str,
+    /// Optional **accent marker** at this X value (a vertical line): the breeding dashboard
+    /// marks the generation being inspected. `None` (the time-series call sites) draws none.
+    pub marker_x: Option<f32>,
 }
 
 /// The Y bounds `(min, max)` for `curves` under `y`. For [`YAxis::Auto`], scans the
@@ -254,6 +257,17 @@ pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) {
                 tick,
             );
         }
+    }
+
+    // The inspected-generation marker (accent), under the curves so the data reads on top.
+    if let Some(mx) = cfg.marker_x
+        && (x_min..=x_max).contains(&mx)
+    {
+        let x = inner.left() + (mx - x_min) / x_span * inner.width();
+        painter.line_segment(
+            [egui::pos2(x, inner.top()), egui::pos2(x, inner.bottom())],
+            egui::Stroke::new(1.5, theme::ACCENT),
+        );
     }
 
     for c in curves {

@@ -8,26 +8,33 @@
 //! progress in egui. The live `SimPlugin` world is **paused** while a run is on (it is
 //! unused — the matches run in their own worlds off-thread).
 //!
-//! Rendered as a **floating window** (a separate egui system, like the Export window),
-//! not a docked panel: it sidesteps the dock's single-root layout and 16-param limit, and
-//! a floating window already counts as UI for [`crate::panels::pointer_over_ui`] (so a
-//! click on it never falls through to the sim). Shown only when the scenario carries a
-//! `batch` regime. The window holds the controls (Run/Stop + progress), a **per-faction**
-//! readout, a **fitness-vs-generation curve** (**one line per bred faction** — the shared
-//! [`crate::hud::plot`]) and a **leaderboard** (with a faction **selector** under
-//! co-evolution; inspect an MLP genome's network + Save-as-variant to the catalog); the
-//! `batch` *editor* lives in the World panel ([`crate::editor`]). See
+//! Rendered as a **docked panel** — the right column (replacing *Analysis*) when the top-bar
+//! Breeding toggle is on and the scenario carries a `batch` regime — **not** a floating popup
+//! over the sim: [`breeding_panel`] is called from [`crate::panels::dock`] within the shared
+//! root `Ui`, so it reserves real layout space and the sim stays centred and fully visible
+//! (a Replay then plays out in it). The panel holds the controls (Run/Stop + progress), a
+//! **generation navigator** (a slider to inspect any completed generation, or *follow the
+//! latest* live — the whole history is retained) with a **Replay** button (re-seed the live
+//! world's founders from that generation's cohort — [`seed_founders`]), a per-faction readout,
+//! a **fitness-vs-generation curve** (**best + mean per faction**, an accent marker at the
+//! inspected generation — the shared [`crate::hud::plot`]), a **per-match metrics table**
+//! (every match scored under every metric, the selection-driving one accented — "several
+//! metrics between simulations") and a **leaderboard** (a faction **selector** under
+//! co-evolution; inspect an MLP genome's network, **Save to library**, or **Save best of
+//! run**). The `batch` **config** lives in the World panel's editor ([`crate::editor`], every
+//! field). Side effects ([`BreedingAction`]) are applied by [`apply_action`]. See
 //! `docs/p5-breeding-plan.md`.
 
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::egui;
 
 use teemlab::SimConfig;
 use teemlab::brain::Brain;
-use teemlab::breeding::{GenerationReport, Individual, Orchestrator};
+use teemlab::breeding::{GenerationReport, Individual, MatchMetrics, Orchestrator, seed_founders};
+use teemlab::config::Fitness;
 use teemlab::metrics::Curve;
 
 use crate::editor::{self, Palette};
@@ -73,6 +80,10 @@ pub struct BreedingSession {
     selected_faction: usize,
     /// Leaderboard row the user picked to inspect / save (UI state, not shared).
     selected: Option<usize>,
+    /// Which **generation** the readout / metrics / leaderboard inspect. `None` = *follow
+    /// the latest* (live, the default); `Some(g)` pins a past generation to browse it while
+    /// the run keeps going or after it ends. The whole history is retained in `reports`.
+    selected_generation: Option<usize>,
 }
 
 /// A leaderboard row — the lightweight per-elite stats shown in the list (no brain
@@ -99,6 +110,16 @@ struct FactionSummary {
     mean: f64,
 }
 
+/// A side-effecting request the docked breeding panel raises for the caller ([`crate::panels`])
+/// to apply where the catalog + live-world resources are in hand — the panel itself only reads.
+pub(crate) enum BreedingAction {
+    /// Save this genome as a library variant (`species/saved/`).
+    Save(Individual),
+    /// **Replay** a generation in the live world: re-seed each bred faction's founders from
+    /// its cohort (`(species, ranked elites)`) and reset — a fresh re-render (Law 10).
+    Replay(Vec<(u16, Vec<Individual>)>),
+}
+
 impl BreedingSession {
     /// Starts a breeding run on `config` (which must carry a `batch`). Spawns the
     /// orchestrator on a background thread; a **no-op** if a run is already in flight.
@@ -108,6 +129,7 @@ impl BreedingSession {
         }
         self.selected = None;
         self.selected_faction = 0;
+        self.selected_generation = None;
         let total = config.batch.as_ref().map_or(0, |b| b.generations);
         // Reset the shared state for the new run.
         if let Ok(mut s) = self.shared.lock() {
@@ -135,43 +157,53 @@ impl BreedingSession {
         s.reports.first().map_or(0, |r| r.factions.len())
     }
 
-    /// The **fitness-vs-generation** curves — one line **per bred faction** (its best
-    /// fitness, coloured by the faction's archetype) — plus the `[y_min, y_max]` range
-    /// (`Dominance` goes negative, so `y_min` may be < 0). X = generation index.
-    fn fitness_curves(&self, config: &SimConfig) -> (Vec<Curve>, f32, f32) {
+    /// Number of generations completed so far (the whole retained history).
+    fn generation_count(&self) -> usize {
+        self.shared.lock().expect("breeding mutex").reports.len()
+    }
+
+    /// The **fitness-vs-generation** curves — **two lines per bred faction**: its *best* (the
+    /// faction's colour) and its *mean* over the cohort (a dimmed shade), so the progress and
+    /// the cohort's central tendency are both legible. X = generation index. (`Dominance`
+    /// goes negative; the caller's `YAxis::Auto` handles the range.)
+    fn fitness_curves(&self, config: &SimConfig) -> Vec<Curve> {
         let s = self.shared.lock().expect("breeding mutex");
         let n = s.reports.first().map_or(0, |r| r.factions.len());
-        let mut curves = Vec::with_capacity(n);
-        let (mut y_min, mut y_max) = (0.0_f32, 1.0_f32);
+        let mut curves = Vec::with_capacity(n * 2);
         for f in 0..n {
             let species = s.reports[0].factions[f].species;
-            let mut pts = Vec::with_capacity(s.reports.len());
-            for (i, r) in s.reports.iter().enumerate() {
-                if let Some(fr) = r.factions.get(f) {
-                    let y = fr.best_fitness as f32;
-                    pts.push([i as f32, y]);
-                    y_min = y_min.min(y);
-                    y_max = y_max.max(y);
-                }
-            }
+            let color = config.color_of(species);
             let name = config
                 .archetypes
                 .get(species as usize)
                 .map_or_else(|| format!("#{species}"), |a| a.name.clone());
+            let mut best = Vec::with_capacity(s.reports.len());
+            let mut mean = Vec::with_capacity(s.reports.len());
+            for (i, r) in s.reports.iter().enumerate() {
+                if let Some(fr) = r.factions.get(f) {
+                    best.push([i as f32, fr.best_fitness as f32]);
+                    mean.push([i as f32, fr.mean_fitness as f32]);
+                }
+            }
             curves.push(Curve {
-                name,
-                color: config.color_of(species),
-                pts,
+                name: format!("{name} best"),
+                color,
+                pts: best,
+            });
+            curves.push(Curve {
+                name: format!("{name} mean"),
+                color: dim(color),
+                pts: mean,
             });
         }
-        (curves, y_min, y_max)
+        curves
     }
 
-    /// The latest generation's per-faction summaries (species + best/mean) for the readout.
-    fn faction_summaries(&self) -> Vec<FactionSummary> {
+    /// Generation `gen_idx`'s per-faction summaries (species + best/mean) for the readout.
+    fn faction_summaries_at(&self, gen_idx: usize) -> Vec<FactionSummary> {
         let s = self.shared.lock().expect("breeding mutex");
         s.reports
-            .last()
+            .get(gen_idx)
             .map(|r| {
                 r.factions
                     .iter()
@@ -185,12 +217,23 @@ impl BreedingSession {
             .unwrap_or_default()
     }
 
-    /// The latest generation's leaderboard rows for `faction` (lightweight — no brain
-    /// clone), its ranked per-match elites. Empty before the first generation completes.
-    fn leaderboard(&self, faction: usize) -> Vec<LeaderRow> {
+    /// Generation `gen_idx`'s **per-match diagnostics** for `faction` (every metric for each
+    /// match of the cohort) — the "several metrics between simulations" table.
+    fn match_metrics_at(&self, faction: usize, gen_idx: usize) -> Vec<MatchMetrics> {
         let s = self.shared.lock().expect("breeding mutex");
         s.reports
-            .last()
+            .get(gen_idx)
+            .and_then(|r| r.factions.get(faction))
+            .map(|fr| fr.match_metrics.clone())
+            .unwrap_or_default()
+    }
+
+    /// Generation `gen_idx`'s leaderboard rows for `faction` (lightweight — no brain clone), its
+    /// ranked per-match elites. Empty when that generation / faction has no living member.
+    fn leaderboard_at(&self, faction: usize, gen_idx: usize) -> Vec<LeaderRow> {
+        let s = self.shared.lock().expect("breeding mutex");
+        s.reports
+            .get(gen_idx)
             .and_then(|r| r.factions.get(faction))
             .map(|fr| {
                 fr.elites
@@ -205,14 +248,43 @@ impl BreedingSession {
             .unwrap_or_default()
     }
 
-    /// The `idx`-th elite of `faction` in the latest generation, **cloned** (genotype +
-    /// brain) for the graph / Save-as-variant. Only called for the selected row.
-    fn elite(&self, faction: usize, idx: usize) -> Option<Individual> {
+    /// The `idx`-th elite of `faction` in generation `gen_idx`, **cloned** (genotype + brain)
+    /// for the graph / Save-as-variant. Only called for the selected row.
+    fn elite_at(&self, faction: usize, idx: usize, gen_idx: usize) -> Option<Individual> {
         let s = self.shared.lock().expect("breeding mutex");
         s.reports
-            .last()
+            .get(gen_idx)
             .and_then(|r| r.factions.get(faction))
             .and_then(|fr| fr.elites.get(idx).cloned())
+    }
+
+    /// Generation `gen_idx`'s **whole cohort** — every bred faction's ranked elites, keyed by
+    /// species — for a **replay** (each faction's live founders are re-seeded from its list).
+    fn cohort_of(&self, gen_idx: usize) -> Vec<(u16, Vec<Individual>)> {
+        let s = self.shared.lock().expect("breeding mutex");
+        s.reports
+            .get(gen_idx)
+            .map(|r| {
+                r.factions
+                    .iter()
+                    .map(|fr| (fr.species, fr.elites.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The **best genome of the whole run** for `faction`: the champion of the
+    /// highest-scoring generation (max `best_fitness` across all generations, ties by the
+    /// most recent). Feeds the "★ best of run" one-click save — the "save an entity from the
+    /// training" tool, aimed at the strongest lineage rather than the currently-browsed one.
+    fn best_of_run(&self, faction: usize) -> Option<Individual> {
+        let s = self.shared.lock().expect("breeding mutex");
+        s.reports
+            .iter()
+            .filter_map(|r| r.factions.get(faction))
+            .filter_map(|fr| fr.best().map(|i| (fr.best_fitness, i.clone())))
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, i)| i)
     }
 
     /// A snapshot of the shared progress state for this frame.
@@ -255,72 +327,63 @@ fn set_status(shared: &Arc<Mutex<BreedingShared>>, status: BreedingStatus) {
     }
 }
 
-/// Draws the breeding dashboard as a floating window — shown only when the scenario
-/// carries a `batch` regime. Runs in the egui pass **after** `panels::dock` (it reuses the
-/// same context); a floating window does not affect the dock's central rect, so the sim
-/// framing is untouched.
+/// Applies a [`BreedingAction`] the docked panel raised, with the catalog + live-world
+/// resources in hand (called by [`crate::panels::dock`]). **Save** captures the genome as a
+/// library variant (the `breed`-bin / inspector path — `Archetype::capture` + `save_variant`);
+/// **Replay** re-seeds each bred faction's live founders from its cohort ([`seed_founders`]),
+/// then resets + un-pauses so the generation plays out in the live world.
 #[allow(clippy::too_many_arguments)]
-pub fn draw(
-    mut contexts: EguiContexts,
-    mut session: ResMut<BreedingSession>,
-    config: Res<SimConfig>,
-    mut vtime: ResMut<Time<Virtual>>,
-    fonts_ready: Res<crate::fonts::FontsReady>,
-    mut palette: ResMut<Palette>,
-    runs_panel: Res<RunsPanel>,
-    mut ui_status: ResMut<UiStatus>,
-    mut windows: ResMut<crate::panels::UiWindows>,
-) -> Result {
-    // Gate on the fonts (an icon would panic before its family is bound), on a batch
-    // regime being present (the dashboard is meaningless for a continuous scenario —
-    // its data precondition), and on the user toggle (top-bar Breeding button).
-    if !fonts_ready.0 || config.batch.is_none() || !windows.breeding {
-        return Ok(());
-    }
-    let ctx = contexts.ctx_mut()?;
-    let mut to_save = None;
-    // A local `open` mirrors the toggle so the window's [x] closes it (the top-bar
-    // button reopens it) — the same pattern as the Export window.
-    let mut open = true;
-    egui::Window::new(fonts::icon_label(icons::SPARKLE, "Breeding"))
-        .collapsible(true)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 44.0))
-        .open(&mut open)
-        .show(ctx, |ui| {
-            to_save = dashboard_section(ui, &mut session, &config, &mut vtime);
-        });
-    if !open {
-        windows.breeding = false;
-    }
-
-    // Save-as-variant (outside the closure, where the catalog resources are free): capture
-    // the genome under the scored species' base archetype and write it to the catalog —
-    // the `breed`-bin / inspector path, reused (`Archetype::capture` + `save_variant`).
-    if let Some(genome) = to_save {
-        // The genome carries its own faction (`species`), so it is captured under the right
-        // base archetype whichever faction's leaderboard it came from.
-        let species = genome.species as usize;
-        if let Some(base) = config.archetypes.get(species) {
-            let variant = base.capture(genome.genotype, genome.brain, genome.generation);
-            let scenario = runs_panel.origin_label();
-            let msg = editor::save_variant(&mut palette, &config, species, variant, &scenario);
-            ui_status.set_result(msg);
+pub(crate) fn apply_action(
+    action: BreedingAction,
+    config: &mut SimConfig,
+    palette: &mut Palette,
+    runs_panel: &RunsPanel,
+    ui_status: &mut UiStatus,
+    sim_controls: &mut crate::controls::SimControls,
+    vtime: &mut Time<Virtual>,
+) {
+    match action {
+        BreedingAction::Save(genome) => {
+            // The genome carries its own faction (`species`), so it is captured under the
+            // right base archetype whichever faction's leaderboard it came from.
+            let species = genome.species as usize;
+            if let Some(base) = config.archetypes.get(species) {
+                let variant = base.capture(genome.genotype, genome.brain, genome.generation);
+                let scenario = runs_panel.origin_label();
+                let msg = editor::save_variant(palette, config, species, variant, &scenario);
+                ui_status.set_result(msg);
+            }
+        }
+        BreedingAction::Replay(cohorts) => {
+            // Seed each bred faction's founders from its cohort, then rebuild the world (the
+            // reset path reads `config.founder_pools`) and un-pause — a fresh re-render.
+            let seed = config.seed;
+            let mut seeded = false;
+            for (species, elites) in &cohorts {
+                if !elites.is_empty() {
+                    seed_founders(config, *species, elites, seed);
+                    seeded = true;
+                }
+            }
+            if seeded {
+                sim_controls.reset_requested = true;
+                vtime.unpause();
+                ui_status.set("Replaying generation in the live world");
+            }
         }
     }
-    Ok(())
 }
 
-/// The dashboard's contents: status + progress + Run/Stop + a fitness readout. Factored
-/// out of [`draw`] so the docked-panel integration (a later step) can reuse it verbatim.
-fn dashboard_section(
+/// The docked breeding panel's contents: config hint + status/progress + Run/Stop + the
+/// generation navigator (Replay any generation) + the fitness curve + per-match metrics +
+/// leaderboard + save tools. Returns a [`BreedingAction`] for [`crate::panels::dock`] to apply.
+pub(crate) fn breeding_panel(
     ui: &mut egui::Ui,
     session: &mut BreedingSession,
     config: &SimConfig,
     vtime: &mut Time<Virtual>,
-) -> Option<Individual> {
-    // A min width so the fitness plot (below) has room in this content-sized window.
-    ui.set_min_width(220.0);
+) -> Option<BreedingAction> {
+    let mut action = None;
     let view = session.view();
     let running = view.status == BreedingStatus::Running;
 
@@ -363,8 +426,66 @@ fn dashboard_section(
         }
     });
 
-    // Per-faction fitness readout (one line per bred faction; the curve below colours them).
-    for fs in session.faction_summaries() {
+    // Nothing bred yet → no history to browse.
+    let done = session.generation_count();
+    if done == 0 {
+        return None;
+    }
+
+    // Generation navigator — inspect ANY completed generation (its readout, per-match
+    // metrics and leaderboard), or **follow the latest** (live, the default). The whole
+    // history is retained, so browsing never blocks or races the running worker.
+    let latest = done - 1;
+    let mut view_gen = session.selected_generation.unwrap_or(latest).min(latest);
+    ui.add_space(6.0);
+    ui.separator();
+    if latest >= 1 {
+        ui.horizontal(|ui| {
+            ui.label("generation");
+            let mut g = view_gen;
+            if ui
+                .add(egui::Slider::new(&mut g, 0..=latest).show_value(false))
+                .changed()
+            {
+                view_gen = g;
+                session.selected_generation = Some(view_gen);
+                session.selected = None; // the row index is generation-local.
+            }
+            fonts::value(ui, |ui| ui.label(format!("{view_gen}/{latest}")));
+        });
+    }
+    let mut follow = session.selected_generation.is_none();
+    if ui
+        .checkbox(&mut follow, "follow latest (live)")
+        .on_hover_text("Track the newest generation as it completes, instead of a pinned one")
+        .changed()
+    {
+        session.selected_generation = if follow { None } else { Some(view_gen) };
+        session.selected = None;
+    }
+    if session.selected_generation.is_none() {
+        view_gen = latest; // following live: always show the newest.
+    }
+
+    // Replay this generation in the LIVE world — re-seed the founders from its whole cohort
+    // and run it. A fresh re-render (Law 10 forbids exact replay); the live sim shows the
+    // generation's genomes foraging / evolving.
+    if ui
+        .add_enabled(
+            !running,
+            egui::Button::new(fonts::icon_label(icons::PLAY, "Replay this generation")),
+        )
+        .on_hover_text(
+            "Seed the live world's founders from this generation's cohort and run it — a \
+             fresh re-render (exact seed replay is impossible, Law 10).",
+        )
+        .clicked()
+    {
+        action = Some(BreedingAction::Replay(session.cohort_of(view_gen)));
+    }
+
+    // Per-faction readout at the viewed generation.
+    for fs in session.faction_summaries_at(view_gen) {
         let name = config
             .archetypes
             .get(fs.species as usize)
@@ -374,11 +495,11 @@ fn dashboard_section(
         });
     }
 
-    // Fitness vs generation — **one line per bred faction** (the shared plot widget,
-    // X = generation index). Drawn once at least two generations give a line; the Y range
-    // auto-scales to the data without forcing zero, so a `Dominance` run that goes negative
-    // still fills the plot (the Red Queen reads as the lines crossing / tracking near 0).
-    let (curves, ..) = session.fitness_curves(config);
+    // Fitness vs generation — **best + mean per faction** (the shared plot widget,
+    // X = generation index), with an accent marker at the generation being inspected. Drawn
+    // once at least two generations give a line; the Y range auto-scales without forcing
+    // zero, so a `Dominance` run that goes negative still fills the plot.
+    let curves = session.fitness_curves(config);
     if curves.iter().any(|c| c.pts.len() >= 2) {
         ui.add_space(4.0);
         ui.weak("fitness / generation");
@@ -389,25 +510,47 @@ fn dashboard_section(
                 pad: 0.1,
             },
             x_unit: "",
+            marker_x: Some(view_gen as f32),
         };
         crate::plot::plot(ui, &cfg, &curves);
         crate::plot::legend(ui, &curves);
     }
 
-    // Leaderboard — the selected faction's ranked cohort (returns a genome to save).
-    leaderboard_section(ui, session, config)
+    // Cohort inspection at the viewed generation: the per-match metrics table + the
+    // leaderboard (may raise a Save action). A Replay clicked above takes precedence.
+    action.or(cohort_section(ui, session, config, view_gen))
 }
 
-/// A **faction selector** (when several factions co-evolve) + the selected faction's
-/// leaderboard, the selected genome's network preview (MLP) and a Save-as-variant button.
-/// Returns the genome to save when the button is clicked (the side-effecting save is done
-/// by [`draw`], which holds the catalog resources — the genome carries its own `species`,
+/// Dims a colour toward the background — the *mean* line's shade against the *best* line's
+/// full-strength faction colour.
+fn dim(color: [f32; 3]) -> [f32; 3] {
+    color.map(|c| c * 0.55)
+}
+
+/// One header cell of the metrics table, accented when that metric is the one **driving
+/// selection** (the scenario's `Fitness`) so the reader sees which column the breeding
+/// actually optimises.
+fn metric_header(ui: &mut egui::Ui, label: &str, driving: bool) {
+    if driving {
+        ui.colored_label(crate::theme::ACCENT, label);
+    } else {
+        ui.weak(label);
+    }
+}
+
+/// The **cohort inspection** for generation `gen_idx`: a faction selector (under co-evolution),
+/// the **per-match metrics table** ("several metrics between simulations"), the ranked
+/// leaderboard with the selected genome's network preview (MLP), and the **save tools** —
+/// Save-to-library for the picked genome plus a one-click "best of run". Returns a
+/// [`BreedingAction::Save`] when a save button is clicked (the side-effecting write is done by
+/// [`apply_action`], which holds the catalog resources — the genome carries its own `species`,
 /// so it is captured under the right archetype whatever the faction).
-fn leaderboard_section(
+fn cohort_section(
     ui: &mut egui::Ui,
     session: &mut BreedingSession,
     config: &SimConfig,
-) -> Option<Individual> {
+    gen_idx: usize,
+) -> Option<BreedingAction> {
     let n_factions = session.faction_count();
     if n_factions == 0 {
         return None;
@@ -415,7 +558,7 @@ fn leaderboard_section(
     ui.add_space(6.0);
     ui.separator();
 
-    // Pick the faction whose leaderboard to show (only when several co-evolve).
+    // Pick the faction to inspect (only when several co-evolve).
     if n_factions > 1 {
         ui.horizontal(|ui| {
             ui.label("faction:");
@@ -441,42 +584,86 @@ fn leaderboard_section(
     }
     let faction = session.selected_faction.min(n_factions - 1);
 
-    let rows = session.leaderboard(faction);
-    if rows.is_empty() {
-        ui.weak("(this faction died out)");
-        return None;
+    // Per-match metrics table — every match of the cohort scored under EVERY metric, with
+    // the column driving selection (the scenario's `Fitness`) accented. Only the selected
+    // metric drove selection; the rest are diagnostics to read the cohort several ways.
+    let metrics = session.match_metrics_at(faction, gen_idx);
+    let driving = config.batch.as_ref().map(|b| b.fitness);
+    if !metrics.is_empty() {
+        ui.add_space(4.0);
+        ui.strong("Match metrics");
+        egui::Grid::new(("breed_metrics", gen_idx, faction))
+            .striped(true)
+            .num_columns(5)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                ui.weak("match");
+                metric_header(ui, "pop", driving == Some(Fitness::Population));
+                metric_header(ui, "lineage", driving == Some(Fitness::BestEvolved));
+                metric_header(ui, "domin.", driving == Some(Fitness::Dominance));
+                ui.weak("reserve");
+                ui.end_row();
+                for (m, mm) in metrics.iter().enumerate() {
+                    fonts::value(ui, |ui| ui.label(format!("#{}", m + 1)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.population)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.best_evolved)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.dominance)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.mean_reserve)));
+                    ui.end_row();
+                }
+            });
     }
-    ui.strong("Leaderboard");
-    for (i, row) in rows.iter().enumerate() {
-        let selected = session.selected == Some(i);
-        let kind = if row.is_mlp { "MLP" } else { "—" };
-        let text = format!(
-            "#{}  G{}  r{:.0}  {kind}",
-            i + 1,
-            row.generation,
-            row.reserve
-        );
-        if ui.selectable_label(selected, text).clicked() {
-            session.selected = (!selected).then_some(i);
+
+    // Leaderboard — the generation's ranked per-match elites (pick one to inspect / save).
+    let rows = session.leaderboard_at(faction, gen_idx);
+    let mut save = None;
+    if rows.is_empty() {
+        ui.weak("(this faction died out this generation)");
+    } else {
+        ui.add_space(4.0);
+        ui.strong("Leaderboard");
+        for (i, row) in rows.iter().enumerate() {
+            let selected = session.selected == Some(i);
+            let kind = if row.is_mlp { "MLP" } else { "—" };
+            let text = format!(
+                "#{}  G{}  r{:.0}  {kind}",
+                i + 1,
+                row.generation,
+                row.reserve
+            );
+            if ui.selectable_label(selected, text).clicked() {
+                session.selected = (!selected).then_some(i);
+            }
+        }
+
+        // The selected genome: its network (MLP only — a structural graph, no live
+        // activations) and the Save-to-library action.
+        if let Some(idx) = session.selected
+            && let Some(elite) = session.elite_at(faction, idx, gen_idx)
+        {
+            if let Brain::Mlp(m) = &elite.brain {
+                editor::draw_mlp_graph(ui, &m.layer_sizes(), Some(m), None);
+            }
+            if ui
+                .button(fonts::icon_label(icons::FLOPPY, "Save to library"))
+                .on_hover_text("Save this genome as a variant in the library (species/saved/).")
+                .clicked()
+            {
+                save = Some(elite);
+            }
         }
     }
 
-    // The selected genome: its network (MLP only — a structural graph, no live
-    // activations) and the Save-as-variant action.
-    let mut save = None;
-    if let Some(idx) = session.selected
-        && let Some(elite) = session.elite(faction, idx)
+    // Best of the whole run — a one-click save of the strongest lineage seen across ALL
+    // generations, independent of which generation is being browsed (the "save an entity
+    // from the training" tool for the end of a run).
+    if ui
+        .button(fonts::icon_label(icons::SPARKLE, "Save best of run"))
+        .on_hover_text("Save the strongest genome across every generation to the library.")
+        .clicked()
+        && let Some(best) = session.best_of_run(faction)
     {
-        if let Brain::Mlp(m) = &elite.brain {
-            editor::draw_mlp_graph(ui, &m.layer_sizes(), Some(m), None);
-        }
-        if ui
-            .button(fonts::icon_label(icons::FLOPPY, "Save to library"))
-            .on_hover_text("Save this genome as a variant in the library (species/saved/).")
-            .clicked()
-        {
-            save = Some(elite);
-        }
+        save = Some(best);
     }
-    save
+    save.map(BreedingAction::Save)
 }
