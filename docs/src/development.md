@@ -57,9 +57,10 @@ same version), so a build without it fails on the missing preprocessor. To add a
 drop a fenced `mermaid` block into any page and write **literal** Mermaid syntax — do not
 pre-escape entities (no `&amp;`), because mdBook escapes the block's content itself, so a
 pre-escaped `&amp;` would reach the browser double-escaped. `mdbook build docs` publishes
-via [GitHub Pages](https://alexisjapas.github.io/teemlab/); if a deploy ever reports
-"Deployment failed, try again later" while the *build* step is green, that is a transient
-Pages backend hiccup — re-run the workflow.
+via [GitHub Pages](https://alexisjapas.github.io/teemlab/). The Pages backend occasionally
+terminal-fails a *first* deploy with "Deployment failed, try again later" even when the
+build is green; the deploy job retries itself (up to three attempts, backing off), so a
+push self-heals — a run that stays red after that is a real failure, not the flake.
 
 ## Testing: properties across seeds
 
