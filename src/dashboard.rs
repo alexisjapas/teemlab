@@ -8,14 +8,16 @@
 //! progress in egui. The live `SimPlugin` world is **paused** while a run is on (it is
 //! unused — the matches run in their own worlds off-thread).
 //!
-//! Rendered as a **docked panel** — the right column (replacing *Analysis*) when the top-bar
-//! Breeding toggle is on and the scenario carries a `batch` regime — **not** a floating popup
-//! over the sim: [`breeding_panel`] is called from [`crate::panels::dock`] within the shared
-//! root `Ui`, so it reserves real layout space and the sim stays centred and fully visible
-//! (a Replay then plays out in it). The panel holds the controls (Run/Stop + progress), a
-//! **generation navigator** (a slider to inspect any completed generation, or *follow the
-//! latest* live — the whole history is retained) with a **Replay** button (re-seed the live
-//! world's founders from that generation's cohort — [`seed_founders`]), a per-faction readout,
+//! Rendered as a **docked panel** — the **left half of the bottom panel**, side by side with
+//! the evolution curves, when the top-bar Breeding toggle is on and the scenario carries a
+//! `batch` regime — **not** a floating popup over the sim: [`breeding_panel`] is called from
+//! [`crate::panels::dock`] within the shared root `Ui`, so it reserves real layout space and
+//! the sim stays centred and fully visible (a Replay then plays out in it). The panel holds
+//! the controls (Run/Stop + progress), a
+//! **generation navigator** (**click the fitness graph** to inspect any completed generation,
+//! or *follow the latest* live — the whole history is retained) with a **Replay** button
+//! (re-seed the live world's founders from that generation's cohort — [`seed_founders`]), a
+//! per-faction readout,
 //! a **fitness-vs-generation curve** (**best + mean per faction**, an accent marker at the
 //! inspected generation — the shared [`crate::hud::plot`]), a **per-match metrics table**
 //! (every match scored under every metric, the selection-driving one accented — "several
@@ -433,36 +435,25 @@ pub(crate) fn breeding_panel(
     }
 
     // Generation navigator — inspect ANY completed generation (its readout, per-match
-    // metrics and leaderboard), or **follow the latest** (live, the default). The whole
-    // history is retained, so browsing never blocks or races the running worker.
+    // metrics and leaderboard) by **clicking the fitness graph below** (the marker shows the
+    // pinned generation), or **follow the latest** (live, the default). The whole history is
+    // retained, so browsing never blocks or races the running worker.
     let latest = done - 1;
     let mut view_gen = session.selected_generation.unwrap_or(latest).min(latest);
     ui.add_space(6.0);
     ui.separator();
-    if latest >= 1 {
-        ui.horizontal(|ui| {
-            ui.label("generation");
-            let mut g = view_gen;
-            if ui
-                .add(egui::Slider::new(&mut g, 0..=latest).show_value(false))
-                .changed()
-            {
-                view_gen = g;
-                session.selected_generation = Some(view_gen);
-                session.selected = None; // the row index is generation-local.
-            }
-            fonts::value(ui, |ui| ui.label(format!("{view_gen}/{latest}")));
-        });
-    }
-    let mut follow = session.selected_generation.is_none();
-    if ui
-        .checkbox(&mut follow, "follow latest (live)")
-        .on_hover_text("Track the newest generation as it completes, instead of a pinned one")
-        .changed()
-    {
-        session.selected_generation = if follow { None } else { Some(view_gen) };
-        session.selected = None;
-    }
+    ui.horizontal(|ui| {
+        let mut follow = session.selected_generation.is_none();
+        if ui
+            .checkbox(&mut follow, "follow latest (live)")
+            .on_hover_text("Track the newest generation as it completes, instead of a pinned one")
+            .changed()
+        {
+            session.selected_generation = if follow { None } else { Some(view_gen) };
+            session.selected = None;
+        }
+        fonts::value(ui, |ui| ui.label(format!("gen {view_gen}/{latest}")));
+    });
     if session.selected_generation.is_none() {
         view_gen = latest; // following live: always show the newest.
     }
@@ -496,13 +487,14 @@ pub(crate) fn breeding_panel(
     }
 
     // Fitness vs generation — **best + mean per faction** (the shared plot widget,
-    // X = generation index), with an accent marker at the generation being inspected. Drawn
-    // once at least two generations give a line; the Y range auto-scales without forcing
-    // zero, so a `Dominance` run that goes negative still fills the plot.
+    // X = generation index), with an accent marker at the generation being inspected.
+    // **Clicking the graph pins that generation** (replaces the old slider). Drawn once at
+    // least two generations give a line; the Y range auto-scales without forcing zero, so a
+    // `Dominance` run that goes negative still fills the plot.
     let curves = session.fitness_curves(config);
     if curves.iter().any(|c| c.pts.len() >= 2) {
         ui.add_space(4.0);
-        ui.weak("fitness / generation");
+        ui.weak("fitness / generation — click to inspect a generation");
         let cfg = crate::plot::PlotConfig {
             height: 90.0,
             y: crate::plot::YAxis::Auto {
@@ -512,7 +504,13 @@ pub(crate) fn breeding_panel(
             x_unit: "",
             marker_x: Some(view_gen as f32),
         };
-        crate::plot::plot(ui, &cfg, &curves);
+        if let Some(x) = crate::plot::plot(ui, &cfg, &curves) {
+            // Snap the clicked X to the nearest generation index and pin it.
+            let g = (x.round().max(0.0) as usize).min(latest);
+            session.selected_generation = Some(g);
+            session.selected = None; // the row index is generation-local.
+            view_gen = g; // reflect the pick in the metrics + leaderboard below, same frame.
+        }
         crate::plot::legend(ui, &curves);
     }
 
@@ -622,16 +620,28 @@ fn cohort_section(
     } else {
         ui.add_space(4.0);
         ui.strong("Leaderboard");
+        // Explicit column header (monospace, so the rows align beneath it).
+        fonts::value(ui, |ui| {
+            ui.weak(format!(
+                "{:<6}{:<7}{:<10}{}",
+                "rank", "gen", "reserve", "brain"
+            ))
+        })
+        .on_hover_text(
+            "rank in this generation's cohort · in-match lineage depth (generations) · \
+             terminal energy reserve · brain type",
+        );
         for (i, row) in rows.iter().enumerate() {
             let selected = session.selected == Some(i);
             let kind = if row.is_mlp { "MLP" } else { "—" };
             let text = format!(
-                "#{}  G{}  r{:.0}  {kind}",
-                i + 1,
-                row.generation,
-                row.reserve
+                "{:<6}{:<7}{:<10}{kind}",
+                format!("#{}", i + 1),
+                format!("G{}", row.generation),
+                format!("r{:.0}", row.reserve),
             );
-            if ui.selectable_label(selected, text).clicked() {
+            let clicked = fonts::value(ui, |ui| ui.selectable_label(selected, text)).clicked();
+            if clicked {
                 session.selected = (!selected).then_some(i);
             }
         }

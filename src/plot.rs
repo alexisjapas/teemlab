@@ -147,10 +147,16 @@ pub fn legend(ui: &mut egui::Ui, curves: &[Curve]) {
 /// a light grid on **round** Y values with axis labels, the polylines, and a **hover
 /// readout** — a vertical cursor, a dot on each curve at the hovered time, and a tooltip
 /// listing the time and each value. Axis margins are computed from the label sizes.
-pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) {
+///
+/// **Returns** the data-space X of a click inside the plot (else `None`) — the breeding
+/// dashboard reads it to pick a generation directly on the fitness graph; the time-series
+/// call sites ignore it.
+pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) -> Option<f32> {
     let width = ui.available_width().max(64.0);
+    // Clickable so a caller can select an X on the plot (generation picking); the hover
+    // readout still works (the pointer position is reported regardless of the sense).
     let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(width, cfg.height), egui::Sense::hover());
+        ui.allocate_exact_size(egui::vec2(width, cfg.height), egui::Sense::click());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, egui::CornerRadius::same(2), theme::SURFACE);
 
@@ -163,7 +169,7 @@ pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) {
             axis_font(),
             theme::INK_FAINT,
         );
-        return;
+        return None;
     };
 
     let (y_min, y_max) = y_bounds(curves, &cfg.y);
@@ -295,7 +301,7 @@ pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) {
         }
     }
     // …and a tooltip listing the time and each curve's value at that time.
-    response.on_hover_ui_at_pointer(|ui| {
+    let response = response.on_hover_ui_at_pointer(|ui| {
         let Some(t) = hover_t else { return };
         ui.small(format!("{t:.0}{}", cfg.x_unit));
         for c in curves {
@@ -307,6 +313,17 @@ pub fn plot(ui: &mut egui::Ui, cfg: &PlotConfig, curves: &[Curve]) {
             }
         }
     });
+
+    // A click inside the plot → its data-space X (clamped to the data extent), for the
+    // caller to map to a selection (the breeding dashboard: a generation).
+    if response.clicked() {
+        response.interact_pointer_pos().map(|pos| {
+            let hx = pos.x.clamp(inner.left(), inner.right());
+            x_min + (hx - inner.left()) / inner.width() * x_span
+        })
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
