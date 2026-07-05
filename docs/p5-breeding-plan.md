@@ -331,11 +331,32 @@ variant = `mlp_evolved` reaching (then beating) parity.
   random restart. `BestEvolved` only behaves where reproduction **requires a skill** (a
   forager that must find food to breed — the `train`-bin case). **`Population`** (now mean
   sustained biomass) is the saner forager fitness, and the one `13_mlp_breed.ron` uses.
-- **Unit `breeding::score`** (done, no `App`): each `Fitness` arm on hand-built individuals
-  — `BestEvolved` = deepest generation of the scored species, `Population` = its living
-  count, `0.0` when extinct — plus `best_individual` (generation, then reserve).
+- **Unit `MatchMetrics::from_samples`** (done, no `App`): the time-robust aggregation on a
+  hand-built [`MatchSample`] trajectory — mean/peak population, survival fraction, deepest-ever
+  lineage, terminal dominance, mean reserve over alive samples — plus `of` selecting the field
+  each `Fitness` names, and `seed_founders` building the replay pool.
 - **Schema unit** (done): a scenario without `batch` omits the field from its RON
   (`skip_serializing_if`) and reads back `None`; a `batch` scenario round-trips losslessly.
+- **RESUME HERE — the generational loop does *not* progressively improve on
+  `13_mlp_breed.ron` (open).** A `breed` run (2026-07-06, 8 gens × 4 matches × 5000 ticks)
+  under the time-robust `Population` (mean sustained) fitness **declines** rather than climbs —
+  cohort mean `41.6 → 25.7` (gen 0 → 7), peak population **flat** at ~50-58, and the late
+  best-matches show **`lineage 0`** (no reproduction at all). Generation 0 (random founders) is
+  among the best; re-seeding again fails to beat the random start under this metric. The
+  captured genome is still **competent** (generation 6, reserve 116.7 ≈ 97 % of `reserve_max`
+  — a deep, well-fed forager), so the *diversity* of the search yields a good individual, but
+  the *loop* isn't compounding it. This is **not** a regression from the fitness rework — the
+  less-noisy metric just makes the plateau (ROADMAP §7 "neuroevolution on living food plateaus
+  at parity") **legible**; the earlier terminal-`Population` "peak 55" was likely seed noise.
+  Two confounds keep the signal weak: only **4 matches/gen with per-generation-varying seeds**
+  (large inter-generation variance), and `Population = mean sustained` rewards *passive
+  survival* over aggressive foraging. **Next steps to try when resuming:** (1) raise
+  `matches_per_gen` (8-12) and fix/widen the seed window so generation-over-generation is
+  comparable; (2) select on `Peak` or `BestEvolved` instead of sustained population; (3) a more
+  stable training ground — immortal food + longer `match_ticks` (the `train`-bin regime), which
+  §7 identifies as the real lever for a longer selection window. A **decisive control**
+  (captured `mlp_bred` vs a wander control, seed-averaged — the `tests/mlp.rs` pattern) would
+  settle "better forager than naïve?" definitively; not yet run.
 
 ---
 
