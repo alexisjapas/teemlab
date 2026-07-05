@@ -46,36 +46,73 @@ pub struct Individual {
     pub brain: Brain,
 }
 
-/// The match's **fitness scalar** for `fitness` over `scored_species`, from a finished
-/// match's `individuals`. Match-level (an aggregate, or the best individual's score) — it
-/// feeds the generation curve and ranks matches. `0.0` for a match where the scored
-/// species died out.
-///
-/// An exhaustive `match` over [`Fitness`] — adding a primitive is one arm here, the
-/// homogeneous counterpart of the cost / relation tables.
-pub fn score(individuals: &[Individual], fitness: Fitness, scored_species: u16) -> f64 {
-    let scored = || individuals.iter().filter(|i| i.species == scored_species);
-    match fitness {
-        // Deepest lineage reached: how far the in-match neuroevolution got (a sustained
-        // lineage = competent foraging). The best individual's `generation`. The reserve
-        // tie-break is a *selection* concern (which genome), not the curve scalar — see
-        // [`best_individual`].
-        Fitness::BestEvolved => scored().map(|i| i.generation).max().unwrap_or(0) as f64,
-        // Standing biomass of the scored species at the terminal condition (an
-        // ecological score — coexistence / dominance).
-        Fitness::Population => scored().count() as f64,
-        // Combat dominance: own survivors minus living rivals (every other non-sessile
-        // agent — food excluded). The battle / factions primitive (item 19): a faction
-        // wins by both surviving and eliminating the enemy.
-        Fitness::Dominance => {
-            let own = scored().count() as f64;
-            let rivals = individuals
-                .iter()
-                .filter(|i| i.species != scored_species && !matches!(i.brain, Brain::Sessile(_)))
-                .count() as f64;
-            own - rivals
+/// **All** selection metrics for one match's scored faction — the **diagnostics** the
+/// dashboard shows per match (P5 "several metrics between each simulation"). Only
+/// `batch.fitness` *drives* selection ([`of`](Self::of)); the rest are computed in the same
+/// pass so a match can be read under every angle without re-selecting. Adding a [`Fitness`]
+/// primitive is one field here + one arm in [`of`](Self::of) — the homogeneous counterpart
+/// of the cost / relation tables.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MatchMetrics {
+    /// Deepest lineage reached ([`Fitness::BestEvolved`]): how far the in-match
+    /// neuroevolution got (a sustained lineage = competent foraging).
+    pub best_evolved: f64,
+    /// Standing biomass of the scored species ([`Fitness::Population`]) — the ecological
+    /// score (coexistence / dominance).
+    pub population: f64,
+    /// Combat dominance ([`Fitness::Dominance`]): own survivors minus living rivals (every
+    /// other non-sessile agent — food excluded). A faction wins by both surviving and
+    /// eliminating the enemy (item 19).
+    pub dominance: f64,
+    /// Mean energy reserve of the scored species' survivors — a **health** diagnostic (how
+    /// well-fed the cohort is), not a selectable [`Fitness`]. `0.0` when the species is
+    /// extinct.
+    pub mean_reserve: f64,
+}
+
+impl MatchMetrics {
+    /// Computes every metric for `scored_species` from a finished match's `individuals`.
+    /// One pass' worth of cheap aggregates — all `0.0` when the scored species died out.
+    pub fn compute(individuals: &[Individual], scored_species: u16) -> Self {
+        let scored = || individuals.iter().filter(|i| i.species == scored_species);
+        let population = scored().count() as f64;
+        let best_evolved = scored().map(|i| i.generation).max().unwrap_or(0) as f64;
+        // Rivals = every other non-sessile agent (food excluded).
+        let rivals = individuals
+            .iter()
+            .filter(|i| i.species != scored_species && !matches!(i.brain, Brain::Sessile(_)))
+            .count() as f64;
+        let mean_reserve = if population > 0.0 {
+            scored().map(|i| i.reserve as f64).sum::<f64>() / population
+        } else {
+            0.0
+        };
+        Self {
+            best_evolved,
+            population,
+            dominance: population - rivals,
+            mean_reserve,
         }
     }
+
+    /// The scalar that **drives selection** for `fitness` — the generation curve's Y and the
+    /// match-ranking key. An exhaustive `match` over the selectable [`Fitness`] primitives
+    /// (`mean_reserve` is a diagnostic only, not selectable).
+    pub fn of(&self, fitness: Fitness) -> f64 {
+        match fitness {
+            Fitness::BestEvolved => self.best_evolved,
+            Fitness::Population => self.population,
+            Fitness::Dominance => self.dominance,
+        }
+    }
+}
+
+/// The match's **fitness scalar** for `fitness` over `scored_species`, from a finished
+/// match's `individuals` — the selection score (the generation curve's Y, the match rank).
+/// `0.0` for a match where the scored species died out. A thin selector over
+/// [`MatchMetrics`] (which computes every metric at once for the dashboard's diagnostics).
+pub fn score(individuals: &[Individual], fitness: Fitness, scored_species: u16) -> f64 {
+    MatchMetrics::compute(individuals, scored_species).of(fitness)
 }
 
 /// The **best individual** of `scored_species` to carry forward (capture into the next
@@ -107,8 +144,12 @@ pub struct FactionReport {
     pub best_fitness: f64,
     /// Mean match fitness over the cohort.
     pub mean_fitness: f64,
-    /// Per-match fitness scalars (the cohort).
+    /// Per-match fitness scalars (the cohort), under the **selected** [`Fitness`].
     pub match_scores: Vec<f64>,
+    /// Per-match **diagnostics** — every metric for each match of the cohort (parallel to
+    /// `match_scores`), so the dashboard can show a match scored several ways even though
+    /// only the selected `Fitness` drove selection ("several metrics between simulations").
+    pub match_metrics: Vec<MatchMetrics>,
     /// The generation's per-match best genomes, ranked by fitness (descending) — the
     /// faction's **leaderboard** (a superset of its carried `survivors`).
     pub elites: Vec<Individual>,
@@ -239,10 +280,15 @@ impl Orchestrator {
         for faction in 0..n_factions {
             let species = self.batch.scored_species[faction];
             let mut scores = Vec::with_capacity(cohort.len());
+            let mut match_metrics = Vec::with_capacity(cohort.len());
             let mut ranked: Vec<(f64, Individual)> = Vec::new();
             for individuals in &cohort {
-                let s = score(individuals, self.batch.fitness, species);
+                // One pass computes **every** metric; the selected `Fitness` picks the
+                // selection scalar, the rest ride along as per-match diagnostics.
+                let mm = MatchMetrics::compute(individuals, species);
+                let s = mm.of(self.batch.fitness);
                 scores.push(s);
+                match_metrics.push(mm);
                 if let Some(best) = best_individual(individuals, species) {
                     ranked.push((s, best.clone()));
                 }
@@ -284,6 +330,7 @@ impl Orchestrator {
                 best_fitness,
                 mean_fitness,
                 match_scores: scores,
+                match_metrics,
                 elites,
             });
         }
@@ -444,6 +491,48 @@ mod tests {
         assert_eq!(score(&pop, Fitness::BestEvolved, 0), 0.0);
         assert_eq!(score(&pop, Fitness::Population, 0), 0.0);
         assert_eq!(score(&[], Fitness::BestEvolved, 0), 0.0);
+    }
+
+    /// [`MatchMetrics::compute`] fills **every** diagnostic in one pass, and [`of`] selects
+    /// exactly the scalar `score` returns — so the diagnostics and the selection score stay
+    /// consistent (the dashboard shows the others, selection uses `of`).
+    #[test]
+    fn match_metrics_computes_every_diagnostic() {
+        let sessile = Individual {
+            species: 2,
+            generation: 0,
+            reserve: 99.0,
+            genotype: Genotype::default(),
+            brain: Brain::Sessile(SessileBrain),
+        };
+        let pop = [
+            ind(0, 4, 10.0),
+            ind(0, 7, 30.0), // scored species: deepest lineage, richer
+            ind(1, 9, 5.0),  // a living non-sessile rival
+            sessile,         // food — not a rival
+        ];
+        let m = MatchMetrics::compute(&pop, 0);
+        assert_eq!(m.best_evolved, 7.0, "deepest generation of species 0");
+        assert_eq!(m.population, 2.0, "two survivors of species 0");
+        assert_eq!(
+            m.dominance, 1.0,
+            "2 own − 1 non-sessile rival (food excluded)"
+        );
+        assert_eq!(m.mean_reserve, 20.0, "(10 + 30) / 2");
+        // `of` selects exactly what `score` returns.
+        for fitness in [
+            Fitness::BestEvolved,
+            Fitness::Population,
+            Fitness::Dominance,
+        ] {
+            assert_eq!(m.of(fitness), score(&pop, fitness, 0));
+        }
+        // Extinct scored species → every metric collapses to 0.
+        let m0 = MatchMetrics::compute(&[ind(1, 3, 5.0)], 0);
+        assert_eq!(
+            (m0.best_evolved, m0.population, m0.mean_reserve),
+            (0.0, 0.0, 0.0)
+        );
     }
 
     /// `Dominance` = own survivors − living rivals (other **non-sessile** species); food

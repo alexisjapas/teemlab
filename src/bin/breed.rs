@@ -80,6 +80,20 @@ fn main() {
                 "gen {:>3}  {name:<10} best={:.2}  mean={:.2}  [{cohort}]",
                 report.generation, fr.best_fitness, fr.mean_fitness,
             );
+            // Diagnostics — the FULL metric set of the top-scoring match (only the selected
+            // fitness drove selection; the rest are shown to read the cohort several ways,
+            // the headless face of the dashboard's per-match metrics).
+            if let Some(bi) = (0..fr.match_scores.len()).max_by(|&a, &b| {
+                fr.match_scores[a]
+                    .partial_cmp(&fr.match_scores[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) && let Some(mm) = fr.match_metrics.get(bi)
+            {
+                println!(
+                    "         └ top match: pop {:.0} · lineage {:.0} · dominance {:.0} · reserve {:.0}",
+                    mm.population, mm.best_evolved, mm.dominance, mm.mean_reserve,
+                );
+            }
         }
         // Capture the FIRST faction's champion (the others co-evolve too).
         if let Some(best) = report.factions.first().and_then(|fr| fr.best().cloned()) {
