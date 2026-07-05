@@ -282,6 +282,32 @@ variant = `mlp_evolved` reaching (then beating) parity.
   (a real ecosystem must persist + improve over many ticks) and **too noisy** (population
   collapse swings the score). The emergent payoff is the `breed` bin's job on
   `13_mlp_breed.ron` — a **generator**, like the `train` bin (likewise not in CI).
+- **Finding — naïve re-seeding *collapsed founder diversity* and lost to a random start
+  (fixed).** Measured on `13_mlp_breed.ron`, the original loop **regressed below its own
+  generation 0**: `best/mean` fell from `44/29` (random founders) to `~12` from the first
+  re-seeding on, and never recovered. Cause: `build_match_config` set **one**
+  `captured_brain` on the archetype and `spawn` cloned it `count` times, so every match at
+  generation ≥ 1 started from `count` **bit-identical** founders — the match explored a
+  *single point* in weight-space (all diversity gone), where generation 0 has identical
+  bodies but `count` **diverse random brains**. The doc *called* this the "founder-diversity
+  lever" but the code injected **no** diversity into the founders. **Fix (three parts):**
+  (1) **founder pools** — the orchestrator builds `count` *distinct* founder brains, each a
+  mutated variant of the assigned elite (founder 0 = the elite unmutated → within-match
+  elitism), carried in-memory on `SimConfig::founder_pools` (`serde(skip)`, so every
+  scenario on disk stays byte-identical and the continuous regime never sets it); `spawn`
+  draws the k-th brain when a pool is present. (2) **inter-generation elitism** — the
+  all-time-best genome per faction (`Orchestrator::best_ever`) always leads the next
+  survivor pool, so a bad generation can't erase progress (guarded on `survivors > 0` → the
+  no-selection contrast is intact). (3) the founder jitter reuses the **exact**
+  `Brain::reproduce` seam at the elite's own `mutation_rate` — same Gaussian step as in-match
+  reproduction (no new tunable). **Result (same seed A/B):** the cohort now *exceeds* the
+  random start (peak `55` vs `44`) and the captured genome jumps from `(gen 6, reserve 55.7)`
+  to `(gen 7, reserve 119.9)`; a second seed reaches `gen 10`. Residual: late-generation
+  variance persists (living-food is inherently high-variance) — a jitter-rate floor / larger
+  cohort are candidate follow-ups, and **self-adaptive `mutation_rate`** was *deliberately
+  held back* (making the gene mutable lets it drift toward 0, which would re-collapse the
+  founder jitter that reads it). `tests/mlp.rs` (byte-identity tripwire) + `tests/breeding.rs`
+  (mechanism) stay green.
 - **Finding — `BestEvolved` is *perverse* on a free reproducer.** Selecting the deepest
   in-match lineage rewards a **reproduce-to-collapse** gene (a runaway-low
   `reproduction_threshold`): a re-seeded cohort then *dies out*, scoring **worse** than a

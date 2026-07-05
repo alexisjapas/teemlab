@@ -117,6 +117,19 @@ pub struct SimConfig {
     /// byte-identical [`SimPlugin`](crate::SimPlugin). See `docs/p5-breeding-plan.md`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch: Option<BatchConfig>,
+    /// **In-memory founder pools** (batch regime only), keyed by bred species index: a
+    /// pool of *distinct* founder brains the orchestrator injects at generation ≥ 1 so
+    /// a match starts from a **diverse** cohort — each founder a mutated variant of an
+    /// elite — instead of `count` identical clones of a single
+    /// [`captured_brain`](Archetype::captured_brain). This restores the founder diversity
+    /// that a from-random generation 0 has (identical bodies, *diverse* brains) and that
+    /// naïve re-seeding destroys (the collapse where breeding lost to a random start; see
+    /// `docs/p5-breeding-plan.md` §7). **Never serialized** (`serde(skip)`): a transient,
+    /// orchestrator-built construct — every scenario on disk is byte-identical and the
+    /// continuous regime never sets it. A species absent from the map keeps the ordinary
+    /// founder path ([`captured_brain_of`](Self::captured_brain_of) or a fresh brain).
+    #[serde(skip)]
+    pub founder_pools: std::collections::HashMap<u16, Vec<Brain>>,
 }
 
 /// An **archetype**: a first-order species. Its index in
@@ -817,6 +830,7 @@ impl Default for SimConfig {
             off_game_color: [0.17, 0.17, 0.19],
             seed: 0x00C0_FFEE,
             batch: None,
+            founder_pools: std::collections::HashMap::new(),
         }
     }
 }

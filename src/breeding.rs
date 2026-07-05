@@ -18,10 +18,11 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 
-use crate::brain::Brain;
+use crate::brain::{Brain, MlpBrain};
 use crate::components::{Agent, Generation, Reserve, Species};
 use crate::config::{BatchConfig, Fitness};
 use crate::genotype::Genotype;
+use crate::rng::Rng;
 use crate::{SimConfig, SimPlugin};
 
 /// One individual extracted from a finished match's world — the data fitness and
@@ -146,6 +147,12 @@ pub struct Orchestrator {
     /// (the cohort starts from the scenario's own founders) and after a `survivors: 0` step.
     /// Several factions ⇒ **co-evolution** (each bred from its own elites — the Red Queen).
     survivors: Vec<Vec<Individual>>,
+    /// The **all-time best** genome per faction (score + individual), for
+    /// **inter-generation elitism**: it always leads the next cohort's survivor pool, so a
+    /// bad generation can never erase progress. The baseline regressed *below its own
+    /// generation 0* for want of this (`docs/p5-breeding-plan.md` §7). `None` per faction
+    /// until its first scored genome; never populated when `survivors: 0` (breeding OFF).
+    best_ever: Vec<Option<(f64, Individual)>>,
     /// Next generation to run.
     next_gen: usize,
 }
@@ -162,6 +169,7 @@ impl Orchestrator {
             base,
             batch,
             survivors: vec![Vec::new(); factions],
+            best_ever: vec![None; factions],
             next_gen: 0,
         })
     }
@@ -225,10 +233,11 @@ impl Orchestrator {
         // → the **Red Queen** (item 19). One [`FactionReport`] per faction (the dashboard's
         // per-faction curve + leaderboard); a **negative** fitness (a losing Dominance)
         // passes through.
-        let mut new_survivors: Vec<Vec<Individual>> =
-            Vec::with_capacity(self.batch.scored_species.len());
-        let mut factions: Vec<FactionReport> = Vec::with_capacity(self.batch.scored_species.len());
-        for &species in &self.batch.scored_species {
+        let n_factions = self.batch.scored_species.len();
+        let mut new_survivors: Vec<Vec<Individual>> = Vec::with_capacity(n_factions);
+        let mut factions: Vec<FactionReport> = Vec::with_capacity(n_factions);
+        for faction in 0..n_factions {
+            let species = self.batch.scored_species[faction];
             let mut scores = Vec::with_capacity(cohort.len());
             let mut ranked: Vec<(f64, Individual)> = Vec::new();
             for individuals in &cohort {
@@ -240,14 +249,36 @@ impl Orchestrator {
             }
             ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
             let elites: Vec<Individual> = ranked.into_iter().map(|(_, i)| i).collect();
-            // The carried survivors (top-K, possibly **none** — the no-selection contrast).
-            new_survivors.push(elites.iter().take(self.batch.survivors).cloned().collect());
             let best_fitness = scores.iter().copied().reduce(f64::max).unwrap_or(0.0);
             let mean_fitness = if scores.is_empty() {
                 0.0
             } else {
                 scores.iter().sum::<f64>() / scores.len() as f64
             };
+            // The carried survivors: this cohort's top-K (possibly **none** — the
+            // no-selection contrast, `survivors: 0`).
+            let mut pool: Vec<Individual> =
+                elites.iter().take(self.batch.survivors).cloned().collect();
+            // **Inter-generation elitism** (`survivors > 0` only, so the no-selection
+            // contrast is untouched): update the all-time best and guarantee it leads the
+            // pool, so a bad generation never regresses below past progress (the baseline
+            // fell below its own random generation 0 — §7). The all-time best is scored by
+            // this faction's `Fitness` (`best_fitness`), consistent with selection.
+            if let Some(champ) = elites.first()
+                && self.best_ever[faction]
+                    .as_ref()
+                    .is_none_or(|(bs, _)| best_fitness > *bs)
+            {
+                self.best_ever[faction] = Some((best_fitness, champ.clone()));
+            }
+            if self.batch.survivors > 0
+                && let Some((_, best)) = &self.best_ever[faction]
+                && !pool.iter().any(|i| i.brain == best.brain)
+            {
+                pool.insert(0, best.clone());
+                pool.truncate(self.batch.survivors);
+            }
+            new_survivors.push(pool);
             factions.push(FactionReport {
                 species,
                 best_fitness,
@@ -281,15 +312,50 @@ impl Orchestrator {
             .wrapping_add(self.next_gen as u64 * self.batch.matches_per_gen as u64)
             .wrapping_add(m as u64);
         for (faction, &species) in self.batch.scored_species.iter().enumerate() {
-            let pool = &self.survivors[faction];
-            if pool.is_empty() {
+            let elites = &self.survivors[faction];
+            if elites.is_empty() {
                 continue; // generation 0 (or no-selection): keep the scenario's founders.
             }
-            let elite = &pool[m % pool.len()];
-            if let Some(arch) = cfg.archetypes.get_mut(species as usize) {
-                arch.genotype = elite.genotype;
-                arch.captured_brain = Some(elite.brain.clone());
-            }
+            let elite = &elites[m % elites.len()];
+            let Some(arch) = cfg.archetypes.get_mut(species as usize) else {
+                continue;
+            };
+            // The elite's evolved **body** — a single genotype, so every founder's brain
+            // shares one input size (the diversity is in the WEIGHTS, mirroring the way
+            // generation 0 has identical bodies but diverse random brains).
+            arch.genotype = elite.genotype;
+            // Fallback for the ordinary founder path (e.g. a stale/mismatched pool): the
+            // exact elite brain, as before.
+            arch.captured_brain = Some(elite.brain.clone());
+            // **Founder diversity**: `count` distinct brains, each a mutated variant of the
+            // elite, so the match explores a NEIGHBOURHOOD of the elite instead of `count`
+            // identical clones — the fix for the founder-diversity collapse that made naïve
+            // re-seeding lose to a random start (`docs/p5-breeding-plan.md` §7). Founder 0
+            // is the elite itself (unmutated), so a proven genome is always present
+            // (within-match elitism); the rest are jittered at the elite's own
+            // `mutation_rate` — the same Gaussian weight step as in-match reproduction, via
+            // the identical [`Brain::reproduce`] seam.
+            let count = arch.count;
+            let n_sensed = self.base.sensed_components(species).len();
+            let n_inputs = MlpBrain::input_size(elite.genotype.ray_count(), n_sensed);
+            let rate = elite.genotype.mutation_rate;
+            // A per-(match, species) RNG so the cohort's pools differ (determinism is
+            // order-of-magnitude, not bit-for-bit — Law 10).
+            let mut rng = Rng::new(cfg.seed ^ (species as u64).wrapping_mul(0x9E37_79B1));
+            let founders: Vec<Brain> = (0..count)
+                .map(|k| {
+                    if k == 0 {
+                        elite.brain.clone()
+                    } else {
+                        let seed = rng.next_u64();
+                        let heading = rng.next_f32() * std::f32::consts::TAU;
+                        elite
+                            .brain
+                            .reproduce(seed, heading, &mut rng, rate, n_inputs, n_sensed)
+                    }
+                })
+                .collect();
+            cfg.founder_pools.insert(species, founders);
         }
         cfg
     }

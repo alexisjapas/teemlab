@@ -76,6 +76,10 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
         .flat_map(|(i, a)| std::iter::repeat_n(i as u16, a.count))
         .collect();
 
+    // Per-species founder counter (the k-th founder of a species), so a **founder pool**
+    // (batch regime) can hand each founder a *distinct* brain. `species_seq` is grouped by
+    // species, but a plain counter is robust to any order.
+    let mut founder_k = vec![0usize; config.archetypes.len()];
     for (i, species) in species_seq.into_iter().enumerate() {
         let span = config.arena_half_extent - config.agent_radius_of(species) - 5.0;
         let pos = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
@@ -85,18 +89,30 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
         let heading = rng.next_f32() * std::f32::consts::TAU;
         let brain_seed = config.seed ^ (i as u64).wrapping_mul(0x9E37_79B1);
         let genotype = config.genotype_of(species);
-        // If the archetype carries a **captured brain** (reused trained weights),
-        // the founder is born with this exact brain; otherwise, the usual path
-        // compiles a fresh brain from the seed. Building a fresh brain only uses a
-        // local `Rng` → the global RNG stream is the same in both branches.
-        match config.captured_brain_of(species) {
+        let k = founder_k[species as usize];
+        founder_k[species as usize] += 1;
+        // Founder brain, in priority order:
+        // 1. a **founder pool** (batch regime, generation ≥ 1): the k-th distinct brain
+        //    of a diverse cohort the orchestrator built (each a mutated variant of an
+        //    elite). Only ever set in-memory for a bred species → no RNG draw, non-batch
+        //    scenarios never reach this branch and stay byte-identical.
+        // 2. a **captured brain** (reused trained weights): the founder is born with this
+        //    exact brain — the showcase / snapshot-restore semantics, unchanged.
+        // 3. otherwise the usual path compiles a **fresh** brain from the seed (a local
+        //    `Rng` → the global stream is the same in all branches).
+        let pooled = config
+            .founder_pools
+            .get(&species)
+            .filter(|pool| !pool.is_empty())
+            .map(|pool| pool[k % pool.len()].clone());
+        match pooled.or_else(|| config.captured_brain_of(species).cloned()) {
             Some(brain) => spawn_agent_with_brain(
                 commands,
                 config,
                 genotype,
                 Species(species),
                 pos,
-                brain.clone(),
+                brain,
                 config.reserve_max_of(species),
                 0.0, // founder: born with no nutrient (T2).
                 0,   // founder: generation 0.
