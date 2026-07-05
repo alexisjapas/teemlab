@@ -56,7 +56,25 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     steps:
-      - id: deployment
+      # GitHub Pages' backend intermittently fails the FIRST deployment of a run with
+      # "Deployment failed, try again later" even though the build is green and the
+      # artifact is valid — a fresh deployment then succeeds (which is why a manual
+      # re-run always fixed it). `deploy-pages` treats that terminal-failed status as
+      # fatal and will not retry it itself, so we retry the whole step in-run (up to
+      # three attempts, backing off): a push now self-heals instead of leaving a red run.
+      - id: deploy1
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - if: steps.deploy1.outcome == 'failure'
+        run: sleep 30
+      - id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: sleep 45
+      - id: deploy3
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         uses: actions/deploy-pages@v5
