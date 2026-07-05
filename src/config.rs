@@ -719,20 +719,31 @@ pub struct BatchConfig {
     pub seed_base: u64,
 }
 
-/// Explicit fitness — how a match **scores** a genome (§4 axis B). A small, growable menu
-/// of engine primitives (an exhaustive `match` in `breeding::score`), the heterogeneous
-/// counterpart of the cost / relation tables.
+/// Explicit fitness — how a match **scores** a genome (§4 axis B). A small, growable menu of
+/// engine primitives (an exhaustive `match` in [`breeding::MatchMetrics::of`]), the
+/// heterogeneous counterpart of the cost / relation tables. Every reading is **time-robust**
+/// — aggregated over the whole match trajectory, not the terminal tick (living food booms
+/// then busts, so the last tick is a poor read; cf. `breeding::MatchMetrics`).
+///
+/// [`breeding::MatchMetrics::of`]: crate::breeding::MatchMetrics::of
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Fitness {
-    /// Best-evolved individual of the scored species: highest `Generation`, tie-broken by
-    /// `Reserve` — exactly the `train` bin's capture rule. The MLP-breeding default.
-    BestEvolved,
-    /// Standing biomass: the living count of the scored species at the terminal condition
-    /// (an ecological score — coexistence / dominance).
+    /// **Sustained biomass** — the MEAN standing population over the match. The robust forager
+    /// default: rewards a lineage that keeps a population fed (not a one-tick bloom nor a dying
+    /// remnant). The MLP-breeding default.
     Population,
-    /// Combat **dominance**: the scored species' living count **minus** its living rivals
-    /// (every other non-sessile agent — food is excluded). Rewards both surviving *and*
-    /// eliminating the enemy — the battle / factions primitive (item 19, §3 combat).
+    /// **Peak** standing population over the match — the strongest bloom the lineage reached.
+    Peak,
+    /// **Survival** (longevity) — the fraction of the match the species stayed alive (`0..=1`).
+    /// Rewards simply not dying out.
+    Survival,
+    /// **Deepest lineage** reached ever over the match (highest `Generation`, caught at its
+    /// peak) — how far the in-match neuroevolution got. NB *perverse* on a free reproducer
+    /// (rewards reproduce-to-collapse) — prefer `Population`; kept for skill-gated foraging.
+    BestEvolved,
+    /// Combat **dominance** (terminal): the scored species' living count **minus** its living
+    /// rivals (every other non-sessile agent — food excluded) at the match's end. Rewards both
+    /// surviving *and* eliminating the enemy — the battle / factions primitive (item 19).
     Dominance,
 }
 

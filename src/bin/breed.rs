@@ -90,8 +90,13 @@ fn main() {
             }) && let Some(mm) = fr.match_metrics.get(bi)
             {
                 println!(
-                    "         └ top match: pop {:.0} · lineage {:.0} · dominance {:.0} · reserve {:.0}",
-                    mm.population, mm.best_evolved, mm.dominance, mm.mean_reserve,
+                    "         └ top match: pop {:.0} · peak {:.0} · survival {:.0}% · lineage {:.0} · dominance {:.0} · reserve {:.0}",
+                    mm.mean_population,
+                    mm.peak_population,
+                    mm.survival * 100.0,
+                    mm.best_evolved,
+                    mm.dominance,
+                    mm.mean_reserve,
                 );
             }
         }

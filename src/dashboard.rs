@@ -592,18 +592,22 @@ fn cohort_section(
         ui.strong("Match metrics");
         egui::Grid::new(("breed_metrics", gen_idx, faction))
             .striped(true)
-            .num_columns(5)
-            .spacing([10.0, 3.0])
+            .num_columns(7)
+            .spacing([7.0, 3.0])
             .show(ui, |ui| {
                 ui.weak("match");
                 metric_header(ui, "pop", driving == Some(Fitness::Population));
-                metric_header(ui, "lineage", driving == Some(Fitness::BestEvolved));
-                metric_header(ui, "domin.", driving == Some(Fitness::Dominance));
-                ui.weak("reserve");
+                metric_header(ui, "peak", driving == Some(Fitness::Peak));
+                metric_header(ui, "surv", driving == Some(Fitness::Survival));
+                metric_header(ui, "lin", driving == Some(Fitness::BestEvolved));
+                metric_header(ui, "dom", driving == Some(Fitness::Dominance));
+                ui.weak("rsv");
                 ui.end_row();
                 for (m, mm) in metrics.iter().enumerate() {
                     fonts::value(ui, |ui| ui.label(format!("#{}", m + 1)));
-                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.population)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.mean_population)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.peak_population)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.0}%", mm.survival * 100.0)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.best_evolved)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.dominance)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.mean_reserve)));

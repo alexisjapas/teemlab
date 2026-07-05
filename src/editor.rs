@@ -1828,17 +1828,46 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// A dropdown over the [`Fitness`] menu — the exhaustive `match` keeps the labels in
 /// sync with the enum (a new variant must be handled here).
 fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
-    let text = match value {
-        Fitness::BestEvolved => "best evolved",
-        Fitness::Population => "population",
-        Fitness::Dominance => "dominance (combat)",
-    };
+    // (variant, label, tooltip) — the single source the closure and the selected text share.
+    const OPTIONS: [(Fitness, &str, &str); 5] = [
+        (
+            Fitness::Population,
+            "population (sustained)",
+            "Mean standing population over the match — the robust forager default.",
+        ),
+        (
+            Fitness::Peak,
+            "peak population",
+            "The strongest bloom the lineage reached during the match.",
+        ),
+        (
+            Fitness::Survival,
+            "survival (longevity)",
+            "Fraction of the match the species stayed alive — rewards not dying out.",
+        ),
+        (
+            Fitness::BestEvolved,
+            "best evolved (lineage)",
+            "Deepest lineage reached — neuroevolution depth. Perverse on a free reproducer \
+             (prefer population); for skill-gated foraging.",
+        ),
+        (
+            Fitness::Dominance,
+            "dominance (combat)",
+            "Own survivors minus living rivals at the match's end — the battle fitness.",
+        ),
+    ];
+    let text = OPTIONS
+        .iter()
+        .find(|(f, _, _)| f == value)
+        .map_or("?", |(_, label, _)| label);
     egui::ComboBox::from_id_salt("batch_fitness")
         .selected_text(text)
         .show_ui(ui, |ui| {
-            ui.selectable_value(value, Fitness::BestEvolved, "best evolved");
-            ui.selectable_value(value, Fitness::Population, "population");
-            ui.selectable_value(value, Fitness::Dominance, "dominance (combat)");
+            for (variant, label, tip) in OPTIONS {
+                ui.selectable_value(value, variant, label)
+                    .on_hover_text(tip);
+            }
         });
 }
 

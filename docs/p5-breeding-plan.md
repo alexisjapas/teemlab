@@ -308,13 +308,29 @@ variant = `mlp_evolved` reaching (then beating) parity.
   held back* (making the gene mutable lets it drift toward 0, which would re-collapse the
   founder jitter that reads it). `tests/mlp.rs` (byte-identity tripwire) + `tests/breeding.rs`
   (mechanism) stay green.
+- **Fitness rework — time-robust metrics + a wider menu (done).** The fitness was measured
+  at the **terminal tick** only: on living food (Lotka–Volterra boom→bust) that is a *dying
+  remnant*, so the score was noisy (old `Population` cohort spread `[27 31 15 44]`). Now
+  `run_match` **samples the whole trajectory** (`SAMPLES_PER_MATCH = 100`, a cheap count/gen/
+  reserve query — no brain clones; the best-ever genome is cloned only on improvement, the
+  `train` pattern) and `MatchMetrics::from_samples` aggregates it. `MatchMetrics::compute`
+  (snapshot) → `MatchMetrics::from_samples` (trajectory); the pure part stays `App`-free and
+  unit-tested. **New `Fitness` menu:** `Population` = **mean sustained** population (the robust
+  forager default — measured cohort spread tightened to `[41 40 42 44]`), `Peak` = peak bloom,
+  `Survival` = longevity (alive-fraction), `BestEvolved` = deepest lineage **ever** (caught at
+  its peak, not the terminal remnant), `Dominance` = **terminal** own − rivals (a battle's
+  outcome is by nature terminal). The per-match elite is the **best-ever** genome (deepest,
+  tie reserve) tracked during the run, not read off the final population. Semantics fix: the
+  editor's fitness dropdown spells each out (and flags `BestEvolved`'s perversity); the
+  dashboard's metrics table + the `breed` bin print all six. `tests/mlp.rs` (continuous, no
+  orchestrator) + `tests/breeding.rs` (mechanism) stay green; a `breed` run captures a strong
+  genome (generation 6, reserve 116.7).
 - **Finding — `BestEvolved` is *perverse* on a free reproducer.** Selecting the deepest
   in-match lineage rewards a **reproduce-to-collapse** gene (a runaway-low
   `reproduction_threshold`): a re-seeded cohort then *dies out*, scoring **worse** than a
   random restart. `BestEvolved` only behaves where reproduction **requires a skill** (a
-  forager that must find food to breed — the `train`-bin case). **`Population`** (standing
-  biomass) is the saner forager fitness, and the one `13_mlp_breed.ron` uses (a quick
-  `breed` run gives a sensible cohort spread, e.g. `[28 41 6 38]`).
+  forager that must find food to breed — the `train`-bin case). **`Population`** (now mean
+  sustained biomass) is the saner forager fitness, and the one `13_mlp_breed.ron` uses.
 - **Unit `breeding::score`** (done, no `App`): each `Fitness` arm on hand-built individuals
   — `BestEvolved` = deepest generation of the scored species, `Population` = its living
   count, `0.0` when extinct — plus `best_individual` (generation, then reserve).
@@ -371,11 +387,11 @@ variant = `mlp_evolved` reaching (then beating) parity.
    from a floating popup over the play area (unacceptable UX) into a first-class docked panel:
    - **Docked, not floating.** `dashboard::draw` (a floating `egui::Window`) was replaced by
      `dashboard::breeding_panel`, called from `panels::dock` inside the shared root `Ui` — it
-     **replaces the right *Analysis* column** while the Breeding toggle is on (during a run the
-     live world is paused/unused; a Replay plays out in the still-centred sim). `BreedingSession`
-     moved into the `DockState` `SystemParam` bundle (16-param limit); the panel returns a
-     `BreedingAction` the dock applies via `apply_action` (it holds the catalog + live-world
-     resources).
+     occupies the **left half of the bottom panel**, side by side with the evolution curves,
+     while the Breeding toggle is on (the sim stays centred; a Replay plays out in it).
+     `BreedingSession` moved into the `DockState` `SystemParam` bundle (16-param limit); the
+     panel returns a `BreedingAction` the dock applies via `apply_action` (it holds the catalog
+     + live-world resources).
    - **Replay any generation.** A per-generation **Replay** button re-seeds the live world's
      founders from that generation's whole cohort (`breeding::seed_founders` — founder 0 the
      champion intact, the rest diversified variants cycled over the elites, into
