@@ -51,6 +51,7 @@ fn hunter_sees_and_chases_its_target() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
             // The bait: a sessile source (Phase 3b) — immobile, never consumed
             // (zero-rate relation); the hunter must see it as a "target".
@@ -77,6 +78,7 @@ fn hunter_sees_and_chases_its_target() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
         ],
         relations: vec![Relation {

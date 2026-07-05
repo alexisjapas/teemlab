@@ -45,8 +45,11 @@ impl Plugin for VisualsPlugin {
                     attach_visuals,
                     shade_by_reserve,
                     draw_arena,
+                    draw_sources,
+                    render_source_bodies,
                     draw_heading,
                     draw_play_area,
+                    sync_layer_flags,
                     render_nutrient_layers,
                     apply_agent_layer,
                 ),
@@ -195,6 +198,85 @@ fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
     );
 }
 
+/// Rendering only: **outline** each scenario **source** (a substrate feature — a vent or
+/// a rock) with a gizmo circle at its position, in its color. Sources are non-`Agent`
+/// entities with no mesh, so — like [`draw_arena`] — the ring is drawn straight from the
+/// config; this is the *only* on-screen trace of an otherwise invisible feature, and the
+/// sole way a **solid** rock that emits nothing (`rate 0`, no field heatmap) is visible at
+/// all. A **solid** source (a rock / obstacle) is additionally *filled* by
+/// [`render_source_bodies`] (a disc mesh) so it reads as a tangible body — this ring then
+/// crisps its edge; an intangible emitter (a vent) is left as the bare outline (its reach
+/// shows through its field's heatmap layer).
+fn draw_sources(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
+    for source in &config.sources {
+        let pos = Vec2::from(source.pos);
+        gizmos.circle_2d(pos, source.radius, srgb3(source.color));
+    }
+}
+
+/// A **filled body** for a solid source (a rock): a disc mesh tinted the source's color,
+/// under the agents (`z = -4`, above the play-area and the component heatmaps). One per
+/// **solid** [`Source`](crate::config::Source), reconciled against the config every frame
+/// — mirroring [`render_nutrient_layers`] — so editing a source (moving, resizing,
+/// toggling `solid`) shows live. It carries the index of the source it mirrors so a
+/// reconcile can find it again.
+///
+/// A unit circle scaled by the radius (never rebuilt on a resize). The gizmo ring
+/// ([`draw_sources`]) still crisps its edge; this fills the interior so a rock reads as a
+/// solid body rather than a hollow outline.
+#[derive(Component)]
+struct SourceBody {
+    /// Index into `config.sources` this disc mirrors.
+    source: usize,
+}
+
+/// Rendering only: keep one filled disc ([`SourceBody`]) per **solid** source, tinted and
+/// placed from the config. Reconciles like [`render_nutrient_layers`]: update the discs
+/// that still map to a solid source, hide those whose source vanished or turned
+/// intangible, and spawn a disc for any solid source that lacks one. No solid source
+/// (every scenario before rocks) → nothing spawned.
+fn render_source_bodies(
+    mut commands: Commands,
+    config: Res<SimConfig>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut bodies: Query<(
+        &SourceBody,
+        &mut Transform,
+        &mut Visibility,
+        &MeshMaterial2d<ColorMaterial>,
+    )>,
+) {
+    let mut covered = vec![false; config.sources.len()];
+    for (body, mut tf, mut vis, material) in &mut bodies {
+        match config.sources.get(body.source) {
+            Some(src) if src.solid => {
+                covered[body.source] = true;
+                *vis = Visibility::Visible;
+                tf.translation = Vec2::from(src.pos).extend(-4.0);
+                tf.scale = Vec3::splat(src.radius);
+                if let Some(mut mat) = materials.get_mut(&material.0) {
+                    mat.color = srgb3(src.color);
+                }
+            }
+            // The source was removed or its `solid` was turned off: hide the disc (kept,
+            // to reuse if it becomes solid again — as the heatmap layers do).
+            _ => *vis = Visibility::Hidden,
+        }
+    }
+    for (index, src) in config.sources.iter().enumerate() {
+        if src.solid && !covered[index] {
+            commands.spawn((
+                SourceBody { source: index },
+                Mesh2d(meshes.add(Circle::new(1.0))),
+                MeshMaterial2d(materials.add(srgb3(src.color))),
+                Transform::from_translation(Vec2::from(src.pos).extend(-4.0))
+                    .with_scale(Vec3::splat(src.radius)),
+            ));
+        }
+    }
+}
+
 /// Rendering only: materializes the **two backgrounds** set by the scenario
 /// ([`SimConfig::play_area_color`] / [`SimConfig::off_game_color`]).
 ///
@@ -298,6 +380,20 @@ fn make_nutrient_image(field: &Field, color: Srgba) -> Image {
     image.sampler = ImageSampler::linear();
     paint_nutrient_image(&mut image, field, color);
     image
+}
+
+/// Rendering only: keep the per-component visibility flags ([`Layers::nutrients`]) sized
+/// to the actual number of fields — a scenario with `N` components needs `N` toggles.
+/// New components (index ≥ the initial `vec![true]`) start **hidden**: only the first
+/// field is shown by default. Crucially this makes the extra components *reachable* — the
+/// View ▸ Layers menu iterates these flags, so before this a pheromone / toxicity /
+/// detritus field (index ≥ 1) had no flag at all: force-hidden **and** absent from the
+/// menu. Appending `false` (not `true`) leaves the recorder's explicit flags untouched
+/// for the fields it set → existing videos byte-identical.
+fn sync_layer_flags(mut layers: ResMut<Layers>, fields: Res<Fields>) {
+    if layers.nutrients.len() != fields.len() {
+        layers.nutrients.resize(fields.len(), false);
+    }
 }
 
 /// Rendering only: the component **heatmap layers** (background, *behind* the agents

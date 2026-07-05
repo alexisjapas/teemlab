@@ -181,6 +181,12 @@ pub struct Archetype {
     /// absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub captured_from: Option<String>,
+    /// **Anchoring** to the substrate ([`AnchorConfig`]): a spring holds this species to
+    /// its spawn point, with a tear-off tension and a die-on-detach choice. `None`
+    /// (default, every existing scenario) ⇒ a free body, no spring → byte-identical.
+    /// Omitted from the RON when absent (`skip_serializing_if`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<AnchorConfig>,
 }
 
 impl Archetype {
@@ -213,6 +219,7 @@ impl Archetype {
             source: None,
             captured_brain: None,
             captured_from: None,
+            anchor: None,
         }
     }
 
@@ -247,6 +254,7 @@ impl Archetype {
             source: None,
             captured_brain: None,
             captured_from: None,
+            anchor: None,
         }
     }
 
@@ -565,8 +573,52 @@ pub struct Source {
     pub rate: f32,
     /// Visual color (linear sRGB, `[r, g, b]` in `[0, 1]`).
     pub color: [f32; 3],
-    /// Visual radius (no collider — purely for rendering).
+    /// Visual radius; **also the collider radius** when [`solid`](Self::solid).
     pub radius: f32,
+    /// **Solid** (a rock / obstacle): spawn a static circle collider of `radius` so the
+    /// feature is *tangible* — it blocks bodies and carves spatial refugia / winding,
+    /// inaccessible zones. Independent of `rate` (a pure rock emits nothing, `rate: 0`,
+    /// and still blocks; a leaching rock does both). `false` (default) = the historical
+    /// intangible emitter (a vent). `#[serde(default)]` → scenarios written before this
+    /// field parse as `false` → byte-identical.
+    #[serde(default)]
+    pub solid: bool,
+}
+
+/// **Anchoring** of a species to the substrate (a rooted plant, a sessile filter-feeder,
+/// a barnacle): the body is held to a fixed point — its spawn position, stored as
+/// [`Anchor`](crate::components::Anchor) — by a **spring**, not pinned rigidly, so it can
+/// be jostled and springs back. Absent by default (`Archetype::anchor == None`) → no
+/// anchor component, the spring system a no-op → **byte-identical**.
+///
+/// The spring is realized in [`crate::movement::anchor_spring`] (an anchored body is
+/// therefore **exempt from `act`**: the spring + the physics solver govern it, not the
+/// locomotion velocity override). The tear-off criterion is a **tension threshold**
+/// (`stiffness · displacement`, a portable quantity — no mass, unlike a contact impulse
+/// ∝ radius², the non-portability that shelved the `crush`, §9): pulled past it, the
+/// anchor **snaps**.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnchorConfig {
+    /// Spring **stiffness**: the restoring pull toward the anchor per unit of
+    /// displacement (a restoring *acceleration* per unit length — mass is deliberately
+    /// folded out so the feel is body-size-independent). Higher ⇒ resists displacement
+    /// more.
+    pub stiffness: f32,
+    /// Velocity **damping** of the anchored body (set as Avian `LinearDamping`) so the
+    /// spring settles after a jolt instead of oscillating forever.
+    pub damping: f32,
+    /// **Tear-off tension**: the anchor snaps once `stiffness · |pos − anchor|` exceeds
+    /// this. Coupled with `stiffness` (a stiffer spring reaches the same tension at a
+    /// shorter displacement), so it reads as a breaking *tension* of the tether.
+    pub tear_force: f32,
+    /// On tear-off, does the body **die**? `true` — an uprooted organism cannot survive:
+    /// routed through the uniform death path ([`crate::ecology::reap`], via a zeroed
+    /// reserve), so it leaves a corpse (`emit_at_death`) and recycles — a portable,
+    /// physical **turnover** lever. `false` — it survives, detached: the
+    /// [`Anchor`](crate::components::Anchor) is dropped and it becomes a free body (a
+    /// dislodged fragment that drifts / settles where it was knocked).
+    pub die_on_detach: bool,
 }
 
 /// How a **species relates to a component** — the environmental analogue of the
@@ -859,6 +911,15 @@ impl SimConfig {
         self.archetypes
             .get(species as usize)
             .and_then(|a| a.captured_brain.as_ref())
+    }
+
+    /// The **anchor config** of archetype `species`, if it is rooted to the substrate
+    /// ([`AnchorConfig`]). `None` (default, all existing scenarios) → a free body, the
+    /// spring system skips it → byte-identical.
+    pub fn anchor_of(&self, species: u16) -> Option<&AnchorConfig> {
+        self.archetypes
+            .get(species as usize)
+            .and_then(|a| a.anchor.as_ref())
     }
 
     /// The **mutability** ("mutable?" facet per gene) of archetype `species`. Falls

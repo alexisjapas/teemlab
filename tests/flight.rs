@@ -57,6 +57,7 @@ fn prey_sees_and_flees_its_predator() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
             // Species 1: the predator, immobile (max_speed 0) — the scarecrow.
             Archetype {
@@ -81,6 +82,7 @@ fn prey_sees_and_flees_its_predator() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
         ],
         // The predator (species 1) can act ON the prey (species 0): the prey

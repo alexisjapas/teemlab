@@ -411,7 +411,7 @@ pub fn dock(
                         .response
                         .on_hover_text("Inline help and the keyboard-shortcuts cheatsheet.");
                         ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
-                            editor::layers_section(ui, &mut layers)
+                            editor::layers_section(ui, &mut layers, &config)
                         })
                         .response
                         .on_hover_text("Toggle view layers (agents, nutrient maps).");

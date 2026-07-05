@@ -1,0 +1,235 @@
+// Reef — solid rocks (refugia) + spring-anchored kelp (rooted, tearable, mortal).
+//
+// The two physical/spatial levers in one scene (ROADMAP §0):
+//   - ROCKS are *solid sources* (a static collider, emitting nothing): they block
+//     bodies and carve a sheltered, winding reef — spatial refugia.
+//   - KELP is a sessile plant ANCHORED to the substrate by a spring: it roots where it
+//     seeds, is jostled and springs back, but pulled past its breaking *tension* it is
+//     UPROOTED and dies (`die_on_detach`) — leaving DETRITUS (a second field). Two
+//     things uproot it: a GRAZER ramming it, and its own crowding (a dense clump pushes
+//     its members past the tear tension → self-thinning). Uprooting is thus a portable,
+//     physical turnover: watch the "Detritus" heatmap brighten where kelp is torn loose.
+//
+// What to look at (View ▸ Layers → toggle Nutrient / Detritus heatmaps; click an entity
+// → Nutrient store):
+//   - kelp clusters into oases around the vents, inside the rock shelter;
+//   - grazers weave through the gaps (rocks occlude their vision and block them);
+//   - where kelp is uprooted, a Detritus patch blooms and slowly fades (turnover).
+//
+// An *example to watch* (Lotka-Volterra liveliness, a known wall — ROADMAP §7/§9), not a
+// calibrated steady state: it stays lively for a good while across seeds.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 320.0,
+    archetypes: [
+        // KELP — a sessile plant, anchored to the substrate. Lives on the sun, absorbs
+        // nutrient from the field, seeds locally when full. Rooted by a spring (see
+        // `anchor`): torn past its tension it dies and deposits detritus (component 1).
+        (
+            name: "Kelp",
+            color: (0.30, 0.75, 0.50),
+            count: 90,
+            radius: 7.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                agility: 0.12,
+                vision_range: 30.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 25.0,
+                offspring_energy: 15.0,
+                mutation_rate: 0.0,
+                base_metabolism: 1.0,
+                move_cost: 0.0,
+                vision_rays: 1.0,
+                photosynthesis: 7.0,
+                seed_dispersal: 20.0,
+                brain_cost: 0.0,
+                agility_cost: 0.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+            ),
+            // ANCHORING: a spring of stiffness 30 holds each kelp to its seed point; the
+            // anchor snaps once the tension (stiffness · displacement) exceeds 700 — i.e.
+            // a ~23-unit pull (radius is 7, so ~three body-widths). Ordinary jostling
+            // holds, but a grazer's sustained shove or a tightly packed clump tears it
+            // loose. Uprooted ⇒ death → a corpse of detritus (turnover).
+            anchor: Some((
+                stiffness: 30.0,
+                damping: 3.0,
+                tear_force: 700.0,
+                die_on_detach: true,
+            )),
+        ),
+        // GRAZER — a mobile forager (Hunter brain steers toward kelp via the relation).
+        // It does not absorb nutrient from the field: its store rises only by eating kelp
+        // (trophic transfer), and it breeds gated on that store → no overshoot. Ramming
+        // kelp to feed also tends to uproot it.
+        (
+            name: "Grazer",
+            color: (1.0, 0.50, 0.35),
+            count: 5,
+            radius: 7.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 120.0,
+                agility: 0.12,
+                vision_range: 150.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 40.0,
+                mutation_rate: 0.06,
+                base_metabolism: 4.0,
+                move_cost: 2.0,
+                vision_rays: 7.0,
+                photosynthesis: 0.0,
+                seed_dispersal: 0.0,
+                brain_cost: 0.0,
+                agility_cost: 0.02,
+            ),
+            brain: Hunter,
+            mutable: (
+                max_speed: true,
+                agility: true,
+                vision_range: true,
+                vision_fov: true,
+                reproduction_threshold: true,
+                offspring_energy: true,
+                mutation_rate: false,
+                base_metabolism: false,
+                move_cost: false,
+                vision_rays: true,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                agility_cost: false,
+            ),
+        ),
+    ],
+    // The grazer (1) eats the kelp (0): predation carries energy AND the nutrient in the
+    // eaten biomass. A short range (reach ≈ contact) so feeding keeps the grazer pressed
+    // against the kelp — which is what shoves it past its anchor tension.
+    relations: [
+        (
+            actor: 1,
+            target: 0,
+            transfer: true,
+            rate: 40.0,
+            range: 9.0,
+        ),
+    ],
+    field_resolution: 256,
+    components: [
+        (
+            name: "Nutrient",
+            diffusion: 0.3,
+            decay: 0.0,
+        ),
+        // Detritus lingers (low diffusion) and slowly fades (decay) — so an uprooting
+        // leaves a visible, localized patch that decomposes over time.
+        (
+            name: "Detritus",
+            diffusion: 0.06,
+            decay: 0.02,
+        ),
+    ],
+    // Rocks (solid, emitting nothing) carve the reef; vents (intangible) seed the
+    // nutrient the kelp clusters around, tucked into the shelter.
+    sources: [
+        // — rocks (solid: true, rate: 0) —
+        (pos: (-180.0, 120.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 34.0, solid: true),
+        (pos: (-60.0, 205.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 26.0, solid: true),
+        (pos: (125.0, 150.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 38.0, solid: true),
+        (pos: (205.0, -40.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 28.0, solid: true),
+        (pos: (60.0, -175.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 32.0, solid: true),
+        (pos: (-165.0, -150.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 30.0, solid: true),
+        (pos: (-25.0, -20.0), component: 0, rate: 0.0, color: (0.40, 0.40, 0.46), radius: 22.0, solid: true),
+        // — nutrient vents (intangible emitters) —
+        (pos: (-120.0, -70.0), component: 0, rate: 8.0, color: (1.0, 0.55, 0.2), radius: 11.0),
+        (pos: (95.0, 45.0), component: 0, rate: 8.0, color: (1.0, 0.55, 0.2), radius: 11.0),
+        (pos: (-45.0, 155.0), component: 0, rate: 8.0, color: (1.0, 0.55, 0.2), radius: 11.0),
+    ],
+    field_relations: [
+        // Kelp: absorbs the nutrient and pays a store to seed; deposits detritus at death.
+        (species: 0, component: 0, absorb: 1.5, capacity: 8.0, repro_cost: 8.0),
+        (species: 0, component: 1, emit_at_death: 5.0),
+        // Grazer: no absorption (store rises only by eating), breeds on the harvested
+        // nutrient; a grazer corpse also returns some detritus.
+        (species: 1, component: 0, capacity: 30.0, repro_cost: 24.0),
+        (species: 1, component: 1, emit_at_death: 3.0),
+    ],
+    speed_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    agility_bounds: (
+        min: 0.02,
+        max: 0.5,
+    ),
+    vision_range_bounds: (
+        min: 30.0,
+        max: 320.0,
+    ),
+    vision_fov_bounds: (
+        min: 40.0,
+        max: 280.0,
+    ),
+    reproduction_threshold_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    offspring_energy_bounds: (
+        min: 10.0,
+        max: 120.0,
+    ),
+    mutation_rate_bounds: (
+        min: 0.0,
+        max: 0.5,
+    ),
+    base_metabolism_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    move_cost_bounds: (
+        min: 0.0,
+        max: 20.0,
+    ),
+    vision_rays_bounds: (
+        min: 1.0,
+        max: 21.0,
+    ),
+    photosynthesis_bounds: (
+        min: 0.0,
+        max: 30.0,
+    ),
+    seed_dispersal_bounds: (
+        min: 0.0,
+        max: 200.0,
+    ),
+    brain_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    agility_cost_bounds: (
+        min: 0.0,
+        max: 2.0,
+    ),
+    play_area_color: (0.06, 0.08, 0.10),
+    off_game_color: (0.14, 0.16, 0.18),
+    seed: 12648430,
+)

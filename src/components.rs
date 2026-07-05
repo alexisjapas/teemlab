@@ -52,6 +52,14 @@ pub struct Wall;
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Radius(pub f32);
 
+/// The **anchor point** of a body rooted to the substrate
+/// ([`crate::config::AnchorConfig`]): the fixed world position a spring pulls it back
+/// toward (its spawn position). Present **only** on anchored species — its presence marks
+/// a body as anchored, so `act` skips it and [`crate::movement::anchor_spring`] governs
+/// it. Absent by default → byte-identical.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Anchor(pub Vec2);
+
 /// Agent generation: `0` for a founder (population, editor placement),
 /// `parent + 1` for a newborn. Set at birth and never modified — it is the
 /// genealogical depth, not a living state. Readable to track a lineage's

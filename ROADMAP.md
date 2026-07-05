@@ -498,6 +498,41 @@ open work in §9.
   leaves only a pulse) and **field-navigation** (a scavenger following a carrion gradient is
   MLP-only; fields are not in entity-vision). The verb is ready; its ecological payoff waits on the
   mortality lever (the flagged "grazed plants cannot die" / turnover thread).
+- **Inert solid features (rocks) + spring-anchored organisms — two physical/spatial levers**:
+  two scenario-authored extensions of the *inert-feature* and *sessile* substrates, both
+  **byte-identical** (absent by default, no RNG, `tests/mlp` green), that re-approach two
+  deferred persistence threads (§9) from the **physics** side rather than a tuned threshold.
+  - **Solid sources — rocks / obstacles.** The `Source` (the non-`Agent` inert emitter, T2)
+    gains `solid: bool` (`#[serde(default)]`): set, it spawns a **static circle collider** of
+    its radius, so the feature is **tangible** — it blocks bodies and carves **spatial refugia /
+    winding, inaccessible zones** (the spatial *stabiliser* / refuge lever §9 wanted, distinct
+    from the density-death `crush`). Independent of `rate` (a pure rock emits nothing and still
+    blocks; a leaching rock does both). It stays a **non-`Agent`** entity → every life system
+    ignores it (Law 11). Sources are now **drawn** (`draw_sources`, a gizmo from config, like
+    `draw_arena` — previously only their field heatmap showed), so a rock that emits nothing is
+    visible; the editor gains a `solid` toggle. Driver `tests/obstacle.rs`: a solid rock
+    **empties its disc**, an intangible vent does not (the falsifiable contrast).
+  - **Spring-anchored organisms — rooted, tearable, mortal-if-uprooted.** An archetype may carry
+    `anchor: Option<AnchorConfig{ stiffness, damping, tear_force, die_on_detach }>`: a **spring**
+    holds the body to its spawn point (an `Anchor(Vec2)` component), not pinned rigidly — it is
+    jostled and springs back (`movement::anchor_spring`, `FixedUpdate`; the body is **exempt from
+    `act`**, so the spring + the solver govern it). **Tear-off is a tension threshold**
+    (`stiffness · displacement`, a **portable**, mass-free quantity — deliberately *not* a contact
+    impulse ∝ radius², the exact non-portability that shelved the `crush`, §9). On tear-off,
+    `die_on_detach`: **true** routes the death through the **uniform** path (`reap`, via a zeroed
+    reserve) so an uprooted body **leaves a corpse** (`emit_at_death`) and recycles — a
+    **portable, physical turnover lever** (the steady mortality the detritivore niche waits on,
+    reached without the crush); **false** drops the `Anchor` → a freed, drifting body. Priced by
+    structure (immobility + tear risk, SIM Law 7). Unit-tested (the three tear branches,
+    deterministic) + `tests/anchor.rs` (anchored bodies stay rooted across a real run).
+  - **Playable showcase — `scenarios/examples/20_reef.ron`.** Solid rocks carve a sheltered
+    reef; **kelp** (anchored `Sessile` flora) roots into the oases around nutrient vents; a
+    light grazer prunes it, and kelp torn past its tension is uprooted → **detritus** (a
+    second field, a toggleable heatmap) — the turnover made observable. Driver `tests/reef.rs`:
+    the reef **persists bounded** and **turns over** (detritus deposited), and — flipping
+    `die_on_detach` off to *count* the tears — kelp **is** uprooted (peak ~9 freed at once), so
+    the tear-off is genuinely exercised, not merely grazing mortality. A lively *example to
+    watch* (the late grazer creep is the documented Lotka-Volterra wall, §7), not a steady state.
 
 **Remaining.**
 
@@ -1159,7 +1194,13 @@ and *scaling* work.
   — e.g. a count of overlapping neighbours, or summed overlap depth — when a stable
   ecosystem actually needs the bound (the predator-prey overshoot that motivates it is
   itself a known wall; cf. the natural-selection work). Until then, mortal flora is
-  bounded by **grazing alone**.
+  bounded by **grazing alone**. **Update (§0):** two of the goals this `crush` was for are
+  now met from the **physics** side — **spatial refugia** via **solid sources** (rocks —
+  static colliders carving winding/inaccessible zones), and a **portable, physical
+  mortality/turnover** via **spring-anchoring** tear-off (`die_on_detach`, a *tension*
+  threshold, mass-free — the portable formulation this note asked for, applied to uprooting
+  rather than crowding). The **density-death `crush` itself stays deferred** (nothing yet
+  bounds a *free-floating* crowd — anchoring only tears a *rooted* body; rocks only exclude).
 - **Generic nutrients layer — the principled population bound (planned, 3 phases)**.
   The *resource-limitation* answer to the density problem above: a population is bounded
   by its **most limiting resource** (Liebig's law of the minimum), not by an artificial

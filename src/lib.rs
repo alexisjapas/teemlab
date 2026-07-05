@@ -83,6 +83,11 @@ impl Plugin for SimPlugin {
             // nutrient to the field (link 2 — the conserving loop), inert (the field
             // untouched) when the store is empty → existing scenarios byte-identical.
             //
+            // `anchor_spring` (Feature 2) sits between `interact` and `reap`: a rooted body
+            // pulled past its tear tension is marked dead (reserve 0) there, so `reap` turns
+            // it into a corpse the *same* tick — placed **after** `interact` so a lethal
+            // uprooting cannot be undone by eating the energy back. No anchored body → no-op.
+            //
             // The **component** sub-pipeline sits after metabolize and before
             // reproduce, so the store is filled before reproduction reads it: sources
             // emit → the fields diffuse and decay → agents absorb into their store;
@@ -95,6 +100,7 @@ impl Plugin for SimPlugin {
                     movement::decide,
                     movement::act,
                     interaction::interact,
+                    movement::anchor_spring,
                     ecology::reap,
                     ecology::metabolize,
                     nutrients::emit_nutrients,

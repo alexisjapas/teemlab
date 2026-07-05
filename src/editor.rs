@@ -1285,13 +1285,21 @@ pub(crate) fn draw_mlp_graph(
 /// rendering concern ([`Layers`]), it never touches the scenario or the sim. The
 /// nutrient layers share an opacity budget (`N` active ⇒ `1/N` each), so the label
 /// states it for the user.
-pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers) {
+pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &SimConfig) {
     ui.checkbox(&mut layers.agents, "Agents (main)");
     if !layers.nutrients.is_empty() {
         ui.separator();
-        help::hint(ui, "Nutrient maps — background, shared opacity:");
+        help::hint(ui, "Component maps — background, shared opacity:");
+        // One toggle per component field, labelled by the scenario's component name
+        // (Nutrient / Pheromone / Toxicity / Detritus…) so each map is findable. The
+        // per-row id ([`egui::Ui::push_id`]) keeps two same-named components distinct.
         for (i, on) in layers.nutrients.iter_mut().enumerate() {
-            ui.checkbox(on, format!("Nutrient {i}"));
+            let label = config
+                .components
+                .get(i)
+                .map(|c| c.name.as_str())
+                .unwrap_or("Component");
+            ui.push_id(i, |ui| ui.checkbox(on, label));
         }
     }
 }
@@ -1527,6 +1535,15 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                                     ui.add(egui::Slider::new(&mut src.radius, 1.0..=40.0))
                                 });
                                 ui.end_row();
+
+                                ui.label("solid");
+                                fonts::value(ui, |ui| {
+                                    ui.checkbox(&mut src.solid, "").on_hover_text(
+                                        "Tangible rock/obstacle: a static collider blocks bodies \
+                                         (spatial refugia / winding zones). Independent of emission.",
+                                    )
+                                });
+                                ui.end_row();
                             });
                     });
                 }
@@ -1544,6 +1561,7 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                         rate: 10.0,
                         color: [1.0, 0.6, 0.2],
                         radius: 12.0,
+                        solid: false,
                     });
                 }
             });

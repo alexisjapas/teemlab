@@ -53,6 +53,7 @@ fn config(mortal: bool) -> SimConfig {
             source: None,
             captured_brain: None,
             captured_from: None,
+            anchor: None,
         }],
         relations: vec![],
         components: vec![ComponentConfig {

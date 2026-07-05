@@ -65,6 +65,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
             Archetype {
                 name: "Plant".into(),
@@ -78,6 +79,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
         ],
         // Forager (0) eats the plant (1): predation (transfer) at a steady rate, in
@@ -216,6 +218,7 @@ fn destruction_without_transfer_moves_no_nutrient() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
             Archetype {
                 name: "Victim".into(),
@@ -229,6 +232,7 @@ fn destruction_without_transfer_moves_no_nutrient() {
                 source: None,
                 captured_brain: None,
                 captured_from: None,
+                anchor: None,
             },
         ],
         // transfer: false → combat: the victim's reserve is destroyed without the

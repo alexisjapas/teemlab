@@ -3,7 +3,7 @@
 
 use crate::brain::{Brain, MlpBrain};
 use crate::components::{
-    Action, Age, Agent, Generation, Maneuver, Perception, Radius, Reserve, Species, Wall,
+    Action, Age, Agent, Anchor, Generation, Maneuver, Perception, Radius, Reserve, Species, Wall,
 };
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
@@ -174,7 +174,7 @@ pub fn spawn_agent_with_brain(
     let r = config.agent_radius_of(species.0);
     // The shape (number of rays) now comes from the visual-precision gene.
     let vision = genotype.vision();
-    commands.spawn((
+    let mut entity = commands.spawn((
         Agent,
         species,
         genotype,
@@ -223,6 +223,15 @@ pub fn spawn_agent_with_brain(
         LinearVelocity::default(),
         Transform::from_translation(pos.extend(0.0)),
     ));
+    // **Anchoring** (Feature 2): a rooted species is held to its spawn point by a spring.
+    // Tag it with its [`Anchor`] (this very position) and set the body's `LinearDamping`
+    // so the spring settles after a jolt; [`crate::movement::anchor_spring`] then applies
+    // the restoring pull and the tear-off, and `act` skips it (`Without<Anchor>`). A
+    // seeded child anchors at *its* own spawn point (this `pos`) → each plant roots where
+    // it grows. `None` (every existing scenario) → nothing added → byte-identical.
+    if let Some(anchor) = config.anchor_of(species.0) {
+        entity.insert((Anchor(pos), LinearDamping(anchor.damping)));
+    }
 }
 
 /// Spawns the scenario's substrate **sources** (T2): for each [`crate::config::Source`],
@@ -239,12 +248,21 @@ pub fn spawn_agent_with_brain(
 /// [`emit_nutrients`]: crate::nutrients::emit_nutrients
 fn spawn_sources(commands: &mut Commands, config: &SimConfig) {
     for source in &config.sources {
-        commands.spawn((
+        let mut entity = commands.spawn((
             Emits {
                 component: source.component,
                 rate: source.rate,
             },
             Transform::from_translation(Vec2::from(source.pos).extend(0.0)),
         ));
+        // A **solid** source (a rock / obstacle): a static circle collider of its
+        // visual `radius` makes the feature *tangible* — dynamic bodies collide with
+        // it, so it blocks passage and carves spatial refugia / winding, inaccessible
+        // zones. It stays a **non-`Agent`** entity, so every life system (`With<Agent>`)
+        // still ignores it by construction (Law 11 untouched). `false` (default) → the
+        // historical intangible emitter, no collider → byte-identical, no RNG.
+        if source.solid {
+            entity.insert((RigidBody::Static, Collider::circle(source.radius)));
+        }
     }
 }

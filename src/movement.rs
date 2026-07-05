@@ -6,7 +6,7 @@
 
 use crate::brain::Brain;
 use crate::components::{
-    Action, Agent, Locomotion, Maneuver, Perception, Reserve, Species, Vision,
+    Action, Agent, Anchor, Locomotion, Maneuver, Perception, Reserve, Species, Vision,
 };
 use crate::config::SimConfig;
 use crate::nutrients::Nutrients;
@@ -176,7 +176,12 @@ pub fn decide(mut agents: Query<(&mut Brain, &Perception, &mut Action)>) {
 /// We steer the velocity toward the desired velocity (lerp), instead of forcing
 /// it: Avian's collision impulses then visibly perturb the trajectory before the
 /// brain re-corrects.
-pub fn act(mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity, &mut Maneuver)>) {
+// Anchored bodies (Feature 2) are **excluded** (`Without<Anchor>`): their velocity is
+// governed by [`anchor_spring`] + the physics solver, not this locomotion override — so
+// the spring can actually displace them (else this would reset their velocity each tick).
+pub fn act(
+    mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity, &mut Maneuver), Without<Anchor>>,
+) {
     for (action, loco, mut velocity, mut maneuver) in &mut agents {
         let desired = action.dir.normalize_or_zero() * loco.max_speed * action.throttle;
         let before = velocity.0;
@@ -186,6 +191,67 @@ pub fn act(mut agents: Query<(&Action, &Locomotion, &mut LinearVelocity, &mut Ma
         // both ends of the lerp are known; collision impulses from the solver land
         // afterwards and are deliberately **not** attributed to maneuvering.
         maneuver.0 = (velocity.0 - before).length();
+    }
+}
+
+/// ANCHORING (Feature 2): hold a **rooted** body to its [`Anchor`] point by a spring, and
+/// **tear it off** when pulled too hard. A sessile organism (plant, coral, barnacle) is
+/// not pinned rigidly — it can be jostled by a grazer or a crowd and springs back — but
+/// past a **breaking tension** the anchor snaps.
+///
+/// Portable by construction (the whole point, §9): the tear criterion is a **tension**,
+/// `stiffness · |pos − anchor|`, a mass-free quantity — unlike a contact impulse
+/// (∝ mass ∝ radius²), the non-portability that shelved the `crush`. On tear-off, per the
+/// scenario's [`AnchorConfig::die_on_detach`]:
+/// - `true` → **death**: zero the reserve so the *uniform* death path
+///   ([`crate::ecology::reap`], next in the chain) despawns it and fires `emit_at_death` /
+///   recycling — an uprooted body becomes detritus, the physical **turnover** lever
+///   (Law 11: one death rule, no special-casing).
+/// - `false` → **release**: drop the [`Anchor`] and let it become a free body.
+///
+/// Below the threshold, a restoring velocity impulse (`−stiffness · displacement · dt`,
+/// mass-free) pulls it home; `LinearDamping` (set at spawn) settles the oscillation, while
+/// collisions from the solver still push it around. No anchored body (every existing
+/// scenario) → the query is empty → a no-op, **byte-identical**.
+///
+/// [`AnchorConfig::die_on_detach`]: crate::config::AnchorConfig::die_on_detach
+pub fn anchor_spring(
+    mut commands: Commands,
+    config: Res<SimConfig>,
+    time: Res<Time>,
+    mut anchored: Query<
+        (
+            Entity,
+            &Transform,
+            &mut LinearVelocity,
+            &mut Reserve,
+            &Anchor,
+            &Species,
+        ),
+        With<Agent>,
+    >,
+) {
+    let dt = time.delta_secs();
+    for (entity, transform, mut velocity, mut reserve, anchor, species) in &mut anchored {
+        let Some(cfg) = config.anchor_of(species.0) else {
+            continue;
+        };
+        let displacement = transform.translation.truncate() - anchor.0;
+        let tension = cfg.stiffness * displacement.length();
+        if tension > cfg.tear_force {
+            if cfg.die_on_detach {
+                // Uprooted → dead: `reap` (next) turns the zeroed reserve into a despawn
+                // + a corpse (`emit_at_death`) + recycling — turnover for free (Law 11).
+                reserve.current = 0.0;
+            } else {
+                // Uprooted → survives, now a free body (a dislodged fragment that drifts
+                // and settles). The removal applies at the next command flush.
+                commands.entity(entity).remove::<Anchor>();
+            }
+            continue;
+        }
+        // Restoring pull toward the anchor (mass-free impulse); damping does the settling.
+        velocity.0 -= cfg.stiffness * displacement * dt;
     }
 }
 
@@ -236,6 +302,122 @@ mod tests {
         assert!(
             world.get::<Maneuver>(e).unwrap().0.abs() < 1e-3,
             "a straight cruise costs no maneuvering effort"
+        );
+    }
+
+    use crate::config::AnchorConfig;
+    use std::time::Duration;
+
+    /// A bare `World` + `Schedule` running [`anchor_spring`] over a single anchored agent,
+    /// with a `SimConfig` whose archetype 0 carries `anchor_cfg`. `dt` is fixed so the
+    /// impulse arithmetic is exact. The body starts at `pos`, anchored at the origin,
+    /// still (velocity 0) and half-full (reserve 50/100).
+    fn anchor_world(anchor_cfg: AnchorConfig, pos: Vec2, dt: f32) -> (World, Entity, Schedule) {
+        let mut world = World::new();
+        let mut config = SimConfig::default();
+        config.archetypes[0].anchor = Some(anchor_cfg);
+        world.insert_resource(config);
+        let mut time = Time::<()>::default();
+        time.advance_by(Duration::from_secs_f32(dt));
+        world.insert_resource(time);
+        let e = world
+            .spawn((
+                Agent,
+                Species(0),
+                Transform::from_translation(pos.extend(0.0)),
+                LinearVelocity(Vec2::ZERO),
+                Reserve {
+                    current: 50.0,
+                    max: 100.0,
+                },
+                Anchor(Vec2::ZERO),
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(anchor_spring);
+        (world, e, schedule)
+    }
+
+    /// Below the tear tension, the spring applies a restoring impulse **toward the
+    /// anchor**: `−stiffness · displacement · dt = −10 · (100,0) · 0.1 = (−100, 0)`.
+    #[test]
+    fn anchor_spring_pulls_toward_the_anchor() {
+        let (mut world, e, mut schedule) = anchor_world(
+            AnchorConfig {
+                stiffness: 10.0,
+                damping: 0.0,
+                tear_force: 1.0e9,
+                die_on_detach: false,
+            },
+            Vec2::new(100.0, 0.0),
+            0.1,
+        );
+        schedule.run(&mut world);
+        let v = world.get::<LinearVelocity>(e).unwrap().0;
+        assert!(
+            (v - Vec2::new(-100.0, 0.0)).length() < 1e-3,
+            "the restoring impulse must point at the anchor, got {v:?}"
+        );
+        assert!(world.get::<Anchor>(e).is_some(), "not torn: still anchored");
+        assert_eq!(
+            world.get::<Reserve>(e).unwrap().current,
+            50.0,
+            "not torn: alive"
+        );
+    }
+
+    /// Past the tear tension (`stiffness · |disp| = 10 · 100 = 1000 > 500`), with
+    /// `die_on_detach`, the body is **killed** — its reserve is zeroed so the uniform
+    /// death path (`reap`, next in the real chain) despawns it as a corpse. No restoring
+    /// impulse is applied (we tear off first).
+    #[test]
+    fn anchor_tears_off_and_kills_when_die_on_detach() {
+        let (mut world, e, mut schedule) = anchor_world(
+            AnchorConfig {
+                stiffness: 10.0,
+                damping: 0.0,
+                tear_force: 500.0,
+                die_on_detach: true,
+            },
+            Vec2::new(100.0, 0.0),
+            0.1,
+        );
+        schedule.run(&mut world);
+        assert_eq!(
+            world.get::<Reserve>(e).unwrap().current,
+            0.0,
+            "an uprooted body is marked dead (reserve zeroed → reap)"
+        );
+        assert_eq!(
+            world.get::<LinearVelocity>(e).unwrap().0,
+            Vec2::ZERO,
+            "no restoring impulse once torn"
+        );
+    }
+
+    /// Past the tear tension but **without** `die_on_detach`, the body is **released**:
+    /// its [`Anchor`] is dropped (a freed, drifting fragment) and it is not killed.
+    #[test]
+    fn anchor_tears_off_and_releases_when_not_die_on_detach() {
+        let (mut world, e, mut schedule) = anchor_world(
+            AnchorConfig {
+                stiffness: 10.0,
+                damping: 0.0,
+                tear_force: 500.0,
+                die_on_detach: false,
+            },
+            Vec2::new(100.0, 0.0),
+            0.1,
+        );
+        schedule.run(&mut world);
+        assert!(
+            world.get::<Anchor>(e).is_none(),
+            "released: the anchor is dropped → a free body"
+        );
+        assert_eq!(
+            world.get::<Reserve>(e).unwrap().current,
+            50.0,
+            "a released body is not killed"
         );
     }
 }

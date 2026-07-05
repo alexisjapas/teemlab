@@ -48,6 +48,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
             source: None,
             captured_brain: None,
             captured_from: None,
+            anchor: None,
         }],
         relations: Vec::new(),
         seed: 0x5EED,
