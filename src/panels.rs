@@ -492,15 +492,12 @@ pub fn dock(
     let detail_in_left = editor_open && mode == crate::layout::LeftMode::SingleColumn;
     let two_column_editor = editor_open && mode == crate::layout::LeftMode::TwoColumn;
 
-    // Right column — **Analysis** of the current state (live *stats* + the agent
-    // *inspector*), OR the **Breeding dashboard** when its toggle is on and the scenario
-    // carries a `batch` (P5): the docked home of the generational loop — config lives in the
-    // left World panel, this column runs it and shows the per-generation results + Replay.
-    // Docking it here (not a floating popup over the sim) is deliberate: during a run the
-    // live world is paused/unused, and a Replay shows in the still-centered sim. Resizable
-    // within a range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other
-    // side" is last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
+    // Right column — **Analysis** of the current state: live *stats* (means) then the
+    // agent *inspector*, with *Observation* pinned above the scroll. Resizable within a
+    // range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other side" is
+    // last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
     // before the left panels so their ranges can read this frame's fresh right width.
+    // (The breeding dashboard docks in the bottom panel's left half — see below.)
     let mut deselect = false;
     let breeding_active = config.batch.is_some() && state.windows.breeding;
     let right_w = egui::Panel::right("right_panel")
@@ -508,26 +505,6 @@ pub fn dock(
         .resizable(true)
         .size_range(crate::layout::side_range(viewport_w, layout.left_w))
         .show_inside(&mut root, |ui| {
-            if breeding_active {
-                egui::ScrollArea::vertical()
-                    .id_salt("breeding_scroll")
-                    .show(ui, |ui| {
-                        if let Some(act) =
-                            dashboard::breeding_panel(ui, &mut state.breeding, &config, &mut vtime)
-                        {
-                            dashboard::apply_action(
-                                act,
-                                &mut config,
-                                &mut palette,
-                                &state.runs_panel,
-                                &mut state.ui_status,
-                                &mut sim_controls,
-                                &mut vtime,
-                            );
-                        }
-                    });
-                return;
-            }
             // Observation (small: follow mode + view reset) stays pinned; only the tall
             // sections below scroll, so each working surface keeps its own scroll offset.
             egui::CollapsingHeader::new("Observation")
@@ -641,13 +618,17 @@ pub fn dock(
     // the full central width). Height-**resizable** now: `hud_section` fills whatever
     // height the panel gets between the two plots (cf. `hud`). The floor is set so the
     // two plots at their minimum height plus the labels/legends still fit (no clipping).
+    // A taller ceiling while breeding is docked here: the dashboard (navigator + curve +
+    // metrics + leaderboard + network) is tall, so give the user room to drag it open.
+    let bottom_max = if breeding_active { 760.0 } else { 520.0 };
     egui::Panel::bottom("bottom_panel")
         .resizable(true)
-        .default_size(300.0)
-        .size_range(260.0..=520.0)
+        .default_size(if breeding_active { 360.0 } else { 300.0 })
+        .size_range(260.0..=bottom_max)
         .show_inside(&mut root, |ui| {
             // The status line, coloured by kind and shown only while unexpired (info /
-            // success fade after a few seconds; errors persist — cf. `status`).
+            // success fade after a few seconds; errors persist — cf. `status`). Full width
+            // above any split.
             if state.ui_status.visible(now) {
                 let color = match state.ui_status.kind {
                     crate::status::StatusKind::Success => crate::theme::SUCCESS,
@@ -658,11 +639,48 @@ pub fn dock(
                 ui.separator();
             }
             // Framed like the other sections (Body/Genes/Brain, the World cards): the
-            // curves live in their own card, the transient status line staying above it.
-            editor::card(ui, |ui| {
-                ui.strong("Evolution — curves");
-                hud::hud_section(ui, &mut history, &config);
-            });
+            // curves live in their own card. The curves are the closure the breeding split
+            // and the full-width case share.
+            let curves = |ui: &mut egui::Ui, history: &mut History, config: &SimConfig| {
+                editor::card(ui, |ui| {
+                    ui.strong("Evolution — curves");
+                    hud::hud_section(ui, history, config);
+                });
+            };
+            if breeding_active {
+                // **Breeding dashboard** in the bottom panel's LEFT HALF, side by side with
+                // the curves (P5): docked in the layout (not a floating popup over the sim),
+                // it runs the generational loop + browses/replays generations while the
+                // curves keep the right half. Config lives in the left World panel.
+                ui.columns(2, |cols| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("breeding_scroll")
+                        .show(&mut cols[0], |ui| {
+                            editor::card(ui, |ui| {
+                                ui.strong("Breeding (generational)");
+                                if let Some(act) = dashboard::breeding_panel(
+                                    ui,
+                                    &mut state.breeding,
+                                    &config,
+                                    &mut vtime,
+                                ) {
+                                    dashboard::apply_action(
+                                        act,
+                                        &mut config,
+                                        &mut palette,
+                                        &state.runs_panel,
+                                        &mut state.ui_status,
+                                        &mut sim_controls,
+                                        &mut vtime,
+                                    );
+                                }
+                            });
+                        });
+                    curves(&mut cols[1], &mut history, &config);
+                });
+            } else {
+                curves(ui, &mut history, &config);
+            }
         });
 
     // Archetype editor — the **detail** half as a second left column, **two-column mode
