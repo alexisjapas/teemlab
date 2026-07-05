@@ -36,7 +36,30 @@ The engine core (`SimPlugin`) is render-agnostic and shared by every binary:
 
 The windowed build adds `main.rs`, `panels.rs`, `editor.rs`, `hud.rs`, `inspector.rs`,
 `visuals.rs`, the breeding `dashboard.rs` and friends — all of it strictly in `Update`
-(rendering / UI), never touching the fixed simulation schedule.
+(rendering / UI), never touching the fixed simulation schedule. For the same structure
+seen as diagrams — the ECS schedule, the full tick pipeline, and the module layers — see
+the [Architecture](./architecture.md) page.
+
+## The documentation site
+
+This handbook is an [mdBook](https://rust-lang.github.io/mdBook/) under `docs/`; the dev
+shell ships the tooling:
+
+```sh
+mdbook serve docs --open   # live-preview while you edit
+mdbook build docs          # render to docs/book/ (what the Pages workflow publishes)
+```
+
+Diagrams are authored as fenced `mermaid` blocks and rendered by
+[`mdbook-mermaid`](https://github.com/badboy/mdbook-mermaid), a preprocessor declared in
+`book.toml`. The dev shell provides it and the Pages CI installs it (both pinned to the
+same version), so a build without it fails on the missing preprocessor. To add a diagram,
+drop a fenced `mermaid` block into any page and write **literal** Mermaid syntax — do not
+pre-escape entities (no `&amp;`), because mdBook escapes the block's content itself, so a
+pre-escaped `&amp;` would reach the browser double-escaped. `mdbook build docs` publishes
+via [GitHub Pages](https://alexisjapas.github.io/teemlab/); if a deploy ever reports
+"Deployment failed, try again later" while the *build* step is green, that is a transient
+Pages backend hiccup — re-run the workflow.
 
 ## Testing: properties across seeds
 
