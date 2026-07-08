@@ -114,5 +114,26 @@ impl Plugin for SimPlugin {
                 )
                     .chain(),
             );
+        // SINGLE-THREADED executors for the sim schedules. Our systems are fully
+        // `.chain()`ed (a total order — determinism), so system-level parallelism has
+        // nothing to win here; the multi-threaded executor still paid its cross-thread
+        // task-queue traffic on every one of the dozens of systems per tick (profiled
+        // at ~5-8% of a tick under the bench, plus idle worker churn — worse for the
+        // breeding orchestrator, whose per-match worlds all contend on the one global
+        // pool). Byte-identical: the same total order runs either way (the
+        // chaos-sensitive suite is the tripwire). Avian's inner schedules get the same
+        // treatment; its heavy phases keep their *internal* parallelism (they fan work
+        // out through the ComputeTaskPool inside single systems).
+        use bevy::ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
+        for label in [
+            FixedUpdate.intern(),
+            FixedPostUpdate.intern(),
+            avian2d::schedule::PhysicsSchedule.intern(),
+            avian2d::dynamics::solver::schedule::SubstepSchedule.intern(),
+        ] {
+            app.edit_schedule(label, |schedule| {
+                schedule.set_executor(SingleThreadedExecutor::new());
+            });
+        }
     }
 }

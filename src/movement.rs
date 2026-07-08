@@ -47,10 +47,20 @@ pub fn perceive(
     // Raycast filter reused from one agent to the next (cf. loop): we avoid
     // reallocating an `EntityHashSet` for every agent and every tick.
     mut filter: Local<SpatialQueryFilter>,
+    // Per-species sensed-component lists, cached across ticks and rebuilt on a
+    // config change (the `interact` reach-collider pattern): `sensed_components`
+    // allocates + sorts, and calling it per agent per tick was the field-sense
+    // scenarios' one remaining per-tick allocation. Same values → byte-identical.
+    mut sensed_cache: Local<Vec<Vec<usize>>>,
 ) {
     // Any field-sense relation in the scenario? Computed once; a scenario with none
     // does no per-agent field-sense work (byte-identical, no perf cost).
     let any_sense = config.field_relations.iter().any(|f| f.sense);
+    if any_sense && (config.is_changed() || sensed_cache.len() != config.archetypes.len()) {
+        sensed_cache.clear();
+        sensed_cache
+            .extend((0..config.archetypes.len()).map(|s| config.sensed_components(s as u16)));
+    }
     for (entity, transform, velocity, species, vision, loco, reserve, nutrients, mut perception) in
         &mut agents
     {
@@ -92,7 +102,9 @@ pub fn perceive(
         // input. Read-only, no RNG → a non-sensing species keeps an empty `field_state`
         // and the input is byte-identical.
         if any_sense {
-            let sensed = config.sensed_components(species.0);
+            let sensed: &[usize] = sensed_cache
+                .get(species.0 as usize)
+                .map_or(&[], |v| v.as_slice());
             if perception.field_state.len() != sensed.len() {
                 perception.field_state = vec![0.0; sensed.len()].into_boxed_slice();
             }

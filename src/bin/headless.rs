@@ -1,12 +1,20 @@
 //! **Headless** entry point.
 //!
-//! No window, no rendering: `ScheduleRunnerPlugin` pumps the fixed loop as fast
-//! as possible. The *same* [`teemlab::SimPlugin`] → the *same* world as the
-//! windowed build. We count the ticks in the FIXED schedule (hence an exact
-//! number, independent of clock speed) and exit at the end condition.
+//! No window, no rendering: `ScheduleRunnerPlugin` pumps the loop with **one
+//! fixed tick per frame** (`TimeUpdateStrategy::ManualDuration(1/tick_hz)`, the
+//! same stepping harness as `tests/common::stepping_app` and
+//! `breeding::run_match`) — truly unthrottled. Under the default real-time clock
+//! the fixed step could never exceed `tick_hz` ticks/s: the process spun hundreds
+//! of *empty* frames between two ticks (a ~60× slower smoke test, and `flame`
+//! profiled that idle executor churn instead of the sim). The fixed-tick sequence
+//! is the same either way → byte-identical (DEV Rule 3). The *same*
+//! [`teemlab::SimPlugin`] → the *same* world as the windowed build. We count the
+//! ticks in the FIXED schedule (hence an exact number) and exit at the end
+//! condition.
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::prelude::*;
+use bevy::time::TimeUpdateStrategy;
 use std::time::Duration;
 use teemlab::components::{Agent, Perception, Reserve};
 use teemlab::genotype::Genotype;
@@ -31,9 +39,14 @@ fn main() -> AppExit {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_TICKS);
+    let config = SimConfig::from_cli();
+    // One `update()` = exactly one fixed tick (cf. the module doc): advance the
+    // clock by hand instead of following real time.
+    let step = Duration::from_secs_f64(1.0 / config.tick_hz);
     App::new()
+        .insert_resource(TimeUpdateStrategy::ManualDuration(step))
         .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::ZERO)))
-        .add_plugins(SimPlugin::new(SimConfig::from_cli()))
+        .add_plugins(SimPlugin::new(config))
         .init_resource::<TickCounter>()
         .insert_resource(TickTarget(target))
         // Counting in the FIXED schedule → exact, after the tick's physics.
