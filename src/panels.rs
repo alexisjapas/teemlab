@@ -128,9 +128,9 @@ pub struct DockState<'w> {
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
     pub prefs: ResMut<'w, UiPrefs>,
-    /// The breeding session (P5) — the docked breeding panel (right column, replacing
-    /// Analysis when the Breeding toggle is on) reads/drives it. Bundled here so `dock`
-    /// stays within Bevy's 16-parameter limit.
+    /// The breeding session (P5) — the docked breeding panel (the bottom panel's left
+    /// half, beside the curves, when the Breeding toggle is on) reads/drives it.
+    /// Bundled here so `dock` stays within Bevy's 16-parameter limit.
     pub breeding: ResMut<'w, BreedingSession>,
 }
 
@@ -341,8 +341,9 @@ pub fn dock(
 
     // Top strip, **a single line** — the app's command strip: scenario IO (the
     // Scenario menu) pinned **left**; the **transport controls** (play / step / speed /
-    // reset) **centered**; the **View** menu and the **Export** toggle pinned **right**.
-    // Video recording lives in a floating window opened by the Export button (below).
+    // reset) **centered**; the **View** / **Help** menus, the **Breeding** toggle and
+    // the **Export** button pinned **right**. Video recording lives in a floating
+    // window opened by the Export button (below).
     egui::Panel::top("top_bar")
         .resizable(false)
         .show_inside(&mut root, |ui| {

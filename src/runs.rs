@@ -224,6 +224,12 @@ pub(crate) fn scenario_section(
     config: &mut SimConfig,
     status: &mut UiStatus,
 ) {
+    // `founder_pools` is **transient** (`serde(skip)`, set by a breeding Replay) and
+    // never reaches the file: mirror it into the baseline so it cannot mark the
+    // document dirty — only the persisted fields decide.
+    if panel.baseline.founder_pools != config.founder_pools {
+        panel.baseline.founder_pools = config.founder_pools.clone();
+    }
     let dirty = *config != panel.baseline;
     // Local copies so the menu closures don't capture `panel` (avoids cross borrows);
     // intents collected here, then resolved against `dirty`/`owns_loaded` below.
@@ -497,14 +503,19 @@ pub fn apply_scenario_load(
     mut controls: ResMut<SimControls>,
     mut vtime: ResMut<Time<Virtual>>,
     mut status: ResMut<UiStatus>,
+    mut breeding: ResMut<crate::dashboard::BreedingSession>,
 ) {
     let Some(action) = panel.pending.take() else {
         return;
     };
-    // Shared epilogue: pause, rebuild, resync the editor, re-baseline.
+    // Shared epilogue: pause, rebuild, resync the editor, re-baseline. The breeding
+    // session is forgotten too: its generation reports name species by index, which
+    // only means something in the scenario that bred them (displaying — or replaying —
+    // them against the incoming config would cross wires).
     let mut install = |panel: &mut RunsPanel, config: &SimConfig| {
         palette.selected = None;
         palette.dragging = None;
+        breeding.reset();
         vtime.pause();
         controls.reset_requested = true;
         panel.baseline = config.clone();

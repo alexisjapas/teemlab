@@ -111,8 +111,13 @@ pub fn delete_under_cursor(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    // Not during an archetype drag, nor when the cursor targets an egui panel.
-    if palette.dragging.is_some() || crate::panels::pointer_over_ui(ctx, central.0) {
+    // Not while a text field holds keyboard focus (Backspace is then editing text,
+    // not the world — the same gate as `main::keyboard_shortcuts`), nor during an
+    // archetype drag, nor when the cursor targets an egui panel.
+    if ctx.egui_wants_keyboard_input()
+        || palette.dragging.is_some()
+        || crate::panels::pointer_over_ui(ctx, central.0)
+    {
         return Ok(());
     }
     let Some(world) = pointer_world(&cameras, &windows) else {

@@ -175,7 +175,8 @@ right-to-left in code, Export first).
 - **Click** an agent → select + inspect (ring + fan of vision rays rendered by
   `SelectionRenderPlugin`); click the void → deselect.
 - **Drag** an archetype from the list into the arena → place one entity (each
-  hand-placed brain gets a distinct RNG stream).
+  hand-placed brain gets a distinct RNG stream). A drop on the greyed off-game
+  margin is clamped inside the walls (body radius + clearance).
 - **`Del` / `Backspace`** → delete the entity under the cursor (same
   radius-contains-point criterion as picking).
 - **Pointer gate**: a click/drop counts as sim input **iff** the pointer is inside
@@ -273,16 +274,23 @@ Inside an **Observation** collapsible:
   toggle is on. Never a floating popup — it reserves real layout space; the sim
   stays visible (Replay plays out in it).
 - **Threading**: Run spawns a **background worker** that drives the generational
-  `Orchestrator` over isolated headless worlds; the UI reads a shared
-  (status + reports) state once per frame. The **live sim world is paused** for the
-  duration of a run. Stop is graceful: after the in-flight generation.
+  `Orchestrator` over isolated headless worlds; the UI reads the shared
+  (status + reports) state through brief per-frame locks (the worker only locks
+  between generations). The **live sim world is paused** when a run starts. Stop is
+  graceful: after the in-flight generation. A scenario load **forgets the session**
+  (history + any in-flight worker, detached): reports index species of the scenario
+  that bred them.
 - **Contents**, top to bottom:
   - config hint (the batch config is edited in the World panel), status +
     **progress** (generations completed / total), **Run / Stop**;
   - **generation navigator**: *follow the latest* by default (live), or **click
     the fitness graph** to pin any completed generation (full history retained);
     an accent marker shows the inspected generation; **Replay** re-seeds the live
-    world's founders from that generation's cohort, resets and un-pauses;
+    world's founders from that generation's cohort, resets and un-pauses. The
+    founder pools are **transient** (`serde(skip)`): they persist on the live config
+    (a manual Reset replays the same generation) until the next scenario load, but
+    are never saved or exported, never dirty the document, and a later Run starts
+    clean;
   - per-faction **readout** (summary line for the inspected generation);
   - **fitness-vs-generation curve** — two lines per bred faction: best (faction
     color) + cohort mean (dimmed), on the shared plot widget;
@@ -414,5 +422,6 @@ Review-worthy hotspots by construction (still open leads):
 - The conditional-panel ordering constraint (§2.5) — easy to violate when adding a
   panel.
 - The `FontsReady` first-frame gate — any new early-render path must respect it.
-- The breeding worker's shared-state locking — the UI must keep to one read per
-  frame, and Stop must stay graceful (after the in-flight generation).
+- The breeding worker's shared-state locking — the worker must never hold the lock
+  during a match, the UI's locks must stay brief (never held across egui), and Stop
+  must stay graceful (after the in-flight generation).

@@ -59,7 +59,8 @@ pub enum BreedingStatus {
 }
 
 /// State shared between the worker thread and the UI (behind a `Mutex`). The worker
-/// **writes** (status + each generation's report); the UI **reads** once per frame.
+/// **writes** (status + each generation's report) and only locks **between**
+/// generations; the UI **reads** through brief per-frame locks, never held across egui.
 #[derive(Default)]
 struct BreedingShared {
     status: BreedingStatus,
@@ -150,6 +151,22 @@ impl BreedingSession {
         if let Ok(mut s) = self.shared.lock() {
             s.stop = true;
         }
+    }
+
+    /// Forgets the whole session — history, selection, and any in-flight worker (asked
+    /// to stop, then **detached** onto a fresh `Arc`: its late writes land in the
+    /// orphaned state and are never displayed). Called on a scenario (re)load: a
+    /// report's species indices are only meaningful in the scenario that bred them, so
+    /// browsing — or replaying — them against another config would cross wires.
+    pub(crate) fn reset(&mut self) {
+        if let Ok(mut s) = self.shared.lock() {
+            s.stop = true; // the detached worker exits after its in-flight generation
+        }
+        self.shared = Arc::default();
+        self.worker = None; // dropping the handle detaches the thread, never blocks the UI
+        self.selected_faction = 0;
+        self.selected = None;
+        self.selected_generation = None;
     }
 
     /// Number of bred factions (1 for foraging / single-faction battle, more under
@@ -358,7 +375,11 @@ pub(crate) fn apply_action(
         }
         BreedingAction::Replay(cohorts) => {
             // Seed each bred faction's founders from its cohort, then rebuild the world (the
-            // reset path reads `config.founder_pools`) and un-pause — a fresh re-render.
+            // reset path reads `config.founder_pools`) and un-pause — a fresh re-render. The
+            // pools stay on the live config until the next scenario load, so a manual Reset
+            // replays the same generation; they are never saved nor exported (`serde(skip)`,
+            // so they don't dirty the document either — cf. `runs`), and a later Run starts
+            // clean (`Orchestrator::new` clears them).
             let seed = config.seed;
             let mut seeded = false;
             for (species, elites) in &cohorts {

@@ -1951,6 +1951,11 @@ fn place(
         return;
     }
     let species = i as u16;
+    // Clamp the drop inside the walls (body radius + the same clearance as
+    // `spawn::populate`): a drop on the greyed off-game margin would otherwise
+    // spawn the agent OUTSIDE the arena, uncontained.
+    let span = (config.arena_half_extent - config.agent_radius_of(species) - 5.0).max(0.0);
+    let world = world.clamp(Vec2::splat(-span), Vec2::splat(span));
     let seed = palette.next_seed;
     palette.next_seed = palette.next_seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     spawn_agent(
