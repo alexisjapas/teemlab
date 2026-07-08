@@ -42,6 +42,13 @@ single column: the detail replaces the master in place) instead of opening a sec
 one. The bottom panel is **height-resizable**; whatever the panels' size, the
 simulation stays framed and fully visible in the central area they leave free.
 
+**Every region folds away**: the chevron in a panel's top-right corner — or the keys
+`1` (World), `2` (Analysis), `3` (bottom strip) — collapses it to a thin **rail**;
+click the rail's chevron to bring it back. The folded bottom rail still shows the
+status line. Launching with a scenario on the command line starts in the
+**observing** layout (side columns folded — the arena and the curves lead); the
+empty canvas starts with everything deployed (**composing**).
+
 ## Top strip
 
 ### Scenario menu (`Scenario ▾`)
@@ -78,11 +85,11 @@ Toggles the render **layers**: the agents, and the nutrient-field **heatmap(s)**
 shown by default in the windowed build. View concerns only — never saved with the
 scenario.
 
-### Help menu (`Help ▾`)
+### Help (button)
 
-**Inline help** — the explanatory hints in the panels, on by default; turn it off to
-declutter once you know the tool — and the **keyboard-shortcuts cheatsheet**
-(`?` / `F1`).
+Opens the **keyboard-shortcuts cheatsheet** (`?` / `F1`). Everything else is
+**hover-first**: hold the pointer over a control — or over a section header
+(Relations, Components, Gene bounds, Species library…) — to read what it does.
 
 ### Breeding (toggle)
 
@@ -213,6 +220,7 @@ docks into the panel's **left half** and the curves keep the right half.
 | `Home`             | Recenter the view                   |
 | `Delete` / `Backspace` | Remove the entity under the cursor |
 | `?` / `F1`         | Keyboard-shortcuts cheatsheet       |
+| `1` / `2` / `3`    | Fold / unfold the World / Analysis / bottom regions |
 
 Mouse: **scroll** zooms toward the cursor; **middle / right drag** pans; **click**
 selects an agent (the void deselects); **drag** from Archetypes places an entity.

@@ -31,6 +31,9 @@ pub const THREAT: egui::Color32 = egui::Color32::from_rgb(210, 60, 60);
 /// one-off `from_gray` picks (18/25/36/80/90/130/140/165) to five steps: the darkest
 /// **surface** (plot and graph backgrounds — also egui's `extreme_bg_color`)…
 pub const SURFACE: egui::Color32 = egui::Color32::from_gray(18);
+/// …the **card** surface — the borderless panel-within-a-panel tint (`editor::card`):
+/// slightly recessed from the panel fill, so grouping reads from tone, not strokes…
+pub const CARD: egui::Color32 = egui::Color32::from_gray(23);
 /// …the hairline **grid** of the plots…
 pub const GRID: egui::Color32 = egui::Color32::from_gray(36);
 /// …and three text inks: faint (hover cursors, structural strokes)…
@@ -89,9 +92,19 @@ pub fn style() -> egui::Style {
     visuals.widgets.open.corner_radius = widget_radius;
     visuals.window_corner_radius = egui::CornerRadius::same(6);
     visuals.menu_corner_radius = egui::CornerRadius::same(6);
+    // Quiet chrome: controls are FLAT at rest (no idle outline — the fill is enough)
+    // and grow a hairline on hover; separators and frame strokes drop to the faint
+    // grid gray, so structure reads from spacing and surface tones, not from lines.
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, GRID);
     style.visuals = visuals;
 
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    // An 8-pt rhythm: roomier controls and menus — the cramped egui defaults read
+    // as "dense instrument panel".
+    style.spacing.button_padding = egui::vec2(10.0, 4.0);
+    style.spacing.interact_size.y = 24.0;
+    style.spacing.menu_margin = egui::Margin::same(8);
 
     let body = FontId::new(BODY_SIZE, FontFamily::Proportional);
     style.text_styles.insert(TextStyle::Body, body.clone());

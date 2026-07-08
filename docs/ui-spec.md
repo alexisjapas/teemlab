@@ -55,8 +55,9 @@ These are the invariants a front change must not break:
    before its family exists (would panic).
 7. **Single sources of truth**: colors in `theme.rs`, key/mouse bindings in
    `keymap.rs` (input handlers, tooltips and cheatsheet all read one table),
-   transient feedback in `status.rs` (one status line), inline hints through
-   `help::hint`.
+   transient feedback in `status.rs` (one status line). Help is **hover-first**:
+   explanations live in tooltips on the control or its section header — there is
+   no inline hint layer (only *state/empty* explanations may stay visible, weak).
 8. **System order within a frame**: `panels::dock` → sim-area interaction systems
    (which read the fresh `CentralRect` via `pointer_over_ui`) → `set_sim_camera`.
    Running interactions before `dock` would let a click on a panel fall through to
@@ -97,6 +98,15 @@ Docked panels frame a central, always fully visible simulation:
 - **Bottom panel** spans only the central width (reserved after the side columns).
   Height-resizable: range `260..=520` pt, or `260..=760` with the breeding
   dashboard docked (it is tall); default 300 / 360.
+- **Every region folds to a thin rail** (`RAIL_W` = 26 pt): a frameless chevron
+  overlaid in the open region's top-right corner (no layout cost, `ui.put`) folds
+  it; the rail's chevron — same spot — reopens it; keys `1`/`2`/`3` toggle
+  left/right/bottom. The bottom rail carries the **status line**, so feedback is
+  never hidden. Launch layout: **composing** (empty canvas → all deployed) vs
+  **observing** (CLI scenario → side columns folded, arena + curves lead). The
+  archetype-editor detail only shows while the left region is open; a Capture
+  reopens it. Each region is always exactly one panel (open or rail), so later
+  egui ids stay stable.
 
 ## 4. Top strip
 
@@ -145,8 +155,8 @@ right-to-left in code, Export first).
   the nutrient heatmap(s) (**default on in the windowed build**, shared opacity
   budget; the recorder keeps its own default of off unless `--nutrients`). View
   concerns are never saved with the scenario.
-- **Help ▾** — the **Inline help** checkbox (default on; gates every `help::hint`
-  in all panels at once) and the **keyboard shortcuts** cheatsheet (also `?` / `F1`).
+- **Help** — a direct button: opens the **keyboard shortcuts** cheatsheet (also
+  `?` / `F1`). All other help is hover-first (tooltips), so no menu remains.
 - **Breeding** toggle (Phosphor *sparkle* + label, `selectable_label`) — shown
   **only** when the scenario carries a `batch` block; docks/undocks the breeding
   dashboard (§10). Defaults to on (the panel appears as soon as a batch scenario
@@ -249,7 +259,8 @@ single-column mode); closes via **✕** or deselection. Three cards:
 
 ## 8. Analysis panel (right — `inspector.rs`, `metrics.rs`)
 
-Inside an **Observation** collapsible:
+The **Observation** row (follow-mode combo + Reset view) sits flat and pinned at
+the top — no wrapping collapsible; the tall sections below scroll:
 
 - **Live stats** (collapsed by default) — a grid with **one column per species**
   (name in the archetype colour): population, mean reserve and per-gene means (an
@@ -270,8 +281,9 @@ Inside an **Observation** collapsible:
   breeding actions). Kind drives color and lifetime: **info** (muted ink) and
   **success** (green) expire after **8 s**; **error** (soft red) persists until
   replaced. Stamped with real (unpausable) time.
-- **Evolution — curves** card: **Population per species** then **Gene drift —
-  mutable genes (normalized 0–1)** (frozen genes are excluded — they'd plot flat).
+- **Curves** (no wrapping card or title — the panel *is* the curves surface):
+  **Population per species** then **Gene drift — mutable genes (normalized 0–1)**
+  (frozen genes are excluded — they'd plot flat).
   Header: sample count + **↻ Clear** (resets the history). The two plots split the
   panel's available height, each clamped to 64–240 pt; the panel's 260 pt floor
   guarantees no clipping at minimum height.
@@ -343,7 +355,12 @@ Inside an **Observation** collapsible:
 
 ## 12. Visual system (`theme.rs`, `fonts.rs`)
 
-- **Dark theme**, one global egui `Style` installed once at startup. Every color
+- **Dark theme**, one global egui `Style` installed once at startup. **Quiet, flat
+  chrome**: controls carry no idle outline (a hairline appears on hover),
+  separators drop to the faint grid gray, an 8-pt spacing rhythm (roomier button
+  padding, 24-pt interact height, 8-pt menu margins) — structure reads from
+  spacing and surface tones, not lines. Cards (`editor::card`) are **borderless**:
+  a slightly recessed `CARD` tint (gray 23) instead of a stroke. Every color
   resolves to a semantic token — no ad-hoc `Color32` literals in panels:
   - `ACCENT` amber `(240,180,80)` — attention/pending: paused chip, dirty marker,
     breeding in flight; also egui `warn_fg_color`.
@@ -374,6 +391,7 @@ Inside an **Observation** collapsible:
 | `Home` | Recenter the view | |
 | `Del` / `Backspace` | Delete the entity under the cursor | |
 | `?` (`/` + Shift) / `F1` | Toggle the shortcuts cheatsheet | |
+| `1` / `2` / `3` | Fold/unfold the World / Analysis / bottom regions | |
 | Scroll | Zoom toward the cursor | pointer on sim |
 | Middle / right drag | Pan the view | pointer on sim |
 | Click | Select an agent (void = deselect) | pointer on sim |
@@ -395,7 +413,8 @@ Shortcuts are ignored while a text field has keyboard focus.
 | Transient outcome | one status line, bottom panel (§9 lifetimes) |
 | Breeding run | progress + status in the panel; live world paused |
 | First frame | panels withheld until `FontsReady` |
-| Inline help | `help::hint` texts everywhere, Help ▾ toggle, default on |
+| Region folded | thin rail with a reopen chevron (bottom rail also carries the status line) |
+| Help | hover a control or a section header for its explanation |
 
 ## 15. Non-functional requirements
 

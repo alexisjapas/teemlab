@@ -196,9 +196,9 @@ pub(crate) fn controls_section(
         }
     });
 
-    ui.separator();
+    ui.add_space(8.0);
     // Logarithmic-scale slider (fixed width so the group stays a constant size): fine
-    // tuning from ×0.1 to ×10 on a single handle, with a `×1` reset beside it.
+    // tuning from ×0.1 to ×10 on a single handle, with quick presets beside it.
     ui.spacing_mut().slider_width = 120.0;
     if ui
         .add(
@@ -224,7 +224,7 @@ pub(crate) fn controls_section(
         }
     }
 
-    ui.separator();
+    ui.add_space(8.0);
     // Accent the Reset while the running world no longer matches the config on the
     // reset-bound fields (arena, seed, bodies, brains…): those edits are waiting for
     // a ⟲, and the inline hints saying so may be turned off.

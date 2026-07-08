@@ -12,7 +12,6 @@ mod dashboard;
 mod editor;
 mod files;
 mod fonts;
-mod help;
 mod hud;
 mod inspector;
 mod keymap;
@@ -75,10 +74,13 @@ fn main() {
         // the transport's Reset accents itself when the live config diverges from it.
         .init_resource::<controls::WorldBaseline>()
         .init_resource::<recorder::RecorderPanel>()
-        // Visibility of the toggleable floating surfaces (Export / Breeding / shortcuts)
-        // and the UI preferences (inline help) — the one convention for "what's open".
-        .init_resource::<panels::UiWindows>()
-        .init_resource::<panels::UiPrefs>()
+        // Visibility of the toggleable surfaces (Export / Breeding / shortcuts) and
+        // the foldable docked regions — the one convention for "what's open". A CLI
+        // scenario starts in the **observing** layout (side columns folded to rails);
+        // the empty canvas starts **composing** (everything deployed).
+        .insert_resource(panels::UiWindows::at_launch(
+            std::env::args().nth(1).is_some(),
+        ))
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()
@@ -191,6 +193,16 @@ fn keyboard_shortcuts(
     }
     if keymap::pressed(&keys, UiAction::ToggleShortcuts) {
         windows.shortcuts = !windows.shortcuts;
+    }
+    // Fold / unfold the docked regions (mirrors the panels' chevrons and the rails).
+    if keymap::pressed(&keys, UiAction::ToggleLeftPanel) {
+        windows.left_open = !windows.left_open;
+    }
+    if keymap::pressed(&keys, UiAction::ToggleRightPanel) {
+        windows.right_open = !windows.right_open;
+    }
+    if keymap::pressed(&keys, UiAction::ToggleBottomPanel) {
+        windows.bottom_open = !windows.bottom_open;
     }
     Ok(())
 }

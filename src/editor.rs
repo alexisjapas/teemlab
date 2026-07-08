@@ -26,7 +26,6 @@ use teemlab::visuals::Layers;
 
 use crate::files::ron_files;
 use crate::fonts::{self, icons};
-use crate::help;
 use crate::status::UiStatus;
 use crate::theme;
 
@@ -87,18 +86,24 @@ fn color_button(ui: &mut egui::Ui, value: &mut [f32; 3]) {
     }
 }
 
-/// A framed **card** spanning the panel's full available width. `ui.group` otherwise
-/// shrink-wraps its frame to the content, so sibling cards would differ in width by
-/// whatever each happens to hold (a slider vs a progress bar vs a label); pinning the
-/// inner width to `available_width` — already net of the parent's padding and any
-/// scrollbar — keeps cards at the same level aligned to one width. The single card
-/// primitive shared by the archetype editor, the world sub-sections and the inspector.
+/// A **card** spanning the panel's full available width. **Borderless**: a slightly
+/// recessed surface tint ([`theme::CARD`]) instead of a stroke — boxes-in-boxes read
+/// as heavy chrome; a tone shift groups just as well. A frame otherwise shrink-wraps
+/// to its content, so sibling cards would differ in width by whatever each happens
+/// to hold; pinning the inner width to `available_width` — already net of the
+/// parent's padding and any scrollbar — keeps cards at the same level aligned to one
+/// width. The single card primitive shared by the archetype editor, the world
+/// sub-sections and the inspector.
 pub(crate) fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    ui.group(|ui| {
-        ui.set_width(ui.available_width());
-        add(ui)
-    })
-    .inner
+    egui::Frame::new()
+        .fill(theme::CARD)
+        .corner_radius(egui::CornerRadius::same(6))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner
 }
 
 /// Builds the palette at `Startup`, after [`SimConfig`] is inserted by the sim
@@ -276,11 +281,6 @@ pub(crate) fn selector_section(
     config: &mut SimConfig,
     status: &mut UiStatus,
 ) {
-    help::hint(
-        ui,
-        "Drag into the area to place; click to edit; Delete (cursor on an entity) to remove.",
-    );
-    ui.separator();
     let mut started = None;
     let mut clicked = None;
     for (i, arch) in config.archetypes.iter().enumerate() {
@@ -471,11 +471,6 @@ fn species_library_section(
     let resp = egui::CollapsingHeader::new("Species library")
         .default_open(false)
         .show(ui, |ui| {
-            help::hint(
-                ui,
-                "Reusable species (species/examples committed · species/saved local). Save the \
-                 selected archetype to the catalog, or import a one-time COPY (base or variant).",
-            );
             // Save the selected scenario archetype into the catalog (scenario → catalog).
             if let Some(i) = palette.selected.filter(|&i| i < config.archetypes.len()) {
                 if ui
@@ -490,11 +485,16 @@ fn species_library_section(
                     palette.catalog = scan_library();
                 }
             } else {
-                help::hint(ui, "Select an archetype to save it to the catalog.");
+                // Empty state: an instruction replacing the absent button stays visible.
+                ui.weak("Select an archetype to save it to the catalog.");
             }
-            ui.separator();
+            ui.add_space(6.0);
             catalog_section(ui, palette, config, status);
         });
+    resp.header_response.on_hover_text(
+        "Reusable species (species/examples committed · species/saved local). Save the \
+         selected archetype to the catalog, or import a one-time COPY (base or variant).",
+    );
 
     // The catalog refreshes itself **when the section opens** (no manual reload button —
     // the same pattern as the Scenario menu, cf. `runs::scenario_section`): detect the
@@ -534,10 +534,7 @@ fn catalog_section(
         );
     });
     if palette.catalog.is_empty() {
-        help::hint(
-            ui,
-            "No species yet — export an archetype to species/saved/.",
-        );
+        ui.weak("No species yet — export an archetype to species/saved/.");
         return;
     }
 
@@ -874,7 +871,9 @@ fn archetype_editor(
     // card. Laid out in a two-column grid so the labels line up.
     card(ui, |ui| {
         let arch = &mut config.archetypes[i];
-        ui.strong("Body");
+        ui.strong("Body").on_hover_text(
+            "Count, radius and reserve are baked at spawn, applied on the next Reset.",
+        );
         egui::Grid::new("body_fields")
             .num_columns(2)
             .spacing([8.0, 6.0])
@@ -907,10 +906,6 @@ fn archetype_editor(
                 });
                 ui.end_row();
             });
-        help::hint(
-            ui,
-            "Count, radius and reserve are baked at spawn, applied on the next Reset.",
-        );
     });
 
     // GENES — the founding genotype + per-species mutability, in a framed card. Every
@@ -918,9 +913,7 @@ fn archetype_editor(
     // brain, editable through these same controls.
     card(ui, |ui| {
         let arch = &mut config.archetypes[i];
-        ui.strong("Genes");
-        help::hint(
-            ui,
+        ui.strong("Genes").on_hover_text(
             "Each placed agent receives a COPY of these genes — its genome — which then \
              mutates on its own.",
         );
@@ -938,10 +931,8 @@ fn archetype_editor(
         // its part, stays shown — it is the mobility switch.
         let immobile = arch.genotype.locomotion().is_immobile();
         if immobile {
-            help::hint(
-                ui,
-                "Immobile: locomotion and vision genes hidden (no effect).",
-            );
+            // A state explanation of *absent* content: stays visible (nothing to hover).
+            ui.weak("Immobile — locomotion and vision genes hidden (no effect).");
         }
 
         // The gene editor sits several nested cards deep (Entities › Archetype editor
@@ -1117,7 +1108,8 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
         }
         BrainKind::Mlp { hidden } => mlp_architecture_editor(ui, hidden, vision_rays),
     }
-    help::hint(ui, kind.description());
+    // The picked brain's one-line description — contextual state, kept visible.
+    ui.weak(kind.description());
 }
 
 /// **Numeric** editing of an MLP's architecture (item 18b, core): the number of
@@ -1125,16 +1117,19 @@ fn brain_kind_editor(ui: &mut egui::Ui, kind: &mut BrainKind, vision_rays: usize
 /// target, threat, proprioception) and the output (steering + eat/attack intent) are
 /// *constrained* by the contract and only displayed.
 fn mlp_architecture_editor(ui: &mut egui::Ui, hidden: &mut Vec<usize>, vision_rays: usize) {
-    help::hint(
-        ui,
-        format!(
-            "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
-             output {} (contract). The input layer then adapts to each individual's \
-             visual precision (gene \"Rays\").",
-            MlpBrain::input_size(vision_rays, 0),
-            MlpBrain::OUTPUTS,
-        ),
-    );
+    // The fixed ends of the network, one compact line; the contract detail on hover.
+    ui.weak(format!(
+        "in {} → hidden → out {} (contract)",
+        MlpBrain::input_size(vision_rays, 0),
+        MlpBrain::OUTPUTS,
+    ))
+    .on_hover_text(format!(
+        "Input {} at the founder (= 3 × {vision_rays} rays: vision, target, threat) to \
+         output {}. The input layer then adapts to each individual's visual precision \
+         (gene \"Rays\"); only the hidden layers are editable.",
+        MlpBrain::input_size(vision_rays, 0),
+        MlpBrain::OUTPUTS,
+    ));
     let mut remove = None;
     for (i, n) in hidden.iter_mut().enumerate() {
         ui.horizontal(|ui| {
@@ -1357,7 +1352,8 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &Si
     ui.checkbox(&mut layers.agents, "Agents (main)");
     if !layers.nutrients.is_empty() {
         ui.separator();
-        help::hint(ui, "Component maps — background, shared opacity:");
+        // A group caption (not help): names what the toggles below are.
+        ui.weak("Component maps — background, shared opacity:");
         // One toggle per component field, labelled by the scenario's component name
         // (Nutrient / Pheromone / Toxicity / Detritus…) so each map is findable. The
         // per-row id ([`egui::Ui::push_id`]) keeps two same-named components distinct.
@@ -1407,19 +1403,26 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                         });
                         ui.end_row();
                     });
-                help::hint(
-                    ui,
-                    "Seed and arena walls apply on the next Reset. Population, bodies and \
+            })
+            .header_response
+            .on_hover_text(
+                "Seed and arena walls apply on the next Reset. Population, bodies and \
                  brains live in the \"Archetypes\" panel.",
-                );
-            });
+            );
     });
 
     // RELATIONS — the interaction table (acts live).
     card(ui, |ui| {
         egui::CollapsingHeader::new("Relations")
             .default_open(true)
-            .show(ui, |ui| relations_section(ui, config));
+            .show(ui, |ui| relations_section(ui, config))
+            .header_response
+            .on_hover_text(
+                "An actor reduces a target's reserve within range — the gap between \
+                 their bodies, so range = 0 means contact. This is what makes an \
+                 archetype a TARGET (what Brain::Hunter pursues). transfer = predation \
+                 (the actor gains the energy); otherwise plain destruction. Acts live.",
+            );
     });
 
     // BREEDING — the generational regime (P5). Authored here (saved with the scenario);
@@ -1460,16 +1463,9 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// (no source ⇒ inert layer), so it folds away while keeping the sibling card frame.
 fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
-        egui::CollapsingHeader::new("Components")
+        let resp = egui::CollapsingHeader::new("Components")
             .default_open(false)
             .show(ui, |ui| {
-                help::hint(
-                    ui,
-                    "Components are diffusible substrates — a nutrient (bounds REPRODUCTION by \
-                 Liebig, decoupled from survival), a toxin, a pheromone, … Each is a field fed \
-                 by the sources below, spread by diffusion and thinned by decay. All (reset): \
-                 applied on the next Reset.",
-                );
                 egui::Grid::new("field_params")
                     .num_columns(2)
                     .spacing([8.0, 6.0])
@@ -1537,12 +1533,9 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     config.components.push(ComponentConfig::default());
                 }
 
-                ui.separator();
-                ui.strong("Sources (emit a component into its field)");
-                help::hint(
-                    ui,
-                    "A fixed point emitting `rate`/s of its component at its position.",
-                );
+                ui.add_space(6.0);
+                ui.strong("Sources (emit a component into its field)")
+                    .on_hover_text("A fixed point emitting `rate`/s of its component at its position.");
                 let n_components = config.components.len().max(1);
                 let mut to_remove = None;
                 for (i, src) in config.sources.iter_mut().enumerate() {
@@ -1633,6 +1626,12 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                     });
                 }
             });
+        resp.header_response.on_hover_text(
+            "Components are diffusible substrates — a nutrient (bounds REPRODUCTION by \
+             Liebig, decoupled from survival), a toxin, a pheromone, … Each is a field \
+             fed by the sources below, spread by diffusion and thinned by decay. \
+             Applied on the next Reset.",
+        );
     });
 }
 
@@ -1645,14 +1644,9 @@ fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// touched, so it folds away while keeping the card frame of its siblings.
 fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
-        egui::CollapsingHeader::new("Gene bounds")
+        let resp = egui::CollapsingHeader::new("Gene bounds")
             .default_open(false)
             .show(ui, |ui| {
-                help::hint(
-                    ui,
-                    "Min/max of each gene: bound the mutation and the archetype editor's \
-                     sliders. Global (shared by all archetypes).",
-                );
                 egui::Grid::new("gene_bounds_grid")
                     .num_columns(3)
                     .striped(true)
@@ -1680,6 +1674,10 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                         }
                     });
             });
+        resp.header_response.on_hover_text(
+            "Min/max of each gene: bound the mutation and the archetype editor's \
+             sliders. Global (shared by all archetypes).",
+        );
     });
 }
 
@@ -1687,13 +1685,8 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// an archetype menu (name + color). No more bare numbers nor possible collision
 /// with the food — which is a full-fledged archetype, with its index.
 fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    help::hint(
-        ui,
-        "An actor reduces a target's reserve within range — the gap between their \
-         bodies, so range = 0 means contact. This is what makes an archetype a \
-         TARGET (what Brain::Hunter pursues). transfer = predation (the actor gains \
-         the energy); otherwise plain destruction.",
-    );
+    // What a relation *means* lives on the "Relations" header's hover (cf. the
+    // caller, `world_section`).
     // Snapshot (name, color) of the archetypes for the menus — captured before
     // borrowing `config.relations` mutably.
     let archs: Vec<(String, egui::Color32)> = config
@@ -1874,6 +1867,10 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                             ui.label("survivors");
                             fonts::value(ui, |ui| {
                                 ui.add(egui::DragValue::new(&mut batch.survivors).range(0..=64))
+                                    .on_hover_text(
+                                        "Elites carried to the next generation (0 = no \
+                                         selection). Run it from the Breeding panel.",
+                                    )
                             });
                             ui.end_row();
 
@@ -1883,11 +1880,6 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
                             });
                             ui.end_row();
                         });
-                    help::hint(
-                        ui,
-                        "survivors = elites carried to the next generation (0 = no \
-                         selection). Run it from the Breeding window.",
-                    );
                 }
             });
     });

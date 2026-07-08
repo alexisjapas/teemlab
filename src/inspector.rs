@@ -23,7 +23,6 @@ use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
 
 use crate::editor::{Palette, card, draw_mlp_graph};
 use crate::fonts::{self, icons};
-use crate::help;
 
 /// **World** position of the cursor in the play area (single camera and window),
 /// if it exists, plus the world size of a **~6-pixel screen slack** — the picking
@@ -176,7 +175,9 @@ pub(crate) fn observation_section(
     view: &mut crate::ViewControl,
 ) {
     ui.horizontal(|ui| {
-        ui.label("Follow (view):");
+        ui.label("Follow (view):").on_hover_text(
+            "None = manual: click an agent. The other modes auto-follow, like the video.",
+        );
         follow_combo(ui, "follow_mode", &mut auto.roll);
         if ui
             .button(fonts::icon_label(icons::RESET, "Reset view"))
@@ -193,11 +194,7 @@ pub(crate) fn observation_section(
     if auto.roll.rolls() {
         ui.add(egui::Slider::new(&mut auto.interval, 0.5..=20.0).text("interval (s)"));
     }
-    help::hint(
-        ui,
-        "None = manual: click an agent. Other modes auto-follow like the video. \
-         Scroll = zoom · middle/right-drag = pan · Home = reset view.",
-    );
+    // The view gestures (scroll/drag/Home) live in the `?` cheatsheet, not here.
 }
 
 /// What the inspector asks the caller to do this frame (it never writes the sim/config
@@ -314,8 +311,8 @@ pub(crate) fn inspector_section(
                 ui.add(
                     egui::ProgressBar::new(nutrients.fraction())
                         .text(format!("{:.1} / {:.0}", nutrients.current, nutrients.max)),
-                );
-                help::hint(ui, "Absorbed from the field / eaten; spent to reproduce.");
+                )
+                .on_hover_text("Absorbed from the field / eaten; spent to reproduce.");
             } else {
                 // A nutrient world, but this entity is off the axis (capacity 0).
                 ui.weak("Not on the nutrient axis (capacity 0).");
@@ -327,10 +324,8 @@ pub(crate) fn inspector_section(
     card(ui, |ui| {
         ui.strong("Genotype (inherited genes)");
         if immobile {
-            help::hint(
-                ui,
-                "Immobile: locomotion and vision genes hidden (no effect).",
-            );
+            // A state explanation of *absent* content: stays visible (nothing to hover).
+            ui.weak("Immobile — locomotion and vision genes hidden (no effect).");
         }
         egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
             // One row per TRAITS characteristic: adding a trait displays it here
@@ -424,10 +419,9 @@ pub(crate) fn inspector_section(
     // decision made readable. The other brains have no graph.
     if let Brain::Mlp(mlp) = brain {
         card(ui, |ui| {
-            ui.strong("MLP brain (activations)");
-            help::hint(
-                ui,
-                "input (vision/target) → hidden layers → steering · color = activation (cold<0<warm) · size = |bias|",
+            ui.strong("MLP brain (activations)").on_hover_text(
+                "input (vision/target) → hidden layers → steering · color = activation \
+                 (cold < 0 < warm) · size = |bias|",
             );
             // The activations are recomputed here, on demand, for the single
             // inspected agent (the sim core's `think` no longer memorizes them).
@@ -440,11 +434,11 @@ pub(crate) fn inspector_section(
     // without a ray) has no channel to show.
     if !immobile {
         card(ui, |ui| {
-            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count));
-            help::hint(
-                ui,
-                "obstacle (gray) · edible target (orange) · threat (red) — 0 = nothing, 1 = in contact",
-            );
+            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count))
+                .on_hover_text(
+                    "obstacle (gray) · edible target (orange) · threat (red) — \
+                     0 = nothing, 1 = in contact",
+                );
             // Proprioception: the scalar self-state channels the brain reads about
             // *itself* (normalized [0,1]) — the substrate for modulating on its own
             // state (eat when hungry, not on contact). See `Perception::self_state`.

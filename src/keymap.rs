@@ -25,6 +25,12 @@ pub enum UiAction {
     DeleteUnderCursor,
     /// Show/hide the keyboard-shortcuts cheatsheet.
     ToggleShortcuts,
+    /// Fold/unfold the left (World) column to its rail.
+    ToggleLeftPanel,
+    /// Fold/unfold the right (Analysis) column to its rail.
+    ToggleRightPanel,
+    /// Fold/unfold the bottom strip (status + curves + breeding) to its rail.
+    ToggleBottomPanel,
 }
 
 /// One row of the binding table: the action, the physical key(s) that trigger it, the
@@ -86,6 +92,27 @@ pub const BINDINGS: &[Binding] = &[
         label: "Keyboard shortcuts",
         when: "",
     },
+    Binding {
+        action: UiAction::ToggleLeftPanel,
+        keys: &[KeyCode::Digit1],
+        keys_text: "1",
+        label: "Fold / unfold the World panel",
+        when: "",
+    },
+    Binding {
+        action: UiAction::ToggleRightPanel,
+        keys: &[KeyCode::Digit2],
+        keys_text: "2",
+        label: "Fold / unfold the Analysis panel",
+        when: "",
+    },
+    Binding {
+        action: UiAction::ToggleBottomPanel,
+        keys: &[KeyCode::Digit3],
+        keys_text: "3",
+        label: "Fold / unfold the bottom strip",
+        when: "",
+    },
 ];
 
 /// The mouse gestures — no `KeyCode`, so a separate table (for the cheatsheet). Kept
@@ -129,6 +156,9 @@ mod tests {
         UiAction::ResetView,
         UiAction::DeleteUnderCursor,
         UiAction::ToggleShortcuts,
+        UiAction::ToggleLeftPanel,
+        UiAction::ToggleRightPanel,
+        UiAction::ToggleBottomPanel,
     ];
 
     #[test]

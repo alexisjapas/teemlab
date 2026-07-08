@@ -1,7 +1,9 @@
 //! **Docked** layout of the windowed build: resizable egui panels around the central
 //! simulation area, assembled by a **single** system ([`dock`]). The side panels
-//! resize within a range that always reserves the sim's minimum width, and the
-//! archetype editor folds into the left panel on a narrow window (cf. [`crate::layout`]).
+//! resize within a range that always reserves the sim's minimum width, the archetype
+//! editor folds into the left panel on a narrow window (cf. [`crate::layout`]), and
+//! **every region folds to a thin rail** (chevron / `1` `2` `3`) so the arena can
+//! take the space back — a CLI-loaded scenario even starts that way (observing).
 //!
 //! A module of the windowed *binary* only. We invent nothing: each panel calls the
 //! reusable `*_section(ui, …)` already exposed by its tool module (`controls`,
@@ -14,10 +16,12 @@
 //! one species you are editing; **Analysis** on the right (live *stats* + the agent
 //! *inspector*) — the current state you read; the evolution *curves* (a time series)
 //! at the bottom, spanning only the **central width** the side panels leave free;
-//! *scenario IO + transport controls + View menu + Export* in
-//! the top strip (controls centered). View layers live in the top-bar **View** menu and
-//! video export in a floating window from the **Export** button — both out of the
-//! always-on panels.
+//! *scenario IO + transport controls + View menu · Help button · Breeding toggle ·
+//! Export* in the top strip (controls centered). View layers live in the top-bar
+//! **View** menu and video export in a floating window from the **Export** button —
+//! both out of the always-on chrome. Help is **hover-first**: explanations live in
+//! tooltips (on the control, or its section header), and the Help button opens the
+//! one remaining surface, the shortcuts cheatsheet.
 //!
 //! **One root viewport `Ui`, `show_inside`.** Following bevy_egui 0.40
 //! (`examples/ui.rs`): we build a single background-layer `Ui` covering
@@ -50,7 +54,6 @@ use crate::controls::{self, SimControls};
 use crate::dashboard::{self, BreedingSession};
 use crate::editor::{self, Palette};
 use crate::fonts::{self, icons};
-use crate::help;
 use crate::hud;
 use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
@@ -88,8 +91,15 @@ pub struct UiWindows {
     /// precondition); default open so it still appears with a batch, as before, but
     /// now dismissable and re-openable from the top bar.
     pub breeding: bool,
-    /// The keyboard-shortcuts **cheatsheet** (`?` / Help menu).
+    /// The keyboard-shortcuts **cheatsheet** (`?` / the Help button).
     pub shortcuts: bool,
+    /// The docked regions, each foldable to a thin **rail** so the arena can take
+    /// the space back: the left (World) column…
+    pub left_open: bool,
+    /// …the right (Analysis) column…
+    pub right_open: bool,
+    /// …and the bottom strip (status + curves + breeding).
+    pub bottom_open: bool,
 }
 
 impl Default for UiWindows {
@@ -98,36 +108,36 @@ impl Default for UiWindows {
             export: false,
             breeding: true,
             shortcuts: false,
+            left_open: true,
+            right_open: true,
+            bottom_open: true,
         }
     }
 }
 
-/// UI **preferences** (not scenario data): the source of truth for the dismissable
-/// inline help. `dock` mirrors it into egui memory each frame so `help::hint` keeps
-/// its zero-threading ergonomics (cf. `help`).
-#[derive(Resource)]
-pub struct UiPrefs {
-    /// Show the explanatory hints in the panels (default on — discoverable).
-    pub inline_help: bool,
-}
-
-impl Default for UiPrefs {
-    fn default() -> Self {
-        Self { inline_help: true }
+impl UiWindows {
+    /// The launch layout: **composing** (the empty canvas — every tool deployed) vs
+    /// **observing** (a scenario passed on the CLI — the side columns folded, the
+    /// arena and the curves lead; the tooling is one key / rail-click away).
+    pub fn at_launch(observing: bool) -> Self {
+        Self {
+            left_open: !observing,
+            right_open: !observing,
+            ..Self::default()
+        }
     }
 }
 
 /// Cross-panel resources [`dock`] writes, bundled into one [`SystemParam`] so the
 /// system stays within Bevy's 16-parameter limit (like [`ObsParams`]): the scenario
-/// document model, the recorder settings, the unified status line, the window toggles
-/// and the UI preferences.
+/// document model, the recorder settings, the unified status line and the
+/// window/region toggles.
 #[derive(SystemParam)]
 pub struct DockState<'w> {
     pub runs_panel: ResMut<'w, RunsPanel>,
     pub recorder_panel: ResMut<'w, RecorderPanel>,
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
-    pub prefs: ResMut<'w, UiPrefs>,
     /// The breeding session (P5) — the docked breeding panel (the bottom panel's left
     /// half, beside the curves, when the Breeding toggle is on) reads/drives it.
     /// Bundled here so `dock` stays within Bevy's 16-parameter limit.
@@ -190,6 +200,48 @@ pub fn pointer_over_ui_at(ctx: &egui::Context, pos: egui::Pos2, central: egui::R
         // Background layer (panels live here): UI iff outside the sim's central rect.
         _ => !central.contains(pos),
     }
+}
+
+/// Width of a folded region's **rail** (egui points): just enough for its chevron.
+const RAIL_W: f32 = 26.0;
+
+/// Overlays a small frameless chevron in an open region's **top-right corner** —
+/// `ui.put` consumes no layout space, so the content keeps its full height — that
+/// folds the region to its rail. The rail's chevron (cf. the `dock` rails) is the
+/// mirror affordance, in the same spot the region folded from.
+fn collapse_overlay(
+    ui: &mut egui::Ui,
+    glyph: char,
+    action: crate::keymap::UiAction,
+    open: &mut bool,
+) {
+    let r = ui.max_rect();
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(r.right() - 20.0, r.top() + 2.0),
+        egui::vec2(18.0, 18.0),
+    );
+    if ui
+        .put(
+            rect,
+            egui::Button::new(fonts::icon(glyph)).small().frame(false),
+        )
+        .on_hover_text(crate::keymap::tooltip("Fold this panel", action))
+        .clicked()
+    {
+        *open = false;
+    }
+}
+
+/// A rail's reopen chevron (frameless, quiet). Returns `true` when clicked.
+fn rail_chevron(
+    ui: &mut egui::Ui,
+    glyph: char,
+    tip: &str,
+    action: crate::keymap::UiAction,
+) -> bool {
+    ui.add(egui::Button::new(fonts::icon(glyph)).frame(false))
+        .on_hover_text(crate::keymap::tooltip(tip, action))
+        .clicked()
 }
 
 /// The archetype-editor **detail** view: a header then the editor itself, shared by
@@ -331,10 +383,6 @@ pub fn dock(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    // Mirror the inline-help preference into egui memory so `help::hint` reads it
-    // without every panel threading the flag (cf. `help`). A one-frame lag on a toggle
-    // is imperceptible.
-    ctx.data_mut(|d| d.insert_temp(crate::help::id(), state.prefs.inline_help));
     // Stamp a freshly-set status message with the current real time so it can expire.
     let now = time.elapsed_secs_f64();
     state.ui_status.stamp(now);
@@ -421,22 +469,19 @@ pub fn dock(
                                 state.windows.breeding = !on;
                             }
                         }
-                        ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "Help"), |ui| {
-                            help::toggle(ui, &mut state.prefs.inline_help);
-                            if ui
-                                .button(crate::keymap::tooltip(
-                                    "Keyboard shortcuts…",
-                                    crate::keymap::UiAction::ToggleShortcuts,
-                                ))
-                                .clicked()
-                            {
-                                state.windows.shortcuts = !state.windows.shortcuts;
-                                ui.close();
-                            }
-                        })
-                        .response
-                        .on_hover_text("Inline help and the keyboard-shortcuts cheatsheet.");
-                        ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "View"), |ui| {
+                        // Help is now hover-first (tooltips everywhere): the button
+                        // opens the one remaining surface, the shortcuts cheatsheet.
+                        if ui
+                            .button("Help")
+                            .on_hover_text(crate::keymap::tooltip(
+                                "Keyboard shortcuts & mouse gestures",
+                                crate::keymap::UiAction::ToggleShortcuts,
+                            ))
+                            .clicked()
+                        {
+                            state.windows.shortcuts = !state.windows.shortcuts;
+                        }
+                        ui.menu_button("View", |ui| {
                             editor::layers_section(ui, &mut layers, &config)
                         })
                         .response
@@ -486,7 +531,10 @@ pub fn dock(
     // so the sim never drops below [`layout::CENTRAL_MIN`] (cf. `layout`).
     let editor_open = palette
         .selected
-        .is_some_and(|i| i < config.archetypes.len());
+        .is_some_and(|i| i < config.archetypes.len())
+        // The detail lives in / beside the left region: folded, it shows nowhere
+        // (reopening the region brings it back).
+        && state.windows.left_open;
 
     // Left-region mode, from last frame's widths (a `SIDE_DEFAULT` fallback before a
     // panel has rendered, so a freshly opened editor picks its mode without a one-frame
@@ -518,72 +566,99 @@ pub fn dock(
     // (The breeding dashboard docks in the bottom panel's left half — see below.)
     let mut deselect = false;
     let breeding_active = config.batch.is_some() && state.windows.breeding;
-    let right_w = egui::Panel::right("right_panel")
-        .default_size(crate::layout::SIDE_DEFAULT)
-        .resizable(true)
-        .size_range(crate::layout::side_range(viewport_w, layout.left_w))
-        .show_inside(&mut root, |ui| {
-            // Observation (small: follow mode + view reset) stays pinned; only the tall
-            // sections below scroll, so each working surface keeps its own scroll offset.
-            egui::CollapsingHeader::new("Observation")
-                .default_open(true)
-                .show(ui, |ui| {
-                    inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view)
-                });
-            egui::ScrollArea::vertical()
-                .id_salt("analysis_scroll")
-                .show(ui, |ui| {
-                    egui::CollapsingHeader::new("Live stats")
-                        .default_open(false)
-                        .show(ui, |ui| editor::stats_section(ui, &stats_agents, &config));
-                    // `inspector_section` **returns** any capture request (a derived
-                    // archetype); `body_returned` is `Some` only while the header is
-                    // expanded, so `flatten` maps the collapsed case to `None`. Applied
-                    // *after* the call (it borrows `config` shared) → the mutable borrow
-                    // is then allowed.
-                    let inspector_action = egui::CollapsingHeader::new("Agent inspector")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            inspector::inspector_section(
-                                ui,
-                                &obs.selection,
-                                &config,
-                                &mut palette.variant_name,
-                                &inspector_agents,
-                            )
-                        })
-                        .body_returned
-                        .flatten();
-                    match inspector_action {
-                        // Capture → add the derived archetype to the current scenario.
-                        Some(inspector::InspectorAction::Capture(arch)) => {
-                            let from = arch.captured_from.clone().unwrap_or_default();
-                            config.archetypes.push(arch);
-                            palette.selected = Some(config.archetypes.len() - 1);
-                            state
-                                .ui_status
-                                .set(format!("Captured to scenario (from {from})."));
+    let right_w = if !state.windows.right_open {
+        // Folded: a thin rail keeps the region present and reopenable in place.
+        egui::Panel::right("right_rail")
+            .resizable(false)
+            .default_size(RAIL_W)
+            .size_range(RAIL_W..=RAIL_W)
+            .show_inside(&mut root, |ui| {
+                if rail_chevron(
+                    ui,
+                    icons::CARET_LEFT,
+                    "Show the Analysis panel",
+                    crate::keymap::UiAction::ToggleRightPanel,
+                ) {
+                    state.windows.right_open = true;
+                }
+            })
+            .response
+            .rect
+            .width()
+    } else {
+        egui::Panel::right("right_panel")
+            .default_size(crate::layout::SIDE_DEFAULT)
+            .resizable(true)
+            .size_range(crate::layout::side_range(viewport_w, layout.left_w))
+            .show_inside(&mut root, |ui| {
+                collapse_overlay(
+                    ui,
+                    icons::CARET_RIGHT,
+                    crate::keymap::UiAction::ToggleRightPanel,
+                    &mut state.windows.right_open,
+                );
+                // Observation (follow mode + view reset) stays pinned — flat, it is a
+                // single row; only the tall sections below scroll, so each working
+                // surface keeps its own scroll offset.
+                inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
+                egui::ScrollArea::vertical()
+                    .id_salt("analysis_scroll")
+                    .show(ui, |ui| {
+                        egui::CollapsingHeader::new("Live stats")
+                            .default_open(false)
+                            .show(ui, |ui| editor::stats_section(ui, &stats_agents, &config));
+                        // `inspector_section` **returns** any capture request (a derived
+                        // archetype); `body_returned` is `Some` only while the header is
+                        // expanded, so `flatten` maps the collapsed case to `None`. Applied
+                        // *after* the call (it borrows `config` shared) → the mutable borrow
+                        // is then allowed.
+                        let inspector_action = egui::CollapsingHeader::new("Agent inspector")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                inspector::inspector_section(
+                                    ui,
+                                    &obs.selection,
+                                    &config,
+                                    &mut palette.variant_name,
+                                    &inspector_agents,
+                                )
+                            })
+                            .body_returned
+                            .flatten();
+                        match inspector_action {
+                            // Capture → add the derived archetype to the current scenario.
+                            Some(inspector::InspectorAction::Capture(arch)) => {
+                                let from = arch.captured_from.clone().unwrap_or_default();
+                                config.archetypes.push(arch);
+                                palette.selected = Some(config.archetypes.len() - 1);
+                                // The capture selects the new archetype for editing: make
+                                // sure the region holding its editor is visible.
+                                state.windows.left_open = true;
+                                state
+                                    .ui_status
+                                    .set(format!("Captured to scenario (from {from})."));
+                            }
+                            // Save variant → write it to the library (species/saved/).
+                            Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
+                                let scenario = state.runs_panel.origin_label();
+                                let msg = editor::save_variant(
+                                    &mut palette,
+                                    &config,
+                                    species as usize,
+                                    variant,
+                                    &scenario,
+                                );
+                                palette.variant_name.clear();
+                                state.ui_status.set_result(msg);
+                            }
+                            None => {}
                         }
-                        // Save variant → write it to the library (species/saved/).
-                        Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
-                            let scenario = state.runs_panel.origin_label();
-                            let msg = editor::save_variant(
-                                &mut palette,
-                                &config,
-                                species as usize,
-                                variant,
-                                &scenario,
-                            );
-                            palette.variant_name.clear();
-                            state.ui_status.set_result(msg);
-                        }
-                        None => {}
-                    }
-                });
-        })
-        .response
-        .rect
-        .width();
+                    });
+            })
+            .response
+            .rect
+            .width()
+    };
 
     // Left column — **the world** (scenario params + the *Archetypes* list/library). On a
     // narrow window with an archetype selected, its content becomes the archetype editor
@@ -591,43 +666,74 @@ pub fn dock(
     // own column below. Resizable, reserving the sim's minimum against this frame's right
     // width. Drops its right separator in two-column mode so the world and the editor read
     // as one contiguous surface.
-    let left_w = egui::Panel::left("left_tools")
-        .default_size(crate::layout::SIDE_DEFAULT)
-        .resizable(true)
-        .size_range(crate::layout::side_range(viewport_w, right_w))
-        .show_separator_line(!two_column_editor)
-        .show_inside(&mut root, |ui| {
-            if detail_in_left {
-                // Detail view swapped in place — under its own id scope so its widgets
-                // never share auto-ids with the master content (stable ids on the swap).
-                ui.push_id("detail", |ui| {
-                    if archetype_detail(ui, &mut palette, &mut config, true) {
-                        deselect = true;
-                    }
-                });
-            } else {
-                ui.push_id("master", |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        egui::CollapsingHeader::new("World")
-                            .default_open(true)
-                            .show(ui, |ui| editor::world_section(ui, &mut config));
-                        egui::CollapsingHeader::new("Archetypes")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                editor::selector_section(
-                                    ui,
-                                    &mut palette,
-                                    &mut config,
-                                    &mut state.ui_status,
-                                )
-                            });
+    let left_w = if !state.windows.left_open {
+        egui::Panel::left("left_rail")
+            .resizable(false)
+            .default_size(RAIL_W)
+            .size_range(RAIL_W..=RAIL_W)
+            .show_inside(&mut root, |ui| {
+                if rail_chevron(
+                    ui,
+                    icons::CARET_RIGHT,
+                    "Show the World panel",
+                    crate::keymap::UiAction::ToggleLeftPanel,
+                ) {
+                    state.windows.left_open = true;
+                }
+            })
+            .response
+            .rect
+            .width()
+    } else {
+        egui::Panel::left("left_tools")
+            .default_size(crate::layout::SIDE_DEFAULT)
+            .resizable(true)
+            .size_range(crate::layout::side_range(viewport_w, right_w))
+            .show_separator_line(!two_column_editor)
+            .show_inside(&mut root, |ui| {
+                collapse_overlay(
+                    ui,
+                    icons::CARET_LEFT,
+                    crate::keymap::UiAction::ToggleLeftPanel,
+                    &mut state.windows.left_open,
+                );
+                if detail_in_left {
+                    // Detail view swapped in place — under its own id scope so its widgets
+                    // never share auto-ids with the master content (stable ids on the swap).
+                    ui.push_id("detail", |ui| {
+                        if archetype_detail(ui, &mut palette, &mut config, true) {
+                            deselect = true;
+                        }
                     });
-                });
-            }
-        })
-        .response
-        .rect
-        .width();
+                } else {
+                    ui.push_id("master", |ui| {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            egui::CollapsingHeader::new("World")
+                                .default_open(true)
+                                .show(ui, |ui| editor::world_section(ui, &mut config));
+                            egui::CollapsingHeader::new("Archetypes")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    editor::selector_section(
+                                        ui,
+                                        &mut palette,
+                                        &mut config,
+                                        &mut state.ui_status,
+                                    )
+                                })
+                                .header_response
+                                .on_hover_text(
+                                    "Drag a species into the arena to place it; click one \
+                                     to edit it; Delete (cursor on an entity) removes it.",
+                                );
+                        });
+                    });
+                }
+            })
+            .response
+            .rect
+            .width()
+    };
 
     // Bottom panel reserved **after** the side columns so it spans only the **central
     // width** they leave free. The evolution **curves** with the unified **status line**.
@@ -639,68 +745,96 @@ pub fn dock(
     // A taller ceiling while breeding is docked here: the dashboard (navigator + curve +
     // metrics + leaderboard + network) is tall, so give the user room to drag it open.
     let bottom_max = if breeding_active { 760.0 } else { 520.0 };
-    egui::Panel::bottom("bottom_panel")
-        .resizable(true)
-        .default_size(if breeding_active { 360.0 } else { 300.0 })
-        .size_range(260.0..=bottom_max)
-        .show_inside(&mut root, |ui| {
-            // The status line, coloured by kind and shown only while unexpired (info /
-            // success fade after a few seconds; errors persist — cf. `status`). Full width
-            // above any split.
-            if state.ui_status.visible(now) {
-                let color = match state.ui_status.kind {
-                    crate::status::StatusKind::Success => crate::theme::SUCCESS,
-                    crate::status::StatusKind::Error => crate::theme::ERROR,
-                    crate::status::StatusKind::Info => crate::theme::INK_MUTED,
-                };
-                ui.colored_label(color, &state.ui_status.message);
-                ui.separator();
-            }
-            // Framed like the other sections (Body/Genes/Brain, the World cards): the
-            // curves live in their own card. The curves are the closure the breeding split
-            // and the full-width case share.
-            let curves = |ui: &mut egui::Ui, history: &mut History, config: &SimConfig| {
-                editor::card(ui, |ui| {
-                    ui.strong("Evolution — curves");
+    // The status line, coloured by kind and shown only while unexpired (info / success
+    // fade after a few seconds; errors persist — cf. `status`). Drawn in the open
+    // panel — or **on the rail** when folded, so feedback is never hidden.
+    let status_line = |ui: &mut egui::Ui, status: &crate::status::UiStatus| {
+        let color = match status.kind {
+            crate::status::StatusKind::Success => crate::theme::SUCCESS,
+            crate::status::StatusKind::Error => crate::theme::ERROR,
+            crate::status::StatusKind::Info => crate::theme::INK_MUTED,
+        };
+        ui.colored_label(color, &status.message);
+    };
+    if !state.windows.bottom_open {
+        egui::Panel::bottom("bottom_rail")
+            .resizable(false)
+            .default_size(RAIL_W)
+            .size_range(RAIL_W..=RAIL_W)
+            .show_inside(&mut root, |ui| {
+                ui.horizontal(|ui| {
+                    if rail_chevron(
+                        ui,
+                        icons::CARET_UP,
+                        "Show the curves strip",
+                        crate::keymap::UiAction::ToggleBottomPanel,
+                    ) {
+                        state.windows.bottom_open = true;
+                    }
+                    if state.ui_status.visible(now) {
+                        status_line(ui, &state.ui_status);
+                    }
+                });
+            });
+    } else {
+        egui::Panel::bottom("bottom_panel")
+            .resizable(true)
+            .default_size(if breeding_active { 360.0 } else { 300.0 })
+            .size_range(260.0..=bottom_max)
+            .show_inside(&mut root, |ui| {
+                collapse_overlay(
+                    ui,
+                    icons::CARET_DOWN,
+                    crate::keymap::UiAction::ToggleBottomPanel,
+                    &mut state.windows.bottom_open,
+                );
+                if state.ui_status.visible(now) {
+                    status_line(ui, &state.ui_status);
+                    ui.add_space(2.0);
+                }
+                // The panel IS the curves surface — no wrapping card or title (the two
+                // plots carry their own strong labels). The closure is shared by the
+                // breeding split and the full-width case.
+                let curves = |ui: &mut egui::Ui, history: &mut History, config: &SimConfig| {
                     hud::hud_section(ui, history, config);
-                });
-            };
-            if breeding_active {
-                // **Breeding dashboard** in the bottom panel's LEFT HALF, side by side with
-                // the curves (P5): docked in the layout (not a floating popup over the sim),
-                // it runs the generational loop + browses/replays generations while the
-                // curves keep the right half. Config lives in the left World panel.
-                ui.columns(2, |cols| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("breeding_scroll")
-                        .show(&mut cols[0], |ui| {
-                            editor::card(ui, |ui| {
-                                ui.strong("Breeding (generational)");
-                                if let Some(act) = dashboard::breeding_panel(
-                                    ui,
-                                    &mut state.breeding,
-                                    &config,
-                                    &mut vtime,
-                                    &mut state.ui_status,
-                                ) {
-                                    dashboard::apply_action(
-                                        act,
-                                        &mut config,
-                                        &mut palette,
-                                        &state.runs_panel,
-                                        &mut state.ui_status,
-                                        &mut sim_controls,
+                };
+                if breeding_active {
+                    // **Breeding dashboard** in the bottom panel's LEFT HALF, side by side with
+                    // the curves (P5): docked in the layout (not a floating popup over the sim),
+                    // it runs the generational loop + browses/replays generations while the
+                    // curves keep the right half. Config lives in the left World panel.
+                    ui.columns(2, |cols| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("breeding_scroll")
+                            .show(&mut cols[0], |ui| {
+                                editor::card(ui, |ui| {
+                                    ui.strong("Breeding (generational)");
+                                    if let Some(act) = dashboard::breeding_panel(
+                                        ui,
+                                        &mut state.breeding,
+                                        &config,
                                         &mut vtime,
-                                    );
-                                }
+                                        &mut state.ui_status,
+                                    ) {
+                                        dashboard::apply_action(
+                                            act,
+                                            &mut config,
+                                            &mut palette,
+                                            &state.runs_panel,
+                                            &mut state.ui_status,
+                                            &mut sim_controls,
+                                            &mut vtime,
+                                        );
+                                    }
+                                });
                             });
-                        });
-                    curves(&mut cols[1], &mut history, &config);
-                });
-            } else {
-                curves(ui, &mut history, &config);
-            }
-        });
+                        curves(&mut cols[1], &mut history, &config);
+                    });
+                } else {
+                    curves(ui, &mut history, &config);
+                }
+            });
+    }
 
     // Archetype editor — the **detail** half as a second left column, **two-column mode
     // only** (in single column the detail lives in `left_tools` above). Created **last**,
@@ -845,7 +979,21 @@ mod tests {
             "Breeding starts open (appears with a batch, as before)"
         );
         assert!(!w.shortcuts, "the cheatsheet starts closed");
-        assert!(UiPrefs::default().inline_help, "inline help starts on");
+        assert!(
+            w.left_open && w.right_open && w.bottom_open,
+            "composing: every region deployed"
+        );
+    }
+
+    #[test]
+    fn launch_layout_folds_side_tooling_when_observing() {
+        // A CLI scenario → observation: the side columns fold to rails, the arena and
+        // the curves lead; the empty canvas keeps everything open (composing).
+        let observing = UiWindows::at_launch(true);
+        assert!(!observing.left_open && !observing.right_open);
+        assert!(observing.bottom_open, "the curves are the observation tool");
+        let composing = UiWindows::at_launch(false);
+        assert!(composing.left_open && composing.right_open && composing.bottom_open);
     }
 
     #[test]
