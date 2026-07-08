@@ -43,12 +43,20 @@ pub struct RecorderPanel {
     child: Option<Child>,
     /// Launch requested by the UI, handled at the next `Update`.
     launch_requested: bool,
+    /// Cancel requested by the UI (kill the subprocess, discard the partial file).
+    cancel_requested: bool,
+    /// The last **auto-suggested** output name: while `out` still equals it, a
+    /// completed take advances the suggestion to the next free name, so the default
+    /// flow never overwrites a previous render (a hand-typed name is left alone).
+    suggested: String,
 }
 
 impl Default for RecorderPanel {
     fn default() -> Self {
+        // The default output is the first free `outputs/run-NN.mp4`, so the default
+        // flow never overwrites a previous take (cf. [`free_output_name`]).
+        let suggested = free_output_name();
         Self {
-            out: "outputs/run.mp4".into(),
             fps: 30.0,
             seconds: 61.0,
             // Portrait 9:16 by default: the visualizer is overlaid (square arena
@@ -65,8 +73,24 @@ impl Default for RecorderPanel {
             hud_interval: 6.0,
             child: None,
             launch_requested: false,
+            cancel_requested: false,
+            out: suggested.clone(),
+            suggested,
         }
     }
+}
+
+/// The first free `outputs/run-NN.mp4` — the auto-suggested output name: readable,
+/// ordered, and **never a previous take** (the document-model care, applied to
+/// renders). Falls back to the bare historical name past 99 files.
+fn free_output_name() -> String {
+    for n in 1..=99u32 {
+        let candidate = format!("outputs/run-{n:02}.mp4");
+        if !std::path::Path::new(&candidate).exists() {
+            return candidate;
+        }
+    }
+    "outputs/run.mp4".into()
 }
 
 /// Path of the `record` binary: next to the current executable (`cargo run` case
@@ -177,6 +201,13 @@ pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
                 false,
                 egui::Button::new(fonts::icon_label(icons::RECORD, "Recording…")),
             );
+            if ui
+                .button(fonts::icon_label(icons::X, "Cancel"))
+                .on_hover_text("Stop the render and discard the partial file.")
+                .clicked()
+            {
+                panel.cancel_requested = true;
+            }
         });
     } else if ui
         .button(fonts::icon_label(icons::RECORD, "Record"))
@@ -195,6 +226,20 @@ pub fn drive_recorder(
     mut status: ResMut<UiStatus>,
     config: Res<SimConfig>,
 ) {
+    // A cancel kills the subprocess and discards the partial file. (ffmpeg, fed by
+    // the dying `record`'s pipe, exits on its own once the pipe closes; unlinking
+    // the open file is safe — the data follows the inode and vanishes on close.)
+    if panel.cancel_requested {
+        panel.cancel_requested = false;
+        if let Some(mut child) = panel.child.take() {
+            let _ = child.kill();
+            let _ = child.wait(); // reap, no zombie
+            let _ = std::fs::remove_file(&panel.out); // best-effort cleanup
+            status.set("Recording cancelled.");
+        }
+        return;
+    }
+
     // Monitoring the running process: we detect its end without blocking (`try_wait`).
     if let Some(child) = panel.child.as_mut() {
         match child.try_wait() {
@@ -202,6 +247,13 @@ pub fn drive_recorder(
                 panel.child = None;
                 if exit.success() {
                     status.ok(format!("Video written → {}", panel.out));
+                    // The auto-suggested name was used → advance to the next free
+                    // one, so the next take never overwrites this one (a hand-typed
+                    // name is left alone).
+                    if panel.out == panel.suggested {
+                        panel.suggested = free_output_name();
+                        panel.out = panel.suggested.clone();
+                    }
                 } else {
                     status.error(format!("record failed ({exit}). See the console."));
                 }

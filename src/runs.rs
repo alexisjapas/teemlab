@@ -515,6 +515,9 @@ pub fn apply_scenario_load(
     let mut install = |panel: &mut RunsPanel, config: &SimConfig| {
         palette.selected = None;
         palette.dragging = None;
+        // The delete-undo snapshot belongs to the outgoing scenario: restoring it
+        // over the incoming one would swap documents under the user.
+        palette.deleted = None;
         breeding.reset();
         vtime.pause();
         controls.reset_requested = true;

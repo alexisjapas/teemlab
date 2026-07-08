@@ -87,6 +87,9 @@ pub struct BreedingSession {
     /// the latest* (live, the default); `Some(g)` pins a past generation to browse it while
     /// the run keeps going or after it ends. The whole history is retained in `reports`.
     selected_generation: Option<usize>,
+    /// The status the UI saw last frame — detects the Running→Done/Stopped **edge** to
+    /// bridge the end of a run to the next step with one status-line message.
+    last_status: BreedingStatus,
 }
 
 /// A leaderboard row — the lightweight per-elite stats shown in the list (no brain
@@ -167,6 +170,7 @@ impl BreedingSession {
         self.selected_faction = 0;
         self.selected = None;
         self.selected_generation = None;
+        self.last_status = BreedingStatus::Idle;
     }
 
     /// Number of bred factions (1 for foraging / single-faction battle, more under
@@ -405,10 +409,28 @@ pub(crate) fn breeding_panel(
     session: &mut BreedingSession,
     config: &SimConfig,
     vtime: &mut Time<Virtual>,
+    ui_status: &mut UiStatus,
 ) -> Option<BreedingAction> {
     let mut action = None;
     let view = session.view();
     let running = view.status == BreedingStatus::Running;
+
+    // Bridge the END of a run to the next step: the live world stays paused and the
+    // central chip only says "Space to run", so say what just happened and what the
+    // natural follow-up is — once, at the status edge.
+    if view.status != session.last_status {
+        match (session.last_status, view.status) {
+            (BreedingStatus::Running, BreedingStatus::Done) => ui_status.ok(
+                "Breeding done — click the fitness curve to browse generations, \
+                 or Replay one in the live world.",
+            ),
+            (BreedingStatus::Running, BreedingStatus::Stopped) => {
+                ui_status.set("Breeding stopped — the completed generations stay browsable below.")
+            }
+            _ => {}
+        }
+        session.last_status = view.status;
+    }
 
     // Status + progress.
     let (label, color) = match view.status {
@@ -546,15 +568,22 @@ fn dim(color: [f32; 3]) -> [f32; 3] {
     color.map(|c| c * 0.55)
 }
 
-/// One header cell of the metrics table, accented when that metric is the one **driving
-/// selection** (the scenario's `Fitness`) so the reader sees which column the breeding
-/// actually optimises.
-fn metric_header(ui: &mut egui::Ui, label: &str, driving: bool) {
-    if driving {
-        ui.colored_label(crate::theme::ACCENT, label);
+/// One header cell of the metrics table: a hover tooltip spells out the abbreviation,
+/// and the cell is **accented** when that metric is the one driving selection (the
+/// scenario's `Fitness`) so the reader sees which column the breeding actually
+/// optimises.
+fn metric_header(ui: &mut egui::Ui, label: &str, tip: &str, driving: bool) {
+    let response = if driving {
+        ui.colored_label(crate::theme::ACCENT, label)
     } else {
-        ui.weak(label);
-    }
+        ui.weak(label)
+    };
+    let tip = if driving {
+        format!("{tip}\nAccented: this metric drives the selection (the scenario's fitness).")
+    } else {
+        tip.to_owned()
+    };
+    response.on_hover_text(tip);
 }
 
 /// The **cohort inspection** for generation `gen_idx`: a faction selector (under co-evolution),
@@ -616,13 +645,49 @@ fn cohort_section(
             .num_columns(7)
             .spacing([7.0, 3.0])
             .show(ui, |ui| {
-                ui.weak("match");
-                metric_header(ui, "pop", driving == Some(Fitness::Population));
-                metric_header(ui, "peak", driving == Some(Fitness::Peak));
-                metric_header(ui, "surv", driving == Some(Fitness::Survival));
-                metric_header(ui, "lin", driving == Some(Fitness::BestEvolved));
-                metric_header(ui, "dom", driving == Some(Fitness::Dominance));
-                ui.weak("rsv");
+                ui.weak("match")
+                    .on_hover_text("One row per headless match of the cohort.");
+                metric_header(
+                    ui,
+                    "pop",
+                    "Mean standing population over the match — sustained biomass \
+                     (fitness: Population).",
+                    driving == Some(Fitness::Population),
+                );
+                metric_header(
+                    ui,
+                    "peak",
+                    "Peak standing population over the match — the strongest bloom \
+                     (fitness: Peak).",
+                    driving == Some(Fitness::Peak),
+                );
+                metric_header(
+                    ui,
+                    "surv",
+                    "Fraction of the match the faction stayed alive (fitness: Survival).",
+                    driving == Some(Fitness::Survival),
+                );
+                metric_header(
+                    ui,
+                    "lin",
+                    "Deepest lineage (in-match generations) ever reached \
+                     (fitness: BestEvolved).",
+                    driving == Some(Fitness::BestEvolved),
+                );
+                metric_header(
+                    ui,
+                    "dom",
+                    "Terminal dominance — own minus living rivals at the last sample \
+                     (fitness: Dominance).",
+                    driving == Some(Fitness::Dominance),
+                );
+                metric_header(
+                    ui,
+                    "rsv",
+                    "Mean energy reserve of survivors — a foraging-health diagnostic \
+                     (never drives selection).",
+                    false,
+                );
                 ui.end_row();
                 for (m, mm) in metrics.iter().enumerate() {
                     fonts::value(ui, |ui| ui.label(format!("#{}", m + 1)));

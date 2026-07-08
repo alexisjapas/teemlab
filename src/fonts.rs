@@ -81,10 +81,17 @@ pub fn icon(glyph: char) -> egui::RichText {
 /// family, so we build a two-section `LayoutJob`. Both use [`egui::Color32::PLACEHOLDER`]
 /// (egui's sentinel) so the widget recolours them per state (hover / disabled).
 pub fn icon_label(glyph: char, label: &str) -> egui::WidgetText {
+    icon_label_tinted(glyph, label, egui::Color32::PLACEHOLDER)
+}
+
+/// [`icon_label`] with an explicit `color` instead of the state-driven placeholder —
+/// for a control that must carry a semantic tint (e.g. the transport's Reset accented
+/// while the running world diverges from the config).
+pub fn icon_label_tinted(glyph: char, label: &str, color: egui::Color32) -> egui::WidgetText {
     let size = crate::theme::BODY_SIZE; // egui buttons use the body text style.
     let fmt = |family: egui::FontFamily| egui::TextFormat {
         font_id: egui::FontId::new(size, family),
-        color: egui::Color32::PLACEHOLDER,
+        color,
         valign: egui::Align::Center,
         ..Default::default()
     };

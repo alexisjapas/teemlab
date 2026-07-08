@@ -15,13 +15,12 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
-use teemlab::brain::{Brain, BrainKind, GrazerBrain, MlpBrain};
+use teemlab::brain::{BrainKind, GrazerBrain, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
 use teemlab::config::{
     Archetype, BatchConfig, ComponentConfig, Fitness, Relation, Source, SpeciesEntry,
 };
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
-use teemlab::metrics;
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
 
@@ -62,6 +61,12 @@ pub struct Palette {
     /// **“mutable”** checkbox beside each gene. Off by default — the toggle sits at
     /// the top of the gene panel so it stays discoverable.
     pub show_mutability: bool,
+    /// One-level **undo of an archetype deletion**: the deleted name + a full config
+    /// snapshot from just before it (relations / field-relations / batch remaps
+    /// included — restoring is then trivially exact, no inverse remap to maintain).
+    /// The config data is carefully-tuned work, unlike a placed entity, so a
+    /// mis-click must be recoverable. Cleared on scenario load (cf. `runs`).
+    pub deleted: Option<(String, SimConfig)>,
 }
 
 /// egui color of an archetype, from its stored color (`[r, g, b]` ∈ [0, 1]).
@@ -109,6 +114,7 @@ pub fn build_palette(mut commands: Commands, config: Res<SimConfig>) {
         variant_name: String::new(),
         library_was_open: false,
         show_mutability: false,
+        deleted: None,
     });
 }
 
@@ -399,11 +405,34 @@ pub(crate) fn selector_section(
         && config.archetypes.len() > 1
         && ui
             .button(fonts::icon_label(icons::TRASH, "Delete"))
-            .on_hover_text("Removes the selected archetype and remaps the relation table.")
+            .on_hover_text(
+                "Removes the selected archetype and remaps the index-keyed tables \
+                 (a Restore button appears below to undo).",
+            )
             .clicked()
     {
+        let name = config.archetypes[i].name.clone();
+        palette.deleted = Some((name.clone(), config.clone()));
         remove_archetype(config, i);
         palette.selected = None;
+        status.set(format!("Deleted “{name}” — Restore below to undo."));
+    }
+    // The undo of the deletion above (one level).
+    if let Some(name) = palette.deleted.as_ref().map(|(n, _)| n.clone())
+        && ui
+            .button(fonts::icon_label(
+                icons::RESET,
+                &format!("Restore “{name}”"),
+            ))
+            .on_hover_text(
+                "Undo the deletion: restores the scenario exactly as it was just \
+                 before it (edits made in between are rolled back too).",
+            )
+            .clicked()
+        && let Some((_, snapshot)) = palette.deleted.take()
+    {
+        *config = snapshot;
+        status.ok(format!("“{name}” restored."));
     }
 
     ui.separator();
@@ -601,9 +630,10 @@ fn catalog_section(
     }
 }
 
-/// Removes archetype `i` and **remaps the relation table**: relations that
-/// reference it (actor or target) are removed, and any higher index is decremented
-/// — otherwise the archetype indices would point to the wrong species.
+/// Removes archetype `i` and **remaps every index-keyed table** — relations, field
+/// relations, the batch's scored species and the transient founder pools: rows that
+/// reference it are removed and any higher index is decremented, otherwise archetype
+/// indices would point to the wrong species.
 fn remove_archetype(config: &mut SimConfig, i: usize) {
     config.archetypes.remove(i);
     let removed = i as u16;
@@ -618,6 +648,27 @@ fn remove_archetype(config: &mut SimConfig, i: usize) {
             r.target -= 1;
         }
     }
+    config.field_relations.retain(|fr| fr.species != removed);
+    for fr in &mut config.field_relations {
+        if fr.species > removed {
+            fr.species -= 1;
+        }
+    }
+    if let Some(batch) = &mut config.batch {
+        batch.scored_species.retain(|s| *s != removed);
+        for s in &mut batch.scored_species {
+            if *s > removed {
+                *s -= 1;
+            }
+        }
+    }
+    // Transient (set by a breeding Replay): re-keyed rather than left stale.
+    let pools = std::mem::take(&mut config.founder_pools);
+    config.founder_pools = pools
+        .into_iter()
+        .filter(|(s, _)| *s != removed)
+        .map(|(s, brains)| (if s > removed { s - 1 } else { s }, brains))
+        .collect();
 }
 
 /// Duplicates archetype `i`: an **independent** clone added **at the end** of the
@@ -634,8 +685,9 @@ fn duplicate_archetype(config: &mut SimConfig, i: usize) -> Option<usize> {
 }
 
 /// Swaps archetypes `i` and `j` (reordering) and **transposes** their indices in
-/// the relation table: an archetype's index *is* its species identity
-/// ([`Species`]), so swapping two archetypes without touching the relations would
+/// every index-keyed table — relations, field relations, the batch's scored species
+/// and the transient founder pools: an archetype's index *is* its species identity
+/// ([`Species`]), so swapping two archetypes without touching those tables would
 /// make them point to the wrong species. The exact counterpart, for reordering, of
 /// the remap [`remove_archetype`] does for deletion.
 fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
@@ -652,6 +704,22 @@ fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
         transpose(&mut r.actor);
         transpose(&mut r.target);
     }
+    for fr in &mut config.field_relations {
+        transpose(&mut fr.species);
+    }
+    if let Some(batch) = &mut config.batch {
+        for s in &mut batch.scored_species {
+            transpose(s);
+        }
+    }
+    let pools = std::mem::take(&mut config.founder_pools);
+    config.founder_pools = pools
+        .into_iter()
+        .map(|(mut s, brains)| {
+            transpose(&mut s);
+            (s, brains)
+        })
+        .collect();
 }
 
 /// Exports an archetype as a **reusable base** to `species/saved/<name>.ron` (the local
@@ -1898,40 +1966,74 @@ fn archetype_combo(
 
 /// Live statistics, rendered in the **Analysis** (right) panel by
 /// [`crate::panels::dock`]. Read-only over the world: observation for display, not sim
-/// logic. A two-column `name : value` grid suited to the narrow side panel.
+/// logic. **One column per species** (the scenario's order): a mean over mixed
+/// species (prey + predators) answers nothing, so population, mean reserve and the
+/// gene means are ventilated per species. (The video's aggregate,
+/// [`teemlab::metrics::live_stats`], is a different medium and stays as is.)
 pub(crate) fn stats_section(
     ui: &mut egui::Ui,
-    agents: &Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
+    agents: &Query<(&Reserve, &Genotype, &Species), With<Agent>>,
+    config: &SimConfig,
 ) {
-    // Computation shared with the native Bevy visualizer
-    // ([`teemlab::metrics::live_stats`]) → same numbers in the egui panel and in the
-    // video. Population and gene means cover only the mobile fauna; sessile sources
-    // count only in `food` (otherwise their frozen genes would swamp the fauna's
-    // drift).
-    let stats = metrics::live_stats(agents);
-    egui::Grid::new("live_stats")
-        .num_columns(2)
-        .striped(true)
+    let n = config.archetypes.len();
+    if n == 0 {
+        ui.weak("(no species in the scenario)");
+        return;
+    }
+    // Per-species accumulators: population, reserve sum, per-trait sums.
+    let mut count = vec![0usize; n];
+    let mut reserve = vec![0.0f32; n];
+    let mut traits = vec![vec![0.0f32; TRAITS.len()]; n];
+    for (r, g, species) in agents {
+        let s = species.0 as usize;
+        if s >= n {
+            continue; // a structural edit not yet applied by a Reset
+        }
+        count[s] += 1;
+        reserve[s] += r.current;
+        for (sum, t) in traits[s].iter_mut().zip(TRAITS.iter()) {
+            *sum += (t.get)(g);
+        }
+    }
+    // A dead species shows an em dash, not a fake zero mean.
+    let mean = |sum: f32, population: usize, decimals: usize| {
+        if population > 0 {
+            format!("{:.*}", decimals, sum / population as f32)
+        } else {
+            "—".to_string()
+        }
+    };
+    // Wider scenarios overflow the narrow side panel: the grid scrolls horizontally.
+    egui::ScrollArea::horizontal()
+        .id_salt("live_stats_scroll")
         .show(ui, |ui| {
-            // Values in the monospace family (Departure Mono); labels stay Inter.
-            ui.label("Population");
-            ui.label(egui::RichText::new(stats.population.to_string()).monospace());
-            ui.end_row();
-            ui.label("Food");
-            ui.label(egui::RichText::new(stats.food.to_string()).monospace());
-            ui.end_row();
-            ui.label("Mean reserve");
-            ui.label(egui::RichText::new(format!("{:.0}", stats.mean_reserve)).monospace());
-            ui.end_row();
-            // One row per TRAITS characteristic (the gene means), without a hard-coded
-            // field — adding a gene shows up here automatically.
-            for (t, mean) in TRAITS.iter().zip(&stats.mean_traits) {
-                ui.label(t.name);
-                ui.label(
-                    egui::RichText::new(format!("{:.*}", t.decimals as usize, mean)).monospace(),
-                );
+            egui::Grid::new("live_stats").striped(true).show(ui, |ui| {
+                // Header: the species names, each in its archetype colour.
+                ui.label("");
+                for a in &config.archetypes {
+                    ui.colored_label(archetype_color32(a), &a.name);
+                }
                 ui.end_row();
-            }
+                ui.label("Population");
+                for c in &count {
+                    fonts::value(ui, |ui| ui.label(c.to_string()));
+                }
+                ui.end_row();
+                ui.label("Mean reserve");
+                for (sum, c) in reserve.iter().zip(&count) {
+                    fonts::value(ui, |ui| ui.label(mean(*sum, *c, 0)));
+                }
+                ui.end_row();
+                // One row per TRAITS characteristic (the gene means), without a
+                // hard-coded field — adding a gene shows up here automatically.
+                for (ti, t) in TRAITS.iter().enumerate() {
+                    ui.label(t.name);
+                    for (sums, c) in traits.iter().zip(&count) {
+                        fonts::value(ui, |ui| ui.label(mean(sums[ti], *c, t.decimals as usize)));
+                    }
+                    ui.end_row();
+                }
+            });
         });
 }
 
@@ -2014,6 +2116,82 @@ mod tests {
             (config.relations[1].actor, config.relations[1].target),
             (0, 1)
         );
+    }
+
+    /// Deleting an archetype **remaps every index-keyed table**: relations and field
+    /// relations referencing it are dropped and higher indices slide down; the
+    /// batch's scored species and the transient founder pools follow the same rule.
+    #[test]
+    fn remove_remaps_every_index_keyed_table() {
+        use teemlab::config::FieldRelation;
+        let mut config = SimConfig {
+            archetypes: vec![
+                Archetype::new_agent(0),
+                Archetype::new_agent(1),
+                Archetype::new_food(2),
+            ],
+            relations: vec![rel(0, 1), rel(2, 0)],
+            field_relations: vec![
+                FieldRelation {
+                    species: 1,
+                    ..FieldRelation::default()
+                },
+                FieldRelation {
+                    species: 2,
+                    ..FieldRelation::default()
+                },
+            ],
+            batch: Some(BatchConfig {
+                scored_species: vec![1, 2],
+                ..BatchConfig::default()
+            }),
+            ..SimConfig::default()
+        };
+        config.founder_pools.insert(1, Vec::new());
+        config.founder_pools.insert(2, Vec::new());
+        remove_archetype(&mut config, 1);
+        // Relations referencing 1 are gone; 2→0 slid to 1→0.
+        assert_eq!(config.relations.len(), 1);
+        assert_eq!(
+            (config.relations[0].actor, config.relations[0].target),
+            (1, 0)
+        );
+        // Field relations: species 1's row dropped, species 2's slid to 1.
+        assert_eq!(config.field_relations.len(), 1);
+        assert_eq!(config.field_relations[0].species, 1);
+        // Batch: the removed species is unscored, species 2 slid to 1.
+        assert_eq!(config.batch.as_ref().unwrap().scored_species, vec![1]);
+        // Founder pools re-keyed the same way (species 1's pool dropped, 2 → 1).
+        assert_eq!(config.founder_pools.len(), 1);
+        assert!(config.founder_pools.contains_key(&1));
+    }
+
+    /// Reordering transposes the indices in the field relations, the batch's scored
+    /// species and the founder pools, exactly like in the relations.
+    #[test]
+    fn swap_transposes_field_relations_batch_and_pools() {
+        use teemlab::config::FieldRelation;
+        let mut config = SimConfig {
+            archetypes: vec![
+                Archetype::new_agent(0),
+                Archetype::new_agent(1),
+                Archetype::new_food(2),
+            ],
+            field_relations: vec![FieldRelation {
+                species: 0,
+                ..FieldRelation::default()
+            }],
+            batch: Some(BatchConfig {
+                scored_species: vec![0, 2],
+                ..BatchConfig::default()
+            }),
+            ..SimConfig::default()
+        };
+        config.founder_pools.insert(0, Vec::new());
+        swap_archetypes(&mut config, 0, 1);
+        assert_eq!(config.field_relations[0].species, 1);
+        assert_eq!(config.batch.as_ref().unwrap().scored_species, vec![1, 2]);
+        assert!(config.founder_pools.contains_key(&1));
     }
 
     /// Duplicating adds a clone **at the end** (without shifting the existing indices

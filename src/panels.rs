@@ -132,6 +132,9 @@ pub struct DockState<'w> {
     /// half, beside the curves, when the Breeding toggle is on) reads/drives it.
     /// Bundled here so `dock` stays within Bevy's 16-parameter limit.
     pub breeding: ResMut<'w, BreedingSession>,
+    /// The config the running world was built from — the transport's Reset accents
+    /// itself when the live config diverges from it (cf. `controls::world_diverged`).
+    pub world_baseline: Res<'w, controls::WorldBaseline>,
 }
 
 /// **Observation** state of the right panel, bundled into one [`SystemParam`] so
@@ -172,9 +175,15 @@ impl Default for CentralRect {
 /// window (non-background layer) always counts as UI; on the background layer, the
 /// pointer is over a panel iff it falls **outside** the central rect.
 pub fn pointer_over_ui(ctx: &egui::Context, central: egui::Rect) -> bool {
-    let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) else {
-        return false;
-    };
+    ctx.input(|i| i.pointer.interact_pos())
+        .is_some_and(|pos| pointer_over_ui_at(ctx, pos, central))
+}
+
+/// [`pointer_over_ui`] at an arbitrary position — the **gesture-origin** variant: a
+/// drag belongs to where it *started*, so `camera_navigation` tests the press origin
+/// here rather than the pointer's current position (a pan begun on the sim survives
+/// crossing a panel; one begun on a panel never pans the view).
+pub fn pointer_over_ui_at(ctx: &egui::Context, pos: egui::Pos2, central: egui::Rect) -> bool {
     match ctx.layer_id_at(pos) {
         // A window / menu / popup floating over the sim: always UI.
         Some(layer) if layer.order != egui::Order::Background => true,
@@ -299,7 +308,7 @@ pub fn dock(
     // Observation: selection + auto-follow mode + the sim view's pan/zoom (bundled to
     // keep `dock` within the 16-param system limit — cf. [`ObsParams`]).
     mut obs: ObsParams,
-    stats_agents: Query<(&Reserve, &Genotype, &Brain), With<Agent>>,
+    stats_agents: Query<(&Reserve, &Genotype, &Species), With<Agent>>,
     inspector_agents: Query<
         (
             &Species,
@@ -371,7 +380,15 @@ pub fn dock(
                     let pad = (full_w * 0.5 - layout.ctrl_width * 0.5 - left_w).max(8.0);
                     ui.add_space(pad);
                     let measured = ui
-                        .scope(|ui| controls::controls_section(ui, &mut sim_controls, &mut vtime))
+                        .scope(|ui| {
+                            controls::controls_section(
+                                ui,
+                                &mut sim_controls,
+                                &mut vtime,
+                                &config,
+                                &state.world_baseline,
+                            )
+                        })
                         .response
                         .rect
                         .width();
@@ -518,7 +535,7 @@ pub fn dock(
                 .show(ui, |ui| {
                     egui::CollapsingHeader::new("Live stats")
                         .default_open(false)
-                        .show(ui, |ui| editor::stats_section(ui, &stats_agents));
+                        .show(ui, |ui| editor::stats_section(ui, &stats_agents, &config));
                     // `inspector_section` **returns** any capture request (a derived
                     // archetype); `body_returned` is `Some` only while the header is
                     // expanded, so `flatten` maps the collapsed case to `None`. Applied
@@ -664,6 +681,7 @@ pub fn dock(
                                     &mut state.breeding,
                                     &config,
                                     &mut vtime,
+                                    &mut state.ui_status,
                                 ) {
                                     dashboard::apply_action(
                                         act,

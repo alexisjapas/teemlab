@@ -67,7 +67,10 @@ unsaved edits. Two guardrails protect your work:
 - **Speed** — a logarithmic slider (×0.1 … ×10) with quick presets **×1 ×2 ×5 ×10**
   (the active one stays highlighted).
 - **⟲ Reset** — rebuild the world from the current config (re-spawns, reseeds,
-  re-applies the sim rate, clears the history) — `R`.
+  re-applies the sim rate, clears the history and the selection) — `R`. The button
+  shows **accented** while edits are waiting for a rebuild (the reset-applied
+  fields: arena, seed, counts, bodies, genes, brains, nutrients — relations and
+  colours apply live and never trigger it).
 
 ### View menu (`View ▾`)
 
@@ -96,7 +99,9 @@ panel's **Batch** card.
 Opens a floating window to render the current scenario to a **video**: it drives the
 headless `record` binary as a subprocess (a clean fresh re-render, without this UI),
 encoded via `ffmpeg`. Configure the output file, duration, fps, size, the followed
-agent, and the 9:16 HUD overlay.
+agent, and the 9:16 HUD overlay. The suggested output name is the first free
+`outputs/run-NN.mp4` — a take never overwrites a previous one unless you name it
+so — and a running render can be **cancelled** (the partial file is discarded).
 
 ## World panel (left)
 
@@ -127,7 +132,8 @@ Collapsible cards, ordered by how often you touch them:
 The species list. **Drag** one into the arena to place it, **click** to **select**
 it — which opens the Archetype editor panel — **Delete** (cursor on an entity) to
 remove it. **＋ Agent / ＋ Food** create one; **Duplicate / Move up / Move down /
-Delete** act on the selection. A **✦** marks an archetype carrying *captured weights*.
+Delete** act on the selection — deleting shows a **Restore** button (a one-level
+undo of the deletion). A **✦** marks an archetype carrying *captured weights*.
 The **Species library** exports the selection to `species/*.ron`, imports a copy, or
 resyncs an imported species from its source.
 
@@ -158,8 +164,9 @@ deselecting). The selected archetype, in three cards:
 
 ## Analysis panel (right)
 
-- **Live stats** (collapsed by default) — population, food count, mean reserve, and
-  the mean of each gene, as a grid.
+- **Live stats** (collapsed by default) — a grid with **one column per species**:
+  population, mean reserve, and the mean of each gene (an em dash for a dead
+  species).
 - **Agent inspector** — **click an agent** in the arena to read its state: *Identity*
   (species / brain / generation / age), *Energy*, *Genotype*, *Action* (the brain’s
   output), the **MLP activation graph** for learned brains (nodes coloured by
@@ -185,7 +192,9 @@ docks into the panel's **left half** and the curves keep the right half.
 ## The simulation area
 
 - **Drag** an archetype from the palette to place it; **click** an agent to inspect
-  it; **Delete / Backspace** removes the entity under the cursor.
+  it (the click has a small tolerance, so tiny agents stay selectable, and the
+  cursor shows a hand over a body); **Delete / Backspace** removes the entity under
+  the cursor.
 - **Scroll** zooms toward the cursor, **middle / right drag** pans the view, and
   `Home` recenters it on the whole arena.
 - An overlay shows the **run time** and **speed**, with a prominent **PAUSED** banner

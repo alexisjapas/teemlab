@@ -19,9 +19,11 @@ use crate::fonts::{self, icons};
 use crate::keymap::{self, UiAction};
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Wall};
+use teemlab::config::Archetype;
 use teemlab::ecology::SimRng;
 use teemlab::metrics::History;
 use teemlab::nutrients::{Emits, Fields};
+use teemlab::selection::Selection;
 use teemlab::spawn;
 
 /// Controls state: chosen speed, pending steps, requested reset. The buttons (in
@@ -55,6 +57,103 @@ pub fn pause_at_launch(mut vtime: ResMut<Time<Virtual>>) {
     vtime.pause();
 }
 
+/// The config the **running world** was built from (startup, then every reset). The
+/// transport's Reset button compares the live [`SimConfig`] against it
+/// ([`world_diverged`]) to show, in accent, that edits are waiting for a ⟲ — the
+/// reset-vs-live application timing of the World / archetype editors, made visible
+/// even with the inline hints turned off.
+#[derive(Resource, Default)]
+pub struct WorldBaseline(pub SimConfig);
+
+/// `Startup`: capture the config the initial world was populated from (the CLI
+/// scenario or the empty canvas) as the first [`WorldBaseline`].
+pub fn init_world_baseline(config: Res<SimConfig>, mut baseline: ResMut<WorldBaseline>) {
+    baseline.0 = config.clone();
+}
+
+/// Whether the running world (built from `world` at the last reset) no longer matches
+/// `config` on the **reset-bound** fields — those only applied by a rebuild.
+/// Live-applied fields (relations, field relations, gene bounds, colors) and fields
+/// outside the live world (`batch`) are ignored. The struct is destructured without
+/// `..` so a new `SimConfig` field forces a decision here: reset-bound (compare) or
+/// live (bind to `_`).
+pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
+    let SimConfig {
+        tick_hz,
+        arena_half_extent,
+        archetypes,
+        field_resolution,
+        components,
+        sources,
+        seed,
+        founder_pools,
+        // Live-applied: read from the config every tick/frame, never stale in the world.
+        relations: _,
+        field_relations: _,
+        speed_bounds: _,
+        agility_bounds: _,
+        vision_range_bounds: _,
+        vision_fov_bounds: _,
+        reproduction_threshold_bounds: _,
+        offspring_energy_bounds: _,
+        mutation_rate_bounds: _,
+        base_metabolism_bounds: _,
+        move_cost_bounds: _,
+        vision_rays_bounds: _,
+        photosynthesis_bounds: _,
+        seed_dispersal_bounds: _,
+        brain_cost_bounds: _,
+        agility_cost_bounds: _,
+        act_cost_bounds: _,
+        play_area_color: _,
+        off_game_color: _,
+        // Outside the live world (the breeding orchestrator runs its own copies).
+        batch: _,
+    } = config;
+    *tick_hz != world.tick_hz
+        || *arena_half_extent != world.arena_half_extent
+        || *field_resolution != world.field_resolution
+        || *seed != world.seed
+        || *components != world.components
+        || *sources != world.sources
+        || *founder_pools != world.founder_pools
+        || archetypes.len() != world.archetypes.len()
+        || archetypes
+            .iter()
+            .zip(&world.archetypes)
+            .any(|(a, b)| archetype_diverged(a, b))
+}
+
+/// The archetype half of [`world_diverged`]: everything **baked at spawn** (bodies,
+/// brains, genomes, counts). `name` is display-only and `color` is re-read every
+/// frame by the reserve shading (cf. `visuals::shade_by_reserve`) — both live,
+/// excluded; so are the provenance labels.
+fn archetype_diverged(a: &Archetype, b: &Archetype) -> bool {
+    let Archetype {
+        count,
+        radius,
+        reserve_max,
+        genotype,
+        brain,
+        mutable,
+        captured_brain,
+        anchor,
+        // Live or display-only.
+        name: _,
+        color: _,
+        source: _,
+        captured_from: _,
+    } = a;
+    *count != b.count
+        || *radius != b.radius
+        || *reserve_max != b.reserve_max
+        || *genotype != b.genotype
+        || *brain != b.brain
+        || *mutable != b.mutable
+        || *captured_brain != b.captured_brain
+        || *anchor != b.anchor
+}
+
 /// The simulation controls — pause / step / speed / reset. Only acts on
 /// `Time<Virtual>` (pause/speed) or sets a flag (step, reset). Rendered **centered in
 /// the top bar** (fixed dock) by [`crate::panels::dock`], which handles the panel;
@@ -63,6 +162,8 @@ pub(crate) fn controls_section(
     ui: &mut egui::Ui,
     controls: &mut SimControls,
     vtime: &mut Time<Virtual>,
+    config: &SimConfig,
+    world: &WorldBaseline,
 ) {
     // Play/Pause and Step are **icon-only, fixed-size** buttons: their width no longer
     // changes with the label ("Play" ↔ "Pause"), so the whole group's width is constant
@@ -109,22 +210,38 @@ pub(crate) fn controls_section(
     {
         vtime.set_relative_speed(controls.speed);
     }
-    if ui
-        .add_enabled((controls.speed - 1.0).abs() > 1e-3, egui::Button::new("×1"))
-        .on_hover_text("Reset the speed to ×1")
-        .clicked()
-    {
-        controls.speed = 1.0;
-        vtime.set_relative_speed(1.0);
+    // Quick presets: exact ×1 / ×2 / ×5 / ×10 are hard to land on a logarithmic
+    // slider, and "compare runs at ×5" is a real use. The active one stays highlighted.
+    for &s in &[1.0f32, 2.0, 5.0, 10.0] {
+        let active = (controls.speed - s).abs() < 1e-3;
+        if ui
+            .selectable_label(active, format!("×{s:.0}"))
+            .on_hover_text(format!("Set the speed to ×{s:.0}"))
+            .clicked()
+        {
+            controls.speed = s;
+            vtime.set_relative_speed(s);
+        }
     }
 
     ui.separator();
+    // Accent the Reset while the running world no longer matches the config on the
+    // reset-bound fields (arena, seed, bodies, brains…): those edits are waiting for
+    // a ⟲, and the inline hints saying so may be turned off.
+    let diverged = world_diverged(config, &world.0);
+    let label = if diverged {
+        fonts::icon_label_tinted(icons::RESET, "Reset", crate::theme::ACCENT)
+    } else {
+        fonts::icon_label(icons::RESET, "Reset")
+    };
+    let tip = if diverged {
+        "Rebuild the world from the current config — edits are waiting to be applied"
+    } else {
+        "Rebuild the world from the current config"
+    };
     if ui
-        .button(fonts::icon_label(icons::RESET, "Reset"))
-        .on_hover_text(keymap::tooltip(
-            "Rebuild the world from the current config",
-            UiAction::ResetWorld,
-        ))
+        .button(label)
+        .on_hover_text(keymap::tooltip(tip, UiAction::ResetWorld))
         .clicked()
     {
         controls.reset_requested = true;
@@ -176,6 +293,8 @@ pub fn apply_reset(
     mut fields: ResMut<Fields>,
     mut history: ResMut<History>,
     mut fixed: ResMut<Time<Fixed>>,
+    mut baseline: ResMut<WorldBaseline>,
+    mut selection: ResMut<Selection>,
     simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>)>>,
 ) {
     if !controls.reset_requested {
@@ -197,4 +316,9 @@ pub fn apply_reset(
     // the "(reset)" counterpart of editing them in the World panel.
     *fields = Fields::from_config(&config);
     history.clear();
+    // The rebuilt world now matches the config (the Reset accent clears)…
+    baseline.0 = config.clone();
+    // …and the previous world's selection could only point at a despawned entity —
+    // clear it instead of letting the inspector report a spurious death.
+    selection.0 = None;
 }

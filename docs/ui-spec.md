@@ -128,7 +128,11 @@ memory (live-edited by the panels), running world (rebuilt on Reset).
   highlighted). Changes evolution rate only, never rendering.
 - **⟲ Reset** (`R`) — rebuilds the world from the current config: re-spawns,
   re-seeds, rebuilds the nutrient field/sources, re-applies `tick_hz`, clears the
-  metrics history.
+  metrics history and the agent selection. The button turns **accent** while the
+  running world no longer matches the config on the **reset-bound** fields (arena,
+  seed, counts, bodies, genomes, brains, components, sources) — edits waiting for
+  a rebuild; live-applied fields (relations, field relations, gene bounds, colors)
+  never trigger it (`controls::world_diverged`).
 - Buttons write into `SimControls`; `drive_steps` / `apply_reset` act in
   `PreUpdate` before the fixed loop (the egui pass is too late for the same frame).
 
@@ -158,7 +162,10 @@ right-to-left in code, Export first).
   (`ClearColor`, editable in Appearance).
 - **User pan/zoom layered on top** of the fit: scroll = zoom toward the cursor,
   middle/right drag = pan, `Home` = recenter (zoom 1, arena centered). Zoom math
-  and framing share one world-units-per-point definition.
+  and framing share one world-units-per-point definition. The pan gesture belongs
+  to where it **started** (press origin): begun on the sim it survives crossing a
+  panel, begun on a panel it never pans; the wheel is gated at the pointer's
+  current position (it has no origin).
 
 ### Overlay (`panels::central_overlay`)
 
@@ -173,7 +180,9 @@ right-to-left in code, Export first).
 ### Interactions (`inspector.rs`, `editor.rs`, keymap `MOUSE`)
 
 - **Click** an agent → select + inspect (ring + fan of vision rays rendered by
-  `SelectionRenderPlugin`); click the void → deselect.
+  `SelectionRenderPlugin`); click the void → deselect. Picking has a **~6-px
+  screen-space slack** so small bodies stay clickable at any zoom, and the cursor
+  becomes a pointing hand over a body.
 - **Drag** an archetype from the list into the arena → place one entity (each
   hand-placed brain gets a distinct RNG stream). A drop on the greyed off-game
   margin is clamped inside the walls (body radius + clearance).
@@ -210,7 +219,11 @@ The scenario as a whole. Collapsible cards, ordered by touch frequency:
 
 **Archetypes** list: drag to place; click to select (opens the detail editor);
 **＋ Agent / ＋ Food** create; **Duplicate / Move up / Move down / Delete** act on
-the selection; a **✦** marks an archetype carrying captured MLP weights. The
+the selection; a **✦** marks an archetype carrying captured MLP weights. Delete
+keeps a **one-level undo** (a `Restore ‹name›` button re-installs the exact
+pre-delete config snapshot; the slot is cleared on scenario load). Delete/reorder
+remap **every index-keyed table**: relations, field relations, the batch's scored
+species and the transient founder pools. The
 **Species library** exports the selection to `species/*.ron`, imports a copy, and
 can resync an imported species from its source file. Edits write **directly** into
 `SimConfig.archetypes` (no copy/sync pass); the archetype's index is its identity.
@@ -238,8 +251,10 @@ single-column mode); closes via **✕** or deselection. Three cards:
 
 Inside an **Observation** collapsible:
 
-- **Live stats** (collapsed by default) — population, food count, mean reserve,
-  per-gene means, as a grid.
+- **Live stats** (collapsed by default) — a grid with **one column per species**
+  (name in the archetype colour): population, mean reserve and per-gene means (an
+  em dash for a dead species). Scrolls horizontally on wide scenarios. The video's
+  aggregate (`metrics::live_stats`) is a separate medium and stays aggregate.
 - **Agent inspector** — for the clicked agent, read-only: *Identity* (species,
   brain, generation, age), *Energy*, *Genotype*, *Action* (the brain's output,
   including the eat/attack intent), the **MLP activation graph** for learned brains
@@ -277,9 +292,11 @@ Inside an **Observation** collapsible:
   `Orchestrator` over isolated headless worlds; the UI reads the shared
   (status + reports) state through brief per-frame locks (the worker only locks
   between generations). The **live sim world is paused** when a run starts. Stop is
-  graceful: after the in-flight generation. A scenario load **forgets the session**
-  (history + any in-flight worker, detached): reports index species of the scenario
-  that bred them.
+  graceful: after the in-flight generation. The Running→Done/Stopped **edge posts a
+  status-line bridge** (browse the fitness curve / Replay) — the live world stays
+  paused and the central chip alone would not say what to do next. A scenario load
+  **forgets the session** (history + any in-flight worker, detached): reports index
+  species of the scenario that bred them.
 - **Contents**, top to bottom:
   - config hint (the batch config is edited in the World panel), status +
     **progress** (generations completed / total), **Run / Stop**;
@@ -311,7 +328,11 @@ Inside an **Observation** collapsible:
   included): output file, duration, fps, size, the auto-selected/followed agent
   (roll modes: Off / Sticky / Cycle / Active / Species tour / Eldest + interval),
   and the 9:16 native-HUD overlay (+ rotation interval). An `Update` system
-  watches process exit; outcome lands in the status line. `record` is looked up
+  watches process exit; outcome lands in the status line. The default output is
+  the **first free `outputs/run-NN.mp4`** — advanced after each completed take
+  while the field is untouched, so the default flow never overwrites a render (a
+  hand-typed name is left alone). **Cancel** kills the subprocess and discards the
+  partial file. `record` is looked up
   next to the current executable (hence the `play` wrapper builds all binaries);
   `ffmpeg` is an external runtime dependency — a missing one must fail with a
   clear message.
@@ -367,6 +388,7 @@ Shortcuts are ignored while a text field has keyboard focus.
 | State | Surface |
 | --- | --- |
 | Unsaved edits | amber `*` by the file name (top strip) |
+| Reset-bound edits not yet in the running world | accented ⟲ Reset in the transport |
 | Paused | accent chip in the sim area; Play button shows ▶ |
 | Speed ≠ ×1 | `· ×N` suffix on the time read-out; highlighted preset |
 | Empty arena | centered faint hint (two variants, §5) |

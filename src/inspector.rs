@@ -26,30 +26,40 @@ use crate::fonts::{self, icons};
 use crate::help;
 
 /// **World** position of the cursor in the play area (single camera and window),
-/// if it exists. Shared by the inspector's picking and the deletion: the
-/// `viewport_to_world_2d` accounts for the centered sim's offset (cf.
-/// `main::set_sim_camera`), so the window cursor remains the correct input.
+/// if it exists, plus the world size of a **~6-pixel screen slack** — the picking
+/// tolerance that keeps a small body clickable at any zoom. Shared by the
+/// inspector's picking and the deletion: the `viewport_to_world_2d` accounts for
+/// the centered sim's offset (cf. `main::set_sim_camera`), so the window cursor
+/// remains the correct input.
 fn pointer_world(
     cameras: &Query<(&Camera, &GlobalTransform)>,
     windows: &Query<&Window>,
-) -> Option<Vec2> {
+) -> Option<(Vec2, f32)> {
     let (camera, cam_tf) = cameras.single().ok()?;
     let window = windows.single().ok()?;
     let cursor = window.cursor_position()?;
-    camera.viewport_to_world_2d(cam_tf, cursor).ok()
+    let world = camera.viewport_to_world_2d(cam_tf, cursor).ok()?;
+    // A probe 6 px to the side gives the world units per 6 px (the camera is 2D
+    // orthographic: the scale is uniform, one probe is enough).
+    let side = camera
+        .viewport_to_world_2d(cam_tf, cursor + Vec2::X * 6.0)
+        .ok()?;
+    Some((world, world.distance(side)))
 }
 
-/// The nearest entity (body) whose radius **contains** `world`, if any. Same
-/// criterion for selecting (inspector) and deleting — hence the sharing. `None` =
-/// cursor in the void.
+/// The nearest entity (body) whose radius — plus `slack`, the screen-space picking
+/// tolerance in world units (cf. [`pointer_world`]) — **contains** `world`, if any.
+/// Same criterion for selecting (inspector) and deleting — hence the sharing.
+/// `None` = cursor in the void.
 fn body_at<'a>(
     world: Vec2,
+    slack: f32,
     bodies: impl IntoIterator<Item = (Entity, &'a Transform, &'a Radius)>,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
     for (entity, transform, radius) in bodies {
         let d = transform.translation.truncate().distance(world);
-        if d <= radius.0 && best.is_none_or(|(_, bd)| d < bd) {
+        if d <= radius.0 + slack && best.is_none_or(|(_, bd)| d < bd) {
             best = Some((entity, d));
         }
     }
@@ -70,18 +80,23 @@ pub fn pick_agent(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     // We do not pick during an archetype drag-and-drop (editor), nor when the
-    // click targets an egui panel, nor if there is no click at all.
-    if palette.dragging.is_some()
-        || !ctx.input(|i| i.pointer.any_click())
-        || crate::panels::pointer_over_ui(ctx, central.0)
-    {
+    // pointer targets an egui panel.
+    if palette.dragging.is_some() || crate::panels::pointer_over_ui(ctx, central.0) {
         return Ok(());
     }
-    let Some(world) = pointer_world(&cameras, &windows) else {
+    let Some((world, slack)) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
-    // The nearest agent whose body contains the click; otherwise (void) → None.
-    selection.0 = body_at(world, agents);
+    // The nearest agent whose body contains the cursor. Hover feedback first: a
+    // clickable body shows a pointing hand *before* the click.
+    let hovered = body_at(world, slack, agents);
+    if hovered.is_some() {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if ctx.input(|i| i.pointer.any_click()) {
+        // Click on a body → select it; in the void → deselect.
+        selection.0 = hovered;
+    }
     Ok(())
 }
 
@@ -120,12 +135,12 @@ pub fn delete_under_cursor(
     {
         return Ok(());
     }
-    let Some(world) = pointer_world(&cameras, &windows) else {
+    let Some((world, slack)) = pointer_world(&cameras, &windows) else {
         return Ok(());
     };
     // The nearest body whose radius contains the cursor (same criterion as the
     // inspector's picking).
-    if let Some(entity) = body_at(world, bodies) {
+    if let Some(entity) = body_at(world, slack, bodies) {
         commands.entity(entity).despawn();
         if selection.0 == Some(entity) {
             selection.0 = None; // do not keep a phantom selection.

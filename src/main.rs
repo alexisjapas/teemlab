@@ -71,6 +71,9 @@ fn main() {
         // windowed build, bevy_egui renders egui through the sim camera, so
         // recomposing the view would break the UI (cf. memory).
         .init_resource::<controls::SimControls>()
+        // Snapshot of the config the running world was built from (startup + resets):
+        // the transport's Reset accents itself when the live config diverges from it.
+        .init_resource::<controls::WorldBaseline>()
         .init_resource::<recorder::RecorderPanel>()
         // Visibility of the toggleable floating surfaces (Export / Breeding / shortcuts)
         // and the UI preferences (inline help) — the one convention for "what's open".
@@ -99,6 +102,7 @@ fn main() {
                 editor::build_palette,
                 runs::build_runs_panel,
                 controls::pause_at_launch,
+                controls::init_world_baseline,
             ),
         )
         // TIME CONTROL / RESET / RUNS (items 11, 13) — no sim logic: we set the
@@ -259,21 +263,19 @@ fn camera_navigation(
     if rect.width() < 1.0 || rect.height() < 1.0 || arena <= 0.0 {
         return Ok(());
     }
-    // Only act when the pointer is over the sim, not over a docked panel/window.
-    if panels::pointer_over_ui(ctx, rect) {
-        return Ok(());
-    }
-
     let s_eff = base_scale(rect, arena) / view.zoom; // world units per egui point now
     let c = rect.center();
 
-    // SCROLL → zoom, anchored on the cursor (the world point under it stays put).
+    // SCROLL → zoom, anchored on the cursor (the world point under it stays put),
+    // gated at the pointer's **current** position (a wheel has no gesture origin):
+    // scrolling a panel's list must not zoom the world.
     // The mapping (derivation in `set_sim_camera`): a viewport point maps to
     // `look_at + k * s_eff`, with `k = (cursor.x - c.x, c.y - cursor.y)`. Keeping
     // that world point fixed across a scale change s0→s1 means
     // `look_at += k * (s0 - s1)`.
     let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
     if scroll.abs() > f32::EPSILON
+        && !panels::pointer_over_ui(ctx, rect)
         && let Some(p) = ctx.input(|i| i.pointer.hover_pos())
     {
         let new_zoom = (view.zoom * (scroll * 0.0015).exp())
@@ -285,14 +287,19 @@ fn camera_navigation(
     }
 
     // MIDDLE / RIGHT drag → pan. The world point under the cursor follows it:
-    // `look_at += (-Δx, Δy) * s_eff` (screen Y is down, world Y up).
-    let (panning, delta) = ctx.input(|i| {
+    // `look_at += (-Δx, Δy) * s_eff` (screen Y is down, world Y up). The gesture
+    // belongs to where it **started** (`press_origin`): a drag begun on the sim keeps
+    // panning across a panel, and one begun on a panel (a slider, a text selection)
+    // never pans the view.
+    let (panning, delta, origin) = ctx.input(|i| {
         (
             i.pointer.middle_down() || i.pointer.secondary_down(),
             i.pointer.delta(),
+            i.pointer.press_origin(),
         )
     });
-    if panning && delta != egui::Vec2::ZERO {
+    let origin_on_sim = origin.is_some_and(|o| !panels::pointer_over_ui_at(ctx, o, rect));
+    if panning && origin_on_sim && delta != egui::Vec2::ZERO {
         view.look_at += Vec2::new(-delta.x, delta.y) * s_eff;
     }
     Ok(())
