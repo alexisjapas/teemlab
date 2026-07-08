@@ -10,7 +10,7 @@
 //! - the **running world** — rebuilt from the config only on a reset.
 //!
 //! The top-bar **Scenario menu** (New / Open / Revert / Save / Save As) drives the
-//! first two; the bottom-bar **Reset** rebuilds the third. A **`●` marker** next to
+//! first two; the transport's **Reset** rebuilds the third. A **`*` marker** next to
 //! the file name shows when the config differs from the last load/save (`dirty`,
 //! derived by comparing against a [`RunsPanel::baseline`] snapshot — every config type
 //! derives `PartialEq`). Destructive navigation (New / Open / Revert) **confirms**

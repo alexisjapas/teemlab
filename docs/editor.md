@@ -16,27 +16,31 @@ command line), so you can place, edit and inspect before launching.
 ## Layout
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Scenario ▾  file *          ▶ Play ⏭ Step  ×1 ×2 …      View ▾   ⏺ Export… │  top strip
-├───────────────┬───────────────────┬───────────────────┬───────────────────┤
-│   WORLD       │  ARCHETYPE EDITOR │                   │     ANALYSIS      │
-│               │  (opens on click) │                   │                   │
-│  ▾ World      │  Body             │   the simulation  │  ▸ Live stats     │
-│  ▾ Archetypes │  Genes · Brain    │  (t = …s   PAUSED)│  Agent inspector  │
-│               │            ✕      │                   │                   │
-├───────────────┴───────────────────┴───────────────────┴───────────────────┤
-│  Evolution — curves  (population per species · gene drift)                  │
-└───────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│ Scenario ▾ file *   ▶ Play ⏭ Step ×1 ×2 … ⟲ Reset   View ▾ Help ▾ [Breeding] ⏺ Export… │
+├───────────────┬───────────────────┬────────────────────┬───────────────────────┤
+│   WORLD       │  ARCHETYPE EDITOR │                    │       ANALYSIS        │
+│               │  (opens on click) │                    │                       │
+│  ▾ World      │  Body             │   the simulation   │    ▸ Live stats       │
+│  ▾ Archetypes │  Genes · Brain    │  (t = …s   PAUSED) │    Agent inspector    │
+│               │            ✕      │                    │                       │
+├───────────────┴───────────────────┴────────────────────┴───────────────────────┤
+│  status line · [Breeding dashboard |] Evolution — curves (population · drift)  │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 A **master / detail** split. The **World** panel (left) holds the scenario as a
 whole — the world parameters and the **Archetypes** list. Clicking an archetype opens
 the **Archetype editor** in a second column (to its right) — the one species you are
 editing; closing it (✕, or deselecting) widens the simulation. **Analysis** (the state
-you read) is on the **right**, the evolution **curves** full-width at the bottom, and
-the **simulation** fills the centre. The side panels have a **fixed width** (equal, so
-the sim stays centred) and are **not resizable** — the width is chosen to fit their
-content; the curves panel auto-sizes to its content height.
+you read) is on the **right**, the evolution **curves** at the bottom (spanning the
+central width the side panels leave free), and the **simulation** fills the centre.
+The side panels are **resizable**, within a range that always reserves a **minimum
+width for the sim** — a drag on a separator stops before the simulation shrinks below
+it. On a **narrow window** the Archetype editor **folds into** the left panel (a
+single column: the detail replaces the master in place) instead of opening a second
+one. The bottom panel is **height-resizable**; whatever the panels' size, the
+simulation stays framed and fully visible in the central area they leave free.
 
 ## Top strip
 
@@ -45,12 +49,13 @@ content; the curves panel auto-sizes to its content height.
 - **New (empty)** — start over from a blank canvas.
 - **Open ▸** — the `scenarios/*.ron` list (refreshed each time the menu opens), plus
   an *Open path* field for an arbitrary file.
+- **Revert** — reload the current file from disk, discarding the edits.
 - **Save** / **Save As…** — write the current config to RON.
 
 Next to the menu, the current file name shows with an amber **`*`** when there are
 unsaved edits. Two guardrails protect your work:
 
-- **New / Open** ask before **discarding unsaved edits**.
+- **New / Open / Revert** ask before **discarding unsaved edits**.
 - **Save** never silently clobbers a file you did not create this session (a bundled
   scenario): it offers **“Save a copy”** instead — RON serialization drops the file’s
   comments and compact form. **Save As** onto an existing name also asks first.
@@ -66,10 +71,25 @@ unsaved edits. Two guardrails protect your work:
 
 ### View menu (`View ▾`)
 
-Toggles the render **layers** (the agents, and the nutrient-field **heatmap(s)**,
-shown by default) and **Inline help** — the explanatory hints in the panels, on by
-default; turn it off to declutter once you know the tool. View concerns only — never
-saved with the scenario.
+Toggles the render **layers**: the agents, and the nutrient-field **heatmap(s)** —
+shown by default in the windowed build. View concerns only — never saved with the
+scenario.
+
+### Help menu (`Help ▾`)
+
+**Inline help** — the explanatory hints in the panels, on by default; turn it off to
+declutter once you know the tool — and the **keyboard-shortcuts cheatsheet**
+(`?` / `F1`).
+
+### Breeding (toggle)
+
+Shown **only when the scenario carries a `batch` block** (the generational regime,
+e.g. `13_mlp_breed` / `15_red_queen`); on by default when available. Docks the
+**breeding dashboard** into the bottom panel's **left half**, beside the curves —
+Run/Stop + progress, the generation navigator (click the fitness graph, **Replay**),
+the per-match metrics table and the leaderboard (inspect an MLP, save to the
+library). Its configuration (generations, cohort, fitness…) is edited in the World
+panel's **Batch** card.
 
 ### Export (`⏺ Export…`)
 
@@ -147,21 +167,32 @@ deselecting). The selected archetype, in three cards:
   **💾 Capture as archetype** freezes this agent’s **evolved genome and concrete
   weights** into a new reusable archetype (the original species is untouched).
 
-## Curves (bottom)
+## Bottom panel — status line + curves
+
+The panel opens with the unified **status line**: every transient feedback (scenario
+save/load, species import/export, capture, recording, breeding actions) lands here.
+Info and success messages fade after a few seconds; an **error persists** until
+replaced. Below it, the curves:
 
 - **Population per species** and **Gene drift** — the latter shows only the **mutable**
   genes (a frozen gene stays flat and would just clutter the plot). Light grid, a time
   axis; **hover** for a vertical cursor, a dot on each curve and a tooltip with the
   time and every value. **↻ Clear** resets the sampled history.
 
+When the **Breeding** toggle is on (a `batch` scenario), the **breeding dashboard**
+docks into the panel's **left half** and the curves keep the right half.
+
 ## The simulation area
 
 - **Drag** an archetype from the palette to place it; **click** an agent to inspect
   it; **Delete / Backspace** removes the entity under the cursor.
+- **Scroll** zooms toward the cursor, **middle / right drag** pans the view, and
+  `Home` recenters it on the whole arena.
 - An overlay shows the **run time** and **speed**, with a prominent **PAUSED** banner
   when frozen.
-- The whole square arena is always **centred and fully visible** — the camera fits it
-  to whatever central area the panels leave free; the off-arena margin is greyed.
+- The whole square arena starts **centred and fully visible** — the camera fits it
+  to whatever central area the panels leave free (pan/zoom layer on top of that
+  framing); the off-arena margin is greyed.
 
 ## Keyboard shortcuts
 
@@ -170,6 +201,11 @@ deselecting). The selected archetype, in three cards:
 | `Space`            | Play / pause                        |
 | `→`                | Step one tick (when paused)         |
 | `R`                | Reset the world                     |
+| `Home`             | Recenter the view                   |
 | `Delete` / `Backspace` | Remove the entity under the cursor |
+| `?` / `F1`         | Keyboard-shortcuts cheatsheet       |
+
+Mouse: **scroll** zooms toward the cursor; **middle / right drag** pans; **click**
+selects an agent (the void deselects); **drag** from Archetypes places an entity.
 
 Shortcuts are ignored while a text field (a path, a name…) has keyboard focus.

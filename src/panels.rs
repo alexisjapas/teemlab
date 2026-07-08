@@ -395,8 +395,8 @@ pub fn dock(
                             if ui
                                 .selectable_label(on, fonts::icon_label(icons::SPARKLE, "Breeding"))
                                 .on_hover_text(
-                                    "Show the breeding dashboard in the right panel (replaces \
-                                     Analysis while on).",
+                                    "Dock the breeding dashboard in the bottom panel, beside \
+                                     the curves.",
                                 )
                                 .clicked()
                             {

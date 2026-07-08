@@ -43,8 +43,9 @@ Design and implementation order: [`ROADMAP.md`](ROADMAP.md).
 **"Everything is an entity" (done).** The species (`Archetype`) is the **central**
 data of the scenario: body + brain + genes + count, and its index is its identity.
 Complete editor — create / duplicate / reorder / delete, **species library**
-reusable (`species/*.ron`, import by copy + resynchronization), and all the world
-parameters in the UI (including `tick_hz` and the gene bounds). **Evolutionary
+reusable (`species/*.ron`, import by copy + resynchronization), and the world
+parameters in the UI (including the gene bounds; `tick_hz` stays a scenario-file
+parameter, re-applied on Reset). **Evolutionary
 flora**: a sessile plant lives on photosynthesis, seeds itself locally and
 self-limits through intraspecific competition — the interaction primitive reused,
 without any new mechanism. And since **Phase 3b, the special `Food` type is
