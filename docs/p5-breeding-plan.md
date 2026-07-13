@@ -356,7 +356,16 @@ variant = `mlp_evolved` reaching (then beating) parity.
   stable training ground — immortal food + longer `match_ticks` (the `train`-bin regime), which
   §7 identifies as the real lever for a longer selection window. A **decisive control**
   (captured `mlp_bred` vs a wander control, seed-averaged — the `tests/mlp.rs` pattern) would
-  settle "better forager than naïve?" definitively; not yet run.
+  settle "better forager than naïve?" definitively. **Run 2026-07-13** (`tests/bred_control.rs`,
+  an `#[ignore]`d experiment driver; the bred archetype spliced into the `07_mlp_brain` arena as
+  `scenarios/saved/mlp_bred_control.ron`): mean subject/wander ratio **naive 0.30 · trained 0.99
+  · bred 1.02** over the 5 `tests/mlp.rs` seeds — the bred individual forages **3.4× better than
+  a naive founder** (no seed overlap: worst bred seed 0.60 > best naive seed 0.40) and matches
+  the `train`-bin pipeline (1.03×). **Verdict: the loop's output is competent — the declining
+  cohort mean is the *metric* (confounds above), not the breeding.** Both pipelines sit at the
+  same §7 parity ceiling, so steps (1)-(2) are about making the fitness signal *legible*, and
+  step (3) (a longer selection window) is the lever for pushing *past* parity, not for fixing
+  the loop.
 
 ---
 
