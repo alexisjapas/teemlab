@@ -16,6 +16,30 @@
 A living summary; the per-item detail lives in §8 (implementation order) and the
 open work in §9.
 
+**Direction (resolved 2026-07-14) — this is a research bench, not a game.** The
+project once carried two goals: (1) train competent behaviour for game mobs, and
+(2) study emergence — non-collapsing biomes, genetic pathways, the factors of
+functional ecosystems. These pull the design in opposite directions (controllability
+and fast convergence vs. openness and minimal priors), and trying to serve both is
+the source of the felt scope-creep. **Goal 2 is primary; goal 1 is a downstream
+beneficiary, never a design driver** (a competent mob falls *out of* a functional
+ecosystem; the reverse teaches nothing). This only makes explicit what the
+architecture already committed to — "an experiments platform, not a game" — so two
+consequences bind every future addition:
+
+- **The single filter for scope.** For any proposed feature, ask: *does it help
+  understand why an ecosystem holds or collapses?* If not — if it only buys mob
+  controllability or spectacle — it waits. The honest deliverable is *falsifiable
+  knowledge* (a hypothesis with a criterion that could disprove it, a control group,
+  a curve), not an impressive-looking run.
+- **"Fewest arbitrary values" is now methodology, not taste.** A constant baked into
+  the *engine* is a hidden confound that pollutes a conclusion; a constant that lives
+  in the *scenario* (RON) is an experimental parameter. So the discipline is
+  **constant-as-data, not constant-as-assumption** — and under that rule many priced
+  thresholds are fine, as long as they descend into the scenario. This is exactly the
+  form/value split of **SIM Law 7**: "no free beneficial trait" is the inviolable
+  *form*; the specific cost *value* is scenario data.
+
 **Done.**
 
 - **P0–P3** (foundations, playable loop, interface, video capture): done.
