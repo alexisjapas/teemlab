@@ -206,3 +206,30 @@ actually needs.
 
 **Anchored in.** `Cargo.toml` (`version`); `.github/workflows/release.yml`
 (`version-check` guard, the `dist` build matrix); `Cargo.toml` `[profile.dist]`.
+
+---
+
+## Rule 12 — The scope filter: this is a research bench, not a game
+
+teemlab exists to **study emergence** — non-collapsing biomes, genetic pathways, the
+factors of functional ecosystems (ROADMAP §0). Before adding any feature, apply the
+one filter: **does it help understand why an ecosystem holds or collapses?** If it
+only buys mob controllability, faster convergence, or visual spectacle, it waits —
+those serve the demoted game-mob goal, which is a downstream beneficiary, never a
+design driver. The deliverable of a feature is **falsifiable knowledge** — a
+hypothesis with a criterion that could disprove it, a control, a curve (Rules 4 and
+8) — not an impressive-looking run.
+
+This is also why "fewest arbitrary values" is methodology, not taste: a constant
+baked into the *engine* is a hidden confound that pollutes a conclusion, whereas one
+that lives in the *scenario* (RON) is an experimental parameter. Prefer
+**constant-as-data over constant-as-assumption** — the form/value split of SIM Law 7
+(the "no free trait" *form* is inviolable; the cost *value* is scenario data), and
+the operational echo of Rule 5 (extend the data, not the drivers).
+
+**Why.** The two-goal tension (research vs. game mobs) was the source of felt
+scope-creep; naming the primary goal turns "should I build this?" from taste into a
+test. A bench that impresses without falsifying anything is decoration, not science.
+
+**Anchored in.** `ROADMAP.md` §0 (the resolved direction, 2026-07-14); [SIM Law
+7](CONSTITUTION-SIM.md) (priced traits); Rules 4, 5, 8 above.
