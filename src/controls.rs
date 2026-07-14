@@ -104,6 +104,7 @@ pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
         brain_cost_bounds: _,
         act_cost_bounds: _,
         cost_law: _,
+        predation: _,
         play_area_color: _,
         off_game_color: _,
         // Outside the live world (the breeding orchestrator runs its own copies).

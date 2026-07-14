@@ -98,6 +98,9 @@ pub struct SimConfig {
     /// `base_metabolism` / `move_cost` / `agility_cost` genes — the pricing of body
     /// size that makes emergent size-dominance (stage A4) obey Law 7.
     pub cost_law: CostLaw,
+    /// **Emergent predation** knobs (size margin, bite range & rate) — the implicit
+    /// trophic filter replacing the relation table (`docs/emergent-trophics.md` §3).
+    pub predation: Predation,
     /// Background color of the **play area** (inside of the arena), sRGB `[r, g, b]`
     /// in `[0, 1]`. A **presentation** setting (windowed rendering only, cf.
     /// `main::draw_play_area`); lives in the scenario to be saved/loaded with it.
@@ -181,6 +184,38 @@ impl CostLaw {
             maintenance: 0.0,
             locomotion: 0.0,
             maneuver: 0.0,
+        }
+    }
+}
+
+/// **Emergent predation** parameters (`docs/emergent-trophics.md` §3): the world-level
+/// knobs of the *implicit* trophic filter that replaces the authored relation table
+/// (amending SIM Law 8). An actor can eat a target when it **dominates** it in size (by
+/// [`size_margin`](Self::size_margin)) **and** the target is **digestible** (holds a
+/// component the actor needs — [`SimConfig::digestibility`]); the bite then transfers
+/// reserve at `rate` within `range`. The former per-relation `transfer`/`rate`/`range`
+/// become these scalars — predation is always a transfer; non-nutritional combat is
+/// removed, awaiting a dedicated aggression mechanism (§9).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Predation {
+    /// Size advantage the actor needs: it preys on a target only if `actor_radius ≥
+    /// target_radius · (1 + size_margin)` (the actor is `(1+margin)×` larger). `0` → the
+    /// actor need only be `≥` the prey.
+    pub size_margin: f32,
+    /// Reach as a **surface-to-surface clearance** (world units): the actor bites while
+    /// the gap between the two bodies is `≤ range` (`0` = contact).
+    pub range: f32,
+    /// Reserve transferred from prey to actor **per second** on a bite.
+    pub rate: f32,
+}
+
+impl Default for Predation {
+    fn default() -> Self {
+        Self {
+            size_margin: 0.1,
+            range: 20.0,
+            rate: 40.0,
         }
     }
 }
@@ -873,6 +908,7 @@ impl Default for SimConfig {
                 max: 10.0,
             },
             cost_law: CostLaw::default(),
+            predation: Predation::default(),
             // Default backgrounds: dark play area, off-game one notch lighter —
             // enough to delimit the arena without any zone looking empty. (Reuses
             // the tints previously hard-coded in `main`.)
@@ -980,6 +1016,42 @@ impl SimConfig {
     /// until a scenario declares a `need` → byte-identical.
     pub fn needs_of(&self, species: u16) -> Vec<f32> {
         self.per_component(species, |f| f.need)
+    }
+
+    /// **Digestibility** of `prey` for `actor` ∈ `[0, 1]` — the fraction of the
+    /// components `actor` **needs** ([`needs_of`](Self::needs_of)) that `prey`'s species
+    /// can **hold** ([`capacities_of`](Self::capacities_of)). `0` when the actor needs
+    /// nothing, or the prey holds none of it. The nutritional half of the emergent
+    /// target filter (`docs/emergent-trophics.md` §3.2); it also grades the brain's
+    /// *target* channel (how appetising a prey is). Species-level (config only) — the
+    /// *amount* actually transferred on a bite is the prey entity's live store (cf.
+    /// [`crate::interaction`]).
+    pub fn digestibility(&self, actor: u16, prey: u16) -> f32 {
+        let need = self.needs_of(actor);
+        let cap = self.capacities_of(prey);
+        let needed = need.iter().filter(|&&n| n > 0.0).count();
+        if needed == 0 {
+            return 0.0;
+        }
+        let met = need
+            .iter()
+            .enumerate()
+            .filter(|&(c, &n)| n > 0.0 && cap.get(c).copied().unwrap_or(0.0) > 0.0)
+            .count();
+        met as f32 / needed as f32
+    }
+
+    /// `true` if archetype `actor` can **prey on** `target` — the **emergent** target
+    /// filter (§3, amending SIM Law 8): the actor must **dominate** it in size (by
+    /// [`Predation::size_margin`]) **and** the target must be **digestible**
+    /// ([`digestibility`](Self::digestibility) `> 0`). Replaces the authored relation
+    /// table; no cannibalism (`actor == target`). Perception derives from it: a *target*
+    /// is what the actor can eat, a *threat* is what can eat the actor (the inverse).
+    pub fn can_eat(&self, actor: u16, target: u16) -> bool {
+        actor != target
+            && self.agent_radius_of(actor)
+                >= self.agent_radius_of(target) * (1.0 + self.predation.size_margin)
+            && self.digestibility(actor, target) > 0.0
     }
 
     /// The components `species` **senses** (a [`FieldRelation`] with `sense: true`),
