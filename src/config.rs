@@ -665,6 +665,13 @@ pub struct FieldRelation {
     pub affect: f32,
     /// Store spent per child — the **reproduction gate** (`0` = no gate).
     pub repro_cost: f32,
+    /// **Nutritional requirement**: how much of this component the species needs (`0` =
+    /// does not need it) — its *diet* in component terms. Consumed by **emergent
+    /// targeting** (`docs/emergent-trophics.md` §3.2): an actor finds a target
+    /// *digestible* when the target's stores hold the components the actor needs, so
+    /// prey/predator roles emerge from `need` ∩ content instead of an authored table.
+    /// Data only until stage A4 wires digestibility; default `0` → byte-identical.
+    pub need: f32,
 }
 
 impl Default for FieldRelation {
@@ -679,6 +686,7 @@ impl Default for FieldRelation {
             sense: false,
             affect: 0.0,
             repro_cost: 0.0,
+            need: 0.0,
         }
     }
 }
@@ -899,18 +907,15 @@ impl SimConfig {
             .unwrap_or((0.0, 0.0, 0.0))
     }
 
-    /// The per-component **store capacities** of `species` — the `capacity` verb of its
-    /// [`FieldRelation`] rows, one entry per scenario [`component`](Self::components)
-    /// (`0` where it has none). Sizes the agent's
-    /// [`Nutrients`](crate::nutrients::Nutrients) store at spawn. A single-axis scenario
-    /// (capacity only on component `0`) yields `[cap, 0, …]` → byte-identical with the
-    /// former single `max` from [`nutrient_of`](Self::nutrient_of).
-    ///
-    /// The store spans **at least** every component the species' relations reference, so
-    /// a store can exist without a declared field (a nutrient held but never absorbed —
-    /// e.g. the trophic-transfer test's forager, which cannot absorb). For a well-formed
-    /// scenario (every referenced component declared) this equals `components.len()`.
-    pub fn capacities_of(&self, species: u16) -> Vec<f32> {
+    /// A **per-component vector** for `species`, reading `verb` off each of its
+    /// [`FieldRelation`] rows (`0` where it has no row for that component). The vector
+    /// spans **at least** every component the species' relations reference, so a store
+    /// or a diet can exist without a declared field (a component held/needed but never
+    /// absorbed — e.g. the trophic-transfer test's non-absorbing forager). For a
+    /// well-formed scenario (every referenced component declared) its length equals
+    /// `components.len()`. Backs [`capacities_of`](Self::capacities_of) and
+    /// [`needs_of`](Self::needs_of).
+    fn per_component(&self, species: u16, verb: impl Fn(&FieldRelation) -> f32) -> Vec<f32> {
         let n = self.components.len().max(
             self.field_relations
                 .iter()
@@ -924,10 +929,26 @@ impl SimConfig {
                 self.field_relations
                     .iter()
                     .find(|f| f.species == species && f.component == c)
-                    .map(|f| f.capacity)
+                    .map(&verb)
                     .unwrap_or(0.0)
             })
             .collect()
+    }
+
+    /// The per-component **store capacities** of `species` (the `capacity` verb). Sizes
+    /// the agent's [`Nutrients`](crate::nutrients::Nutrients) store at spawn; a
+    /// single-axis scenario (capacity only on component `0`) yields `[cap, 0, …]` →
+    /// byte-identical with the former single `max` from [`nutrient_of`](Self::nutrient_of).
+    pub fn capacities_of(&self, species: u16) -> Vec<f32> {
+        self.per_component(species, |f| f.capacity)
+    }
+
+    /// The per-component **nutritional requirements** of `species` (the `need` verb) —
+    /// its *diet*. Emergent targeting (stage A4) finds a target digestible when it holds
+    /// the components the actor needs (`docs/emergent-trophics.md` §3.2). `0` everywhere
+    /// until a scenario declares a `need` → byte-identical.
+    pub fn needs_of(&self, species: u16) -> Vec<f32> {
+        self.per_component(species, |f| f.need)
     }
 
     /// The components `species` **senses** (a [`FieldRelation`] with `sense: true`),
