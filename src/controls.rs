@@ -25,6 +25,7 @@ use teemlab::metrics::History;
 use teemlab::nutrients::{Emits, Fields};
 use teemlab::selection::Selection;
 use teemlab::spawn;
+use teemlab::visuals::NutrientLayer;
 
 /// Controls state: chosen speed, pending steps, requested reset. The buttons (in
 /// `EguiPrimaryContextPass`, too late for the frame's fixed loop) only write
@@ -275,8 +276,12 @@ pub fn drive_steps(
 /// simulated (agents, walls, **and the nutrient sources** — non-`Agent` substrate
 /// entities, which `populate` would otherwise re-add on top, duplicating them),
 /// re-populate, and reset the sim resources (RNG, **the nutrient field**) and the
-/// HUD. In `PreUpdate`: the commands apply before the fixed loop, so the frame
-/// already restarts on the new world.
+/// HUD. The despawn also sweeps the **nutrient heatmap layers**
+/// ([`NutrientLayer`](teemlab::visuals::NutrientLayer)): a pure render artifact keyed
+/// by field index, it would otherwise linger frozen when the new scenario declares
+/// **fewer** fields (or none) — `render_nutrient_layers` only repaints indices that
+/// still exist, never the orphans. In `PreUpdate`: the commands apply before the
+/// fixed loop, so the frame already restarts on the new world.
 ///
 /// This is also **the single passage point** where we re-apply the sim rate
 /// `tick_hz` (cf. [`SimPlugin`](teemlab::SimPlugin), which only sets it at
@@ -295,7 +300,7 @@ pub fn apply_reset(
     mut fixed: ResMut<Time<Fixed>>,
     mut baseline: ResMut<WorldBaseline>,
     mut selection: ResMut<Selection>,
-    simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>)>>,
+    simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>, With<NutrientLayer>)>>,
 ) {
     if !controls.reset_requested {
         return;

@@ -62,7 +62,7 @@ use std::time::Duration;
 use teemlab::dataviz::DataVizPlugin;
 use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
-use teemlab::visuals::{Layers, VisualsPlugin, srgb3};
+use teemlab::visuals::{Layers, NewLayerVisible, VisualsPlugin, srgb3};
 use teemlab::{SimConfig, SimPlugin};
 
 /// Recording parameters, read from the command line.
@@ -322,6 +322,10 @@ fn main() -> AppExit {
         agents: true,
         nutrients: vec![settings.nutrients],
     })
+    // New nutrient layers (index ≥ 1, appearing when a scenario declares more than one
+    // component) stay hidden in the recorder: `--nutrients` shows only the first field,
+    // so existing videos are byte-identical. The windowed build defaults this to `true`.
+    .insert_resource(NewLayerVisible(false))
     // Curve sampling (shared with the windowed build) + overlaid native visualizer.
     // With HUD, `DataVizPlugin` recomposes the target in 9:16 (arena on top, viz at bottom).
     .add_plugins(MetricsPlugin)

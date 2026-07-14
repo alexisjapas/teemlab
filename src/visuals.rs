@@ -39,6 +39,9 @@ impl Plugin for VisualsPlugin {
             // both binaries; the windowed build drives it via egui, the recorder
             // keeps the defaults (agents on, nutrient maps off → video unchanged).
             .init_resource::<Layers>()
+            // The fill value for newly-appearing nutrient layers (cf. `sync_layer_flags`).
+            // Default `true` (windowed: show every component); the recorder overrides it.
+            .init_resource::<NewLayerVisible>()
             .add_systems(
                 Update,
                 (
@@ -74,11 +77,27 @@ impl Default for Layers {
     fn default() -> Self {
         Self {
             agents: true,
-            // T2 has one nutrient field; its heatmap is shown by default (the windowed
-            // build). The video recorder sets its own `Layers` from `--nutrients`
-            // (off), so existing videos are unchanged (cf. `bin/record`).
-            nutrients: vec![true],
+            // Left empty on purpose: the per-component flags are grown to the scenario's
+            // field count by `sync_layer_flags`, which fills them from `NewLayerVisible`
+            // (the windowed default → every component shown). The recorder sets its own
+            // `Layers` from `--nutrients` (cf. `bin/record`).
+            nutrients: Vec::new(),
         }
+    }
+}
+
+/// Visibility handed to a nutrient layer that **appears** when the field count grows
+/// (a scenario load / reset) — the fill value used by [`sync_layer_flags`]. The
+/// windowed build wants every declared component shown by default (`true`, "see the
+/// whole substrate"); the video recorder overrides it to `false` so a `--nutrients`
+/// render only shows the field it explicitly asked for, keeping existing videos
+/// byte-identical.
+#[derive(Resource)]
+pub struct NewLayerVisible(pub bool);
+
+impl Default for NewLayerVisible {
+    fn default() -> Self {
+        Self(true)
     }
 }
 
@@ -336,8 +355,13 @@ fn apply_agent_layer(layers: Res<Layers>, mut agents: Query<&mut Visibility, Wit
 /// A nutrient **heatmap** quad (one per nutrient field). Holds the field index and
 /// the grid resolution the texture was built for, so a scenario reload that changes
 /// the grid rebuilds it.
+/// Purely a **rendering** artifact (a background sprite), not part of the simulated
+/// world — so the windowed build's hot reset despawns it explicitly:
+/// [`render_nutrient_layers`] only ever touches indices that still exist in
+/// [`Fields`], so a reload into a scenario with **fewer** fields would otherwise leave
+/// the dropped layers orphaned (frozen on their last texture).
 #[derive(Component)]
-struct NutrientLayer {
+pub struct NutrientLayer {
     index: usize,
     res: usize,
 }
@@ -384,15 +408,19 @@ fn make_nutrient_image(field: &Field, color: Srgba) -> Image {
 
 /// Rendering only: keep the per-component visibility flags ([`Layers::nutrients`]) sized
 /// to the actual number of fields — a scenario with `N` components needs `N` toggles.
-/// New components (index ≥ the initial `vec![true]`) start **hidden**: only the first
-/// field is shown by default. Crucially this makes the extra components *reachable* — the
-/// View ▸ Layers menu iterates these flags, so before this a pheromone / toxicity /
-/// detritus field (index ≥ 1) had no flag at all: force-hidden **and** absent from the
-/// menu. Appending `false` (not `true`) leaves the recorder's explicit flags untouched
-/// for the fields it set → existing videos byte-identical.
-fn sync_layer_flags(mut layers: ResMut<Layers>, fields: Res<Fields>) {
+/// New components are filled from [`NewLayerVisible`]: `true` in the windowed build (every
+/// declared component is shown by default), `false` in the recorder (a `--nutrients` video
+/// shows only the field it asked for → byte-identical). Sizing these flags also makes the
+/// extra components *reachable* — the View ▸ Layers menu iterates them, so a field at
+/// index ≥ 1 (pheromone / toxicity / detritus) that had no flag would be both force-hidden
+/// **and** absent from the menu.
+fn sync_layer_flags(
+    mut layers: ResMut<Layers>,
+    fields: Res<Fields>,
+    new_visible: Res<NewLayerVisible>,
+) {
     if layers.nutrients.len() != fields.len() {
-        layers.nutrients.resize(fields.len(), false);
+        layers.nutrients.resize(fields.len(), new_visible.0);
     }
 }
 
