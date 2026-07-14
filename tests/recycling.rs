@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, ComponentConfig, FieldRelation, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::{Fields, Nutrients};
 use teemlab::spawn::spawn_agent;
@@ -32,10 +32,7 @@ mod common;
 /// store capacity so the seeded amount fits.
 fn dying_genotype() -> Genotype {
     Genotype {
-        max_speed: 0.0,        // immobile: stays on its cell
-        base_metabolism: 60.0, // a steep drain → death within a tick or two
-        move_cost: 0.0,
-        agility_cost: 0.0,
+        max_speed: 0.0, // immobile: stays on its cell
         brain_cost: 0.0,
         photosynthesis: 0.0,         // nothing refills the reserve → it dies
         reproduction_threshold: 0.0, // does not reproduce
@@ -78,6 +75,12 @@ fn one_agent_config() -> SimConfig {
             capacity: 100.0,
             ..default()
         }],
+        // A large maintenance so the sliver-energy body starves in a tick — the drain
+        // that was the `base_metabolism` gene is now the world's allometric `CostLaw`.
+        cost_law: CostLaw {
+            maintenance: 50.0,
+            ..CostLaw::inert()
+        },
         ..SimConfig::default()
     }
 }

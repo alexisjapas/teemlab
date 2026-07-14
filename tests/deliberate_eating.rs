@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Action, Agent, Reserve, Species};
-use teemlab::config::{Archetype, Mutability, Relation};
+use teemlab::config::{Archetype, CostLaw, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
@@ -33,9 +33,6 @@ mod common;
 fn inert_genotype(act_cost: f32) -> Genotype {
     Genotype {
         max_speed: 0.0, // immobile: bodies stay exactly where spawned
-        base_metabolism: 0.0,
-        move_cost: 0.0,
-        agility_cost: 0.0,
         brain_cost: 0.0,
         photosynthesis: 0.0,
         vision_rays: 0.0, // blind → zero vision cost, so act_cost is the sole drain
@@ -93,6 +90,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
             rate: 100.0,
             range: 30.0,
         }],
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
 
@@ -171,6 +169,7 @@ fn reserve_after_holding(act_cost: f32, gate_off: bool, ticks: usize) -> (f32, f
         arena_half_extent: 400.0,
         archetypes: vec![sessile("Eater", 0, inert_genotype(act_cost))],
         relations: vec![],
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
     let start = config.reserve_max_of(0);

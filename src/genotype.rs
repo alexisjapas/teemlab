@@ -46,14 +46,6 @@ pub struct Genotype {
     /// default** ([`crate::config::Mutability`]): left mutable, it drifts
     /// (meta-evolution) and may freeze at 0 → dead evolution.
     pub mutation_rate: f32,
-    /// Base metabolism: energy drained **per second** at rest — the cost of
-    /// survival (§2), the base selection pressure. Per-species, **not mutable by
-    /// default**: evolvable, it would be whittled down to 0 (the pressure would vanish).
-    pub base_metabolism: f32,
-    /// Locomotion surcharge: energy/s at full speed. Couples speed to a cost (§2).
-    /// Per-species, **not mutable by default**: otherwise the speed gene could
-    /// "cancel out" its own cost.
-    pub move_cost: f32,
     /// Visual precision: the **number of vision rays**. A full-fledged gene
     /// (mutable, inherited), stored as `f32` to fit the common Gaussian-mutation
     /// machinery, and rounded to an integer at phenotype compilation (cf.
@@ -74,24 +66,16 @@ pub struct Genotype {
     /// MLP (hidden + output, cf. [`crate::brain::Brain::neuron_count`]) — the cost
     /// coupling of the *decision system* (§2), the counterpart for the brain of
     /// what [`Vision::metabolic_cost`] is for the sensor. `0` for a hand-written
-    /// brain (no network) and `0` by default (inert). Per-species, **not mutable by
-    /// default** (like `base_metabolism`/`move_cost`): evolvable, it would be
-    /// whittled down to 0 and the pressure would vanish. Added at the **end** to
+    /// brain (no network) and non-zero by default. Per-species, **not mutable by
+    /// default** (like the other costs): evolvable, it would be whittled down to 0
+    /// and the pressure would vanish. Added at the **end** to
     /// preserve [`mutate`](Genotype::mutate)'s draw stream.
     pub brain_cost: f32,
-    /// **Agility cost**: energy drained per unit of *maneuvering effort* — the
-    /// magnitude `|Δv|` of the velocity change `act` applies each tick (cf.
-    /// [`crate::components::Maneuver`]). The transient counterpart of `move_cost`
-    /// (which prices steady-state cruising): turning and accelerating do work
-    /// against inertia, cruising in a straight line is nearly free. Per-species,
-    /// **not mutable by default** like the other costs (evolvable, it would fall to
-    /// 0). `0` by default (inert). Appended at the **end** (draw stream).
-    pub agility_cost: f32,
     /// **Deliberate-eating cost**: energy drained **per second** while the agent
     /// holds its eat/attack intent ([`crate::components::Action::act`] `> 0`, gated in
     /// [`crate::interaction::interact`]). The Law-7 price of the *act* itself — the
-    /// counterpart, for the interaction primitive, of what `move_cost` is for
-    /// locomotion: it makes acting a **costed choice**, so indiscriminate always-on
+    /// counterpart, for the interaction primitive, of what the locomotion cost is for
+    /// movement: it makes acting a **costed choice**, so indiscriminate always-on
     /// eating is wasteful and behavioural **restraint** becomes selectable
     /// (`docs/persistent-ecosystems.md` §2). Charged in [`crate::ecology::metabolize`]
     /// whether or not a target is in range (an *effort* model). `0` (default) → no
@@ -109,14 +93,13 @@ impl Default for Genotype {
     /// with food, it metabolizes, reproduces and drifts out of the box (no need to
     /// hand-wire an economy first). Each gene in its storage unit — the fov in degrees.
     ///
-    /// **Every cost is priced** (SIM Law 7 — no free beneficial trait): the four cost
-    /// genes default **non-zero**, including `brain_cost` and `agility_cost` (inert in
-    /// effect for a hand-written brain — zero neurons — or an immobile body — no
-    /// maneuver — but present, so a moving / networked entity always pays). The costs
-    /// stay **non-mutable** by default ([`crate::config::Mutability`]), so this change
-    /// does not alter `mutate`'s RNG draws. Scenarios that need other values set the
-    /// genes explicitly (every bundled `.ron` and the in-code chaos drivers do), so the
-    /// new defaults reach *new* entities without shifting existing experiments.
+    /// **Costs are priced** (SIM Law 7 — no free beneficial trait): the size-derived
+    /// maintenance / locomotion / manoeuvre now live in the world's allometric
+    /// [`CostLaw`](crate::config::CostLaw); the two remaining *gene* costs default so a
+    /// networked entity still pays — `brain_cost` non-zero (inert for a 0-neuron
+    /// hand-written brain) and `act_cost` zero (opted into by a deliberate-eating
+    /// scenario). Both stay **non-mutable** by default ([`crate::config::Mutability`]),
+    /// so this does not alter `mutate`'s RNG draws.
     fn default() -> Self {
         Self {
             max_speed: 140.0,
@@ -128,17 +111,14 @@ impl Default for Genotype {
             reproduction_threshold: 80.0,
             offspring_energy: 40.0,
             mutation_rate: 0.05,
-            base_metabolism: 4.0,
-            move_cost: 2.0,
             vision_rays: 7.0,
             // Flora genes inactive by default (fauna): no passive gain, close seeding.
             photosynthesis: 0.0,
             seed_dispersal: 0.0,
-            // Decision-system + maneuvering costs priced (Law 7): inert for a 0-neuron
-            // hand-written brain / an immobile body, but a real price for an MLP / a
-            // mover. Small so they don't dominate base metabolism.
+            // Decision-system cost priced (Law 7): inert for a 0-neuron hand-written
+            // brain, a real price for an MLP. Small so it doesn't dominate the
+            // size-derived maintenance (the allometric `CostLaw`, `docs/emergent-trophics.md`).
             brain_cost: 0.1,
-            agility_cost: 0.02,
             // Nutrient genes (T2) inert by default: no absorption, no store, no
             // nutrient cost per child → the reproduction gate always passes.
             // Deliberate-eating cost inert by default (like the flora/nutrient genes):
@@ -342,7 +322,7 @@ pub struct TraitSpec {
 /// seeded config — whence the addition at the **end** of the table, which leaves
 /// the pre-existing traits' stream intact). A constant table shared by all
 /// agents.
-pub const TRAITS: [TraitSpec; 15] = [
+pub const TRAITS: [TraitSpec; 12] = [
     TraitSpec {
         name: "Max speed",
         category: GeneCategory::Locomotion,
@@ -442,34 +422,6 @@ pub const TRAITS: [TraitSpec; 15] = [
         inert_when_immobile: false,
     },
     TraitSpec {
-        name: "Metabolism/s",
-        category: GeneCategory::Metabolism,
-        is_cost: true,
-        get: |g| g.base_metabolism,
-        set: |g, v| g.base_metabolism = v,
-        bounds: |c| c.base_metabolism_bounds,
-        bounds_mut: |c| &mut c.base_metabolism_bounds,
-        mutable: |m| m.base_metabolism,
-        set_mutable: |m, b| m.base_metabolism = b,
-        decimals: 1,
-        // Base cost of survival: drains flora as well as fauna.
-        inert_when_immobile: false,
-    },
-    TraitSpec {
-        name: "Locomotion cost",
-        category: GeneCategory::Locomotion,
-        is_cost: true,
-        get: |g| g.move_cost,
-        set: |g, v| g.move_cost = v,
-        bounds: |c| c.move_cost_bounds,
-        bounds_mut: |c| &mut c.move_cost_bounds,
-        mutable: |m| m.move_cost,
-        set_mutable: |m, b| m.move_cost = b,
-        decimals: 1,
-        // Energy surcharge for moving: no effect on an entity that does not move.
-        inert_when_immobile: true,
-    },
-    TraitSpec {
         name: "Rays (precision)",
         category: GeneCategory::Vision,
         is_cost: false,
@@ -525,21 +477,6 @@ pub const TRAITS: [TraitSpec; 15] = [
         // A metabolic cost of the brain tissue (like base metabolism): paid
         // whatever the mobility — a non-MLP brain simply counts zero neurons.
         inert_when_immobile: false,
-    },
-    TraitSpec {
-        name: "Agility cost",
-        category: GeneCategory::Locomotion,
-        is_cost: true,
-        get: |g| g.agility_cost,
-        set: |g, v| g.agility_cost = v,
-        bounds: |c| c.agility_cost_bounds,
-        bounds_mut: |c| &mut c.agility_cost_bounds,
-        mutable: |m| m.agility_cost,
-        set_mutable: |m, b| m.agility_cost = b,
-        decimals: 3,
-        // Cost of maneuvering: like locomotion cost and agility, it has no effect on
-        // an entity that does not move (a sessile body never maneuvers).
-        inert_when_immobile: true,
     },
     TraitSpec {
         name: "Act cost/s",
@@ -619,12 +556,7 @@ mod tests {
     #[test]
     fn cost_genes_are_flagged() {
         let is_cost = |name: &str| TRAITS.iter().find(|t| t.name == name).unwrap().is_cost;
-        for c in [
-            "Metabolism/s",
-            "Locomotion cost",
-            "Brain cost/neuron",
-            "Agility cost",
-        ] {
+        for c in ["Brain cost/neuron", "Act cost/s"] {
             assert!(is_cost(c), "{c} should be a cost");
         }
         for n in [
@@ -668,15 +600,13 @@ mod tests {
         assert_eq!(g.vision_fov_deg, 120.0);
         assert_eq!(g.vision_rays, 7.0);
         assert_eq!(g.ray_count(), 7);
-        // Alive: a survival cost, a reproduction threshold, a non-zero mutation rate.
-        assert!(g.base_metabolism > 0.0);
+        // Alive: a reproduction threshold and a non-zero mutation rate. (Survival and
+        // locomotion costs are now the world's allometric `CostLaw`, size-derived, not
+        // genes.)
         assert!(g.reproduction_threshold > 0.0);
         assert!(g.mutation_rate > 0.0);
-        // Every cost is priced (SIM Law 7): none defaults to 0.
-        assert!(g.base_metabolism > 0.0);
-        assert!(g.move_cost > 0.0);
+        // The gene-borne cost that remains is priced (SIM Law 7): the brain.
         assert!(g.brain_cost > 0.0);
-        assert!(g.agility_cost > 0.0);
         // Flora genes stay inert (a plant scenario opts in).
         assert_eq!(g.photosynthesis, 0.0);
     }
@@ -714,9 +644,7 @@ mod tests {
                 "Agility",
                 "Vision range",
                 "Vision FOV (°)",
-                "Locomotion cost",
-                "Rays (precision)",
-                "Agility cost",
+                "Rays (precision)"
             ]
         );
     }
@@ -759,13 +687,10 @@ mod tests {
             reproduction_threshold: 6.0,
             offspring_energy: 7.0,
             mutation_rate: 8.0,
-            base_metabolism: 9.0,
-            move_cost: 11.0,
             vision_rays: 12.0,
             photosynthesis: 13.0,
             seed_dispersal: 14.0,
             brain_cost: 15.0,
-            agility_cost: 16.0,
             act_cost: 20.0,
         };
         // Rebuild through ONLY the TRAITS accessors, starting from the defaults (whose

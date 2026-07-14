@@ -21,18 +21,16 @@ use teemlab::{SimConfig, SimPlugin};
 /// parameterized (genes of the single archetype).
 fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
     use teemlab::brain::BrainKind;
-    use teemlab::config::{Archetype, Mutability};
+    use teemlab::config::{Archetype, CostLaw, Mutability};
     use teemlab::genotype::Genotype;
     let genotype = Genotype {
         reproduction_threshold: threshold,
         offspring_energy: offspring,
         mutation_rate: 0.0, // stable genes: we reason on exact values.
-        base_metabolism: 0.0,
-        move_cost: 0.0,
-        // No drain at all (inert-world shortcut) so the reserve evolves by reproduction
-        // only — the "living" Genotype::default now prices these, so pin them to 0.
-        agility_cost: 0.0,
+        // No drain at all so the reserve evolves by reproduction only: a blind agent
+        // (no vision cost) in a cost-free world (`cost_law: inert` below).
         brain_cost: 0.0,
+        vision_rays: 0.0,
         ..Genotype::default()
     };
     SimConfig {
@@ -52,6 +50,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
         }],
         relations: Vec::new(),
         seed: 0x5EED,
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     }
 }

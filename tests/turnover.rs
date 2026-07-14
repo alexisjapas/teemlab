@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::Species;
-use teemlab::config::{Archetype, ComponentConfig, FieldRelation, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::Fields;
 use teemlab::spawn::spawn_agent;
@@ -30,13 +30,11 @@ const CORPSE: f32 = 10.0;
 fn config(mortal: bool) -> SimConfig {
     let genotype = Genotype {
         max_speed: 0.0, // immobile: stays on its cell
-        move_cost: 0.0,
-        agility_cost: 0.0,
         brain_cost: 0.0,
+        vision_rays: 0.0,            // blind (sessile): no vision cost
         reproduction_threshold: 0.0, // does not reproduce
         mutation_rate: 0.0,
-        base_metabolism: if mortal { 60.0 } else { 0.0 }, // steep drain vs none
-        photosynthesis: if mortal { 0.0 } else { 5.0 },   // starves vs lives on the sun
+        photosynthesis: if mortal { 0.0 } else { 5.0 }, // starves vs lives on the sun
         ..Genotype::default()
     };
     SimConfig {
@@ -68,6 +66,17 @@ fn config(mortal: bool) -> SimConfig {
             emit_at_death: CORPSE,
             ..default()
         }],
+        // Mortal: a large maintenance so the sliver-energy body starves in a tick (the
+        // drain that was `base_metabolism` is now the allometric `CostLaw`). Living: a
+        // cost-free world, so photosynthesis keeps it alive.
+        cost_law: if mortal {
+            CostLaw {
+                maintenance: 50.0,
+                ..CostLaw::inert()
+            }
+        } else {
+            CostLaw::inert()
+        },
         ..SimConfig::default()
     }
 }

@@ -16,8 +16,6 @@
             reproduction_threshold: 90.0,
             offspring_energy: 40.0,
             mutation_rate: 0.06,
-            base_metabolism: 4.0,
-            move_cost: 2.0,
         ),
         brain: Hunter,
         mutable: (),

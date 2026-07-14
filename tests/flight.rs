@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
-use teemlab::config::{Archetype, Mutability, Relation};
+use teemlab::config::{Archetype, CostLaw, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
@@ -44,9 +44,6 @@ fn prey_sees_and_flees_its_predator() {
                     // Inert + non-reproducing + non-mutating: a short determinism
                     // test, predating the "living" Genotype::default (which now prices
                     // the costs and breeds), so we pin the changed genes to 0.
-                    base_metabolism: 0.0,
-                    move_cost: 0.0,
-                    agility_cost: 0.0,
                     brain_cost: 0.0,
                     reproduction_threshold: 0.0,
                     mutation_rate: 0.0,
@@ -69,9 +66,6 @@ fn prey_sees_and_flees_its_predator() {
                 genotype: Genotype {
                     max_speed: 0.0,
                     // Inert + non-reproducing (cf. the prey above).
-                    base_metabolism: 0.0,
-                    move_cost: 0.0,
-                    agility_cost: 0.0,
                     brain_cost: 0.0,
                     reproduction_threshold: 0.0,
                     mutation_rate: 0.0,
@@ -95,6 +89,7 @@ fn prey_sees_and_flees_its_predator() {
             rate: 0.0,
             range: 10.0,
         }],
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
 

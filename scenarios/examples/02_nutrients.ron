@@ -32,13 +32,10 @@
                 reproduction_threshold: 28.0,
                 offspring_energy: 14.0,
                 mutation_rate: 0.0,
-                base_metabolism: 1.0,
-                move_cost: 0.0,
                 vision_rays: 1.0,
                 photosynthesis: 5.0,
                 seed_dispersal: 22.0,
                 brain_cost: 0.0,
-                agility_cost: 0.0,
             ),
             brain: Sessile,
             // A sessile plant: the locomotion/vision genes are FROZEN (their founder
@@ -52,13 +49,10 @@
                 reproduction_threshold: true,
                 offspring_energy: true,
                 mutation_rate: false,
-                base_metabolism: false,
-                move_cost: false,
                 vision_rays: false,
                 photosynthesis: false,
                 seed_dispersal: false,
                 brain_cost: false,
-                agility_cost: false,
             ),
         ),
     ],
@@ -137,14 +131,6 @@
         min: 0.0,
         max: 0.5,
     ),
-    base_metabolism_bounds: (
-        min: 0.0,
-        max: 20.0,
-    ),
-    move_cost_bounds: (
-        min: 0.0,
-        max: 20.0,
-    ),
     vision_rays_bounds: (
         min: 0.0,
         max: 21.0,
@@ -158,10 +144,6 @@
         max: 200.0,
     ),
     brain_cost_bounds: (
-        min: 0.0,
-        max: 2.0,
-    ),
-    agility_cost_bounds: (
         min: 0.0,
         max: 2.0,
     ),

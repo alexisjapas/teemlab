@@ -43,10 +43,11 @@ impl SimRng {
     }
 }
 
-/// METABOLISM: each agent's per-second energy balance. **Expenses** — base +
-/// speed surcharge (cruising) + agility surcharge (maneuvering) + vision sensor
-/// cost + brain cost (per decision neuron); **gain** — photosynthesis (a flora
-/// gene, passive gain). Bounded to `[0, max]`; death at zero is left to [`reap`].
+/// METABOLISM: each agent's per-second energy balance. **Expenses** — the
+/// **size-derived** maintenance + locomotion (cruising) + manoeuvre of the allometric
+/// [`CostLaw`](crate::config::CostLaw), plus the vision sensor cost and the brain cost
+/// (per decision neuron); **gain** — photosynthesis (a flora gene). Bounded to
+/// `[0, max]`; death at zero is left to [`reap`].
 pub fn metabolize(
     time: Res<Time>,
     config: Res<SimConfig>,
@@ -66,53 +67,33 @@ pub fn metabolize(
 ) {
     let dt = time.delta_secs();
     for (mut reserve, genotype, species, vision, velocity, brain, maneuver, action) in &mut agents {
-        // Metabolism, locomotion, agility, photosynthesis, brain and act cost are
-        // genes (per-species). An agent with no energy item at all (all six zero) is
-        // in an inert world (pre-item-8 scenarios): neither drain nor gain, not even
-        // the vision or brain cost.
-        if genotype.base_metabolism == 0.0
-            && genotype.move_cost == 0.0
-            && genotype.agility_cost == 0.0
-            && genotype.photosynthesis == 0.0
-            && genotype.brain_cost == 0.0
-            && genotype.act_cost == 0.0
-        {
-            continue;
-        }
-        // *Reference* speed: the archetype's **founding** max speed (not the
-        // agent's, possibly mutated one) — otherwise a mutant twice as fast would
-        // pay the same and the speed gene would have no cost. This keeps "speed →
-        // energy" (§2) true, and the cost stays measured against a per-species
-        // reference.
+        // Size-derived costs (allometric `CostLaw`, `docs/emergent-trophics.md` §5):
+        // maintenance, locomotion and manoeuvring all scale with body **size** — the
+        // former per-species base_metabolism / move_cost / agility_cost genes are gone.
+        // Radius is a per-archetype body value (not a gene), so a mutant is priced by
+        // its species' body; `size = radius^exponent`.
+        let law = &config.cost_law;
+        let size = config.agent_radius_of(species.0).powf(law.size_exponent);
+        // *Reference* speed: the archetype's **founding** max speed (not the agent's,
+        // possibly mutated one) — so a faster mutant actually pays more (speed → cost,
+        // §2), measured against a per-species reference.
         let reference_speed = config.founder_max_speed_of(species.0).max(1e-3);
         let speed_ratio = velocity.0.length() / reference_speed;
-        // Agility cost: the energy of *maneuvering*. `maneuver.0` is the magnitude
-        // of the velocity change `act` applied this tick (cf. `Maneuver`), i.e. the
-        // work done against inertia to turn/accelerate — the transient counterpart
-        // of `move_cost`, which prices steady-state cruising. Cruising in a straight
-        // line (already at the desired velocity) costs nothing here.
-        //
-        // Brain cost: energy/s per decision neuron (hidden + output). A hand-written
-        // brain counts zero neurons (cf. `Brain::neuron_count`) → no cost, so
-        // non-MLP scenarios are unaffected. The counterpart, for the *decision
-        // system*, of the vision sensor's cost.
-        //
         // Act cost: energy/s while the agent **holds its eat/attack intent**
-        // (`Action::act > 0`, deliberate eating — SIM Law 8). Charged as an *effort*,
-        // whether or not a target is in range, so that indiscriminate always-on eating
-        // is wasteful and **restraint** pays (`docs/persistent-ecosystems.md` §2). The
-        // hand-written brains hold `1.0` but with `act_cost` defaulting to 0 they pay
-        // nothing → non-MLP scenarios byte-identical.
+        // (`Action::act > 0`, deliberate eating — SIM Law 8), an *effort* charged food
+        // in range or not, so indiscriminate eating is wasteful and restraint pays.
         let act_effort = if action.act > 0.0 { 1.0 } else { 0.0 };
-        let drain = genotype.base_metabolism
-            + genotype.move_cost * speed_ratio
-            + genotype.agility_cost * maneuver.0
+        // Expenses: size-derived maintenance + cruising + manoeuvre, then the sensor
+        // (vision) and decision (brain, per neuron) couplings — which keep their own
+        // measures — and the act effort. A hand-written brain counts zero neurons; an
+        // immobile / idle body pays no locomotion or manoeuvre.
+        let drain = law.maintenance * size
+            + law.locomotion * size * speed_ratio
+            + law.maneuver * size * maneuver.0
             + vision.metabolic_cost()
             + genotype.brain_cost * brain.neuron_count() as f32
             + genotype.act_cost * act_effort;
-        // Net balance = passive gain − expenses. For fauna (photosynthesis 0)
-        // this is the old pure drain, and the cap at `max` is then a no-op (eating
-        // already caps at `max`, cf. `interaction`) → unchanged behavior.
+        // Net balance = passive gain (photosynthesis) − expenses, bounded to [0, max].
         let net = genotype.photosynthesis - drain;
         reserve.current = (reserve.current + net * dt).clamp(0.0, reserve.max);
     }

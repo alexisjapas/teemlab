@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, FieldRelation, Mutability, Relation};
+use teemlab::config::{Archetype, CostLaw, FieldRelation, Mutability, Relation};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::Nutrients;
 use teemlab::spawn::spawn_agent;
@@ -34,9 +34,6 @@ mod common;
 fn inert_genotype() -> Genotype {
     Genotype {
         max_speed: 0.0, // immobile: nothing moves, the two stay exactly in place
-        base_metabolism: 0.0,
-        move_cost: 0.0,
-        agility_cost: 0.0,
         brain_cost: 0.0,
         photosynthesis: 0.0,
         reproduction_threshold: 0.0, // does not reproduce
@@ -107,6 +104,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 ..default()
             },
         ],
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
 
@@ -258,6 +256,7 @@ fn destruction_without_transfer_moves_no_nutrient() {
                 ..default()
             },
         ],
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
 

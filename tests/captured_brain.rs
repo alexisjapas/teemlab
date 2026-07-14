@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::{Brain, BrainKind, MlpBrain};
 use teemlab::components::Agent;
-use teemlab::config::{Archetype, Mutability};
+use teemlab::config::{Archetype, CostLaw, Mutability};
 use teemlab::genotype::Genotype;
 
 /// A world with a single MLP archetype, `count` founders, stable genes (no
@@ -18,13 +18,10 @@ use teemlab::genotype::Genotype;
 fn world(captured: Option<Brain>, count: usize) -> SimConfig {
     let genotype = Genotype {
         mutation_rate: 0.0,
-        base_metabolism: 0.0,
-        move_cost: 0.0,
         // Frozen population: no reproduction (the "living" Genotype::default now breeds
         // at threshold 80) and no costs (inert-world shortcut), so the founders and
         // their brains stay put at the first tick.
         reproduction_threshold: 0.0,
-        agility_cost: 0.0,
         brain_cost: 0.0,
         ..Genotype::default()
     };
@@ -40,6 +37,7 @@ fn world(captured: Option<Brain>, count: usize) -> SimConfig {
         archetypes: vec![arch],
         relations: Vec::new(),
         seed: 0x5EED,
+        cost_law: CostLaw::inert(),
         ..SimConfig::default()
     }
 }

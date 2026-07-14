@@ -78,10 +78,6 @@ pub struct SimConfig {
     pub offspring_energy_bounds: Bounds,
     /// Bounds of the mutation-rate gene.
     pub mutation_rate_bounds: Bounds,
-    /// Bounds of the base-metabolism gene.
-    pub base_metabolism_bounds: Bounds,
-    /// Bounds of the locomotion-surcharge gene.
-    pub move_cost_bounds: Bounds,
     /// Bounds of the vision-ray-count gene (visual precision). Integer bounds in
     /// practice (the gene is rounded at phenotype compilation).
     pub vision_rays_bounds: Bounds,
@@ -93,12 +89,15 @@ pub struct SimConfig {
     /// editor slider; the gene is non-mutable by default, so these bounds rarely
     /// clamp anything.
     pub brain_cost_bounds: Bounds,
-    /// Bounds of the agility-cost gene (energy per unit of maneuvering effort
-    /// `|Δv|`). Drives the editor slider; non-mutable by default.
-    pub agility_cost_bounds: Bounds,
     /// Bounds of the act-cost gene (energy/s while the eat/attack intent is held,
     /// deliberate eating). Drives the editor slider; non-mutable by default.
     pub act_cost_bounds: Bounds,
+    /// **Allometric cost law** (`docs/emergent-trophics.md` §5): the world-level
+    /// coefficients from which each agent's **size-derived** costs are computed
+    /// (maintenance, locomotion, manoeuvring), replacing the former per-species
+    /// `base_metabolism` / `move_cost` / `agility_cost` genes — the pricing of body
+    /// size that makes emergent size-dominance (stage A4) obey Law 7.
+    pub cost_law: CostLaw,
     /// Background color of the **play area** (inside of the arena), sRGB `[r, g, b]`
     /// in `[0, 1]`. A **presentation** setting (windowed rendering only, cf.
     /// `main::draw_play_area`); lives in the scenario to be saved/loaded with it.
@@ -130,6 +129,60 @@ pub struct SimConfig {
     /// founder path ([`captured_brain_of`](Self::captured_brain_of) or a fresh brain).
     #[serde(skip)]
     pub founder_pools: std::collections::HashMap<u16, Vec<Brain>>,
+}
+
+/// **Allometric cost law** — the world-level coefficients from which an agent's costs
+/// derive from its **body size** (radius) rather than per-species free genes
+/// (`docs/emergent-trophics.md` §5). One functional form, `k · size^exponent · …`, so
+/// specifying a species reduces to its size; and size, priced by maintenance +
+/// locomotion, is a Law-7 trait — the prerequisite to the size-dominance of emergent
+/// targeting (stage A4). `size = radius^exponent` (`exponent` default `2` — 2D area =
+/// mass — but a scenario parameter, so metabolic scaling is itself an experimental
+/// knob). Brain and vision keep their **own** couplings (neuron count, range × rays).
+/// The future evolvable *muscular efficiency* (a per-species divisor) is fixed at 1.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CostLaw {
+    /// The **size exponent** `e`: `size = radius^e`. Default `2` (area / mass in 2D).
+    pub size_exponent: f32,
+    /// **Maintenance** `k_m`: resting drain `= k_m · size` per second — the cost of
+    /// survival (the former `base_metabolism`), now scaling with body size.
+    pub maintenance: f32,
+    /// **Locomotion** `k_v`: cruising drain `= k_v · size · (speed / founder max speed)`
+    /// per second (the former `move_cost`). Linear in the speed fraction for now; a
+    /// super-linear form is a documented follow-up (`docs/emergent-trophics.md` §5.4).
+    pub locomotion: f32,
+    /// **Manoeuvre** `k_a`: drain `= k_a · size · |Δv|` (the former `agility_cost`) —
+    /// the transient cost of turning / accelerating a body of that size.
+    pub maneuver: f32,
+}
+
+impl Default for CostLaw {
+    /// Sane defaults: at a reference body (radius 10, `size = 100`) they reproduce the
+    /// former default costs — maintenance `4`, locomotion `2` at full speed, manoeuvre
+    /// `0.02 · |Δv|`. Scenario viability under the new law is re-tuned in the scenario
+    /// rework; these keep the mechanism demonstrably alive.
+    fn default() -> Self {
+        Self {
+            size_exponent: 2.0,
+            maintenance: 0.04,
+            locomotion: 0.02,
+            maneuver: 0.0002,
+        }
+    }
+}
+
+impl CostLaw {
+    /// All coefficients zero — a **cost-free** world: no maintenance, locomotion or
+    /// manoeuvre drain. For deterministic tests and a deliberately inert scenario.
+    pub fn inert() -> Self {
+        Self {
+            size_exponent: 2.0,
+            maintenance: 0.0,
+            locomotion: 0.0,
+            maneuver: 0.0,
+        }
+    }
 }
 
 /// An **archetype**: a first-order species. Its index in
@@ -256,8 +309,6 @@ impl Archetype {
                 vision_range: 30.0,
                 vision_rays: 1.0,
                 reproduction_threshold: 0.0,
-                base_metabolism: 0.0,
-                move_cost: 0.0,
                 photosynthesis: 6.0,
                 seed_dispersal: 0.0,
                 ..Genotype::default()
@@ -441,13 +492,10 @@ pub struct Mutability {
     pub reproduction_threshold: bool,
     pub offspring_energy: bool,
     pub mutation_rate: bool,
-    pub base_metabolism: bool,
-    pub move_cost: bool,
     pub vision_rays: bool,
     pub photosynthesis: bool,
     pub seed_dispersal: bool,
     pub brain_cost: bool,
-    pub agility_cost: bool,
     pub act_cost: bool,
 }
 
@@ -463,13 +511,10 @@ impl Mutability {
             reproduction_threshold: false,
             offspring_energy: false,
             mutation_rate: false,
-            base_metabolism: false,
-            move_cost: false,
             vision_rays: false,
             photosynthesis: false,
             seed_dispersal: false,
             brain_cost: false,
-            agility_cost: false,
             act_cost: false,
         }
     }
@@ -488,12 +533,11 @@ impl Default for Mutability {
             // and its metabolic cost (cf. `Vision::metabolic_cost`) bounds its
             // drift.
             vision_rays: true,
-            // Not mutable by default: the mutation rate (unstable meta-evolution)
-            // and the costs (metabolism, locomotion) which *are* the selection
-            // pressure — if evolvable, they would be whittled down to 0.
+            // Not mutable by default: the mutation rate (unstable meta-evolution),
+            // which *is* the selection pressure — if evolvable it would be whittled to
+            // 0. (The metabolism/locomotion costs are now the world's allometric
+            // `CostLaw`, not genes.)
             mutation_rate: false,
-            base_metabolism: false,
-            move_cost: false,
             // Flora genes (Phase 3), not mutable by default: lacking a cost
             // coupling, photosynthesis would drift toward the maximum (§2); and this
             // default **preserves the RNG stream** of existing scenarios (a
@@ -501,11 +545,9 @@ impl Default for Mutability {
             // scenario enables them.
             photosynthesis: false,
             seed_dispersal: false,
-            // Decision-system and maneuvering costs: like the other costs,
-            // non-mutable by default (evolvable, they would be driven to 0) and
-            // absent from the draw stream.
+            // Decision-system cost: non-mutable by default (evolvable, it would be
+            // driven to 0) and absent from the draw stream.
             brain_cost: false,
-            agility_cost: false,
             // Deliberate-eating cost: like the other costs, non-mutable by default
             // (evolvable, it would be whittled to 0 and the restraint pressure would
             // vanish) and absent from the draw stream.
@@ -807,14 +849,6 @@ impl Default for SimConfig {
                 max: 120.0,
             },
             mutation_rate_bounds: Bounds { min: 0.0, max: 0.5 },
-            base_metabolism_bounds: Bounds {
-                min: 0.0,
-                max: 20.0,
-            },
-            move_cost_bounds: Bounds {
-                min: 0.0,
-                max: 20.0,
-            },
             // Min 0: a blind agent (0 rays) is legitimate (cf. `Genotype::ray_count`).
             vision_rays_bounds: Bounds {
                 min: 0.0,
@@ -829,19 +863,16 @@ impl Default for SimConfig {
                 max: 200.0,
             },
             // Per-neuron scale: a typical MLP has ~10 decision neurons, so a max of
-            // 2.0 ≈ 20 energy/s, of the same order as base_metabolism.
+            // 2.0 ≈ 20 energy/s.
             brain_cost_bounds: Bounds { min: 0.0, max: 2.0 },
-            // Per-effort scale: the per-second cost is roughly agility_cost × the
-            // mean |Δv| an agent applies while tracking; a small coefficient already
-            // bites, so a modest ceiling.
-            agility_cost_bounds: Bounds { min: 0.0, max: 2.0 },
             // Deliberate-eating cost, non-mutable by default: min 0 (default gene 0 →
-            // inert). An editor-slider range of the same order as base_metabolism —
-            // enough for the act cost to bite against the food it buys.
+            // inert). An editor-slider range enough for the act cost to bite against
+            // the food it buys.
             act_cost_bounds: Bounds {
                 min: 0.0,
                 max: 10.0,
             },
+            cost_law: CostLaw::default(),
             // Default backgrounds: dark play area, off-game one notch lighter —
             // enough to delimit the arena without any zone looking empty. (Reuses
             // the tints previously hard-coded in `main`.)

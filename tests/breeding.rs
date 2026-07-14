@@ -36,8 +36,6 @@ fn breeder_config(survivors: usize, generations: usize) -> SimConfig {
         reproduction_threshold: 35.0,
         offspring_energy: 20.0,
         mutation_rate: 0.12,
-        base_metabolism: 2.0,
-        move_cost: 1.5,
         vision_rays: 1.0,
         photosynthesis: 5.0,
         ..Genotype::default()
