@@ -156,6 +156,15 @@ impl RunsPanel {
     pub(crate) fn load_config(&mut self, config: SimConfig) {
         self.pending = Some(RunAction::LoadConfig(Box::new(config)));
     }
+
+    /// Whether the in-memory config has **unsaved edits** vs the last load/save baseline
+    /// (the amber `*` marker). The transient founder pools never count as an edit (they
+    /// never reach the file), mirroring [`scenario_section`]'s dirty check.
+    pub(crate) fn dirty(&self, config: &SimConfig) -> bool {
+        let mut baseline = self.baseline.clone();
+        baseline.founder_pools = config.founder_pools.clone();
+        *config != baseline
+    }
 }
 
 /// Normalizes a user-typed name into a scenario path: ensures a `.ron` extension and,

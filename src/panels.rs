@@ -493,19 +493,43 @@ fn studio_validation(ui: &mut egui::Ui, graph: &crate::trophic::TrophicGraph, co
     }
 }
 
-/// A centred **placeholder** screen (Library not-yet-built, Analyze deferred): a
-/// heading, an optional *deferred* chip, and a wrapped one-paragraph description.
-/// Its own `CentralPanel` fills the whole content area, so the arena stays hidden
-/// (the one-camera discipline — `docs/ui-redesign.md` §1).
-fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &str) {
+/// A centred **placeholder** screen (Analyze deferred): an icon medallion, the title,
+/// an optional *deferred* chip, a wrapped description, and a row of feature chips. Its
+/// own `CentralPanel` fills the content area, so the arena stays hidden (the one-camera
+/// discipline — `docs/ui-redesign.md` §1).
+fn placeholder_screen(
+    root: &mut egui::Ui,
+    icon: char,
+    title: &str,
+    deferred: bool,
+    body: &str,
+    features: &[&str],
+) {
     egui::CentralPanel::default().show_inside(root, |ui| {
         ui.vertical_centered(|ui| {
-            ui.add_space((ui.available_height() * 0.5 - 70.0).max(16.0));
-            ui.heading(title);
+            ui.add_space((ui.available_height() * 0.5 - 110.0).max(16.0));
+            // Icon medallion.
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(66.0, 66.0), egui::Sense::hover());
+            ui.painter().rect_filled(rect, 18.0, crate::theme::CARD);
+            ui.painter().rect_stroke(
+                rect,
+                18.0,
+                egui::Stroke::new(1.0, crate::theme::GRID),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                icon.to_string(),
+                egui::FontId::new(30.0, fonts::phosphor()),
+                crate::theme::INK_MUTED,
+            );
+            ui.add_space(16.0);
             if deferred {
-                ui.add_space(6.0);
                 crate::theme::chip(ui, crate::theme::ACCENT, "Deferred · placeholder");
+                ui.add_space(12.0);
             }
+            ui.heading(title);
             ui.add_space(10.0);
             ui.allocate_ui_with_layout(
                 egui::vec2(440.0, 96.0),
@@ -514,6 +538,14 @@ fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &s
                     ui.colored_label(crate::theme::INK_MUTED, body);
                 },
             );
+            if !features.is_empty() {
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    for f in features {
+                        crate::theme::chip(ui, crate::theme::INK_MUTED, *f);
+                    }
+                });
+            }
         });
     });
 }
@@ -561,17 +593,29 @@ fn observe_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) 
     }
 }
 
-/// A small **metric tile** (Lab results header): a muted caption over a large mono
-/// value, in a card. Used for the species / trophic-links / web-fragility read-outs.
-fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
+/// A **dot caption**: a small filled dot followed by a [`crate::theme::caption`] — the
+/// comp's `● OUTER · SWEEP` block headers.
+fn dot_caption(ui: &mut egui::Ui, color: egui::Color32, text: &str) {
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(egui::vec2(9.0, 9.0), egui::Sense::hover());
+        ui.painter().circle_filled(r.center(), 4.0, color);
+        crate::theme::caption(ui, text);
+    });
+}
+
+/// A small **metric tile** (Lab results header): a caption over a large mono value in
+/// its own colour, in a card. Used for the species / trophic-links / web-fragility
+/// read-outs.
+fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str, color: egui::Color32) {
     editor::card(ui, |ui| {
         ui.vertical(|ui| {
+            crate::theme::caption(ui, label);
             ui.label(
-                egui::RichText::new(label)
-                    .small()
-                    .color(crate::theme::INK_MUTED),
+                egui::RichText::new(value)
+                    .monospace()
+                    .size(22.0)
+                    .color(color),
             );
-            ui.label(egui::RichText::new(value).monospace().size(22.0));
         });
     });
 }
@@ -1078,6 +1122,22 @@ pub fn dock(
                 .show_inside(&mut root, |ui| {
                     ui.horizontal(|ui| {
                         ui.heading("Studio");
+                        // The document: origin name + amber dirty marker (the comp's
+                        // "Studio reef *").
+                        let dirty = state.runs_panel.dirty(&config);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}{}",
+                                state.runs_panel.origin_label(),
+                                if dirty { " *" } else { "" }
+                            ))
+                            .monospace()
+                            .color(if dirty {
+                                crate::theme::ACCENT
+                            } else {
+                                crate::theme::INK_MUTED
+                            }),
+                        );
                         ui.separator();
                         runs::scenario_section(
                             ui,
@@ -1174,9 +1234,12 @@ pub fn dock(
                         .show(ui, |ui| {
                             ui.heading("Experiment");
                             ui.weak("Run headless cohorts — breed, sweep, or nest both.");
-                            ui.add_space(4.0);
-                            ui.label(format!("Scenario · {}", state.runs_panel.origin_label()));
-                            ui.separator();
+                            ui.add_space(6.0);
+                            crate::theme::caption(ui, "Scenario");
+                            editor::card(ui, |ui| {
+                                ui.label(state.runs_panel.origin_label());
+                            });
+                            ui.add_space(8.0);
 
                             ui.horizontal(|ui| {
                                 for (m, label) in [
@@ -1189,10 +1252,11 @@ pub fn dock(
                                     }
                                 }
                             });
+                            ui.add_space(6.0);
 
                             if state.lab.mode.has_sweep() {
                                 editor::card(ui, |ui| {
-                                    ui.strong("Outer · sweep");
+                                    dot_caption(ui, crate::theme::ACCENT, "Outer · sweep");
                                     egui::Grid::new("sweep_grid").num_columns(2).show(ui, |ui| {
                                         ui.label("parameter");
                                         ui.add(
@@ -1233,9 +1297,18 @@ pub fn dock(
                                     );
                                 });
                             }
+                            // The nesting cue: an outer sweep over an inner breed.
+                            if state.lab.mode == LabMode::Both {
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        fonts::icon(icons::ARROW_DOWN)
+                                            .color(crate::theme::INK_FAINT),
+                                    );
+                                });
+                            }
                             if state.lab.mode.has_breed() {
                                 editor::card(ui, |ui| {
-                                    ui.strong("Inner · breed");
+                                    dot_caption(ui, crate::theme::ACCENT, "Inner · breed");
                                     if config.batch.is_some() {
                                         ui.weak(
                                             "Config in Studio's World editor; run it in the \
@@ -1303,9 +1376,24 @@ pub fn dock(
                 let frag = crate::trophic::web_fragility(&config);
                 let graph = crate::trophic::TrophicGraph::derive(&config);
                 ui.horizontal(|ui| {
-                    metric_tile(ui, "SPECIES", &config.archetypes.len().to_string());
-                    metric_tile(ui, "TROPHIC LINKS", &graph.edge_count().to_string());
-                    metric_tile(ui, "WEB FRAGILITY", &format!("{:.2}", frag.worst));
+                    metric_tile(
+                        ui,
+                        "SPECIES",
+                        &config.archetypes.len().to_string(),
+                        crate::theme::INK,
+                    );
+                    metric_tile(
+                        ui,
+                        "TROPHIC LINKS",
+                        &graph.edge_count().to_string(),
+                        crate::theme::INK,
+                    );
+                    metric_tile(
+                        ui,
+                        "WEB FRAGILITY",
+                        &format!("{:.2}", frag.worst),
+                        crate::theme::ACCENT,
+                    );
                 });
                 ui.separator();
                 if config.batch.is_some() {
@@ -1786,12 +1874,18 @@ pub fn dock(
             // CENTRE — the deferred comparison placeholder.
             placeholder_screen(
                 &mut root,
+                icons::CHART,
                 "Post-hoc comparison",
                 true,
                 "Overlay populations, gene trajectories and component quantities across \
                  saved runs, compare species side by side, and export the data (CSV / PNG) \
                  for the falsifiable-knowledge deliverable. Deferred until run records \
                  (persisted time series) exist.",
+                &[
+                    "overlaid time series",
+                    "small multiples",
+                    "CSV / PNG export",
+                ],
             );
             egui::Rect::ZERO
         }
