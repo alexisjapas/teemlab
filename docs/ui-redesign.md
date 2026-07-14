@@ -26,6 +26,13 @@ per-archetype gene panel still shows the *old free cost genes*
 read-only** costs (companion §5), and the theme switcher is designer exploration
 (ship a single theme at MVP).
 
+**Prerequisite status.** The simulation model this UI is built against — the
+emergent-trophics refactor ([`emergent-trophics.md`](emergent-trophics.md)) — is
+**implemented**: its *Phase A* is complete on branch `redesign/emergent-trophics` (see
+that doc's *Implementation status*). This UI (**Phase B**) is **not yet started**; it can
+now be built against the settled model — no relation table, per-component stores,
+allometric costs, and the static food-web validator (`broken_chains`) the Studio surfaces.
+
 **Framing (why the shape is what it is).** The project's resolved direction
 (ROADMAP §0, 2026-07-14) is **a research bench, not a game**: the deliverable is
 *falsifiable knowledge* about why ecosystems hold or collapse (a hypothesis, a

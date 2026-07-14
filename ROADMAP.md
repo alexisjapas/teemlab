@@ -16,6 +16,18 @@
 A living summary; the per-item detail lives in §8 (implementation order) and the
 open work in §9.
 
+**⟳ In flight — emergent-trophics refactor: Phase A (simulation) COMPLETE** (branch
+`redesign/emergent-trophics`, 2026-07-14; **not yet on `main`**). The sim now runs on
+**emergent targeting** — size dominance + digestibility replace the authored relation
+table (**SIM Laws 8 & 11 amended**) — over an **allometric cost law** (costs derive from
+body size), per-component nutrient stores, a static **food-web validator**, and the
+flora/fauna gene-category dissolution; faction combat removed. Binding doc + full stage
+status: [`docs/emergent-trophics.md`](docs/emergent-trophics.md) (*Implementation
+status*). The example scenarios are **not re-tuned** — 14 behavioural test drivers are
+`#[ignore]`d pending that rework. **Next:** the UI redesign
+([`docs/ui-redesign.md`](docs/ui-redesign.md), Phase B). Everything in this §0 *below*
+still describes `main` (pre-refactor); it will be rewritten when the branch lands.
+
 **Direction (resolved 2026-07-14) — this is a research bench, not a game.** The
 project once carried two goals: (1) train competent behaviour for game mobs, and
 (2) study emergence — non-collapsing biomes, genetic pathways, the factors of

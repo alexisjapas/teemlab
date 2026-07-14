@@ -24,6 +24,44 @@ web"* vision, which already names *emergent targeting* as "a real change to SIM 
 
 ---
 
+## Implementation status — Phase A (simulation) COMPLETE
+
+Built and pushed on branch **`redesign/emergent-trophics`** (7 commits; **not yet on
+`main`**). Each stage was implemented, run through `build` / `fmt` / `clippy` clean,
+tested, and committed:
+
+| Stage | What | Commit | Nature |
+|---|---|---|---|
+| A1 | Per-component `Nutrients` stores (nutrient = component `0`) | `e424f8c` | additive · byte-identical |
+| A2 | `need` verb on `FieldRelation` — the nutritional profile | `b27552a` | additive · byte-identical |
+| A3 | Allometric `CostLaw` (costs derive from body size); the `base_metabolism` / `move_cost` / `agility_cost` genes removed | `bf4790b` | **breaking** |
+| A4a | `Predation` config + `SimConfig::can_eat` / `digestibility` | `a85a21d` | additive · byte-identical |
+| A4b | Emergent targeting; `relations` table + `acts_on` + faction combat (`Fitness::Dominance`, scenarios 11/14/15) removed; **SIM Laws 8 & 11 amended** in `CONSTITUTION-SIM.md` | `9430fc9` | **breaking · constitutional** |
+| A5 | Static food-web validator: `SimConfig::broken_chains` / `unreachable_needs` (§6.1) | `a2e918d` | additive |
+| A6 | `GeneCategory::Flora` dissolved (genes → Metabolism/Reproduction); "Algae" library preset (`species/examples/algae.ron`) | `d1197d3` | byte-identical (presentation) |
+
+**Test strategy** — per the decision *not to dwell on post-refactor scenario viability*
+(the scenarios will be reworked wholesale later): the example scenarios were **not**
+re-tuned, so their **behavioural** drivers are `#[ignore]`d — **14 total** — each with a
+reason. The **mechanism / conservation / determinism** tests stay green (`trophic`
+re-tuned to emergent — a bigger, hungry forager; reproduction, recycling, turnover,
+breeding, captured_brain, obstacle, anchor, nutrients, flora, containment; + all lib unit
+tests incl. the A5 validator and the A6 preset). `cargo test --no-fail-fast` → **0
+failures, 14 ignored**.
+
+**Remaining.**
+
+- **Phase B — the UI** ([`ui-redesign.md`](ui-redesign.md)): the screen router + 5
+  screens. **Not started.** Its Studio consumes A5 (the validator) and A6 (neutral gene
+  categories); the Observe fragility overlay & the Lab metric consume A5 / §6.
+- **Deferred debts** (§9): re-tune every scenario (un-`#[ignore]` the 14 drivers);
+  metabolization; nutrient-as-survival economy; muscular-efficiency gene; non-nutritional
+  combat; graded dominance; signed digestibility; speed-ceiling removal.
+- **`ROADMAP.md §0`** carries a pointer entry; its full narrative update waits until the
+  scenarios are re-tuned and the branch is validated end-to-end (and merged to `main`).
+
+---
+
 ## 1. The need — why interactions must become implicit
 
 Today the scenario carries an explicit `relations` table: a per-pair `(actor,
