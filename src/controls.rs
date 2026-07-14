@@ -172,7 +172,14 @@ pub(crate) fn controls_section(
     };
     let paused = vtime.is_paused();
     let play_glyph = if paused { icons::PLAY } else { icons::PAUSE };
-    if icon_button(ui, play_glyph)
+    // The play/pause is the transport's **primary** control — teal (the comp's accent2).
+    if ui
+        .add(
+            egui::Button::new(fonts::icon(play_glyph).color(crate::theme::ON_ACCENT2))
+                .fill(crate::theme::ACCENT2)
+                .min_size(egui::vec2(34.0, 24.0))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .on_hover_text(keymap::tooltip("Play / pause", UiAction::PlayPause))
         .clicked()
     {

@@ -95,6 +95,30 @@ impl History {
     pub fn latest_time(&self) -> f32 {
         self.samples.back().map(|s| s.t).unwrap_or(0.0)
     }
+
+    /// The latest sample's **per-species living population** (indexed like `Species`),
+    /// or an empty slice before the first sample. Read-only — the Observe live-stats
+    /// panel reads it (the same source the population curve plots, so they agree).
+    pub fn latest_population(&self) -> &[u32] {
+        self.samples
+            .back()
+            .map(|s| s.population.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Total living population of the latest sample and its **change** since the
+    /// previous one — the `78  −4` read-out. `(total, delta)`; `delta` is `0` before a
+    /// second sample.
+    pub fn population_delta(&self) -> (u32, i32) {
+        let sum = |s: &Sample| s.population.iter().sum::<u32>();
+        let latest = self.samples.back().map(sum).unwrap_or(0);
+        let delta = if self.samples.len() >= 2 {
+            latest as i32 - sum(&self.samples[self.samples.len() - 2]) as i32
+        } else {
+            0
+        };
+        (latest, delta)
+    }
 }
 
 /// Normalizes a gene value within its bounds, to `[0, 1]`.

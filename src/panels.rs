@@ -518,6 +518,49 @@ fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &s
     });
 }
 
+/// Observe's **live-stats** block (comp §3): a big-number population card (total +
+/// delta) then one coloured row per species. Reads the metrics [`History`] — the same
+/// source the population curve plots, so the two agree.
+fn observe_population(ui: &mut egui::Ui, history: &History, config: &SimConfig) {
+    let (total, delta) = history.population_delta();
+    editor::card(ui, |ui| {
+        crate::theme::caption(ui, "Population");
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(total.to_string())
+                    .monospace()
+                    .size(26.0)
+                    .color(crate::theme::INK),
+            );
+            if delta != 0 {
+                let (col, txt) = if delta > 0 {
+                    (crate::theme::SUCCESS, format!("+{delta}"))
+                } else {
+                    (crate::theme::ERROR, delta.to_string())
+                };
+                ui.label(egui::RichText::new(txt).color(col).size(12.0));
+            }
+        });
+    });
+    let pop = history.latest_population();
+    if !pop.is_empty() {
+        editor::card(ui, |ui| {
+            for (i, arch) in config.archetypes.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    let (dot, _) =
+                        ui.allocate_exact_size(egui::vec2(11.0, 11.0), egui::Sense::hover());
+                    ui.painter()
+                        .circle_filled(dot.center(), 4.5, crate::theme::rgb(arch.color));
+                    ui.label(&arch.name);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.monospace(pop.get(i).copied().unwrap_or(0).to_string());
+                    });
+                });
+            }
+        });
+    }
+}
+
 /// A small **metric tile** (Lab results header): a muted caption over a large mono
 /// value, in a card. Used for the species / trophic-links / web-fragility read-outs.
 fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
@@ -531,6 +574,16 @@ fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
             ui.label(egui::RichText::new(value).monospace().size(22.0));
         });
     });
+}
+
+/// A translucent dark **overlay frame** for the arena's floating controls (the comp's
+/// blurred pills — egui has no backdrop-blur, so a dark wash + hairline approximates it).
+fn overlay_frame() -> egui::Frame {
+    egui::Frame::default()
+        .fill(egui::Color32::from_black_alpha(180))
+        .stroke(egui::Stroke::new(1.0, crate::theme::GRID))
+        .corner_radius(egui::CornerRadius::same(10))
+        .inner_margin(egui::Margin::symmetric(9, 6))
 }
 
 /// The Observe **arena overlays** (interactive, floating over the live arena): the
@@ -553,7 +606,7 @@ fn arena_controls(
         .fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 12.0))
         .pivot(egui::Align2::LEFT_BOTTOM)
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
+            overlay_frame().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Follow").on_hover_text(
                         "What the view auto-follows (same modes as the video). None = \
@@ -572,7 +625,7 @@ fn arena_controls(
         .fixed_pos(egui::pos2(rect.right() - 12.0, rect.bottom() - 12.0))
         .pivot(egui::Align2::RIGHT_BOTTOM)
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
+            overlay_frame().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("+").on_hover_text("Zoom in").clicked() {
                         view.zoom_by(1.25);
@@ -883,26 +936,26 @@ pub fn dock(
                         egui::ScrollArea::vertical()
                             .id_salt("observe_left_scroll")
                             .show(ui, |ui| {
-                                egui::CollapsingHeader::new("Live stats")
-                                    .default_open(true)
+                                crate::theme::caption(ui, "Live stats");
+                                observe_population(ui, &history, &config);
+                                egui::CollapsingHeader::new("Per-gene means")
+                                    .default_open(false)
                                     .show(ui, |ui| {
                                         editor::stats_section(ui, &stats_agents, &config)
                                     });
-                                egui::CollapsingHeader::new("Layers")
-                                    .default_open(true)
-                                    .show(ui, |ui| {
-                                        editor::layers_section(ui, &mut layers, &config);
-                                        crate::theme::toggle_row(
-                                            ui,
-                                            "Trophic graph",
-                                            &mut state.windows.trophic_overlay,
-                                        )
-                                        .on_hover_text(
-                                            "Overlay the derived food web on the arena: node \
-                                             size = population, edge colour = dependency \
-                                             (docs/emergent-trophics.md §6).",
-                                        );
-                                    });
+                                ui.add_space(12.0);
+                                crate::theme::caption(ui, "Layers");
+                                editor::layers_section(ui, &mut layers, &config);
+                                crate::theme::toggle_row(
+                                    ui,
+                                    "Trophic graph",
+                                    &mut state.windows.trophic_overlay,
+                                )
+                                .on_hover_text(
+                                    "Overlay the derived food web on the arena: node size = \
+                                     population, edge colour = dependency \
+                                     (docs/emergent-trophics.md §6).",
+                                );
                             });
                     })
                     .response
@@ -1650,11 +1703,20 @@ fn central_overlay(
     has_archetypes: bool,
 ) {
     let cx = rect.center().x;
-    painter.text(
-        egui::pos2(cx, rect.top() + 6.0),
-        egui::Align2::CENTER_TOP,
+    // Run-time read-out in a translucent pill (the comp's blurred chip).
+    let galley = painter.layout_no_wrap(
         overlay_label(run_time, speed),
         egui::FontId::monospace(11.0),
+        crate::theme::INK_MUTED,
+    );
+    let pill = egui::Rect::from_center_size(
+        egui::pos2(cx, rect.top() + 6.0 + galley.size().y * 0.5),
+        galley.size() + egui::vec2(16.0, 6.0),
+    );
+    painter.rect_filled(pill, 8.0, egui::Color32::from_black_alpha(150));
+    painter.galley(
+        egui::pos2(cx - galley.size().x * 0.5, rect.top() + 6.0),
+        galley,
         crate::theme::INK_MUTED,
     );
     if paused {
