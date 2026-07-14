@@ -90,6 +90,10 @@ pub struct UiWindows {
     pub right_open: bool,
     /// …and the bottom strip (status + curves).
     pub bottom_open: bool,
+    /// The **dynamic trophic-graph overlay** on the arena (ui-redesign §7): the derived
+    /// web annotated with live population (node size) and dependency (edge colour). A
+    /// view layer, off by default.
+    pub trophic_overlay: bool,
 }
 
 impl Default for UiWindows {
@@ -100,6 +104,7 @@ impl Default for UiWindows {
             left_open: true,
             right_open: true,
             bottom_open: true,
+            trophic_overlay: false,
         }
     }
 }
@@ -419,6 +424,15 @@ fn studio_validation(ui: &mut egui::Ui, graph: &crate::trophic::TrophicGraph, co
                 format!("{sp} needs {comp} — chain broken"),
             );
         }
+    }
+    // Structural fragility (§6.4): the worst predator's diet concentration — a specialist
+    // (→1) is one collapse away from losing its only prey.
+    let frag = crate::trophic::web_fragility(config);
+    if !frag.per_predator.is_empty() {
+        ui.weak(format!(
+            "web fragility · worst {:.2} · mean {:.2} (1 = specialist, →0 = generalist)",
+            frag.worst, frag.mean
+        ));
     }
 }
 
@@ -816,7 +830,16 @@ pub fn dock(
                                 egui::CollapsingHeader::new("Layers")
                                     .default_open(true)
                                     .show(ui, |ui| {
-                                        editor::layers_section(ui, &mut layers, &config)
+                                        editor::layers_section(ui, &mut layers, &config);
+                                        ui.checkbox(
+                                            &mut state.windows.trophic_overlay,
+                                            "Trophic graph",
+                                        )
+                                        .on_hover_text(
+                                            "Overlay the derived food web on the arena: node \
+                                             size = population, edge colour = dependency \
+                                             (docs/emergent-trophics.md §6).",
+                                        );
                                     });
                             });
                     })
@@ -1466,6 +1489,27 @@ pub fn dock(
     // interactive follow / zoom controls floating over the arena's corners.
     if screen.shows_arena() {
         let painter = root.painter().with_clip_rect(central.0);
+        // The **dynamic trophic-graph overlay** (§7): the derived web over a translucent
+        // backdrop, node size ∝ live population, edge colour ∝ dependency. Drawn first, so
+        // the run-time read-out and the arena controls stay on top.
+        if state.windows.trophic_overlay {
+            painter.rect_filled(central.0, 0.0, egui::Color32::from_black_alpha(190));
+            let graph = crate::trophic::TrophicGraph::derive(&config);
+            let mut population = vec![0usize; config.archetypes.len()];
+            for (_, _, species) in &stats_agents {
+                if let Some(p) = population.get_mut(species.0 as usize) {
+                    *p += 1;
+                }
+            }
+            graph.paint_into(
+                &painter,
+                central.0,
+                Some(crate::trophic::Live {
+                    population: &population,
+                    config: &config,
+                }),
+            );
+        }
         central_overlay(
             &painter,
             central.0,

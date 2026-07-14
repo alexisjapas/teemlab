@@ -148,16 +148,56 @@ impl TrophicGraph {
         self.edibility.len()
     }
 
-    /// Draw the static node-link diagram into `ui` (a fixed-height canvas). Components
-    /// sit in the leftmost column, archetypes in columns by trophic level; edibility
-    /// and absorption/emission are lines; a broken need paints the archetype with a red
-    /// ring. The **flags** below it (drawn by the caller) carry the authoritative text.
+    /// Draw the diagram into `ui` as a fixed-height canvas — the **static** Studio
+    /// surface. Components sit in the leftmost column, archetypes in columns by trophic
+    /// level; the **flags** the caller draws below carry the authoritative text.
     pub fn paint(&self, ui: &mut egui::Ui, height: f32) {
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), height),
             egui::Sense::hover(),
         );
         let painter = ui.painter_at(rect);
+        self.paint_into(&painter, rect, None);
+    }
+
+    /// Node layout: component column (0) + one column per trophic level (1..). Shared by
+    /// the static (Studio) and dynamic (Observe) surfaces.
+    fn layout(&self, rect: egui::Rect) -> (Vec<egui::Pos2>, Vec<egui::Pos2>) {
+        let max_level = self.archetypes.iter().map(|a| a.level).max().unwrap_or(0);
+        let n_cols = max_level + 2;
+        let pad = 26.0;
+        let col_w = ((rect.width() - 2.0 * pad) / (n_cols.max(1) as f32 - 1.0).max(1.0)).max(1.0);
+        let col_x = |col: usize| rect.left() + pad + col as f32 * col_w;
+        let slot_y = |i: usize, count: usize| {
+            let count = count.max(1);
+            let h = rect.height() - 2.0 * pad;
+            rect.top() + pad + h * (i as f32 + 0.5) / count as f32
+        };
+        let comp_pos = (0..self.components.len())
+            .map(|i| egui::pos2(col_x(0), slot_y(i, self.components.len())))
+            .collect();
+        let mut per_level = vec![0usize; max_level + 1];
+        for a in &self.archetypes {
+            per_level[a.level] += 1;
+        }
+        let mut idx_in_level = vec![0usize; max_level + 1];
+        let arch_pos = self
+            .archetypes
+            .iter()
+            .map(|a| {
+                let i = idx_in_level[a.level];
+                idx_in_level[a.level] += 1;
+                egui::pos2(col_x(a.level + 1), slot_y(i, per_level[a.level]))
+            })
+            .collect();
+        (comp_pos, arch_pos)
+    }
+
+    /// Draw the graph over an arbitrary painter / rect, **static** (`live = None`, the
+    /// Studio validator) or **dynamic** (`live = Some`, the Observe overlay): node size
+    /// ∝ population, edibility-edge colour ∝ **dependency** and thickness ∝ flow — the
+    /// §6.2/6.3 fragility surface. A broken need keeps its red ring.
+    pub fn paint_into(&self, painter: &egui::Painter, rect: egui::Rect, live: Option<Live>) {
         if self.archetypes.is_empty() {
             painter.text(
                 rect.center(),
@@ -168,69 +208,42 @@ impl TrophicGraph {
             );
             return;
         }
+        let (comp_pos, arch_pos) = self.layout(rect);
 
-        // Columns: 0 = components, 1.. = archetype trophic levels (+1).
-        let max_level = self.archetypes.iter().map(|a| a.level).max().unwrap_or(0);
-        let n_cols = max_level + 2; // components column + (max_level + 1) archetype columns
-        let pad = 26.0;
-        let col_w = ((rect.width() - 2.0 * pad) / (n_cols.max(1) as f32 - 1.0).max(1.0)).max(1.0);
-        let col_x = |col: usize| rect.left() + pad + col as f32 * col_w;
-
-        // Vertical slot within a column, given how many nodes share it.
-        let slot_y = |i: usize, count: usize| {
-            let count = count.max(1);
-            let h = rect.height() - 2.0 * pad;
-            rect.top() + pad + h * (i as f32 + 0.5) / count as f32
-        };
-
-        // Node centres.
-        let comp_pos: Vec<egui::Pos2> = (0..self.components.len())
-            .map(|i| egui::pos2(col_x(0), slot_y(i, self.components.len())))
-            .collect();
-        // Count archetypes per level for even vertical spread.
-        let mut per_level = vec![0usize; max_level + 1];
-        for a in &self.archetypes {
-            per_level[a.level] += 1;
-        }
-        let mut idx_in_level = vec![0usize; max_level + 1];
-        let arch_pos: Vec<egui::Pos2> = self
-            .archetypes
-            .iter()
-            .map(|a| {
-                let i = idx_in_level[a.level];
-                idx_in_level[a.level] += 1;
-                egui::pos2(col_x(a.level + 1), slot_y(i, per_level[a.level]))
-            })
-            .collect();
-
-        let line = |p: egui::Pos2, q: egui::Pos2, stroke: egui::Stroke| {
-            painter.line_segment([p, q], stroke);
-        };
-        // Absorption (component → archetype) and emission (archetype → component).
+        // Absorption / emission (static grey either way).
         for &(c, a) in &self.absorption {
             if let (Some(&p), Some(&q)) = (comp_pos.get(c), arch_pos.get(a)) {
-                line(p, q, egui::Stroke::new(1.0, crate::theme::GRID));
+                painter.line_segment([p, q], egui::Stroke::new(1.0, crate::theme::GRID));
             }
         }
         for &(a, c) in &self.emission {
             if let (Some(&p), Some(&q)) = (arch_pos.get(a), comp_pos.get(c)) {
-                line(p, q, egui::Stroke::new(1.0, crate::theme::GRID));
+                painter.line_segment([p, q], egui::Stroke::new(1.0, crate::theme::GRID));
             }
         }
-        // Edibility (prey → predator).
+        // Edibility (prey → predator) — dependency-coloured / flow-thick when live.
         for &(actor, prey) in &self.edibility {
-            if let (Some(&p), Some(&q)) = (arch_pos.get(prey), arch_pos.get(actor)) {
-                line(p, q, egui::Stroke::new(1.5, crate::theme::INK_FAINT));
-            }
+            let (Some(&p), Some(&q)) = (arch_pos.get(prey), arch_pos.get(actor)) else {
+                continue;
+            };
+            let (color, width) = match &live {
+                Some(l) => {
+                    let dep = l.dependency(self, actor, prey);
+                    (
+                        lerp_color(crate::theme::GRID, crate::theme::ERROR, dep),
+                        1.0 + 3.0 * dep,
+                    )
+                }
+                None => (crate::theme::INK_FAINT, 1.5),
+            };
+            painter.line_segment([p, q], egui::Stroke::new(width, color));
         }
-        // Broken need: a red dashed link + a red ring on the archetype (below).
         let broken_arch: std::collections::HashSet<usize> =
             self.broken.iter().map(|&(a, _)| a).collect();
 
         // Component nodes (small diamonds).
         for (i, &p) in comp_pos.iter().enumerate() {
-            let fed = self.source_components.contains(&i);
-            let col = if fed {
+            let col = if self.source_components.contains(&i) {
                 crate::theme::ACCENT
             } else {
                 crate::theme::INK_MUTED
@@ -254,25 +267,87 @@ impl TrophicGraph {
                 crate::theme::INK_MUTED,
             );
         }
-        // Archetype nodes (circles in body colour), sized by level a touch.
+        // Archetype nodes — radius ∝ population (sqrt, so area tracks it) when live.
+        let max_pop = live
+            .as_ref()
+            .and_then(|l| l.population.iter().copied().max())
+            .unwrap_or(0);
         for (i, a) in self.archetypes.iter().enumerate() {
             let p = arch_pos[i];
-            let [r, g, b] = a.color;
-            let fill =
-                egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
-            painter.circle_filled(p, 8.0, fill);
+            let fill = color32(a.color);
+            let r = match &live {
+                Some(l) if max_pop > 0 => {
+                    let pop = l.population.get(i).copied().unwrap_or(0);
+                    5.0 + 9.0 * (pop as f32 / max_pop as f32).sqrt()
+                }
+                _ => 8.0,
+            };
+            painter.circle_filled(p, r, fill);
             if broken_arch.contains(&i) {
-                painter.circle_stroke(p, 10.0, egui::Stroke::new(2.0, crate::theme::ERROR));
+                painter.circle_stroke(p, r + 2.0, egui::Stroke::new(2.0, crate::theme::ERROR));
             }
+            let label = match &live {
+                Some(l) => format!("{} · {}", a.name, l.population.get(i).copied().unwrap_or(0)),
+                None => a.name.clone(),
+            };
             painter.text(
-                egui::pos2(p.x, p.y + 10.0),
+                egui::pos2(p.x, p.y + r + 2.0),
                 egui::Align2::CENTER_TOP,
-                &a.name,
+                label,
                 egui::FontId::proportional(10.0),
                 crate::theme::INK,
             );
         }
     }
+}
+
+/// Live annotations for the **dynamic** overlay (Observe): per-archetype population and
+/// the config (for the digestibility that weights edge dependency, §6.3).
+pub struct Live<'a> {
+    /// Live population per archetype (index-aligned with the graph's archetypes).
+    pub population: &'a [usize],
+    /// The scenario, read for `digestibility`.
+    pub config: &'a SimConfig,
+}
+
+impl Live<'_> {
+    /// `dependency(P→Q) = digestibility(P,Q)·pop(Q) / Σ_Q' digestibility(P,Q')·pop(Q')` —
+    /// the **share** of predator P's nourishment coming from prey Q (§6.3): `1` = a pure
+    /// specialist on Q (fragile), `→0` = one of many sources (robust). `0` if P has no
+    /// live intake.
+    fn dependency(&self, g: &TrophicGraph, actor: usize, prey: usize) -> f32 {
+        let intake = |q: usize| {
+            self.config.digestibility(actor as u16, q as u16).max(0.0)
+                * self.population.get(q).copied().unwrap_or(0) as f32
+        };
+        let denom: f32 = g
+            .edibility
+            .iter()
+            .filter(|&&(a, _)| a == actor)
+            .map(|&(_, q)| intake(q))
+            .sum();
+        if denom > 0.0 {
+            intake(prey) / denom
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Linear RGB interpolation between two colours (`t` clamped to `[0, 1]`).
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
+}
+
+/// A linear-sRGB `[r, g, b]` archetype colour as an egui `Color32`.
+fn color32(c: [f32; 3]) -> egui::Color32 {
+    egui::Color32::from_rgb(
+        (c[0] * 255.0) as u8,
+        (c[1] * 255.0) as u8,
+        (c[2] * 255.0) as u8,
+    )
 }
 
 /// **Structural web fragility** (`docs/emergent-trophics.md` §6.4) — how concentrated
