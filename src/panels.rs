@@ -576,6 +576,63 @@ fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
     });
 }
 
+/// HSL → `Color32` (`h` in degrees, `s`/`l` in `[0, 1]`) — for the seed-derived hue of a
+/// World thumbnail.
+fn hsl(h: f32, s: f32, l: f32) -> egui::Color32 {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = (h.rem_euclid(360.0)) / 60.0;
+    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
+    let (r, g, b) = match hp as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    let q = |v: f32| ((v + m) * 255.0) as u8;
+    egui::Color32::from_rgb(q(r), q(g), q(b))
+}
+
+/// Paint a **World thumbnail** (the comp's gallery preview): a seed-derived radial glow
+/// over a near-black base, with a few species motes. egui has no radial gradient, so
+/// stacked translucent circles (large-faint → small-bright) approximate it.
+fn world_thumbnail(painter: &egui::Painter, rect: egui::Rect, seed: u64) {
+    let painter = painter.with_clip_rect(rect);
+    painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(13, 15, 19));
+    let base = hsl((seed % 360) as f32, 0.45, 0.32);
+    let center = egui::pos2(
+        rect.left() + rect.width() * 0.38,
+        rect.top() + rect.height() * 0.40,
+    );
+    for i in (1..=6).rev() {
+        let r = rect.width() * 0.11 * i as f32;
+        let a = (46 / i) as u8;
+        painter.circle_filled(
+            center,
+            r,
+            egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a),
+        );
+    }
+    for (fx, fy, col) in [
+        (0.20, 0.20, crate::theme::FLORA),
+        (0.42, 0.32, crate::theme::FLORA),
+        (0.66, 0.54, crate::theme::FLORA),
+        (0.30, 0.68, crate::theme::FLORA),
+        (0.78, 0.24, crate::theme::TARGET),
+    ] {
+        painter.circle_filled(
+            egui::pos2(
+                rect.left() + rect.width() * fx,
+                rect.top() + rect.height() * fy,
+            ),
+            3.0,
+            col,
+        );
+    }
+}
+
 /// A translucent dark **overlay frame** for the arena's floating controls (the comp's
 /// blurred pills — egui has no backdrop-blur, so a dark wash + hairline approximates it).
 fn overlay_frame() -> egui::Frame {
@@ -1326,29 +1383,43 @@ pub fn dock(
                         });
                     });
                     ui.horizontal(|ui| {
-                        for (tab, label) in [
-                            (LibraryTab::Worlds, "Worlds"),
-                            (LibraryTab::Species, "Species"),
+                        let src = state.library.source;
+                        let nw = state
+                            .library
+                            .worlds
+                            .iter()
+                            .filter(|w| w.source == src)
+                            .count();
+                        let ns = state
+                            .library
+                            .species
+                            .iter()
+                            .filter(|s| s.source == src)
+                            .count();
+                        for (tab, label, n) in [
+                            (LibraryTab::Worlds, "Worlds", nw),
+                            (LibraryTab::Species, "Species", ns),
                         ] {
                             if ui
-                                .selectable_label(state.library.tab == tab, label)
+                                .selectable_label(state.library.tab == tab, format!("{label}  {n}"))
                                 .clicked()
                             {
                                 state.library.tab = tab;
                             }
                         }
-                        ui.separator();
-                        for (src, label) in [
-                            (CatalogSource::Examples, "examples"),
-                            (CatalogSource::Saved, "saved"),
-                        ] {
-                            if ui
-                                .selectable_label(state.library.source == src, label)
-                                .clicked()
-                            {
-                                state.library.source = src;
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            for (source, label) in [
+                                (CatalogSource::Saved, "saved"),
+                                (CatalogSource::Examples, "examples"),
+                            ] {
+                                if ui
+                                    .selectable_label(state.library.source == source, label)
+                                    .clicked()
+                                {
+                                    state.library.source = source;
+                                }
                             }
-                        }
+                        });
                     });
                 });
 
@@ -1366,7 +1437,24 @@ pub fn dock(
                         .and_then(|i| state.library.worlds.get(i))
                     {
                         Some(w) => {
-                            ui.label(format!("World · {}", w.name));
+                            let (name, seed) = (w.name.clone(), w.world.seed);
+                            editor::card(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let (thumb, _) = ui.allocate_exact_size(
+                                        egui::vec2(46.0, 46.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    world_thumbnail(ui.painter(), thumb, seed);
+                                    ui.vertical(|ui| {
+                                        ui.strong(&name);
+                                        ui.label(
+                                            egui::RichText::new(format!("world · #{seed}"))
+                                                .color(crate::theme::INK_MUTED)
+                                                .size(11.5),
+                                        );
+                                    });
+                                });
+                            });
                         }
                         None => {
                             ui.weak("No world chosen — pick one in the Worlds gallery.");
@@ -1462,49 +1550,116 @@ pub fn dock(
                         LibraryTab::Worlds => {
                             let mut choose = None;
                             let mut delete = None;
-                            for i in 0..state.library.worlds.len() {
-                                let w = &state.library.worlds[i];
-                                if w.source != source
-                                    || (!search.is_empty()
-                                        && !w.name.to_lowercase().contains(&search))
-                                {
-                                    continue;
-                                }
-                                let deletable = w.path.clone();
-                                editor::card(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.strong(&w.name);
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                if ui.button("Use").clicked() {
-                                                    choose = Some(i);
-                                                }
-                                                if deletable.is_some()
-                                                    && ui
-                                                        .button(fonts::icon(icons::TRASH))
-                                                        .on_hover_text("Delete this saved world")
-                                                        .clicked()
-                                                {
-                                                    delete = deletable.clone();
-                                                }
-                                            },
-                                        );
-                                    });
-                                    ui.label(format!(
-                                        "seed #{} · {} component(s) · {} source(s)",
+                            let ids: Vec<usize> = (0..state.library.worlds.len())
+                                .filter(|&i| {
+                                    let w = &state.library.worlds[i];
+                                    w.source == source
+                                        && (search.is_empty()
+                                            || w.name.to_lowercase().contains(&search))
+                                })
+                                .collect();
+                            ui.horizontal_wrapped(|ui| {
+                                for i in ids {
+                                    let w = &state.library.worlds[i];
+                                    let (name, seed, ncomp, nsrc, derived, path, selected) = (
+                                        w.name.clone(),
                                         w.world.seed,
                                         w.world.components.len(),
-                                        w.world.sources.len()
-                                    ));
-                                    if w.derived_from > 0 {
-                                        ui.weak(format!(
-                                            "stage of {} example scenario(s)",
-                                            w.derived_from
-                                        ));
-                                    }
-                                });
-                            }
+                                        w.world.sources.len(),
+                                        w.derived_from,
+                                        w.path.clone(),
+                                        state.library.chosen_world == Some(i),
+                                    );
+                                    ui.allocate_ui(egui::vec2(224.0, 194.0), |ui| {
+                                        egui::Frame::default()
+                                            .fill(crate::theme::SURFACE)
+                                            .stroke(egui::Stroke::new(
+                                                1.0,
+                                                if selected {
+                                                    crate::theme::line(crate::theme::ACCENT)
+                                                } else {
+                                                    crate::theme::GRID
+                                                },
+                                            ))
+                                            .corner_radius(egui::CornerRadius::same(14))
+                                            .show(ui, |ui| {
+                                                ui.set_width(224.0);
+                                                let (thumb, _) = ui.allocate_exact_size(
+                                                    egui::vec2(224.0, 116.0),
+                                                    egui::Sense::hover(),
+                                                );
+                                                world_thumbnail(ui.painter(), thumb, seed);
+                                                egui::Frame::default()
+                                                    .inner_margin(egui::Margin::same(12))
+                                                    .show(ui, |ui| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.strong(&name);
+                                                            ui.with_layout(
+                                                                egui::Layout::right_to_left(
+                                                                    egui::Align::Center,
+                                                                ),
+                                                                |ui| {
+                                                                    ui.label(
+                                                                        egui::RichText::new(
+                                                                            format!(
+                                                                                "#{}",
+                                                                                seed % 100000
+                                                                            ),
+                                                                        )
+                                                                        .monospace()
+                                                                        .size(11.0)
+                                                                        .color(
+                                                                            crate::theme::INK_FAINT,
+                                                                        ),
+                                                                    );
+                                                                },
+                                                            );
+                                                        });
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "{ncomp} component(s) · \
+                                                                 {nsrc} source(s)"
+                                                            ))
+                                                            .color(crate::theme::INK_MUTED)
+                                                            .size(12.0),
+                                                        );
+                                                        ui.horizontal(|ui| {
+                                                            if derived > 0 {
+                                                                ui.label(
+                                                                    egui::RichText::new(format!(
+                                                                        "{derived} scenario(s)"
+                                                                    ))
+                                                                    .color(crate::theme::INK_FAINT)
+                                                                    .size(11.0),
+                                                                );
+                                                            }
+                                                            ui.with_layout(
+                                                                egui::Layout::right_to_left(
+                                                                    egui::Align::Center,
+                                                                ),
+                                                                |ui| {
+                                                                    if ui.button("Use").clicked() {
+                                                                        choose = Some(i);
+                                                                    }
+                                                                    if path.is_some()
+                                                                        && ui
+                                                                            .small_button(
+                                                                                fonts::icon(
+                                                                                    icons::TRASH,
+                                                                                ),
+                                                                            )
+                                                                            .clicked()
+                                                                    {
+                                                                        delete = path.clone();
+                                                                    }
+                                                                },
+                                                            );
+                                                        });
+                                                    });
+                                            });
+                                    });
+                                }
+                            });
                             if let Some(i) = choose {
                                 state.library.chosen_world = Some(i);
                             }
@@ -1517,39 +1672,75 @@ pub fn dock(
                         LibraryTab::Species => {
                             let mut add = None;
                             let mut delete = None;
-                            for i in 0..state.library.species.len() {
-                                let s = &state.library.species[i];
-                                if s.source != source
-                                    || (!search.is_empty()
-                                        && !s.name.to_lowercase().contains(&search))
-                                {
-                                    continue;
-                                }
-                                let path = s.path.clone();
-                                let saved = s.source == CatalogSource::Saved;
-                                editor::card(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.strong(&s.name);
-                                        ui.weak(s.entry.archetype.brain.name());
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                if ui.button("Add").clicked() {
-                                                    add = Some(s.entry.clone());
-                                                }
-                                                if saved
-                                                    && ui
-                                                        .button(fonts::icon(icons::TRASH))
-                                                        .on_hover_text("Delete this saved species")
-                                                        .clicked()
-                                                {
-                                                    delete = Some(path.clone());
-                                                }
-                                            },
-                                        );
+                            let ids: Vec<usize> = (0..state.library.species.len())
+                                .filter(|&i| {
+                                    let s = &state.library.species[i];
+                                    s.source == source
+                                        && (search.is_empty()
+                                            || s.name.to_lowercase().contains(&search))
+                                })
+                                .collect();
+                            ui.horizontal_wrapped(|ui| {
+                                for i in ids {
+                                    let s = &state.library.species[i];
+                                    let (name, brain, color, saved, path, entry) = (
+                                        s.name.clone(),
+                                        s.entry.archetype.brain.name().to_string(),
+                                        s.entry.archetype.color,
+                                        s.source == CatalogSource::Saved,
+                                        s.path.clone(),
+                                        s.entry.clone(),
+                                    );
+                                    ui.allocate_ui(egui::vec2(224.0, 78.0), |ui| {
+                                        egui::Frame::default()
+                                            .fill(crate::theme::SURFACE)
+                                            .stroke(egui::Stroke::new(1.0, crate::theme::GRID))
+                                            .corner_radius(egui::CornerRadius::same(14))
+                                            .inner_margin(egui::Margin::same(13))
+                                            .show(ui, |ui| {
+                                                ui.set_width(224.0);
+                                                ui.horizontal(|ui| {
+                                                    let (dot, _) = ui.allocate_exact_size(
+                                                        egui::vec2(14.0, 14.0),
+                                                        egui::Sense::hover(),
+                                                    );
+                                                    ui.painter().circle_filled(
+                                                        dot.center(),
+                                                        6.0,
+                                                        crate::theme::rgb(color),
+                                                    );
+                                                    ui.vertical(|ui| {
+                                                        ui.strong(&name);
+                                                        ui.label(
+                                                            egui::RichText::new(&brain)
+                                                                .color(crate::theme::INK_MUTED)
+                                                                .size(11.5),
+                                                        );
+                                                    });
+                                                    ui.with_layout(
+                                                        egui::Layout::right_to_left(
+                                                            egui::Align::Center,
+                                                        ),
+                                                        |ui| {
+                                                            if ui.button("Add").clicked() {
+                                                                add = Some(entry.clone());
+                                                            }
+                                                            if saved
+                                                                && ui
+                                                                    .small_button(fonts::icon(
+                                                                        icons::TRASH,
+                                                                    ))
+                                                                    .clicked()
+                                                            {
+                                                                delete = Some(path.clone());
+                                                            }
+                                                        },
+                                                    );
+                                                });
+                                            });
                                     });
-                                });
-                            }
+                                }
+                            });
                             if let Some(entry) = add {
                                 state.library.add_to_cast(entry);
                             }

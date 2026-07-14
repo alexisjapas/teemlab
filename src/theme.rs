@@ -37,6 +37,9 @@ pub const ERROR: egui::Color32 = egui::Color32::from_rgb(255, 140, 120);
 pub const TARGET: egui::Color32 = egui::Color32::from_rgb(220, 130, 40);
 /// …and the **threat** channel.
 pub const THREAT: egui::Color32 = egui::Color32::from_rgb(210, 60, 60);
+/// The green of a **producer** / plant species (the comp's `--flora`) — the motes on a
+/// World thumbnail.
+pub const FLORA: egui::Color32 = egui::Color32::from_rgb(78, 201, 138);
 
 /// The surface ramp — four steps of depth (the comp's `--bg` / `--surface` / `--card` /
 /// `--raised`): the app **background** behind everything (the arena's off-game, the
