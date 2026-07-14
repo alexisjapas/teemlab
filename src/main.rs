@@ -16,6 +16,7 @@ mod hud;
 mod inspector;
 mod keymap;
 mod layout;
+mod library;
 mod panels;
 mod plot;
 mod recorder;
@@ -93,6 +94,9 @@ fn main() {
         // default **off** on Observe (observation is usually throwaway). Inert until the
         // run-record store lands (deferred with Analyze) — a toggle that only holds a bool.
         .init_resource::<panels::RunRecord>()
+        // The Library catalog + compose tray (Worlds / Species, ui-redesign §4). Scanned
+        // from disk on the first Library visit (cf. `library::Library::reload`).
+        .init_resource::<library::Library>()
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()

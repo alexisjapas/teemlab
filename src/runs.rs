@@ -41,6 +41,9 @@ use crate::status::UiStatus;
 enum RunAction {
     /// Load this scenario file into the living world (config + reset).
     LoadScenario(String),
+    /// Install this **in-memory** config as a fresh unsaved scenario — the Library's
+    /// compose → launch (a World populated by a cast). `Box`ed so the enum stays small.
+    LoadConfig(Box<SimConfig>),
     /// Start over from an empty editor canvas ([`SimConfig::empty`]).
     NewEmpty,
 }
@@ -144,6 +147,14 @@ impl RunsPanel {
             .as_deref()
             .map(|p| scenario_label(p).to_string())
             .unwrap_or_else(|| "unsaved".to_string())
+    }
+
+    /// Install a **composed** scenario (a World + a cast — the Library flow, §8) as a
+    /// fresh unsaved document: queues the load that `apply_scenario_load` applies next
+    /// frame (pause, rebuild, re-baseline). The document becomes unnamed and unowned, so
+    /// a later Save asks for a name.
+    pub(crate) fn load_config(&mut self, config: SimConfig) {
+        self.pending = Some(RunAction::LoadConfig(Box::new(config)));
     }
 }
 
@@ -534,6 +545,13 @@ pub fn apply_scenario_load(
             }
             Err(e) => status.error(format!("Failed: {e}")),
         },
+        RunAction::LoadConfig(cfg) => {
+            *config = *cfg;
+            install(&mut panel, &config);
+            panel.loaded_path = None; // a fresh, unsaved composition
+            panel.owns_loaded = false;
+            status.set("Composed scenario (paused).".to_string());
+        }
         RunAction::NewEmpty => {
             *config = SimConfig::empty();
             install(&mut panel, &config);

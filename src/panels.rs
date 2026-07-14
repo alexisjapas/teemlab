@@ -12,8 +12,9 @@
 //! strip on top, live stats + view layers on the left, the agent inspector on the
 //! right, evolution curves at the bottom — each foldable to a thin rail (`1` `2` `3`)
 //! so the arena leads. **Studio** is world + cast + archetype editor with static
-//! food-web validation; **Lab** is the headless breeding dashboard; **Library** and
-//! **Analyze** are placeholders (built out in later stages). Help is **hover-first**
+//! food-web validation; **Lab** is the headless breeding dashboard; **Library** is the
+//! compose hub (Worlds / Species galleries + tray); **Analyze** is a deferred
+//! placeholder. Help is **hover-first**
 //! (tooltips), the nav rail's Help opening the one remaining surface — the shortcuts
 //! cheatsheet.
 //!
@@ -49,6 +50,7 @@ use crate::editor::{self, Palette};
 use crate::fonts::{self, icons};
 use crate::hud;
 use crate::inspector;
+use crate::library::{CatalogSource, Library, LibraryTab};
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
 use crate::screen::{Router, Screen};
@@ -141,6 +143,8 @@ pub struct DockState<'w> {
     pub windows: ResMut<'w, UiWindows>,
     /// The Observe run-record toggle's intent (inert until Analyze — see [`RunRecord`]).
     pub run_record: ResMut<'w, RunRecord>,
+    /// The Library catalog + compose tray (Worlds / Species — cf. [`crate::library`]).
+    pub library: ResMut<'w, Library>,
     /// The breeding session (P5) — the **Lab** screen's dashboard reads/drives it (the
     /// generational `run → score → breed` loop over isolated worlds). Bundled here so
     /// `dock` stays within Bevy's 16-parameter limit.
@@ -1004,14 +1008,261 @@ pub fn dock(
         }
 
         Screen::Library => {
-            placeholder_screen(
-                &mut root,
-                "Library",
-                false,
-                "Browse Worlds and Species, compose a Scenario in a few clicks, and manage \
-                 the catalog. The catalog and drop-only composition land in a later stage; \
-                 for now, compose and edit scenarios in Studio.",
-            );
+            // The low-friction hub (ui-redesign §4): browse Worlds / Species, drop a cast
+            // into a World, launch. Catalogs scanned once on the first visit.
+            if !state.library.loaded {
+                state.library.reload();
+            }
+
+            // TOP — title + search + the gallery / library tabs.
+            egui::Panel::top("library_top")
+                .resizable(false)
+                .show_inside(&mut root, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading("Library");
+                        ui.label(
+                            egui::RichText::new("pick a world, drop in species, launch")
+                                .color(crate::theme::INK_MUTED),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut state.library.search)
+                                    .hint_text("search name…")
+                                    .desired_width(160.0),
+                            );
+                            if !state.library.search.is_empty() && ui.button("clear").clicked() {
+                                state.library.search.clear();
+                            }
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        for (tab, label) in [
+                            (LibraryTab::Worlds, "Worlds"),
+                            (LibraryTab::Species, "Species"),
+                        ] {
+                            if ui
+                                .selectable_label(state.library.tab == tab, label)
+                                .clicked()
+                            {
+                                state.library.tab = tab;
+                            }
+                        }
+                        ui.separator();
+                        for (src, label) in [
+                            (CatalogSource::Examples, "examples"),
+                            (CatalogSource::Saved, "saved"),
+                        ] {
+                            if ui
+                                .selectable_label(state.library.source == src, label)
+                                .clicked()
+                            {
+                                state.library.source = src;
+                            }
+                        }
+                    });
+                });
+
+            // RIGHT — the compose tray: chosen World + cast + validator + launch.
+            egui::Panel::right("library_tray")
+                .default_size(300.0)
+                .resizable(true)
+                .size_range(260.0..=380.0)
+                .show_inside(&mut root, |ui| {
+                    ui.strong("Compose");
+                    ui.separator();
+                    match state
+                        .library
+                        .chosen_world
+                        .and_then(|i| state.library.worlds.get(i))
+                    {
+                        Some(w) => {
+                            ui.label(format!("World · {}", w.name));
+                        }
+                        None => {
+                            ui.weak("No world chosen — pick one in the Worlds gallery.");
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.label("Cast");
+                    let mut remove = None;
+                    for (i, item) in state.library.cast.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(&item.entry.archetype.name);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.small_button(fonts::icon(icons::X)).clicked() {
+                                        remove = Some(i);
+                                    }
+                                    if ui.small_button("+").clicked() {
+                                        item.count += 1;
+                                    }
+                                    ui.monospace(item.count.to_string());
+                                    if ui.small_button("-").clicked() {
+                                        item.count = item.count.saturating_sub(1);
+                                    }
+                                },
+                            );
+                        });
+                    }
+                    if let Some(i) = remove {
+                        state.library.cast.remove(i);
+                    }
+                    if state.library.cast.is_empty() {
+                        ui.weak("Add species from the Species gallery.");
+                    }
+                    ui.separator();
+
+                    // Validator + launch (drop-only composition, §8).
+                    let composed = state.library.compose();
+                    if let Some(cfg) = &composed {
+                        let g = crate::trophic::TrophicGraph::derive(cfg);
+                        if g.is_viable() {
+                            ui.colored_label(crate::theme::SUCCESS, "Food web viable");
+                        } else {
+                            ui.colored_label(
+                                crate::theme::ERROR,
+                                format!("{} broken chain(s) — refine in Studio", g.broken.len()),
+                            );
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.add_enabled_ui(composed.is_some(), |ui| {
+                        let launch =
+                            |target: Screen,
+                             state: &mut DockState,
+                             composed: &Option<SimConfig>| {
+                                if let Some(cfg) = composed.clone() {
+                                    state.runs_panel.load_config(cfg);
+                                    state.router.current = target;
+                                }
+                            };
+                        if ui
+                            .button(fonts::icon_label(icons::PLAY, "Observe"))
+                            .clicked()
+                        {
+                            launch(Screen::Observe, &mut state, &composed);
+                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Open in Studio").clicked() {
+                                launch(Screen::Studio, &mut state, &composed);
+                            }
+                            if ui.button("Send to Lab").clicked() {
+                                launch(Screen::Lab, &mut state, &composed);
+                            }
+                        });
+                    });
+                });
+
+            // CENTRE — the gallery (a scrollable list of cards, filtered by tab / source
+            // / search).
+            egui::CentralPanel::default().show_inside(&mut root, |ui| {
+                let search = state.library.search.trim().to_lowercase();
+                let source = state.library.source;
+                egui::ScrollArea::vertical()
+                    .id_salt("library_gallery")
+                    .show(ui, |ui| match state.library.tab {
+                        LibraryTab::Worlds => {
+                            let mut choose = None;
+                            let mut delete = None;
+                            for i in 0..state.library.worlds.len() {
+                                let w = &state.library.worlds[i];
+                                if w.source != source
+                                    || (!search.is_empty()
+                                        && !w.name.to_lowercase().contains(&search))
+                                {
+                                    continue;
+                                }
+                                let deletable = w.path.clone();
+                                editor::card(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.strong(&w.name);
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if ui.button("Use").clicked() {
+                                                    choose = Some(i);
+                                                }
+                                                if deletable.is_some()
+                                                    && ui
+                                                        .button(fonts::icon(icons::TRASH))
+                                                        .on_hover_text("Delete this saved world")
+                                                        .clicked()
+                                                {
+                                                    delete = deletable.clone();
+                                                }
+                                            },
+                                        );
+                                    });
+                                    ui.label(format!(
+                                        "seed #{} · {} component(s) · {} source(s)",
+                                        w.world.seed,
+                                        w.world.components.len(),
+                                        w.world.sources.len()
+                                    ));
+                                    if w.derived_from > 0 {
+                                        ui.weak(format!(
+                                            "stage of {} example scenario(s)",
+                                            w.derived_from
+                                        ));
+                                    }
+                                });
+                            }
+                            if let Some(i) = choose {
+                                state.library.chosen_world = Some(i);
+                            }
+                            if let Some(path) = delete {
+                                let _ = std::fs::remove_file(&path);
+                                state.library.chosen_world = None; // indices change on rescan
+                                state.library.reload();
+                            }
+                        }
+                        LibraryTab::Species => {
+                            let mut add = None;
+                            let mut delete = None;
+                            for i in 0..state.library.species.len() {
+                                let s = &state.library.species[i];
+                                if s.source != source
+                                    || (!search.is_empty()
+                                        && !s.name.to_lowercase().contains(&search))
+                                {
+                                    continue;
+                                }
+                                let path = s.path.clone();
+                                let saved = s.source == CatalogSource::Saved;
+                                editor::card(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.strong(&s.name);
+                                        ui.weak(s.entry.archetype.brain.name());
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if ui.button("Add").clicked() {
+                                                    add = Some(s.entry.clone());
+                                                }
+                                                if saved
+                                                    && ui
+                                                        .button(fonts::icon(icons::TRASH))
+                                                        .on_hover_text("Delete this saved species")
+                                                        .clicked()
+                                                {
+                                                    delete = Some(path.clone());
+                                                }
+                                            },
+                                        );
+                                    });
+                                });
+                            }
+                            if let Some(entry) = add {
+                                state.library.add_to_cast(entry);
+                            }
+                            if let Some(path) = delete {
+                                let _ = std::fs::remove_file(&path);
+                                state.library.reload();
+                            }
+                        }
+                    });
+            });
             egui::Rect::ZERO
         }
 
