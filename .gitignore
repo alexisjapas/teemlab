@@ -17,6 +17,12 @@
 /species/*
 !/species/examples/
 
+# Library Worlds (abiotic stages) and Lab Experiments (saved run parameters): all
+# local. Example Worlds are *derived* at runtime from the committed scenarios
+# (cf. `library::Library::reload`), so nothing here is committed.
+/worlds/
+/experiments/
+
 # Run snapshot written by default from the Runs panel (Save the run).
 /run.ron
 

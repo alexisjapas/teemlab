@@ -10,6 +10,7 @@
 mod controls;
 mod dashboard;
 mod editor;
+mod experiment;
 mod files;
 mod fonts;
 mod hud;
@@ -97,6 +98,9 @@ fn main() {
         // The Library catalog + compose tray (Worlds / Species, ui-redesign §4). Scanned
         // from disk on the first Library visit (cf. `library::Library::reload`).
         .init_resource::<library::Library>()
+        // The Lab screen's experiment-setup state (mode + sweep params + run-record —
+        // ui-redesign §6).
+        .init_resource::<experiment::LabSetup>()
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()

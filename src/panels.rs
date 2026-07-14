@@ -47,6 +47,7 @@ use teemlab::visuals::Layers;
 use crate::controls::{self, SimControls};
 use crate::dashboard::{self, BreedingSession};
 use crate::editor::{self, Palette};
+use crate::experiment::{EXPERIMENTS_DIR, LabMode, LabSetup};
 use crate::fonts::{self, icons};
 use crate::hud;
 use crate::inspector;
@@ -145,6 +146,8 @@ pub struct DockState<'w> {
     pub run_record: ResMut<'w, RunRecord>,
     /// The Library catalog + compose tray (Worlds / Species — cf. [`crate::library`]).
     pub library: ResMut<'w, Library>,
+    /// The Lab screen's experiment-setup state (mode + sweep + run-record — [`LabSetup`]).
+    pub lab: ResMut<'w, LabSetup>,
     /// The breeding session (P5) — the **Lab** screen's dashboard reads/drives it (the
     /// generational `run → score → breed` loop over isolated worlds). Bundled here so
     /// `dock` stays within Bevy's 16-parameter limit.
@@ -440,6 +443,21 @@ fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &s
                     ui.colored_label(crate::theme::INK_MUTED, body);
                 },
             );
+        });
+    });
+}
+
+/// A small **metric tile** (Lab results header): a muted caption over a large mono
+/// value, in a card. Used for the species / trophic-links / web-fragility read-outs.
+fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
+    editor::card(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new(label)
+                    .small()
+                    .color(crate::theme::INK_MUTED),
+            );
+            ui.label(egui::RichText::new(value).monospace().size(22.0));
         });
     });
 }
@@ -947,23 +965,153 @@ pub fn dock(
         }
 
         Screen::Lab => {
-            // Headless breeding & sweeps — no live arena (ui-redesign §6). The breeding
-            // dashboard runs the generational loop over isolated worlds on a worker.
-            egui::CentralPanel::default().show_inside(&mut root, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Lab");
-                    ui.label(
-                        egui::RichText::new("headless breeding & sweeps")
-                            .color(crate::theme::INK_MUTED),
-                    );
+            // Headless breeding & sweeps — no live arena (ui-redesign §6). Experiment
+            // **setup** on the left; **results** (dashboard + web-fragility) on the right.
+
+            // LEFT — experiment setup: mode, sweep, run-record, save Experiment (params).
+            egui::Panel::left("lab_setup")
+                .default_size(320.0)
+                .resizable(true)
+                .size_range(280.0..=420.0)
+                .show_inside(&mut root, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("lab_setup_scroll")
+                        .show(ui, |ui| {
+                            ui.heading("Experiment");
+                            ui.weak("Run headless cohorts — breed, sweep, or nest both.");
+                            ui.add_space(4.0);
+                            ui.label(format!("Scenario · {}", state.runs_panel.origin_label()));
+                            ui.separator();
+
+                            ui.horizontal(|ui| {
+                                for (m, label) in [
+                                    (LabMode::Breed, "Breed"),
+                                    (LabMode::Sweep, "Sweep"),
+                                    (LabMode::Both, "Both (nested)"),
+                                ] {
+                                    if ui.selectable_label(state.lab.mode == m, label).clicked() {
+                                        state.lab.mode = m;
+                                    }
+                                }
+                            });
+
+                            if state.lab.mode.has_sweep() {
+                                editor::card(ui, |ui| {
+                                    ui.strong("Outer · sweep");
+                                    egui::Grid::new("sweep_grid").num_columns(2).show(ui, |ui| {
+                                        ui.label("parameter");
+                                        ui.add(
+                                            egui::TextEdit::singleline(
+                                                &mut state.lab.sweep.parameter,
+                                            )
+                                            .desired_width(150.0),
+                                        );
+                                        ui.end_row();
+                                        ui.label("min");
+                                        fonts::value(ui, |ui| {
+                                            ui.add(
+                                                egui::DragValue::new(&mut state.lab.sweep.min)
+                                                    .speed(0.01),
+                                            )
+                                        });
+                                        ui.end_row();
+                                        ui.label("max");
+                                        fonts::value(ui, |ui| {
+                                            ui.add(
+                                                egui::DragValue::new(&mut state.lab.sweep.max)
+                                                    .speed(0.01),
+                                            )
+                                        });
+                                        ui.end_row();
+                                        ui.label("steps");
+                                        fonts::value(ui, |ui| {
+                                            ui.add(
+                                                egui::DragValue::new(&mut state.lab.sweep.steps)
+                                                    .range(1..=64),
+                                            )
+                                        });
+                                        ui.end_row();
+                                    });
+                                    ui.weak(
+                                        "Sweeps run headless via the `sweep` bin; saved here as \
+                                         an Experiment.",
+                                    );
+                                });
+                            }
+                            if state.lab.mode.has_breed() {
+                                editor::card(ui, |ui| {
+                                    ui.strong("Inner · breed");
+                                    if config.batch.is_some() {
+                                        ui.weak(
+                                            "Config in Studio's World editor; run it in the \
+                                             results panel →",
+                                        );
+                                    } else {
+                                        ui.colored_label(
+                                            crate::theme::ACCENT,
+                                            "No batch regime — add one in Studio's World editor.",
+                                        );
+                                    }
+                                });
+                            }
+
+                            editor::card(ui, |ui| {
+                                ui.checkbox(&mut state.lab.run_record, "Save run record")
+                                    .on_hover_text(
+                                        "Persist this run's metrics for Analyze (default on for \
+                                         the Lab; inert until records land).",
+                                    );
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut state.lab.experiment_name)
+                                            .hint_text("experiment name")
+                                            .desired_width(130.0),
+                                    );
+                                    if ui.button("Save Experiment").clicked() {
+                                        let name = state.lab.experiment_name.trim().to_string();
+                                        if name.is_empty() {
+                                            state
+                                                .ui_status
+                                                .error("Name the experiment first.".to_string());
+                                        } else {
+                                            let exp = state.lab.to_experiment(
+                                                state.runs_panel.origin_label(),
+                                                config.seed,
+                                            );
+                                            let path = format!("{EXPERIMENTS_DIR}/{name}.ron");
+                                            match exp.save_ron_file(&path) {
+                                                Ok(()) => state
+                                                    .ui_status
+                                                    .set(format!("Experiment saved → {path}")),
+                                                Err(e) => state
+                                                    .ui_status
+                                                    .error(format!("Save failed: {e}")),
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+                        });
                 });
+
+            // CENTRE — results: fragility tiles, then the breeding dashboard.
+            egui::CentralPanel::default().show_inside(&mut root, |ui| {
                 if state.ui_status.visible(now) {
                     status_line(ui, &state.ui_status);
+                    ui.separator();
                 }
+                let frag = crate::trophic::web_fragility(&config);
+                let graph = crate::trophic::TrophicGraph::derive(&config);
+                ui.horizontal(|ui| {
+                    metric_tile(ui, "SPECIES", &config.archetypes.len().to_string());
+                    metric_tile(ui, "TROPHIC LINKS", &graph.edge_count().to_string());
+                    metric_tile(ui, "WEB FRAGILITY", &format!("{:.2}", frag.worst));
+                });
                 ui.separator();
                 if config.batch.is_some() {
                     egui::ScrollArea::vertical()
-                        .id_salt("lab_scroll")
+                        .id_salt("lab_results_scroll")
                         .show(ui, |ui| {
                             editor::card(ui, |ui| {
                                 ui.strong("Breeding (generational)");
@@ -985,21 +1133,21 @@ pub fn dock(
                                     );
                                 }
                             });
-                            ui.add_space(8.0);
-                            ui.colored_label(
-                                crate::theme::INK_MUTED,
-                                "Sweeps (seed / parameter, and breed×sweep nesting) run via \
-                                 the `sweep` bin for now; an in-app setup form lands in a \
-                                 later stage.",
-                            );
                         });
+                } else if state.lab.mode.has_sweep() {
+                    ui.add_space(20.0);
+                    ui.colored_label(
+                        crate::theme::INK_MUTED,
+                        "Configure the sweep on the left and save it as an Experiment; run it \
+                         headless with the `sweep` bin.",
+                    );
                 } else {
                     ui.add_space(20.0);
                     ui.vertical_centered(|ui| {
                         ui.colored_label(
                             crate::theme::INK_MUTED,
-                            "This scenario has no batch regime. Add a `batch` block in \
-                             Studio's World editor to breed a cohort here.",
+                            "This scenario has no batch regime. Add a `batch` block in Studio's \
+                             World editor to breed a cohort here.",
                         );
                     });
                 }

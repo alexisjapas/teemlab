@@ -143,6 +143,11 @@ impl TrophicGraph {
         self.broken.is_empty()
     }
 
+    /// Number of edibility edges (a crude "connectance" proxy for the results header).
+    pub fn edge_count(&self) -> usize {
+        self.edibility.len()
+    }
+
     /// Draw the static node-link diagram into `ui` (a fixed-height canvas). Components
     /// sit in the leftmost column, archetypes in columns by trophic level; edibility
     /// and absorption/emission are lines; a broken need paints the archetype with a red
@@ -270,6 +275,61 @@ impl TrophicGraph {
     }
 }
 
+/// **Structural web fragility** (`docs/emergent-trophics.md` §6.4) — how concentrated
+/// each predator's diet is, from the digestibility structure alone (no live
+/// populations; the *dynamic*, population-weighted version rides with the Observe
+/// overlay, B7). Node fragility = the Herfindahl [`concentration`] of a predator's
+/// digestibility over the prey it can eat: `1` = a pure specialist (all eggs in one
+/// basket → fragile), `→0` = a generalist (robust).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Fragility {
+    /// Per predator: `(archetype index, node fragility ∈ (0, 1])`. Producers /
+    /// non-predators are omitted — they have no diet to concentrate.
+    pub per_predator: Vec<(usize, f32)>,
+    /// The worst (most specialised) predator's fragility — the pre-collapse signature.
+    pub worst: f32,
+    /// Mean fragility over predators (0 if none) — a scalar web-robustness proxy.
+    pub mean: f32,
+}
+
+/// Herfindahl **concentration** of a diet: `Σ (dᵢ / Σd)²`. `1` = all weight on one prey,
+/// `1/k` = `k` equally-digestible prey. Pure — the fragility kernel, unit-tested.
+fn concentration(digs: &[f32]) -> f32 {
+    let total: f32 = digs.iter().sum();
+    if total <= 0.0 {
+        return 0.0;
+    }
+    digs.iter().map(|d| (d / total).powi(2)).sum()
+}
+
+/// Compute the structural [`Fragility`] of a scenario's food web from its digestibility
+/// structure (`SimConfig::digestibility` over what each predator `can_eat`).
+pub fn web_fragility(config: &SimConfig) -> Fragility {
+    let n = config.archetypes.len();
+    let mut per_predator = Vec::new();
+    for p in 0..n {
+        let digs: Vec<f32> = (0..n)
+            .filter(|&q| q != p && config.can_eat(p as u16, q as u16))
+            .map(|q| config.digestibility(p as u16, q as u16).max(0.0))
+            .collect();
+        let frag = concentration(&digs);
+        if frag > 0.0 {
+            per_predator.push((p, frag));
+        }
+    }
+    let worst = per_predator.iter().map(|&(_, f)| f).fold(0.0, f32::max);
+    let mean = if per_predator.is_empty() {
+        0.0
+    } else {
+        per_predator.iter().map(|&(_, f)| f).sum::<f32>() / per_predator.len() as f32
+    };
+    Fragility {
+        per_predator,
+        worst,
+        mean,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +374,36 @@ mod tests {
         let g = TrophicGraph::derive(&cfg);
         let n = g.archetypes.len();
         assert!(g.archetypes.iter().all(|a| a.level <= n));
+    }
+
+    #[test]
+    fn concentration_is_1_for_a_specialist_and_1_over_k_for_k_equal_prey() {
+        // The Herfindahl kernel: one prey → 1 (fragile); k equal prey → 1/k (robust).
+        assert_eq!(concentration(&[]), 0.0);
+        assert_eq!(concentration(&[1.0]), 1.0);
+        assert!((concentration(&[0.5, 0.5]) - 0.5).abs() < 1e-6);
+        assert!(
+            (concentration(&[2.0, 2.0]) - 0.5).abs() < 1e-6,
+            "scale-free"
+        );
+        assert!((concentration(&[1.0, 1.0, 1.0]) - 1.0 / 3.0).abs() < 1e-6);
+        // A skewed diet is more concentrated than an even one but below a specialist.
+        let skewed = concentration(&[0.9, 0.1]);
+        assert!(skewed > 0.5 && skewed < 1.0);
+    }
+
+    #[test]
+    fn web_fragility_is_bounded_and_worst_dominates_mean() {
+        // On any scenario: every node fragility ∈ (0, 1], the worst is the max, and the
+        // mean never exceeds it.
+        let cfg = SimConfig::default();
+        let f = web_fragility(&cfg);
+        assert!(
+            f.per_predator
+                .iter()
+                .all(|&(_, x)| x > 0.0 && x <= 1.0 + 1e-6)
+        );
+        assert!(f.mean <= f.worst + 1e-6);
+        assert!(f.worst <= 1.0 + 1e-6);
     }
 }
