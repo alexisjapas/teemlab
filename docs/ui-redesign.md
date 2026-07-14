@@ -15,6 +15,17 @@ says "a list", "a form", "a diagram", read it as a *need*, not a prescription.
 table and thereby removes a whole editing burden from the Studio — lives in
 [`emergent-trophics.md`](emergent-trophics.md). Cross-references below point to it.
 
+**Visual reference.** A high-fidelity visual comp of these five screens (produced
+with Claude Design) is versioned at [`ui-mockups/teemlab.dc.html`](ui-mockups/) —
+open it in a browser. Treat it as a **visual reference to re-implement in egui**,
+not as consumable assets: it fixes the look, structure, and per-screen composition,
+while behaviour and the simulation data it depicts are built per this document and
+the companion. Two deliberate reconciliations the comp has **not** yet absorbed: the
+per-archetype gene panel still shows the *old free cost genes*
+(`move_cost` / `agility_cost`) that the allometric law replaces with **derived,
+read-only** costs (companion §5), and the theme switcher is designer exploration
+(ship a single theme at MVP).
+
 **Framing (why the shape is what it is).** The project's resolved direction
 (ROADMAP §0, 2026-07-14) is **a research bench, not a game**: the deliverable is
 *falsifiable knowledge* about why ecosystems hold or collapse (a hypothesis, a

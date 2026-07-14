@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<style>
+  :root{
+    --bg:#131315; --surface:#1b1b1e; --card:#212124; --raised:#2b2b2f; --raised-2:#35353a;
+    --line:#2a2a2e; --line-2:#3c3c42; --grid:#29292d;
+    --ink:#ececee; --ink-2:#a7a7ac; --ink-3:#6e6e74;
+    --accent:#cba250; --accent-soft:rgba(203,162,80,.14); --accent-line:rgba(203,162,80,.35);
+    --accent2:#2f9188; --accent2-soft:rgba(47,145,136,.14); --on-accent:#181206; --on-accent2:#eafcf8;
+    --amber:#f0b450; --success:#78c878; --error:#ff8c78;
+    --flora:#4ec98a; --target:#dc8228; --threat:#d23c3c;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--ink)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--raised-2);border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  .ph{line-height:1}
+</style>
+</helmet>
+
+<div style="display:flex;height:100vh;width:100%;overflow:hidden;background:var(--bg)">
+
+  <!-- ============ NAV RAIL (router) ============ -->
+  <nav style="width:76px;flex:0 0 76px;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px">
+    <div style="width:40px;height:40px;border-radius:11px;background:var(--accent-soft);border:1px solid var(--accent-line);display:flex;align-items:center;justify-content:center;margin-bottom:16px">
+      <i class="ph-fill ph-atom" style="font-size:22px;color:var(--accent)"></i>
+    </div>
+    <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="5">
+      <button onClick="{{ item.onClick }}" style="width:60px;border:none;cursor:pointer;padding:9px 0;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;background:{{ item.btnBg }}"
+        style-hover="background:var(--card)">
+        <sc-if value="{{ item.active }}" hint-placeholder-val="{{ true }}">
+          <span style="position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:26px;border-radius:0 3px 3px 0;background:var(--accent)"></span>
+        </sc-if>
+        <i class="ph {{ item.icon }}" style="font-size:23px;color:{{ item.fg }}"></i>
+        <span style="font-size:10.5px;font-weight:500;letter-spacing:.02em;color:{{ item.fg }}">{{ item.label }}</span>
+      </button>
+    </sc-for>
+    <div style="flex:1"></div>
+    <button style="width:60px;border:none;cursor:pointer;background:transparent;padding:9px 0;border-radius:12px;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink-3)" style-hover="background:var(--card)">
+      <i class="ph ph-question" style="font-size:23px"></i>
+      <span style="font-size:10.5px;font-weight:500">Help</span>
+    </button>
+  </nav>
+
+  <!-- decorate active nav via renderVals: we re-mark below with a colored strip -->
+  <main style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+
+  <!-- ============================= OBSERVE ============================= -->
+  <sc-if value="{{ isObserve }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;height:100%;background:var(--bg)">
+    <!-- transport strip -->
+    <header style="height:56px;flex:0 0 56px;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--surface)">
+      <button style="display:flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:none;border-radius:9px;background:var(--card);color:var(--ink-2);font-size:13px;cursor:pointer" style-hover="background:var(--raised)">
+        <i class="ph ph-caret-down" style="font-size:13px"></i> 20_reef.ron
+      </button>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:2px;background:var(--card);border-radius:11px;padding:4px">
+        <button style="width:38px;height:34px;border:none;border-radius:8px;background:var(--accent2);color:var(--on-accent2);cursor:pointer;display:flex;align-items:center;justify-content:center">
+          <i class="ph-fill ph-play" style="font-size:15px"></i>
+        </button>
+        <button style="width:38px;height:34px;border:none;border-radius:8px;background:transparent;color:var(--ink-2);cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="background:var(--raised)">
+          <i class="ph ph-skip-forward" style="font-size:15px"></i>
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:12px;color:var(--ink-3);font-family:var(--mono)">SPEED</span>
+        <div style="display:flex;gap:3px;background:var(--card);padding:4px;border-radius:11px">
+          <sc-for list="{{ speeds }}" as="sp" hint-placeholder-count="4">
+            <button style="min-width:40px;height:30px;padding:0 8px;border:none;border-radius:7px;cursor:pointer;font-family:var(--mono);font-size:12.5px;font-weight:600;background:transparent;color:var(--ink-2)"
+              style-hover="background:var(--raised)">{{ sp.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="width:1px;height:26px;background:var(--line)"></div>
+      <button style="display:flex;align-items:center;gap:6px;height:34px;padding:0 13px;border:none;border-radius:9px;background:var(--card);color:var(--ink-2);font-size:13px;cursor:pointer" style-hover="background:var(--raised)">
+        <i class="ph ph-arrow-counter-clockwise" style="font-size:14px"></i> Reset
+      </button>
+      <button style="display:flex;align-items:center;gap:6px;height:34px;padding:0 13px;border:none;border-radius:9px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent);font-size:13px;cursor:pointer">
+        <i class="ph ph-video-camera" style="font-size:14px"></i> Export video
+      </button>
+    </header>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <!-- live stats (foldable, left) -->
+      <aside style="width:216px;flex:0 0 216px;border-right:1px solid var(--line);background:var(--surface);overflow:auto;padding:16px 14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Live stats</span>
+          <div style="flex:1;height:1px;background:var(--line)"></div>
+          <i class="ph ph-caret-down" style="font-size:12px;color:var(--ink-3)"></i>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="background:var(--card);border-radius:10px;padding:12px">
+            <div style="font-size:11px;color:var(--ink-3);margin-bottom:6px">POPULATION</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <span style="font:600 26px var(--mono);color:var(--ink)">78</span>
+              <span style="font-size:12px;color:var(--error)">−4</span>
+            </div>
+          </div>
+          <div style="background:var(--card);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="display:flex;align-items:center;gap:7px;font-size:13px"><span style="width:9px;height:9px;border-radius:50%;background:var(--target)"></span>Grazer</span>
+              <span style="font-family:var(--mono);font-size:13px">42</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="display:flex;align-items:center;gap:7px;font-size:13px"><span style="width:9px;height:9px;border-radius:50%;background:var(--flora)"></span>Kelp</span>
+              <span style="font-family:var(--mono);font-size:13px">36</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:20px 0 12px">
+          <span style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Layers</span>
+          <div style="flex:1;height:1px;background:var(--line)"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;cursor:pointer">Agents
+            <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--on-accent)"></span></span></label>
+          <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;cursor:pointer">Nutrient heatmap
+            <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--on-accent)"></span></span></label>
+          <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--ink-2);cursor:pointer">Trophic graph
+            <span style="width:34px;height:20px;border-radius:11px;background:var(--raised-2);position:relative"><span style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3)"></span></span></label>
+        </div>
+      </aside>
+
+      <!-- arena (full-bleed, leads) -->
+      <section style="flex:1;min-width:0;position:relative;display:flex;align-items:center;justify-content:center;background:radial-gradient(120% 120% at 50% 0%, #14161c 0%, #0c0d11 100%);padding:22px">
+        <div style="position:relative;aspect-ratio:1/1.06;height:100%;max-height:100%;max-width:100%;border-radius:14px;overflow:hidden;border:1px solid var(--line-2);box-shadow:0 20px 60px rgba(0,0,0,.45)">
+          <img src="assets/arena2.png" alt="arena" style="width:100%;height:100%;object-fit:cover;display:block">
+          <!-- top overlay: run time + paused chip -->
+          <div style="position:absolute;top:14px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none">
+            <span style="font-family:var(--mono);font-size:12px;color:var(--ink-2);background:rgba(10,12,16,.6);padding:4px 10px;border-radius:8px;backdrop-filter:blur(4px)">t = 158.4 s · ×10.0</span>
+            <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--amber);background:rgba(10,12,16,.72);border:1px solid rgba(240,180,80,.35);padding:5px 12px;border-radius:9px;backdrop-filter:blur(4px)">
+              <i class="ph-fill ph-pause" style="font-size:12px"></i>{{ runLabel }} — Space to run</span>
+          </div>
+          <!-- follow selector -->
+          <div style="position:absolute;bottom:14px;left:14px;display:flex;align-items:center;gap:8px;background:rgba(14,16,21,.78);border:1px solid var(--line-2);border-radius:10px;padding:7px 11px;backdrop-filter:blur(6px)">
+            <span style="font-size:12px;color:var(--ink-3)">Follow</span>
+            <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500">Vanguard <i class="ph ph-caret-down" style="font-size:11px;color:var(--ink-3)"></i></span>
+          </div>
+          <!-- view controls -->
+          <div style="position:absolute;bottom:14px;right:14px;display:flex;gap:6px">
+            <button style="width:34px;height:34px;border:1px solid var(--line-2);border-radius:9px;background:rgba(14,16,21,.78);color:var(--ink-2);cursor:pointer;backdrop-filter:blur(6px)"><i class="ph ph-plus"></i></button>
+            <button style="width:34px;height:34px;border:1px solid var(--line-2);border-radius:9px;background:rgba(14,16,21,.78);color:var(--ink-2);cursor:pointer;backdrop-filter:blur(6px)"><i class="ph ph-minus"></i></button>
+            <button style="width:34px;height:34px;border:1px solid var(--line-2);border-radius:9px;background:rgba(14,16,21,.78);color:var(--ink-2);cursor:pointer;backdrop-filter:blur(6px)"><i class="ph ph-crosshair"></i></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- inspector (right, tall, data-dense) -->
+      <aside style="width:312px;flex:0 0 312px;border-left:1px solid var(--line);background:var(--surface);overflow:auto">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px">
+          <span style="width:9px;height:9px;border-radius:50%;background:var(--target);box-shadow:0 0 0 4px rgba(220,130,64,.18)"></span>
+          <span style="font-weight:600;font-size:14px">Agent inspector</span>
+          <div style="flex:1"></div>
+          <i class="ph ph-x" style="font-size:14px;color:var(--ink-3);cursor:pointer"></i>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:18px">
+
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px">Identity</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">
+              <div style="background:var(--card);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--ink-3)">Species</div><div style="font-family:var(--mono);font-size:14px">1 · Hunter</div></div>
+              <div style="background:var(--card);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--ink-3)">Generation</div><div style="font-family:var(--mono);font-size:14px">0</div></div>
+              <div style="background:var(--card);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--ink-3)">Age</div><div style="font-family:var(--mono);font-size:14px">34.7 s</div></div>
+              <div style="background:var(--card);border-radius:9px;padding:9px 11px"><div style="font-size:11px;color:var(--ink-3)">Brain</div><div style="font-family:var(--mono);font-size:14px">Hunter</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px">
+              <span style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Energy / reserve</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--ink-2)">119.9 / 120</span>
+            </div>
+            <div style="height:12px;border-radius:7px;background:var(--card);overflow:hidden"><div style="height:100%;width:99%;background:linear-gradient(90deg,#7a5a1e,var(--amber))"></div></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px">
+              <span style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Nutrient store</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--ink-2)">3.7 / 30</span>
+            </div>
+            <div style="height:12px;border-radius:7px;background:var(--card);overflow:hidden"><div style="height:100%;width:12%;background:linear-gradient(90deg,#2b4a6b,#6aa6ff)"></div></div>
+          </div>
+
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px">Genotype</div>
+            <div style="background:var(--card);border-radius:10px;padding:4px 12px">
+              <sc-for list="{{ genotype }}" as="row" hint-placeholder-count="8">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.035)">
+                  <span style="font-size:12.5px;color:var(--ink-2)">{{ row.k }}</span>
+                  <span style="font-family:var(--mono);font-size:12.5px;color:var(--ink)">{{ row.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px">Action (brain output)</div>
+            <div style="background:var(--card);border-radius:10px;padding:11px 12px;display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--ink-2)">desired heading</span><span style="font-family:var(--mono)">+68°</span></div>
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:4px"><span>throttle</span><span style="font-family:var(--mono)">1.00</span></div>
+                <div style="height:10px;border-radius:6px;background:var(--raised);overflow:hidden"><div style="height:100%;width:100%;background:var(--accent)"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <span style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Perception · 7 rays</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">nrg 1.00 · nut 0.12 · spd 0.62</span>
+            </div>
+            <div style="background:var(--card);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ rays }}" as="ray" hint-placeholder-count="7">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);width:20px">{{ ray.r }}</span>
+                  <div style="flex:1;height:9px;border-radius:5px;background:var(--raised);overflow:hidden"><div style="height:100%;width:{{ ray.pct }};background:var(--ink-2)"></div></div>
+                  <span style="width:12px;height:9px;border-radius:3px;background:var(--target);opacity:.25"></span>
+                  <span style="width:12px;height:9px;border-radius:3px;background:var(--threat);opacity:.25"></span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button style="display:flex;align-items:center;justify-content:center;gap:7px;height:38px;border:none;border-radius:10px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent);font-size:13px;font-weight:500;cursor:pointer">
+              <i class="ph ph-sparkle"></i> Capture to scenario</button>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:10px;padding:10px 12px">
+              <span style="font-size:12.5px;color:var(--ink-2)">Record this run</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--raised-2);position:relative"><span style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3)"></span></span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- curves strip (bottom) -->
+    <footer style="height:150px;flex:0 0 150px;border-top:1px solid var(--line);background:var(--surface);display:flex">
+      <div style="flex:1;padding:12px 16px;border-right:1px solid var(--line);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">Population / species</span>
+          <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--target)"></span>Grazer</span>
+          <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--flora)"></span>Kelp</span>
+        </div>
+        <svg viewBox="0 0 600 90" preserveAspectRatio="none" style="flex:1;width:100%">
+          <line x1="0" y1="30" x2="600" y2="30" style="stroke:var(--grid)" stroke-width="1"/>
+          <line x1="0" y1="60" x2="600" y2="60" style="stroke:var(--grid)" stroke-width="1"/>
+          <polyline fill="none" stroke="#dc8228" stroke-width="2" points="0,20 80,22 160,26 240,24 320,30 400,36 480,40 560,44 600,46"/>
+          <polyline fill="none" stroke="#4ec98a" stroke-width="2" points="0,55 80,52 160,50 240,54 320,50 400,48 480,52 560,50 600,49"/>
+        </svg>
+      </div>
+      <div style="flex:1;padding:12px 16px;display:flex;flex-direction:column">
+        <span style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px">Gene drift — normalized 0–1</span>
+        <svg viewBox="0 0 600 90" preserveAspectRatio="none" style="flex:1;width:100%">
+          <line x1="0" y1="45" x2="600" y2="45" style="stroke:var(--grid)" stroke-width="1"/>
+          <polyline fill="none" stroke="#6aa6ff" stroke-width="1.5" points="0,40 100,38 200,42 300,39 400,41 500,38 600,40"/>
+          <polyline fill="none" stroke="#c084f5" stroke-width="1.5" points="0,55 100,54 200,52 300,55 400,53 500,54 600,52"/>
+          <polyline fill="none" stroke="#78c878" stroke-width="1.5" points="0,28 100,30 200,27 300,29 400,26 500,28 600,27"/>
+          <polyline fill="none" stroke="#f0b450" stroke-width="1.5" points="0,66 100,65 200,67 300,64 400,66 500,65 600,66"/>
+        </svg>
+      </div>
+    </footer>
+  </div>
+  </sc-if>
+
+  <!-- ============================= LIBRARY ============================= -->
+  <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;height:100%">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+      <header style="padding:20px 26px 0;border-bottom:1px solid var(--line);background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+          <div>
+            <h1 style="margin:0;font-size:20px;font-weight:600">Library</h1>
+            <p style="margin:3px 0 0;font-size:13px;color:var(--ink-3)">Pick a world, drop in species, and launch — no wiring needed.</p>
+          </div>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;gap:8px;height:38px;padding:0 13px;background:var(--card);border-radius:10px;width:260px">
+            <i class="ph ph-magnifying-glass" style="font-size:15px;color:var(--ink-3)"></i>
+            <span style="font-size:13px;color:var(--ink-3)">Search name / tag…</span>
+          </div>
+          <button style="display:flex;align-items:center;gap:7px;height:38px;padding:0 14px;border:none;border-radius:10px;background:var(--accent2);color:var(--on-accent2);font-size:13px;font-weight:600;cursor:pointer"><i class="ph ph-plus"></i> New</button>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onClick="{{ setWorldsTab }}" style="padding:9px 16px;border:none;background:transparent;border-bottom:2px solid {{ wTabBorder }};color:{{ wTabColor }};font-size:13.5px;font-weight:500;cursor:pointer">Worlds <span style="font-family:var(--mono);color:var(--ink-3)">6</span></button>
+          <button onClick="{{ setSpeciesTab }}" style="padding:9px 16px;border:none;background:transparent;border-bottom:2px solid {{ sTabBorder }};color:{{ sTabColor }};font-size:13.5px;font-weight:500;cursor:pointer">Species <span style="font-family:var(--mono);color:var(--ink-3)">6</span></button>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;gap:2px;background:var(--card);border-radius:9px;padding:3px;margin-bottom:6px">
+            <span style="padding:5px 11px;border-radius:7px;background:var(--raised);font-size:12px;font-family:var(--mono)">examples</span>
+            <span style="padding:5px 11px;border-radius:7px;font-size:12px;font-family:var(--mono);color:var(--ink-3)">saved</span>
+          </div>
+        </div>
+      </header>
+
+      <div style="flex:1;overflow:auto;padding:22px 26px">
+        <sc-if value="{{ worldsActive }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:16px">
+          <sc-for list="{{ worlds }}" as="w" hint-placeholder-count="6">
+            <div style="border-radius:14px;overflow:hidden;background:var(--surface);border:1px solid var(--line);cursor:pointer" style-hover="border-color:var(--line-2)">
+              <div style="height:130px;position:relative;background:radial-gradient(circle at 38% 40%, hsl({{ w.hue }} 45% 30%) 0%, #0d0f13 62%)">
+                <span style="position:absolute;top:9px;left:11px;width:8px;height:8px;border-radius:50%;background:var(--flora);box-shadow:34px 12px 0 -1px var(--flora),58px 40px 0 -2px var(--flora),18px 50px 0 -2px var(--flora),70px 20px 0 -1px var(--target)"></span>
+              </div>
+              <div style="padding:13px 14px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+                  <span style="font-size:14.5px;font-weight:600">{{ w.name }}</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">#{{ w.seed }}</span>
+                </div>
+                <div style="font-size:12px;color:var(--ink-3);margin-bottom:10px">{{ w.tag }}</div>
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:11.5px;color:var(--ink-3)">{{ w.scen }}</span>
+                  <div style="display:flex;gap:4px">
+                    <span style="width:26px;height:26px;border-radius:7px;background:var(--card);display:flex;align-items:center;justify-content:center;color:var(--ink-3)"><i class="ph ph-copy" style="font-size:13px"></i></span>
+                    <span style="width:26px;height:26px;border-radius:7px;background:var(--card);display:flex;align-items:center;justify-content:center;color:var(--ink-3)"><i class="ph ph-pencil-simple" style="font-size:13px"></i></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+        <sc-if value="{{ speciesActive }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:16px">
+          <sc-for list="{{ species }}" as="s" hint-placeholder-count="6">
+            <div style="border-radius:14px;background:var(--surface);border:1px solid var(--line);padding:15px;cursor:pointer" style-hover="border-color:var(--line-2)">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                <span style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center" style="background:var(--card)"><span style="width:14px;height:14px;border-radius:50%;background:{{ s.color }}"></span></span>
+                <div style="flex:1">
+                  <div style="font-size:14.5px;font-weight:600">{{ s.name }}</div>
+                  <div style="font-size:11.5px;color:var(--ink-3)">{{ s.brain }}</div>
+                </div>
+                <i class="ph ph-download-simple" style="font-size:15px;color:var(--ink-3)"></i>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--ink-3)">
+                <span>{{ s.prov }}</span><span>{{ s.used }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <!-- compose tray (docked right) -->
+    <aside style="width:300px;flex:0 0 300px;border-left:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column">
+      <div style="padding:18px 18px 12px;border-bottom:1px solid var(--line)">
+        <div style="font:600 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px">Compose</div>
+        <div style="background:var(--card);border-radius:11px;padding:13px;display:flex;align-items:center;gap:11px">
+          <div style="width:44px;height:44px;border-radius:9px;background:radial-gradient(circle at 40% 40%, hsl(188 45% 30%), #0d0f13 70%)"></div>
+          <div><div style="font-size:14px;font-weight:600">Reef</div><div style="font-size:11.5px;color:var(--ink-3)">world · #12648430</div></div>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:14px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:12px;color:var(--ink-3)">CAST</span>
+          <span style="font-size:11.5px;color:var(--accent)">+ Add species</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ composeItems }}" as="c" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border-radius:10px;padding:10px 12px">
+              <span style="width:11px;height:11px;border-radius:50%;background:{{ c.color }}"></span>
+              <span style="flex:1;font-size:13.5px">{{ c.name }}</span>
+              <div style="display:flex;align-items:center;gap:6px;background:var(--raised);border-radius:8px;padding:3px">
+                <i class="ph ph-minus" style="font-size:12px;color:var(--ink-3);width:18px;text-align:center;cursor:pointer"></i>
+                <span style="font-family:var(--mono);font-size:13px;min-width:24px;text-align:center">{{ c.count }}</span>
+                <i class="ph ph-plus" style="font-size:12px;color:var(--ink-3);width:18px;text-align:center;cursor:pointer"></i>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--success);background:rgba(120,200,120,.08);border:1px solid rgba(120,200,120,.2);border-radius:9px;padding:9px 11px">
+          <i class="ph ph-check-circle" style="font-size:15px"></i> Food web is viable
+        </div>
+      </div>
+      <div style="padding:16px 18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+        <button style="display:flex;align-items:center;justify-content:center;gap:8px;height:42px;border:none;border-radius:11px;background:var(--accent2);color:var(--on-accent2);font-size:14px;font-weight:600;cursor:pointer"><i class="ph-fill ph-play"></i> Observe</button>
+        <div style="display:flex;gap:8px">
+          <button style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border:none;border-radius:11px;background:var(--card);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer" style-hover="background:var(--raised)"><i class="ph ph-pencil-ruler"></i> Studio</button>
+          <button style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border:none;border-radius:11px;background:var(--card);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer" style-hover="background:var(--raised)"><i class="ph ph-flask"></i> Lab</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+  </sc-if>
+
+  <!-- ============================= STUDIO ============================= -->
+  <sc-if value="{{ isStudio }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;height:100%">
+    <header style="height:56px;flex:0 0 56px;display:flex;align-items:center;gap:14px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--surface)">
+      <h1 style="margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:9px">Studio <span style="font-size:13px;color:var(--amber);font-family:var(--mono)">reef *</span></h1>
+      <div style="flex:1"></div>
+      <button style="display:flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:none;border-radius:10px;background:var(--card);color:var(--ink);font-size:13px;cursor:pointer" style-hover="background:var(--raised)"><i class="ph ph-arrow-counter-clockwise"></i> Overwrite</button>
+      <button style="display:flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:none;border-radius:10px;background:var(--accent2);color:var(--on-accent2);font-size:13px;font-weight:600;cursor:pointer"><i class="ph ph-floppy-disk"></i> Save as new</button>
+    </header>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <!-- world editor -->
+      <aside style="width:264px;flex:0 0 264px;border-right:1px solid var(--line);background:var(--surface);overflow:auto;padding:18px 16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <i class="ph ph-globe-hemisphere-west" style="font-size:16px;color:var(--accent)"></i>
+          <span style="font-size:14px;font-weight:600">World</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:11px">Arena</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px"><span style="color:var(--ink-2)">half-arena</span><span style="font-family:var(--mono)">320</span></div>
+                <div style="height:6px;border-radius:4px;background:var(--raised);position:relative"><div style="height:100%;width:52%;background:var(--accent);border-radius:4px"></div><div style="position:absolute;top:50%;left:52%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--accent)"></div></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px"><span style="color:var(--ink-2)">seed</span><span style="font-family:var(--mono);background:var(--card);padding:4px 10px;border-radius:7px">12648430</span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:11px">Sources &amp; rocks</div>
+            <button style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px;height:36px;border:1px dashed var(--line-2);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12.5px;cursor:pointer"><i class="ph ph-cursor-click"></i> Place in arena</button>
+          </div>
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:11px">Components (fields)</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:9px;font-size:13px;padding:8px 10px;background:var(--card);border-radius:9px"><span style="width:9px;height:9px;border-radius:50%;background:var(--amber)"></span>sunlight<span style="flex:1"></span><span style="font-size:11px;color:var(--ink-3);font-family:var(--mono)">decay 0.02</span></div>
+              <div style="display:flex;align-items:center;gap:9px;font-size:13px;padding:8px 10px;background:var(--card);border-radius:9px"><span style="width:9px;height:9px;border-radius:50%;background:#6aa6ff"></span>nutrient<span style="flex:1"></span><span style="font-size:11px;color:var(--ink-3);font-family:var(--mono)">decay 0.05</span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:11px">Appearance · gene bounds · costs</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--ink-2);padding:7px 10px;background:var(--card);border-radius:9px">Gene bounds <i class="ph ph-caret-right" style="font-size:12px;color:var(--ink-3)"></i></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--ink-2);padding:7px 10px;background:var(--card);border-radius:9px">Allometric costs <i class="ph ph-caret-right" style="font-size:12px;color:var(--ink-3)"></i></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--ink-2);padding:7px 10px;background:var(--card);border-radius:9px">Appearance <i class="ph ph-caret-right" style="font-size:12px;color:var(--ink-3)"></i></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- cast list (master) -->
+      <aside style="width:184px;flex:0 0 184px;border-right:1px solid var(--line);background:var(--bg);overflow:auto;padding:18px 13px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <span style="font-size:14px;font-weight:600">Cast</span>
+          <span style="width:26px;height:26px;border-radius:8px;background:var(--card);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ph ph-plus" style="font-size:14px"></i></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <sc-for list="{{ cast }}" as="c" hint-placeholder-count="4">
+            <button onClick="{{ c.onClick }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 11px;border:1px solid transparent;border-radius:10px;background:var(--card);cursor:pointer;text-align:left">
+              <span style="width:11px;height:11px;border-radius:50%;background:{{ c.color }};flex:0 0 auto"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:5px">{{ c.name }}</div>
+                <div style="font-size:11px;color:var(--ink-3)">{{ c.sub }}</div>
+              </div>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--ink-3)">{{ c.count }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </aside>
+
+      <!-- archetype editor (detail) -->
+      <section style="flex:1;min-width:0;overflow:auto;padding:22px 24px;background:var(--bg)">
+        <div style="max-width:560px">
+          <div style="display:flex;align-items:center;gap:11px;margin-bottom:20px">
+            <span style="width:15px;height:15px;border-radius:50%;background:var(--sp-hunter,#6aa6ff)"></span>
+            <h2 style="margin:0;font-size:18px;font-weight:600">Hunter</h2>
+            <span style="font-size:11.5px;color:var(--threat);background:rgba(210,60,60,.12);border:1px solid rgba(210,60,60,.28);padding:3px 9px;border-radius:20px;display:flex;align-items:center;gap:5px"><i class="ph ph-warning" style="font-size:12px"></i> needs an energy source in reach</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:22px">
+            <div>
+              <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:13px">Body</div>
+              <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+                <div><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:5px">name</div><div style="height:38px;background:var(--card);border-radius:9px;display:flex;align-items:center;padding:0 12px;font-size:13.5px">Hunter</div></div>
+                <div><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:5px">colour</div><div style="height:38px;background:var(--card);border-radius:9px;display:flex;align-items:center;gap:9px;padding:0 12px"><span style="width:18px;height:18px;border-radius:5px;background:#6aa6ff"></span><span style="font-family:var(--mono);font-size:12.5px;color:var(--ink-2)">#6aa6ff</span></div></div>
+                <div><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:5px">count</div><div style="height:38px;background:var(--card);border-radius:9px;display:flex;align-items:center;padding:0 12px;font-family:var(--mono);font-size:13.5px">4</div></div>
+                <div><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:5px">body radius</div><div style="height:38px;background:var(--card);border-radius:9px;display:flex;align-items:center;padding:0 12px;font-family:var(--mono);font-size:13.5px">6.0</div></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">
+                <span style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">Genes</span>
+                <span style="font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border:1.5px solid var(--line-2);border-radius:4px;display:inline-block"></span>edit mutability</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ geneCats }}" as="cat" hint-placeholder-count="3">
+                  <div style="background:var(--card);border-radius:11px;overflow:hidden">
+                    <div style="display:flex;align-items:center;gap:8px;padding:11px 13px">
+                      <i class="ph ph-caret-down" style="font-size:12px;color:var(--ink-3)"></i>
+                      <span style="font-size:13px;font-weight:600">{{ cat.name }}</span>
+                    </div>
+                    <div style="padding:0 13px 12px;display:flex;flex-direction:column;gap:11px">
+                      <sc-for list="{{ cat.genes }}" as="g" hint-placeholder-count="3">
+                        <div style="display:flex;align-items:center;gap:12px">
+                          <span style="width:150px;flex:0 0 150px;font-size:12.5px;color:var(--ink-2)">{{ g.g }}</span>
+                          <div style="flex:1;height:6px;border-radius:4px;background:var(--raised);position:relative"><div style="height:100%;width:{{ g.pct }};background:var(--accent);border-radius:4px"></div><div style="position:absolute;top:50%;left:{{ g.pct }};transform:translate(-50%,-50%);width:13px;height:13px;border-radius:50%;background:var(--ink);border:3px solid var(--accent)"></div></div>
+                          <span style="width:52px;text-align:right;font-family:var(--mono);font-size:12.5px">{{ g.v }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:13px">Nutritional profile</div>
+              <div style="display:flex;gap:9px">
+                <sc-for list="{{ nutrients }}" as="n" hint-placeholder-count="2">
+                  <div style="flex:1;background:var(--card);border-radius:10px;padding:12px 13px">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:9px;height:9px;border-radius:50%;background:{{ n.color }}"></span><span style="font-size:13px;font-weight:500">{{ n.n }}</span></div>
+                    <div style="font-size:11.5px;color:var(--ink-3);font-family:var(--mono)">{{ n.mode }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:13px">Brain</div>
+              <div style="display:flex;align-items:center;gap:12px;background:var(--card);border-radius:10px;padding:12px 14px">
+                <span style="font-size:12.5px;color:var(--ink-2)">decider</span>
+                <span style="display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;background:var(--raised);padding:7px 13px;border-radius:8px">Hunter <i class="ph ph-caret-down" style="font-size:11px;color:var(--ink-3)"></i></span>
+                <span style="font-size:12px;color:var(--ink-3)">charge toward target · flee threats</span>
+              </div>
+            </div>
+
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:13px">
+                <i class="ph ph-graph" style="font-size:15px;color:var(--accent)"></i>
+                <span style="font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)">Food web · static validation</span>
+              </div>
+              <div style="display:flex;gap:14px;background:var(--card);border-radius:12px;padding:16px">
+                <svg viewBox="0 0 200 150" style="width:180px;flex:0 0 180px;height:150px">
+                  <line x1="70" y1="120" x2="70" y2="78" stroke="#3a4150" stroke-width="2"/>
+                  <line x1="70" y1="78" x2="70" y2="36" stroke="#3a4150" stroke-width="2"/>
+                  <line x1="70" y1="78" x2="150" y2="60" stroke="#d23c3c" stroke-width="2" stroke-dasharray="4 3"/>
+                  <circle cx="70" cy="128" r="15" fill="#4ec98a"/>
+                  <circle cx="70" cy="70" r="13" fill="#dc8228"/>
+                  <circle cx="70" cy="30" r="9" fill="#6aa6ff"/>
+                  <circle cx="150" cy="60" r="11" fill="#6aa6ff" opacity="0.3" stroke="#d23c3c" stroke-width="1.5" stroke-dasharray="3 2"/>
+                  <text x="70" y="131" text-anchor="middle" font-size="8" fill="#06120e" font-family="monospace">Kelp</text>
+                  <text x="92" y="74" font-size="9" fill="#a3abb8" font-family="monospace">Grazer</text>
+                  <text x="166" y="63" font-size="9" fill="#ff8c78" font-family="monospace">Hunter</text>
+                </svg>
+                <div style="flex:1;display:flex;flex-direction:column;gap:9px;justify-content:center">
+                  <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--success);background:rgba(120,200,120,.08);border-radius:9px;padding:9px 11px"><i class="ph ph-check-circle" style="font-size:15px"></i> Kelp → Grazer reachable</div>
+                  <div style="display:flex;gap:8px;font-size:12px;color:var(--error);background:rgba(255,140,120,.08);border:1px solid rgba(255,140,120,.2);border-radius:9px;padding:9px 11px"><i class="ph ph-warning-circle" style="font-size:15px;flex:0 0 auto"></i><span>Hunter has no reachable prey — chain broken</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============================= LAB ============================= -->
+  <sc-if value="{{ isLab }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;height:100%">
+    <!-- experiment setup -->
+    <aside style="width:340px;flex:0 0 340px;border-right:1px solid var(--line);background:var(--surface);overflow:auto;padding:20px 18px">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><i class="ph ph-flask" style="font-size:17px;color:var(--accent)"></i><h1 style="margin:0;font-size:17px;font-weight:600">Experiment</h1></div>
+      <p style="margin:0 0 18px;font-size:12.5px;color:var(--ink-3)">Run headless cohorts — no live arena. Breed, sweep, or nest both.</p>
+
+      <div style="margin-bottom:18px">
+        <div style="font-size:11.5px;color:var(--ink-3);margin-bottom:6px">SCENARIO</div>
+        <div style="display:flex;align-items:center;gap:10px;background:var(--card);border-radius:10px;padding:11px 13px">
+          <div style="width:34px;height:34px;border-radius:8px;background:radial-gradient(circle at 40% 40%, hsl(188 45% 30%), #0d0f13 70%)"></div>
+          <div style="flex:1"><div style="font-size:13.5px;font-weight:500">Reef · Grazer × Kelp</div><div style="font-size:11px;color:var(--ink-3)">from compose tray</div></div>
+          <i class="ph ph-caret-down" style="font-size:13px;color:var(--ink-3)"></i>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:6px;background:var(--card);border-radius:10px;padding:4px;margin-bottom:18px">
+        <button onClick="{{ setBreed }}" style="flex:1;padding:8px;border:none;border-radius:7px;background:transparent;color:var(--ink-2);font-size:12.5px;font-weight:500;cursor:pointer">Breed</button>
+        <button onClick="{{ setSweep }}" style="flex:1;padding:8px;border:none;border-radius:7px;background:transparent;color:var(--ink-2);font-size:12.5px;font-weight:500;cursor:pointer">Sweep</button>
+        <button onClick="{{ setBoth }}" style="flex:1;padding:8px;border:none;border-radius:7px;background:var(--raised);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer">Both (nested)</button>
+      </div>
+
+      <div style="background:var(--card);border-radius:11px;padding:15px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:13px"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent)"></span><span style="font-size:12.5px;font-weight:600;font-family:var(--mono);letter-spacing:.04em">OUTER · SWEEP</span></div>
+        <div style="display:flex;flex-direction:column;gap:13px">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px"><span style="color:var(--ink-2)">parameter</span><span style="background:var(--raised);padding:5px 11px;border-radius:7px;font-size:12px">nutrient decay</span></div>
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3);margin-bottom:6px"><span>range</span><span style="font-family:var(--mono)">0.02 → 0.10 · 5 steps</span></div>
+            <div style="height:6px;border-radius:4px;background:var(--raised);position:relative"><div style="position:absolute;left:12%;right:20%;top:0;bottom:0;background:var(--accent-soft);border-radius:4px"></div><div style="position:absolute;top:50%;left:12%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:var(--accent)"></div><div style="position:absolute;top:50%;right:20%;transform:translate(50%,-50%);width:12px;height:12px;border-radius:50%;background:var(--accent)"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:center;margin:-2px 0"><i class="ph ph-arrow-down" style="font-size:15px;color:var(--ink-3)"></i></div>
+
+      <div style="background:var(--card);border-radius:11px;padding:15px;margin-bottom:18px;border:1px solid var(--accent-line)">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:13px"><span style="width:7px;height:7px;border-radius:50%;background:var(--amber)"></span><span style="font-size:12.5px;font-weight:600;font-family:var(--mono);letter-spacing:.04em">INNER · BREED</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+          <div><div style="font-size:11px;color:var(--ink-3);margin-bottom:5px">generations</div><div style="height:34px;background:var(--raised);border-radius:8px;display:flex;align-items:center;padding:0 11px;font-family:var(--mono);font-size:13px">24</div></div>
+          <div><div style="font-size:11px;color:var(--ink-3);margin-bottom:5px">cohort size</div><div style="height:34px;background:var(--raised);border-radius:8px;display:flex;align-items:center;padding:0 11px;font-family:var(--mono);font-size:13px">32</div></div>
+          <div><div style="font-size:11px;color:var(--ink-3);margin-bottom:5px">fitness</div><div style="height:34px;background:var(--raised);border-radius:8px;display:flex;align-items:center;padding:0 11px;font-size:12.5px">Population</div></div>
+          <div><div style="font-size:11px;color:var(--ink-3);margin-bottom:5px">survivors</div><div style="height:34px;background:var(--raised);border-radius:8px;display:flex;align-items:center;padding:0 11px;font-family:var(--mono);font-size:13px">4</div></div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:10px;padding:11px 13px">
+        <span style="font-size:12.5px;color:var(--ink-2)">Save run record</span>
+        <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--on-accent)"></span></span>
+      </div>
+    </aside>
+
+    <!-- results -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)">
+      <header style="height:56px;flex:0 0 56px;display:flex;align-items:center;gap:14px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--surface)">
+        <button style="display:flex;align-items:center;gap:8px;height:38px;padding:0 18px;border:none;border-radius:10px;background:var(--accent2);color:var(--on-accent2);font-size:13.5px;font-weight:600;cursor:pointer"><i class="ph-fill ph-play"></i> Run</button>
+        <div style="display:flex;align-items:center;gap:10px;flex:1;max-width:320px">
+          <div style="flex:1;height:6px;border-radius:4px;background:var(--card);overflow:hidden"><div style="height:100%;width:62%;background:var(--accent)"></div></div>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--ink-2)">gen 15 / 24</span>
+        </div>
+        <div style="flex:1"></div>
+        <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3)"><i class="ph ph-cpu" style="font-size:14px"></i> 8 cores · ×5.2</span>
+      </header>
+
+      <div style="flex:1;overflow:auto;padding:22px 24px;display:flex;flex-direction:column;gap:20px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px"><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:6px">BEST FITNESS</div><div style="font:600 24px var(--mono);color:var(--accent)">0.842</div></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px"><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:6px">BIODIVERSITY</div><div style="font:600 24px var(--mono)">2.31</div></div>
+          <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px"><div style="font-size:11.5px;color:var(--ink-3);margin-bottom:6px">WEB FRAGILITY</div><div style="font:600 24px var(--mono);color:var(--amber)">0.38</div></div>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:13px;font-weight:600">Fitness vs generation</span><span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--target)"></span>Grazer</span></div>
+          <svg viewBox="0 0 800 180" preserveAspectRatio="none" style="width:100%;height:180px">
+            <line x1="0" y1="45" x2="800" y2="45" style="stroke:var(--grid)"/><line x1="0" y1="90" x2="800" y2="90" style="stroke:var(--grid)"/><line x1="0" y1="135" x2="800" y2="135" style="stroke:var(--grid)"/>
+            <polyline fill="none" stroke="#dc8228" stroke-width="2.5" points="0,150 60,140 120,128 180,118 240,100 300,92 360,78 420,74 480,62 540,58 600,50 660,44 720,40 780,36"/>
+            <polyline fill="none" stroke="#dc8228" stroke-width="1" opacity="0.35" points="0,165 60,158 120,150 180,142 240,132 300,124 360,110 420,104 480,96 540,90 600,84 660,80 720,76 780,72"/>
+          </svg>
+        </div>
+
+        <div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden">
+          <div style="padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between"><span style="font-size:13px;font-weight:600">Elite genomes</span><span style="font-size:11.5px;color:var(--ink-3)">capture to catalog →</span></div>
+          <sc-for list="{{ leaderboard }}" as="row" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.03)">
+              <span style="font-family:var(--mono);font-size:12px;color:var(--ink-3);width:16px">{{ row.rank }}</span>
+              <span style="width:9px;height:9px;border-radius:50%;background:var(--target)"></span>
+              <span style="flex:1;font-size:13px">{{ row.fac }}</span>
+              <span style="font-size:11.5px;color:var(--ink-3);font-family:var(--mono)">{{ row.gen }}</span>
+              <span style="font-family:var(--mono);font-size:13px;color:var(--ink);width:48px;text-align:right">{{ row.fit }}</span>
+              <span style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--accent);cursor:pointer"><i class="ph ph-sparkle" style="font-size:13px"></i> save</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============================= ANALYZE (placeholder) ============================= -->
+  <sc-if value="{{ isAnalyze }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;height:100%">
+    <aside style="width:250px;flex:0 0 250px;border-right:1px solid var(--line);background:var(--surface);padding:20px 16px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">Records</div>
+      <p style="margin:0 0 16px;font-size:12px;color:var(--ink-3)">Select runs to compare.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;opacity:.5">
+        <div style="display:flex;align-items:center;gap:9px;padding:10px 11px;background:var(--card);border-radius:9px"><span style="width:14px;height:14px;border:1.5px solid var(--line-2);border-radius:4px"></span><span style="font-size:12.5px">reef · decay sweep</span></div>
+        <div style="display:flex;align-items:center;gap:9px;padding:10px 11px;background:var(--card);border-radius:9px"><span style="width:14px;height:14px;border:1.5px solid var(--line-2);border-radius:4px"></span><span style="font-size:12.5px">grazer breed · 24 gen</span></div>
+      </div>
+    </aside>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--bg)">
+      <div style="text-align:center;max-width:420px;padding:40px">
+        <div style="width:72px;height:72px;border-radius:20px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 22px"><i class="ph ph-chart-line-up" style="font-size:34px;color:var(--ink-3)"></i></div>
+        <div style="display:inline-block;font-size:11px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--amber);background:rgba(240,180,80,.1);border:1px solid rgba(240,180,80,.25);padding:4px 11px;border-radius:20px;margin-bottom:16px">Deferred · placeholder</div>
+        <h1 style="margin:0 0 12px;font-size:22px;font-weight:600">Post-hoc comparison</h1>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:var(--ink-2)">Overlay populations, gene trajectories and component quantities across saved runs. Compare species side by side and export the data — CSV or plots — for the falsifiable-knowledge deliverable.</p>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:22px">
+          <span style="font-size:12px;color:var(--ink-3);background:var(--card);padding:7px 13px;border-radius:8px">overlaid time series</span>
+          <span style="font-size:12px;color:var(--ink-3);background:var(--card);padding:7px 13px;border-radius:8px">small multiples</span>
+          <span style="font-size:12px;color:var(--ink-3);background:var(--card);padding:7px 13px;border-radius:8px">CSV / PNG export</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;noir&quot;,&quot;options&quot;:[&quot;noir&quot;,&quot;clair&quot;,&quot;aubergine&quot;,&quot;ember&quot;,&quot;oxblood&quot;,&quot;plumcoral&quot;,&quot;charbrass&quot;,&quot;custom&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#cba250&quot;,&quot;options&quot;:[[&quot;#cba250&quot;,&quot;#2f9188&quot;,&quot;#1c6f66&quot;,&quot;#a97c28&quot;,&quot;#d5a24e&quot;]],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;paused&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Observe&quot;},&quot;trophicOverlay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Observe&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;observe&quot;,&quot;options&quot;:[&quot;observe&quot;,&quot;library&quot;,&quot;studio&quot;,&quot;lab&quot;,&quot;analyze&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Router&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, worldTab: 'worlds', studioSel: 2, labMode: 'both' };
+
+  hexToRgba(hex, a){
+    const h = (hex||'').replace('#','');
+    if(h.length<6) return `rgba(70,201,163,${a})`;
+    const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  themes = {
+    kelp:  {bg:'#0e0f13',surface:'#16181d',card:'#1b1e25',raised:'#232833','raised-2':'#2b313d',line:'#282d37','line-2':'#39404d',ink:'#e8eaef','ink-2':'#a3abb8','ink-3':'#6c7480',accent:'#46c9a3'},
+    abyss: {bg:'#080c13',surface:'#0f1620',card:'#131d2a',raised:'#1b2838','raised-2':'#243347',line:'#1c2836','line-2':'#2d3e52',ink:'#e4ecf4','ink-2':'#9db0c6','ink-3':'#61748a',accent:'#22c9d8'},
+    slate: {bg:'#0d0e12',surface:'#15171d',card:'#1a1d24',raised:'#222633','raised-2':'#2b3040',line:'#262a35','line-2':'#383e4d',ink:'#e7e9f0','ink-2':'#a2a8ba','ink-3':'#6a7183',accent:'#7c86f5'},
+    ember: {bg:'#100d0c',surface:'#1a1614',card:'#201b18',raised:'#2b2420','raised-2':'#362d28',line:'#2c2521','line-2':'#40362f',ink:'#efeae6','ink-2':'#b3a9a1','ink-3':'#7d7269',accent:'#e5644e'},
+    mono:  {bg:'#0f0f11',surface:'#17171a',card:'#1c1c20',raised:'#26262b','raised-2':'#303036',line:'#29292e','line-2':'#3b3b42',ink:'#ececef','ink-2':'#a7a8ad','ink-3':'#6d6e74',accent:'#9db8d6'},
+    nocturne: {bg:'#0a0c14',surface:'#10131f',card:'#151929',raised:'#1d2338','raised-2':'#262d45',line:'#1e2333','line-2':'#303852',ink:'#e9ecf7','ink-2':'#9ea8c4','ink-3':'#626c88',accent:'#58e6b0'},
+    aubergine:{bg:'#120e17',surface:'#1a141f',card:'#201826',raised:'#2b2132','raised-2':'#362a40',line:'#2a2130','line-2':'#40324a',ink:'#f0eaf1','ink-2':'#b6a8bc','ink-3':'#7d6f85',accent:'#e6c07d'},
+    petri: {bg:'#07110e',surface:'#0d1714',card:'#111e1a',raised:'#182a24','raised-2':'#21362f',line:'#172621','line-2':'#294038',ink:'#e6f0ea','ink-2':'#9cb2a9','ink-3':'#5f766d',accent:'#b7e84f'},
+    plumcoral:{bg:'#120e17',surface:'#1a141f',card:'#201826',raised:'#2b2132','raised-2':'#362a40',line:'#2a2130','line-2':'#40324a',ink:'#f0eaf1','ink-2':'#b6a8bc','ink-3':'#7d6f85',accent:'#e5644e'},
+    charbrass:{bg:'#100d0c',surface:'#1a1614',card:'#201b18',raised:'#2b2420','raised-2':'#362d28',line:'#2c2521','line-2':'#40362f',ink:'#efeae6','ink-2':'#b3a9a1','ink-3':'#7d7269',accent:'#d8a24a'},
+    oxblood: {bg:'#160d10',surface:'#201317',card:'#27181c',raised:'#341f24','raised-2':'#41282e',line:'#301c21','line-2':'#4a2f36',ink:'#f2e8ea','ink-2':'#bda2a8','ink-3':'#866a70',accent:'#d5a24e'},
+    noir:  {bg:'#131315',surface:'#1b1b1e',card:'#212124',raised:'#2b2b2f','raised-2':'#35353a',line:'#2a2a2e','line-2':'#3c3c42',grid:'#29292d',ink:'#ececee','ink-2':'#a7a7ac','ink-3':'#6e6e74',accent:'#cba250',accent2:'#2f9188',onAccent:'#181206',onAccent2:'#eafcf8'},
+    clair: {light:true,bg:'#e9e8e6',surface:'#f4f3f1',card:'#ecebe8',raised:'#ffffff','raised-2':'#e4e3e0',line:'#dbd9d5','line-2':'#cac8c3',grid:'#e0ded9',ink:'#23211f','ink-2':'#63605b','ink-3':'#928e88',accent:'#1c6f66',accent2:'#a97c28',onAccent:'#eafbf7',onAccent2:'#221904'},
+  };
+  applyTheme(){
+    const name = this.props.theme || 'noir';
+    const base = this.themes[name] || this.themes.noir;
+    const root = document.documentElement.style;
+    ['bg','surface','card','raised','raised-2','line','line-2','ink','ink-2','ink-3'].forEach(k=>root.setProperty('--'+k, base[k]));
+    let accent = base.accent;
+    if(name==='custom') accent = this.props.accent || '#cba250';
+    const accent2 = base.accent2 || accent;
+    root.setProperty('--accent', accent);
+    root.setProperty('--accent-soft', this.hexToRgba(accent, 0.14));
+    root.setProperty('--accent-line', this.hexToRgba(accent, 0.35));
+    root.setProperty('--accent2', accent2);
+    root.setProperty('--accent2-soft', this.hexToRgba(accent2, 0.14));
+    root.setProperty('--on-accent', base.onAccent || '#12100b');
+    root.setProperty('--on-accent2', base.onAccent2 || base.onAccent || '#12100b');
+    root.setProperty('--grid', base.grid || base.line);
+  }
+  componentDidMount(){ this.applyTheme(); }
+  componentDidUpdate(){ this.applyTheme(); }
+
+  screenNow(){ return this.state.screen || this.props.startScreen || 'observe'; }
+
+  renderVals(){
+    const cur = this.screenNow();
+    const set = (id)=>this.setState({screen:id});
+    const nav = [
+      {id:'observe', label:'Observe', icon:'ph-eye'},
+      {id:'library', label:'Library', icon:'ph-squares-four'},
+      {id:'studio',  label:'Studio',  icon:'ph-puzzle-piece'},
+      {id:'lab',     label:'Lab',     icon:'ph-flask'},
+      {id:'analyze', label:'Analyze', icon:'ph-chart-line-up', soon:true},
+    ].map(n=>({ ...n, active:n.id===cur, onClick:()=>set(n.id),
+      fg: n.id===cur ? 'var(--accent)' : (n.soon ? 'var(--ink-3)' : 'var(--ink-2)'),
+      btnBg: n.id===cur ? 'var(--card)' : 'transparent' }));
+
+    const genotype = [
+      ['Max speed','120.0'],['Agility','0.120'],['Vision range','150.0'],['Vision FOV (°)','130'],
+      ['Repro threshold','100'],['Energy/child','40'],['Mutation rate','0.060'],['Metabolism/s','4.0'],
+      ['Locomotion cost','2.0'],['Rays (precision)','7'],['Photosynthesis/s','0.0'],['Dispersal','0'],
+      ['Brain cost/neuron','0.00'],['Agility cost','0.020'],['Act cost/s','0.00'],['vision cost/s','0.525'],
+    ].map(([k,v])=>({k,v}));
+
+    const rays = [['r0','0.75'],['r1','0.80'],['r2','0.81'],['r3','0.79'],['r4','0.73'],['r5','0.70'],['r6','0.68']]
+      .map(([r,v])=>({r,v,pct:(parseFloat(v)*100)+'%',t:'0.00',th:'0.00'}));
+
+    const speeds = ['×1','×2','×5','×10'].map(l=>({label:l, active:l==='×10'}));
+
+    const worlds = [
+      {name:'Reef', tag:'oasis · nutrient field', seed:'12648430', scen:'3 scenarios', sel:true, hue:'188'},
+      {name:'Open flora', tag:'photosynthetic patches', seed:'88213', scen:'2 scenarios', hue:'150'},
+      {name:'Twin sources', tag:'2 emitters · diffusion', seed:'40021', scen:'1 scenario', hue:'40'},
+      {name:'Gradient', tag:'single source · long range', seed:'55127', scen:'1 scenario', hue:'265'},
+      {name:'Barren', tag:'sparse · high decay', seed:'7', scen:'no scenarios', hue:'20'},
+      {name:'Empty', tag:'blank canvas', seed:'0', scen:'no scenarios', hue:'220'},
+    ];
+
+    const species = [
+      {name:'Hunter', brain:'Hunter', color:'#6aa6ff', prov:'example', used:'used in 3', variant:false},
+      {name:'Grazer', brain:'Grazer', color:'#dc8228', prov:'example', used:'used in 2', variant:false},
+      {name:'Kelp',   brain:'Sessile', color:'#4ec98a', prov:'example', used:'used in 5', variant:false},
+      {name:'Wander', brain:'Wander', color:'#8fa0b5', prov:'example', used:'used in 2', variant:false},
+      {name:'MLP',    brain:'Network (MLP)', color:'#c084f5', prov:'example', used:'used in 1', variant:false},
+      {name:'Species 0', brain:'Wander', color:'#6aa6ff', prov:'captured · reef', used:'unused', variant:true},
+    ];
+
+    const composeItems = [
+      {name:'Kelp', color:'#4ec98a', count:'60'},
+      {name:'Grazer', color:'#dc8228', count:'12'},
+      {name:'Hunter', color:'#6aa6ff', count:'4'},
+    ];
+
+    const cast = [
+      {name:'Kelp', sub:'sessile', color:'#4ec98a', count:'60'},
+      {name:'Grazer', sub:'grazer', color:'#dc8228', count:'12'},
+      {name:'Hunter', sub:'hunter', color:'#6aa6ff', count:'4', warn:true},
+      {name:'MLP', sub:'network · captured', color:'#c084f5', count:'2', captured:true},
+    ].map((c,i)=>({...c, sel:i===this.state.studioSel, onClick:()=>this.setState({studioSel:i})}));
+
+    const geneCats = [
+      {name:'Metabolism', open:true, genes:[
+        {g:'Metabolism/s', v:'4.0', pct:'40%'},
+        {g:'Repro threshold', v:'100', pct:'50%'},
+        {g:'Energy/child', v:'40', pct:'32%'},
+        {g:'Mutation rate', v:'0.060', pct:'30%'},
+      ]},
+      {name:'Locomotion', open:true, genes:[
+        {g:'Max speed', v:'120.0', pct:'60%'},
+        {g:'Agility', v:'0.120', pct:'24%'},
+        {g:'Locomotion cost', v:'2.0', pct:'20%'},
+      ]},
+      {name:'Vision', open:false, genes:[
+        {g:'Vision range', v:'150.0', pct:'50%'},
+        {g:'Vision FOV (°)', v:'130', pct:'72%'},
+        {g:'Rays (precision)', v:'7', pct:'44%'},
+      ]},
+    ];
+
+    const nutrients = [
+      {n:'sunlight', mode:'sense', color:'#f0b450'},
+      {n:'nutrient', mode:'absorb · hold', color:'#6aa6ff'},
+    ];
+
+    const leaderboard = [
+      {rank:'1', fac:'Grazer', fit:'0.842', gen:'gen 24', elite:true},
+      {rank:'2', fac:'Grazer', fit:'0.815', gen:'gen 24'},
+      {rank:'3', fac:'Grazer', fit:'0.798', gen:'gen 23'},
+      {rank:'4', fac:'Grazer', fit:'0.771', gen:'gen 22'},
+      {rank:'5', fac:'Grazer', fit:'0.744', gen:'gen 24'},
+    ];
+
+    const labMode = this.state.labMode;
+
+    return {
+      screen: cur,
+      isObserve: cur==='observe', isLibrary: cur==='library', isStudio: cur==='studio',
+      isLab: cur==='lab', isAnalyze: cur==='analyze',
+      navItems: nav,
+      paused: this.props.paused ?? true,
+      runLabel: (this.props.paused ?? true) ? 'Paused' : 'Running',
+      trophic: this.props.trophicOverlay ?? false,
+      genotype, rays, speeds, worlds, species, composeItems, cast, geneCats, nutrients, leaderboard,
+      worldTab: this.state.worldTab,
+      setWorldsTab: ()=>this.setState({worldTab:'worlds'}),
+      setSpeciesTab: ()=>this.setState({worldTab:'species'}),
+      worldsActive: this.state.worldTab==='worlds',
+      speciesActive: this.state.worldTab==='species',
+      wTabColor: this.state.worldTab==='worlds' ? 'var(--ink)' : 'var(--ink-3)',
+      wTabBorder: this.state.worldTab==='worlds' ? 'var(--accent)' : 'transparent',
+      sTabColor: this.state.worldTab==='species' ? 'var(--ink)' : 'var(--ink-3)',
+      sTabBorder: this.state.worldTab==='species' ? 'var(--accent)' : 'transparent',
+      labMode,
+      setBreed: ()=>this.setState({labMode:'breed'}),
+      setSweep: ()=>this.setState({labMode:'sweep'}),
+      setBoth: ()=>this.setState({labMode:'both'}),
+      breedActive: labMode==='breed'||labMode==='both',
+      sweepActive: labMode==='sweep'||labMode==='both',
+    };
+  }
+}
+</script>
+</body>
+</html>
