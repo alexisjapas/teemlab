@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
 use teemlab::brain::{BrainKind, GrazerBrain, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{Archetype, BatchConfig, ComponentConfig, Fitness, Source, SpeciesEntry};
+use teemlab::config::{
+    Archetype, BatchConfig, ComponentConfig, FieldRelation, Fitness, Source, SpeciesEntry,
+};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
@@ -891,6 +893,10 @@ fn archetype_editor(
             });
     });
 
+    // DERIVED COSTS — read-only: what this body costs per second under the world's
+    // allometric law (companion §5). Size is priced here, so size-dominance obeys Law 7.
+    derived_costs_card(ui, config, i);
+
     // GENES — the founding genotype + per-species mutability, in a framed card. Every
     // archetype is an agent (Phase 3b); a *food source* is just one with a Sessile
     // brain, editable through these same controls.
@@ -983,6 +989,11 @@ fn archetype_editor(
         }
     });
 
+    // NUTRITIONAL PROFILE — what this species needs (its diet, in component terms) and
+    // holds, plus absorb / emit / sense. Trophic interactions emerge from needs ∩
+    // contents (companion §3), so this is what the food-web validator reads.
+    nutritional_profile_card(ui, config, i);
+
     // BRAIN — the decision's author + any captured weights, in a framed card.
     card(ui, |ui| {
         let arch = &mut config.archetypes[i];
@@ -1025,6 +1036,137 @@ fn archetype_editor(
             {
                 arch.captured_brain = None;
                 arch.captured_from = None;
+            }
+        }
+    });
+}
+
+/// **Derived costs** (read-only) of archetype `i`: what this body drains per second
+/// under the world's allometric [`CostLaw`](teemlab::config::CostLaw) (companion §5) —
+/// `size = radius^e`, then maintenance / locomotion / manoeuvre `= k · size`. Size is
+/// priced here, so the size-dominance of emergent targeting obeys Law 7. The
+/// coefficients live in the World editor; the size in Body.
+fn derived_costs_card(ui: &mut egui::Ui, config: &SimConfig, i: usize) {
+    let law = &config.cost_law;
+    let size = config.archetypes[i].radius.powf(law.size_exponent);
+    let maintenance = law.maintenance * size;
+    let locomotion = law.locomotion * size; // at the reference (founding) max speed
+    let maneuver = law.maneuver * size; // per unit |Δv|
+    card(ui, |ui| {
+        ui.strong("Derived costs").on_hover_text(
+            "Read-only: energy/s derived from the body SIZE and the world's allometric \
+             cost law (docs/emergent-trophics.md §5). Edit the coefficients in the World \
+             editor, the size in Body.",
+        );
+        egui::Grid::new("derived_costs")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("size (radius^e)");
+                ui.monospace(format!("{size:.1}"));
+                ui.end_row();
+                ui.label("maintenance /s");
+                ui.monospace(format!("{maintenance:.3}"));
+                ui.end_row();
+                ui.label("locomotion /s (max)");
+                ui.monospace(format!("{locomotion:.3}"));
+                ui.end_row();
+                ui.label("manoeuvre /|Δv|");
+                ui.monospace(format!("{maneuver:.4}"));
+                ui.end_row();
+            });
+    });
+}
+
+/// The **nutritional profile** of archetype `i`: per component, what it *needs* (its
+/// diet), *holds* (capacity), and its *absorb / emit / sense* behaviour — the
+/// [`FieldRelation`] verbs that drive emergent targeting and the food-web validator
+/// (companion §3). Only **non-default** rows are stored (editing a row back to all-zero
+/// removes it), so a species that ignores the substrate stays byte-clean; the
+/// un-exposed verbs (`affect`, `emit_at_death`, `repro_cost`) on an existing row are
+/// preserved untouched.
+fn nutritional_profile_card(ui: &mut egui::Ui, config: &mut SimConfig, i: usize) {
+    card(ui, |ui| {
+        ui.strong("Nutritional profile").on_hover_text(
+            "What this species NEEDS (its diet, in component terms) and HOLDS, plus \
+             absorb / emit / sense. Trophic roles emerge from needs ∩ contents \
+             (docs/emergent-trophics.md §3).",
+        );
+        if config.components.is_empty() {
+            ui.weak(
+                "No components in this world — add fields in the World editor to give this \
+                 species a diet.",
+            );
+            return;
+        }
+        let species = i as u16;
+        for c in 0..config.components.len() {
+            let name = config.components[c].name.clone();
+            let existing = config
+                .field_relations
+                .iter()
+                .position(|fr| fr.species == species && fr.component == c);
+            let mut fr = existing
+                .map(|idx| config.field_relations[idx].clone())
+                .unwrap_or(FieldRelation {
+                    species,
+                    component: c,
+                    ..Default::default()
+                });
+            ui.push_id(("nutri", i, c), |ui| {
+                egui::CollapsingHeader::new(&name).show(ui, |ui| {
+                    egui::Grid::new("nutri_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("need /s").on_hover_text(
+                                "How much of this component the diet requires (0 = not needed).",
+                            );
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut fr.need).speed(0.01).range(0.0..=100.0))
+                            });
+                            ui.end_row();
+                            ui.label("capacity (holds)").on_hover_text(
+                                "Store size for this component — what the body can hold (its contents).",
+                            );
+                            fonts::value(ui, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut fr.capacity).speed(0.1).range(0.0..=1000.0),
+                                )
+                            });
+                            ui.end_row();
+                            ui.label("absorb /s")
+                                .on_hover_text("Rate it pulls the component out of the field into its store.");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut fr.absorb).speed(0.01).range(0.0..=100.0))
+                            });
+                            ui.end_row();
+                            ui.label("emit /s")
+                                .on_hover_text("Rate it releases the component back into the field (alive).");
+                            fonts::value(ui, |ui| {
+                                ui.add(egui::DragValue::new(&mut fr.emit).speed(0.01).range(0.0..=100.0))
+                            });
+                            ui.end_row();
+                            ui.label("sense");
+                            ui.checkbox(&mut fr.sense, "perceive as a channel");
+                            ui.end_row();
+                        });
+                });
+            });
+            // Keep non-default rows, drop rows edited back to default (byte-clean RON).
+            let is_default = fr
+                == FieldRelation {
+                    species,
+                    component: c,
+                    ..Default::default()
+                };
+            match existing {
+                Some(idx) if is_default => {
+                    config.field_relations.remove(idx);
+                }
+                Some(idx) => config.field_relations[idx] = fr,
+                None if !is_default => config.field_relations.push(fr),
+                None => {}
             }
         }
     });
@@ -1647,6 +1789,71 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             "Min/max of each gene: bound the mutation and the archetype editor's \
              sliders. Global (shared by all archetypes).",
         );
+    });
+
+    // ALLOMETRIC COSTS — the world's cost law (companion §5): the few "physics
+    // constants" from which each body's maintenance / locomotion / manoeuvre derive
+    // (`size = radius^e`). The pricing that makes body size a Law-7 trait, so emergent
+    // size-dominance can't run away. Applied live (metabolize reads it each tick).
+    card(ui, |ui| {
+        egui::CollapsingHeader::new("Allometric costs")
+            .default_open(false)
+            .show(ui, |ui| {
+                let law = &mut config.cost_law;
+                egui::Grid::new("cost_law_grid")
+                    .num_columns(2)
+                    .spacing([8.0, 6.0])
+                    .show(ui, |ui| {
+                        ui.label("size exponent e").on_hover_text(
+                            "size = radius^e (default 2 = 2D area = mass). A research knob \
+                             for how metabolic scaling affects stability.",
+                        );
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut law.size_exponent)
+                                    .speed(0.05)
+                                    .range(0.5..=4.0),
+                            )
+                        });
+                        ui.end_row();
+                        ui.label("maintenance k_m")
+                            .on_hover_text("resting drain = k_m · size per second.");
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut law.maintenance)
+                                    .speed(0.001)
+                                    .range(0.0..=1.0),
+                            )
+                        });
+                        ui.end_row();
+                        ui.label("locomotion k_v").on_hover_text(
+                            "cruising drain = k_v · size · (speed / founder max) per second.",
+                        );
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut law.locomotion)
+                                    .speed(0.001)
+                                    .range(0.0..=1.0),
+                            )
+                        });
+                        ui.end_row();
+                        ui.label("manoeuvre k_a")
+                            .on_hover_text("turn / accelerate drain = k_a · size · |Δv|.");
+                        fonts::value(ui, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut law.maneuver)
+                                    .speed(0.0001)
+                                    .range(0.0..=0.1),
+                            )
+                        });
+                        ui.end_row();
+                    });
+            })
+            .header_response
+            .on_hover_text(
+                "The allometric cost law: how body size prices survival and movement \
+                 (docs/emergent-trophics.md §5).",
+            );
     });
 }
 

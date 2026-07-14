@@ -389,18 +389,17 @@ fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
 /// when every archetype's needs are reachable, else one red line per broken chain
 /// (`‹species› needs ‹component›`). Recomputed each frame, so it updates live as the
 /// user edits — the payoff of emergent (checkable) trophic interactions.
-fn studio_validation(ui: &mut egui::Ui, config: &SimConfig) {
-    let broken = config.broken_chains();
-    if broken.is_empty() {
+fn studio_validation(ui: &mut egui::Ui, graph: &crate::trophic::TrophicGraph, config: &SimConfig) {
+    if graph.is_viable() {
         ui.colored_label(
             crate::theme::SUCCESS,
             "Food web viable — every need is reachable.",
         );
     } else {
-        for (species, component) in broken {
+        for &(species, component) in &graph.broken {
             let sp = config
                 .archetypes
-                .get(species as usize)
+                .get(species)
                 .map(|a| a.name.as_str())
                 .unwrap_or("?");
             let comp = config
@@ -909,10 +908,19 @@ pub fn dock(
                 });
 
             // CENTRE (a `CentralPanel`, added last) — the static food-web validation
-            // (A5) above the selected archetype's editor; fills the remaining width and
-            // hides the arena.
+            // (A5 / the derived graph) above the selected archetype's editor; fills the
+            // remaining width and hides the arena.
             egui::CentralPanel::default().show_inside(&mut root, |ui| {
-                studio_validation(ui, &config);
+                egui::CollapsingHeader::new("Food web · static validation")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        // The derived graph (nodes = components ∪ archetypes; edges =
+                        // edibility / absorption / emission) — built once, skinned three
+                        // ways (`trophic`); here the static reachability surface.
+                        let graph = crate::trophic::TrophicGraph::derive(&config);
+                        graph.paint(ui, 150.0);
+                        studio_validation(ui, &graph, &config);
+                    });
                 ui.separator();
                 if palette
                     .selected

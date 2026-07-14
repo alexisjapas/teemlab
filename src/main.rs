@@ -23,6 +23,7 @@ mod runs;
 mod screen;
 mod status;
 mod theme;
+mod trophic;
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
