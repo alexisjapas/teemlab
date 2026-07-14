@@ -1254,6 +1254,174 @@ impl SimConfig {
     }
 }
 
+/// A **World** — the abiotic stage of a scenario as a first-class catalog artifact
+/// (redesign Phase B, `docs/ui-redesign.md` §2): the arena, sources/rocks, components
+/// (fields), gene bounds, the allometric [`CostLaw`], the emergent-[`Predation`] knobs,
+/// appearance and seed — *the environment without inhabitants*. A [`Scenario`](SimConfig)
+/// is a World **populated** by a cast; composing one is [`apply`](World::apply)ing a
+/// World to a config and dropping species in (no relation wiring — interactions are
+/// emergent, §8).
+///
+/// **Additive & byte-identical.** `SimConfig` is unchanged, so every committed scenario
+/// still loads bit-for-bit; a World is a *derived view* the Library saves (`worlds/*.ron`)
+/// and reloads — it deliberately omits the **cast**-coupled data (archetypes, the
+/// per-species `field_relations`, `batch`), which travels with the species, not the stage.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct World {
+    /// Fixed-timestep rate (Hz).
+    pub tick_hz: f64,
+    /// Half-side of the square arena, in world units.
+    pub arena_half_extent: f32,
+    /// Cells-per-side of every component field.
+    pub field_resolution: usize,
+    /// The diffusible substrates (fields).
+    pub components: Vec<ComponentConfig>,
+    /// Substrate sources / rocks.
+    pub sources: Vec<Source>,
+    /// Bounds of the maximum-speed gene.
+    pub speed_bounds: Bounds,
+    /// Bounds of the agility gene.
+    pub agility_bounds: Bounds,
+    /// Bounds of the vision-range gene.
+    pub vision_range_bounds: Bounds,
+    /// Bounds of the vision-field gene (degrees).
+    pub vision_fov_bounds: Bounds,
+    /// Bounds of the reproduction-threshold gene.
+    pub reproduction_threshold_bounds: Bounds,
+    /// Bounds of the energy-passed-to-child gene.
+    pub offspring_energy_bounds: Bounds,
+    /// Bounds of the mutation-rate gene.
+    pub mutation_rate_bounds: Bounds,
+    /// Bounds of the vision-ray-count gene.
+    pub vision_rays_bounds: Bounds,
+    /// Bounds of the photosynthesis gene.
+    pub photosynthesis_bounds: Bounds,
+    /// Bounds of the dispersal gene.
+    pub seed_dispersal_bounds: Bounds,
+    /// Bounds of the brain-cost gene.
+    pub brain_cost_bounds: Bounds,
+    /// Bounds of the act-cost gene.
+    pub act_cost_bounds: Bounds,
+    /// The allometric cost law (world "physics constants").
+    pub cost_law: CostLaw,
+    /// Emergent-predation knobs (size margin, bite range & rate).
+    pub predation: Predation,
+    /// Play-area background colour.
+    pub play_area_color: [f32; 3],
+    /// Off-game background colour.
+    pub off_game_color: [f32; 3],
+    /// RNG seed.
+    pub seed: u64,
+}
+
+impl Default for World {
+    /// The abiotic half of the default scenario — so a World's unspecified fields fall
+    /// back exactly as a [`SimConfig`]'s do (one source of truth, no duplicated defaults).
+    fn default() -> Self {
+        Self::extract(&SimConfig::default())
+    }
+}
+
+impl World {
+    /// Pull the abiotic stage **out of** a scenario, dropping the cast (archetypes, the
+    /// per-species field relations, batch).
+    pub fn extract(c: &SimConfig) -> Self {
+        Self {
+            tick_hz: c.tick_hz,
+            arena_half_extent: c.arena_half_extent,
+            field_resolution: c.field_resolution,
+            components: c.components.clone(),
+            sources: c.sources.clone(),
+            speed_bounds: c.speed_bounds,
+            agility_bounds: c.agility_bounds,
+            vision_range_bounds: c.vision_range_bounds,
+            vision_fov_bounds: c.vision_fov_bounds,
+            reproduction_threshold_bounds: c.reproduction_threshold_bounds,
+            offspring_energy_bounds: c.offspring_energy_bounds,
+            mutation_rate_bounds: c.mutation_rate_bounds,
+            vision_rays_bounds: c.vision_rays_bounds,
+            photosynthesis_bounds: c.photosynthesis_bounds,
+            seed_dispersal_bounds: c.seed_dispersal_bounds,
+            brain_cost_bounds: c.brain_cost_bounds,
+            act_cost_bounds: c.act_cost_bounds,
+            cost_law: c.cost_law.clone(),
+            predation: c.predation.clone(),
+            play_area_color: c.play_area_color,
+            off_game_color: c.off_game_color,
+            seed: c.seed,
+        }
+    }
+
+    /// Write this World's stage **onto** a scenario, leaving the cast untouched
+    /// (archetypes, field relations, batch, founder pools) — the compose operation (§8).
+    pub fn apply(&self, c: &mut SimConfig) {
+        c.tick_hz = self.tick_hz;
+        c.arena_half_extent = self.arena_half_extent;
+        c.field_resolution = self.field_resolution;
+        c.components = self.components.clone();
+        c.sources = self.sources.clone();
+        c.speed_bounds = self.speed_bounds;
+        c.agility_bounds = self.agility_bounds;
+        c.vision_range_bounds = self.vision_range_bounds;
+        c.vision_fov_bounds = self.vision_fov_bounds;
+        c.reproduction_threshold_bounds = self.reproduction_threshold_bounds;
+        c.offspring_energy_bounds = self.offspring_energy_bounds;
+        c.mutation_rate_bounds = self.mutation_rate_bounds;
+        c.vision_rays_bounds = self.vision_rays_bounds;
+        c.photosynthesis_bounds = self.photosynthesis_bounds;
+        c.seed_dispersal_bounds = self.seed_dispersal_bounds;
+        c.brain_cost_bounds = self.brain_cost_bounds;
+        c.act_cost_bounds = self.act_cost_bounds;
+        c.cost_law = self.cost_law.clone();
+        c.predation = self.predation.clone();
+        c.play_area_color = self.play_area_color;
+        c.off_game_color = self.off_game_color;
+        c.seed = self.seed;
+    }
+
+    /// A fresh scenario from this World with an **empty cast** — ready for the Library to
+    /// drop species into.
+    pub fn into_scenario(&self) -> SimConfig {
+        let mut c = SimConfig {
+            archetypes: vec![],
+            field_relations: vec![],
+            batch: None,
+            ..SimConfig::default()
+        };
+        self.apply(&mut c);
+        c
+    }
+
+    /// Serialize to pretty RON (the catalog format).
+    pub fn to_ron_string(&self) -> Result<String, ron::Error> {
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+    }
+
+    /// Parse a World from a RON string.
+    pub fn from_ron_str(text: &str) -> Result<Self, ron::error::SpannedError> {
+        ron::from_str(text)
+    }
+
+    /// Load a World from a RON file.
+    pub fn from_ron_file(path: impl AsRef<Path>) -> Result<Self, ScenarioError> {
+        let text = std::fs::read_to_string(path)?;
+        Ok(ron::from_str(&text)?)
+    }
+
+    /// Write the World to a RON file, creating the parent directory (e.g. `worlds/saved/`).
+    pub fn save_ron_file(&self, path: impl AsRef<Path>) -> Result<(), ScenarioError> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = self
+            .to_ron_string()
+            .map_err(|e| ScenarioError::Io(std::io::Error::other(e.to_string())))?;
+        std::fs::write(path, text)?;
+        Ok(())
+    }
+}
+
 /// Failure to load a scenario: I/O or RON parsing.
 #[derive(Debug)]
 pub enum ScenarioError {
@@ -1765,5 +1933,66 @@ mod tests {
             "algae is a producer (lives on the sun)"
         );
         assert!(!entry.is_variant(), "the preset is a base form");
+    }
+}
+
+#[cfg(test)]
+mod world_tests {
+    use super::*;
+
+    #[test]
+    fn extract_then_apply_is_faithful_and_keeps_the_cast() {
+        // Extracting a World and applying it back onto the SAME scenario changes nothing
+        // (apply is exactly the inverse view of extract on the abiotic fields), and the
+        // cast (archetypes / field relations / batch) is left untouched.
+        let scenario = SimConfig::default();
+        let world = World::extract(&scenario);
+        let mut copy = scenario.clone();
+        world.apply(&mut copy);
+        assert_eq!(copy, scenario, "apply(extract(c)) must leave c unchanged");
+    }
+
+    #[test]
+    fn apply_overwrites_only_the_stage_not_the_cast() {
+        // A World from one scenario, applied to another, replaces the stage (arena, seed)
+        // but keeps the target's cast.
+        let src = SimConfig {
+            arena_half_extent: 999.0,
+            seed: 4242,
+            ..SimConfig::default()
+        };
+        let world = World::extract(&src);
+
+        let mut target = SimConfig::default();
+        let cast_before = target.archetypes.clone();
+        world.apply(&mut target);
+        assert_eq!(target.arena_half_extent, 999.0, "stage applied");
+        assert_eq!(target.seed, 4242, "stage applied");
+        assert_eq!(target.archetypes, cast_before, "cast untouched");
+    }
+
+    #[test]
+    fn into_scenario_has_an_empty_cast_and_the_world_stage() {
+        let src = SimConfig {
+            arena_half_extent: 123.0,
+            ..SimConfig::default()
+        };
+        let world = World::extract(&src);
+        let scen = world.into_scenario();
+        assert!(
+            scen.archetypes.is_empty(),
+            "a fresh World scenario has no cast"
+        );
+        assert!(scen.field_relations.is_empty());
+        assert!(scen.batch.is_none());
+        assert_eq!(scen.arena_half_extent, 123.0, "the stage is the World's");
+    }
+
+    #[test]
+    fn ron_round_trips() {
+        let world = World::default();
+        let text = world.to_ron_string().expect("serialize");
+        let back = World::from_ron_str(&text).expect("parse");
+        assert_eq!(world, back);
     }
 }
