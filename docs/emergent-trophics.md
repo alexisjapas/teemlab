@@ -52,8 +52,11 @@ failures, 14 ignored**.
 **Remaining.**
 
 - **Phase B — the UI** ([`ui-redesign.md`](ui-redesign.md)): the screen router + 5
-  screens. **Not started.** Its Studio consumes A5 (the validator) and A6 (neutral gene
-  categories); the Observe fragility overlay & the Lab metric consume A5 / §6.
+  screens, staged **B1–B8** (that doc's §11). **In progress — B1 (the screen router +
+  nav rail) is done**; the existing content is re-routed into Observe / Studio / Lab, with
+  Library / Analyze as placeholders. Studio consumes A5 (the validator, surfaced as inline
+  broken-chain flags at B1) and A6 (neutral gene categories); the Observe fragility overlay
+  & the Lab metric consume A5 / §6 (B3/B6/B7).
 - **Deferred debts** (§9): re-tune every scenario (un-`#[ignore]` the 14 drivers);
   metabolization; nutrient-as-survival economy; muscular-efficiency gene; non-nutritional
   combat; graded dominance; signed digestibility; speed-ceiling removal.

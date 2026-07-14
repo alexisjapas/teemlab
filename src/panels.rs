@@ -1,42 +1,35 @@
-//! **Docked** layout of the windowed build: resizable egui panels around the central
-//! simulation area, assembled by a **single** system ([`dock`]). The side panels
-//! resize within a range that always reserves the sim's minimum width, the archetype
-//! editor folds into the left panel on a narrow window (cf. [`crate::layout`]), and
-//! **every region folds to a thin rail** (chevron / `1` `2` `3`) so the arena can
-//! take the space back — a CLI-loaded scenario even starts that way (observing).
+//! The windowed build's whole layout, assembled by a **single** system ([`dock`]):
+//! the persistent **screen router** rail ([`nav_rail`]) on the far left, then the
+//! panels of the current screen (Observe · Library · Studio · Lab · Analyze,
+//! [`crate::screen`]) `show_inside` the one root `Ui` (redesign Phase B,
+//! `docs/ui-redesign.md`). A module of the windowed *binary* only; it invents nothing —
+//! each panel calls a reusable `*_section(ui, …)` already exposed by its tool module
+//! (`controls`, `editor`, `runs`, `hud`, `recorder`, `inspector`, `dashboard`). The
+//! role of this system is purely **layout** — the rail, and reserving the edges of
+//! each screen.
 //!
-//! A module of the windowed *binary* only. We invent nothing: each panel calls the
-//! reusable `*_section(ui, …)` already exposed by its tool module (`controls`,
-//! `editor`, `runs`, `hud`, `recorder`, `inspector`). The role of this system is
-//! purely **layout** — reserving the edges of the egui screen.
-//!
-//! **Semantic** split (master/detail): the **world** on the left (the *World* scenario
-//! params + the *Archetypes* list / library) — the scenario as a whole; the **archetype
-//! editor** in a second left column that opens only when an archetype is selected — the
-//! one species you are editing; **Analysis** on the right (live *stats* + the agent
-//! *inspector*) — the current state you read; the evolution *curves* (a time series)
-//! at the bottom, spanning only the **central width** the side panels leave free;
-//! *scenario IO + transport controls + View menu · Help button · Breeding toggle ·
-//! Export* in the top strip (controls centered). View layers live in the top-bar
-//! **View** menu and video export in a floating window from the **Export** button —
-//! both out of the always-on chrome. Help is **hover-first**: explanations live in
-//! tooltips (on the control, or its section header), and the Help button opens the
-//! one remaining surface, the shortcuts cheatsheet.
+//! **The five screens.** Only [`Screen::Observe`] renders the live arena: transport
+//! strip on top, live stats + view layers on the left, the agent inspector on the
+//! right, evolution curves at the bottom — each foldable to a thin rail (`1` `2` `3`)
+//! so the arena leads. **Studio** is world + cast + archetype editor with static
+//! food-web validation; **Lab** is the headless breeding dashboard; **Library** and
+//! **Analyze** are placeholders (built out in later stages). Help is **hover-first**
+//! (tooltips), the nav rail's Help opening the one remaining surface — the shortcuts
+//! cheatsheet.
 //!
 //! **One root viewport `Ui`, `show_inside`.** Following bevy_egui 0.40
 //! (`examples/ui.rs`): we build a single background-layer `Ui` covering
 //! `ctx.viewport_rect()`, then add every panel into it with
-//! `Panel::show_inside(&mut root, …)`. No deprecated top-level `Panel::show(ctx, …)`
-//! anymore (egui 0.34 deprecates it), and the central region left free is read from
-//! the root `Ui` with `available_rect_before_wrap()` — the non-deprecated successor
-//! of `ctx.available_rect()`. We stash it in [`CentralRect`] so `main::set_sim_camera`
-//! (which runs right after this system) frames the sim there.
+//! `Panel::show_inside(&mut root, …)` — no deprecated top-level `Panel::show(ctx, …)`.
 //!
-//! No `CentralPanel`: the center stays "transparent" and lets the Bevy rendering
-//! show through, so the simulation is always **centered and fully visible**, whatever
-//! the panels' size. With the curves moved to the lone bottom panel and stats/inspector
-//! to the right, the central sim now gets the **full height** between the top strip and
-//! the bottom curves.
+//! **The one-camera discipline** (`docs/ui-redesign.md` §1). On **Observe** the centre
+//! stays "transparent" (no `CentralPanel`) and the Bevy rendering shows through, so the
+//! arena is centred and fully visible; the free region is read with
+//! `available_rect_before_wrap()` and stashed in [`CentralRect`] for
+//! `main::set_sim_camera`. Every **other** screen fills its content area with an opaque
+//! `CentralPanel` and records an **empty** rect, so the arena is hidden and the camera /
+//! picking systems idle — switching away from Observe releases the arena cleanly,
+//! without ever spawning a second camera.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -58,21 +51,19 @@ use crate::hud;
 use crate::inspector;
 use crate::recorder::{self, RecorderPanel};
 use crate::runs::{self, RunsPanel};
+use crate::screen::{Router, Screen};
 use crate::status::UiStatus;
 
-/// Last frame's measured panel widths and the left-region mode — the inputs the
-/// [`crate::layout`] rules need this frame (a one-frame lag, harmless for sizing).
-/// A single [`Local`] so [`dock`] adds no system parameter.
+/// Last frame's measured panel widths — the inputs the [`crate::layout`] range rule
+/// needs this frame (a one-frame lag, harmless for sizing). A single [`Local`] so
+/// [`dock`] adds no system parameter.
 #[derive(Default)]
 pub struct DockLayout {
-    /// Left panel (`left_tools`) width, feeding the right panel's range.
+    /// Left panel width, feeding the right panel's range (each side reserves the sim's
+    /// minimum against the *other* side's width).
     left_w: f32,
-    /// Right panel width, feeding the left panels' ranges.
+    /// Right panel width, feeding the left panel's range.
     right_w: f32,
-    /// Archetype-editor column width (two-column mode), a `left_mode` input.
-    editor_w: f32,
-    /// Left-region mode (master/detail vs single column) — the hysteresis carrier.
-    mode: crate::layout::LeftMode,
     /// Measured width of the centered transport controls (for centering — see below).
     ctrl_width: f32,
 }
@@ -81,24 +72,20 @@ pub struct DockLayout {
 /// "what's open": a bool per surface on a single resource. (egui memory holds only
 /// per-widget presentation state like collapsing headers; `Option`-presence stays
 /// reserved for genuine *selection*, e.g. `palette.selected`, never for visibility;
-/// a scenario's `batch` being set is a data *precondition* for the breeding window,
+/// a scenario's `batch` being set is a data *precondition* for the Lab dashboard,
 /// not its toggle.)
 #[derive(Resource)]
 pub struct UiWindows {
-    /// The video **Export** window (top-bar Export button).
+    /// The video **Export** window (Observe's Export button).
     pub export: bool,
-    /// The **Breeding** dashboard — also gated on `config.batch.is_some()` (its data
-    /// precondition); default open so it still appears with a batch, as before, but
-    /// now dismissable and re-openable from the top bar.
-    pub breeding: bool,
-    /// The keyboard-shortcuts **cheatsheet** (`?` / the Help button).
+    /// The keyboard-shortcuts **cheatsheet** (`?` / the nav rail's Help).
     pub shortcuts: bool,
-    /// The docked regions, each foldable to a thin **rail** so the arena can take
-    /// the space back: the left (World) column…
+    /// Observe's foldable regions, each collapsing to a thin **rail** so the arena can
+    /// take the space back: the left (live stats + layers) column…
     pub left_open: bool,
-    /// …the right (Analysis) column…
+    /// …the right (inspector) column…
     pub right_open: bool,
-    /// …and the bottom strip (status + curves + breeding).
+    /// …and the bottom strip (status + curves).
     pub bottom_open: bool,
 }
 
@@ -106,7 +93,6 @@ impl Default for UiWindows {
     fn default() -> Self {
         Self {
             export: false,
-            breeding: true,
             shortcuts: false,
             left_open: true,
             right_open: true,
@@ -134,13 +120,17 @@ impl UiWindows {
 /// window/region toggles.
 #[derive(SystemParam)]
 pub struct DockState<'w> {
+    /// The top-level screen router (Observe · Library · Studio · Lab · Analyze — cf.
+    /// [`crate::screen`]). Bundled here so `dock` stays within Bevy's 16-parameter
+    /// limit; the nav rail writes it and the layout dispatches on it.
+    pub router: ResMut<'w, Router>,
     pub runs_panel: ResMut<'w, RunsPanel>,
     pub recorder_panel: ResMut<'w, RecorderPanel>,
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
-    /// The breeding session (P5) — the docked breeding panel (the bottom panel's left
-    /// half, beside the curves, when the Breeding toggle is on) reads/drives it.
-    /// Bundled here so `dock` stays within Bevy's 16-parameter limit.
+    /// The breeding session (P5) — the **Lab** screen's dashboard reads/drives it (the
+    /// generational `run → score → breed` loop over isolated worlds). Bundled here so
+    /// `dock` stays within Bevy's 16-parameter limit.
     pub breeding: ResMut<'w, BreedingSession>,
     /// The config the running world was built from — the transport's Reset accents
     /// itself when the live config diverges from it (cf. `controls::world_diverged`).
@@ -244,45 +234,19 @@ fn rail_chevron(
         .clicked()
 }
 
-/// The archetype-editor **detail** view: a header then the editor itself, shared by
-/// the two-column second panel and the single-column in-place swap. Returns `true` if
-/// the user asked to close (deselect the archetype).
-///
-/// `with_switcher` (single-column layout, where the master list is not visible beside
-/// it) adds a **back** button to the list and a **combo** to jump between archetypes
-/// without going back; otherwise the header is a plain "Archetype editor" title. Both
-/// carry a close `X`.
-fn archetype_detail(
-    ui: &mut egui::Ui,
-    palette: &mut Palette,
-    config: &mut SimConfig,
-    with_switcher: bool,
-) -> bool {
+/// The Studio archetype-editor **detail** view: a header (the selected species' name,
+/// its colour dot, and a close `✕`) then the editor itself in its own scroll. Returns
+/// `true` if the user asked to close (deselect the archetype). Rendered in Studio's
+/// central region beside the cast master (`docs/ui-redesign.md` §5).
+fn archetype_detail(ui: &mut egui::Ui, palette: &mut Palette, config: &mut SimConfig) -> bool {
     let mut deselect = false;
+    let name = palette
+        .selected
+        .and_then(|i| config.archetypes.get(i))
+        .map(|a| a.name.clone())
+        .unwrap_or_default();
     ui.horizontal(|ui| {
-        if with_switcher {
-            if ui
-                .button("‹  Archetypes")
-                .on_hover_text("Back to the archetypes list")
-                .clicked()
-            {
-                deselect = true;
-            }
-            let current = palette
-                .selected
-                .and_then(|i| config.archetypes.get(i))
-                .map(|a| a.name.clone())
-                .unwrap_or_default();
-            egui::ComboBox::from_id_salt("archetype_switcher")
-                .selected_text(current)
-                .show_ui(ui, |ui| {
-                    for (i, a) in config.archetypes.iter().enumerate() {
-                        ui.selectable_value(&mut palette.selected, Some(i), &a.name);
-                    }
-                });
-        } else {
-            ui.strong("Archetype editor");
-        }
+        ui.heading(if name.is_empty() { "Archetype" } else { &name });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .button(fonts::icon(icons::X))
@@ -333,11 +297,146 @@ fn shortcuts_cheatsheet(ui: &mut egui::Ui) {
         });
 }
 
-/// Builds the whole docked layout in one pass: one background-layer root `Ui`, then
-/// each panel `show_inside` it. Chained **before** the interaction systems
-/// (`pick_agent`, `resolve_drag`, …) and `set_sim_camera`, all of which read the free
-/// central rect it records in [`CentralRect`] (the camera to frame the sim, the
-/// interactions via [`pointer_over_ui`] to tell a click on the sim from one on a panel).
+/// Width of the persistent **nav rail** (egui points): the router's left strip, on
+/// every screen (`docs/ui-redesign.md` §9).
+const NAV_W: f32 = 78.0;
+
+/// The persistent **screen router** rail on the far left: the five destinations
+/// (Observe · Library · Studio · Lab · Analyze, [`Screen::ALL`]) in fixed order, plus
+/// a Help affordance at the bottom. Present on **every** screen — only the content to
+/// its right changes. Rendered **first** in [`dock`], so it is unconditional and its
+/// ids never shift (§2.5 of `docs/ui-spec.md`). Clicking a destination writes
+/// [`Router::current`]; the active one is accented.
+fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
+    egui::Panel::left("nav_rail")
+        .resizable(false)
+        .default_size(NAV_W)
+        .size_range(NAV_W..=NAV_W)
+        .show_inside(root, |ui| {
+            ui.add_space(8.0);
+            // Plain-text wordmark (not a glyph — the embedded Inter subset renders some
+            // PUA symbols as tofu, cf. the `*` dirty marker in `runs`).
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("teem")
+                        .strong()
+                        .size(13.0)
+                        .color(crate::theme::ACCENT),
+                );
+            });
+            ui.add_space(12.0);
+            let w = ui.available_width();
+            for screen in Screen::ALL {
+                let active = router.current == screen;
+                let mut text = egui::RichText::new(screen.label())
+                    .size(11.5)
+                    .color(if active {
+                        crate::theme::ACCENT
+                    } else {
+                        crate::theme::INK_MUTED
+                    });
+                if active {
+                    text = text.strong();
+                }
+                if ui
+                    .add_sized([w, 34.0], egui::Button::selectable(active, text))
+                    .clicked()
+                {
+                    router.current = screen;
+                }
+                ui.add_space(2.0);
+            }
+            // Push Help to the bottom of the rail.
+            let rem = ui.available_height() - 36.0;
+            if rem > 0.0 {
+                ui.add_space(rem);
+            }
+            if ui
+                .add_sized(
+                    [w, 30.0],
+                    egui::Button::new(
+                        egui::RichText::new("Help")
+                            .size(11.5)
+                            .color(crate::theme::INK_MUTED),
+                    )
+                    .frame(false),
+                )
+                .on_hover_text(crate::keymap::tooltip(
+                    "Keyboard shortcuts & mouse gestures",
+                    crate::keymap::UiAction::ToggleShortcuts,
+                ))
+                .clicked()
+            {
+                windows.shortcuts = !windows.shortcuts;
+            }
+        });
+}
+
+/// The static **food-web validation** strip (Studio), from the A5 reachability
+/// analyzer ([`SimConfig::broken_chains`], `docs/emergent-trophics.md` §6.1): green
+/// when every archetype's needs are reachable, else one red line per broken chain
+/// (`‹species› needs ‹component›`). Recomputed each frame, so it updates live as the
+/// user edits — the payoff of emergent (checkable) trophic interactions.
+fn studio_validation(ui: &mut egui::Ui, config: &SimConfig) {
+    let broken = config.broken_chains();
+    if broken.is_empty() {
+        ui.colored_label(
+            crate::theme::SUCCESS,
+            "Food web viable — every need is reachable.",
+        );
+    } else {
+        for (species, component) in broken {
+            let sp = config
+                .archetypes
+                .get(species as usize)
+                .map(|a| a.name.as_str())
+                .unwrap_or("?");
+            let comp = config
+                .components
+                .get(component)
+                .map(|c| c.name.as_str())
+                .unwrap_or("?");
+            ui.colored_label(
+                crate::theme::ERROR,
+                format!("{sp} needs {comp} — chain broken"),
+            );
+        }
+    }
+}
+
+/// A centred **placeholder** screen (Library not-yet-built, Analyze deferred): a
+/// heading, an optional *deferred* chip, and a wrapped one-paragraph description.
+/// Its own `CentralPanel` fills the whole content area, so the arena stays hidden
+/// (the one-camera discipline — `docs/ui-redesign.md` §1).
+fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &str) {
+    egui::CentralPanel::default().show_inside(root, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space((ui.available_height() * 0.5 - 70.0).max(16.0));
+            ui.heading(title);
+            if deferred {
+                ui.add_space(6.0);
+                ui.colored_label(crate::theme::ACCENT, "Deferred · placeholder");
+            }
+            ui.add_space(10.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(440.0, 96.0),
+                egui::Layout::top_down(egui::Align::Center),
+                |ui| {
+                    ui.colored_label(crate::theme::INK_MUTED, body);
+                },
+            );
+        });
+    });
+}
+
+/// Builds the whole windowed layout in one pass: one background-layer root `Ui`, the
+/// persistent [`nav_rail`], then the panels of the **current screen**
+/// ([`Router::current`]) `show_inside` it. Chained **before** the interaction systems
+/// (`pick_agent`, `resolve_drag`, …) and `set_sim_camera`, all of which read the
+/// central rect it records in [`CentralRect`]. **Only [`Screen::Observe`]** leaves the
+/// arena visible (a live central rect); every other screen fully covers the viewport
+/// and records an **empty** rect, so the camera / picking systems idle — the
+/// one-camera discipline (`docs/ui-redesign.md` §1).
 #[allow(clippy::too_many_arguments)]
 pub fn dock(
     mut contexts: EguiContexts,
@@ -396,22 +495,292 @@ pub fn dock(
             .max_rect(ctx.viewport_rect()),
     );
 
-    // Top strip, **a single line** — the app's command strip: scenario IO (the
-    // Scenario menu) pinned **left**; the **transport controls** (play / step / speed /
-    // reset) **centered**; the **View** / **Help** menus, the **Breeding** toggle and
-    // the **Export** button pinned **right**. Video recording lives in a floating
-    // window opened by the Export button (below).
-    egui::Panel::top("top_bar")
-        .resizable(false)
-        .show_inside(&mut root, |ui| {
-            let row_h = ui.spacing().interact_size.y;
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), row_h),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    let full_w = ui.available_width();
-                    // LEFT: scenario IO.
-                    ui.push_id("scenario_bar", |ui| {
+    // The persistent router rail — **always first** (unconditional → the later panels'
+    // ids never shift, §2.5 of `docs/ui-spec.md`).
+    nav_rail(&mut root, &mut state.router, &mut state.windows);
+
+    // Width available to a *screen's* own panels once the rail has taken its strip: the
+    // side-panel ranges reserve the sim's minimum against this, not the whole window.
+    let viewport_w = root.ctx().viewport_rect().width();
+    let content_w = (viewport_w - NAV_W).max(1.0);
+
+    // A colour-by-kind status line (the transient feedback sink, cf. `status`), reused by
+    // the screens that surface it (Observe's bottom strip, Lab).
+    let status_line = |ui: &mut egui::Ui, status: &crate::status::UiStatus| {
+        let color = match status.kind {
+            crate::status::StatusKind::Success => crate::theme::SUCCESS,
+            crate::status::StatusKind::Error => crate::theme::ERROR,
+            crate::status::StatusKind::Info => crate::theme::INK_MUTED,
+        };
+        ui.colored_label(color, &status.message);
+    };
+
+    // Dispatch on the current screen. Each arm builds that screen's panels; **only
+    // Observe** returns a live arena rect (the transparent centre the sim shows through),
+    // the others fully cover the content area (a `CentralPanel`) and return an empty rect,
+    // so the camera / picking systems idle — the one-camera discipline (ui-redesign §1).
+    let screen = state.router.current;
+    let arena_rect = match screen {
+        Screen::Observe => {
+            // TOP STRIP: scenario IO (left) · transport (centred) · Export (right). View
+            // layers move to the left panel, Help to the nav rail, Breeding to the Lab
+            // screen — so the Observe strip is purely watch-a-run controls.
+            egui::Panel::top("observe_top")
+                .resizable(false)
+                .show_inside(&mut root, |ui| {
+                    let row_h = ui.spacing().interact_size.y;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), row_h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            let full_w = ui.available_width();
+                            ui.push_id("scenario_bar", |ui| {
+                                runs::scenario_section(
+                                    ui,
+                                    &mut state.runs_panel,
+                                    &mut config,
+                                    &mut state.ui_status,
+                                );
+                            });
+                            // Centre the transport on the whole bar, padding by last
+                            // frame's measured width (a 1-frame lag; `scope` measures this
+                            // frame's — same trick the old single strip used).
+                            let left_w = full_w - ui.available_width();
+                            let pad = (full_w * 0.5 - layout.ctrl_width * 0.5 - left_w).max(8.0);
+                            ui.add_space(pad);
+                            let measured = ui
+                                .scope(|ui| {
+                                    controls::controls_section(
+                                        ui,
+                                        &mut sim_controls,
+                                        &mut vtime,
+                                        &config,
+                                        &state.world_baseline,
+                                    )
+                                })
+                                .response
+                                .rect
+                                .width();
+                            layout.ctrl_width = measured;
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .button(fonts::icon_label(icons::RECORD, "Export…"))
+                                        .on_hover_text(
+                                            "Render the current scenario to a video \
+                                             (opens the export panel).",
+                                        )
+                                        .clicked()
+                                    {
+                                        state.windows.export = !state.windows.export;
+                                    }
+                                },
+                            );
+                        },
+                    );
+                });
+
+            // RIGHT — the agent inspector (foldable). Follow selector pinned above the
+            // scroll; a Capture routes the derived archetype into Studio to edit.
+            let right_w = if !state.windows.right_open {
+                egui::Panel::right("observe_right_rail")
+                    .resizable(false)
+                    .default_size(RAIL_W)
+                    .size_range(RAIL_W..=RAIL_W)
+                    .show_inside(&mut root, |ui| {
+                        if rail_chevron(
+                            ui,
+                            icons::CARET_LEFT,
+                            "Show the inspector",
+                            crate::keymap::UiAction::ToggleRightPanel,
+                        ) {
+                            state.windows.right_open = true;
+                        }
+                    })
+                    .response
+                    .rect
+                    .width()
+            } else {
+                egui::Panel::right("observe_right")
+                    .default_size(crate::layout::SIDE_DEFAULT)
+                    .resizable(true)
+                    .size_range(crate::layout::side_range(content_w, layout.left_w))
+                    .show_inside(&mut root, |ui| {
+                        collapse_overlay(
+                            ui,
+                            icons::CARET_RIGHT,
+                            crate::keymap::UiAction::ToggleRightPanel,
+                            &mut state.windows.right_open,
+                        );
+                        inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
+                        egui::ScrollArea::vertical()
+                            .id_salt("observe_inspector_scroll")
+                            .show(ui, |ui| {
+                                // `inspector_section` returns a capture request; it is
+                                // `Some` only while the header is expanded (`flatten`), and
+                                // applied *after* the call so its shared `config` borrow has
+                                // ended before the mutable one.
+                                let inspector_action =
+                                    egui::CollapsingHeader::new("Agent inspector")
+                                        .default_open(true)
+                                        .show(ui, |ui| {
+                                            inspector::inspector_section(
+                                                ui,
+                                                &obs.selection,
+                                                &config,
+                                                &mut palette.variant_name,
+                                                &inspector_agents,
+                                            )
+                                        })
+                                        .body_returned
+                                        .flatten();
+                                match inspector_action {
+                                    Some(inspector::InspectorAction::Capture(arch)) => {
+                                        let from = arch.captured_from.clone().unwrap_or_default();
+                                        config.archetypes.push(arch);
+                                        palette.selected = Some(config.archetypes.len() - 1);
+                                        // Editing lives in Studio now — hand it there.
+                                        state.router.current = Screen::Studio;
+                                        state.ui_status.set(format!(
+                                            "Captured to scenario (from {from}). \
+                                             Opened in Studio."
+                                        ));
+                                    }
+                                    Some(inspector::InspectorAction::SaveVariant {
+                                        species,
+                                        variant,
+                                    }) => {
+                                        let scenario = state.runs_panel.origin_label();
+                                        let msg = editor::save_variant(
+                                            &mut palette,
+                                            &config,
+                                            species as usize,
+                                            variant,
+                                            &scenario,
+                                        );
+                                        palette.variant_name.clear();
+                                        state.ui_status.set_result(msg);
+                                    }
+                                    None => {}
+                                }
+                            });
+                    })
+                    .response
+                    .rect
+                    .width()
+            };
+
+            // LEFT — live stats + view layers (foldable): both live here (ui-redesign §3).
+            let left_w = if !state.windows.left_open {
+                egui::Panel::left("observe_left_rail")
+                    .resizable(false)
+                    .default_size(RAIL_W)
+                    .size_range(RAIL_W..=RAIL_W)
+                    .show_inside(&mut root, |ui| {
+                        if rail_chevron(
+                            ui,
+                            icons::CARET_RIGHT,
+                            "Show live stats & layers",
+                            crate::keymap::UiAction::ToggleLeftPanel,
+                        ) {
+                            state.windows.left_open = true;
+                        }
+                    })
+                    .response
+                    .rect
+                    .width()
+            } else {
+                egui::Panel::left("observe_left")
+                    .default_size(crate::layout::SIDE_DEFAULT)
+                    .resizable(true)
+                    .size_range(crate::layout::side_range(content_w, right_w))
+                    .show_inside(&mut root, |ui| {
+                        collapse_overlay(
+                            ui,
+                            icons::CARET_LEFT,
+                            crate::keymap::UiAction::ToggleLeftPanel,
+                            &mut state.windows.left_open,
+                        );
+                        egui::ScrollArea::vertical()
+                            .id_salt("observe_left_scroll")
+                            .show(ui, |ui| {
+                                egui::CollapsingHeader::new("Live stats")
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        editor::stats_section(ui, &stats_agents, &config)
+                                    });
+                                egui::CollapsingHeader::new("Layers")
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        editor::layers_section(ui, &mut layers, &config)
+                                    });
+                            });
+                    })
+                    .response
+                    .rect
+                    .width()
+            };
+
+            // BOTTOM — status line + evolution curves (foldable), spanning the central
+            // width the side panels leave free.
+            if !state.windows.bottom_open {
+                egui::Panel::bottom("observe_bottom_rail")
+                    .resizable(false)
+                    .default_size(RAIL_W)
+                    .size_range(RAIL_W..=RAIL_W)
+                    .show_inside(&mut root, |ui| {
+                        ui.horizontal(|ui| {
+                            if rail_chevron(
+                                ui,
+                                icons::CARET_UP,
+                                "Show the curves strip",
+                                crate::keymap::UiAction::ToggleBottomPanel,
+                            ) {
+                                state.windows.bottom_open = true;
+                            }
+                            if state.ui_status.visible(now) {
+                                status_line(ui, &state.ui_status);
+                            }
+                        });
+                    });
+            } else {
+                egui::Panel::bottom("observe_bottom")
+                    .resizable(true)
+                    .default_size(300.0)
+                    .size_range(260.0..=520.0)
+                    .show_inside(&mut root, |ui| {
+                        collapse_overlay(
+                            ui,
+                            icons::CARET_DOWN,
+                            crate::keymap::UiAction::ToggleBottomPanel,
+                            &mut state.windows.bottom_open,
+                        );
+                        if state.ui_status.visible(now) {
+                            status_line(ui, &state.ui_status);
+                            ui.add_space(2.0);
+                        }
+                        hud::hud_section(ui, &mut history, &config);
+                    });
+            }
+
+            layout.left_w = left_w;
+            layout.right_w = right_w;
+            // The transparent centre: where `set_sim_camera` frames the live arena.
+            root.available_rect_before_wrap()
+        }
+
+        Screen::Studio => {
+            // TOP STRIP: the document model (file name, dirty `*`, Save / Save As / Open /
+            // Revert with the committed-example guardrails). The redesign's explicit
+            // Overwrite/Save-as-new buttons are a later polish; the scenario menu already
+            // carries the save model.
+            egui::Panel::top("studio_top")
+                .resizable(false)
+                .show_inside(&mut root, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading("Studio");
+                        ui.separator();
                         runs::scenario_section(
                             ui,
                             &mut state.runs_panel,
@@ -419,82 +788,161 @@ pub fn dock(
                             &mut state.ui_status,
                         );
                     });
-                    // CENTER: the transport controls, centered on the **whole bar**. egui
-                    // can't center a *group* along the main axis in immediate mode (it only
-                    // learns the group's width after laying it out), so we pad by the width
-                    // measured last frame (`ctrl_width`, 1-frame lag, clamped so it never
-                    // collides with the scenario group). `scope` measures this frame's width.
-                    let left_w = full_w - ui.available_width();
-                    let pad = (full_w * 0.5 - layout.ctrl_width * 0.5 - left_w).max(8.0);
-                    ui.add_space(pad);
-                    let measured = ui
-                        .scope(|ui| {
-                            controls::controls_section(
-                                ui,
-                                &mut sim_controls,
-                                &mut vtime,
-                                &config,
-                                &state.world_baseline,
-                            )
-                        })
-                        .response
-                        .rect
-                        .width();
-                    layout.ctrl_width = measured;
-                    // RIGHT (emitted right→left, so reading order is View · Help ·
-                    // [Breeding] · Export): Export rightmost, then the Breeding toggle
-                    // (only with a batch regime), the Help menu, and the View menu.
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(fonts::icon_label(icons::RECORD, "Export…"))
-                            .on_hover_text(
-                                "Render the current scenario to a video (opens the export panel).",
-                            )
-                            .clicked()
-                        {
-                            state.windows.export = !state.windows.export;
-                        }
-                        // Breeding dashboard toggle — shown only when the scenario carries a
-                        // batch regime (the window's data precondition).
-                        if config.batch.is_some() {
-                            let on = state.windows.breeding;
-                            if ui
-                                .selectable_label(on, fonts::icon_label(icons::SPARKLE, "Breeding"))
-                                .on_hover_text(
-                                    "Dock the breeding dashboard in the bottom panel, beside \
-                                     the curves.",
-                                )
-                                .clicked()
-                            {
-                                state.windows.breeding = !on;
-                            }
-                        }
-                        // Help is now hover-first (tooltips everywhere): the button
-                        // opens the one remaining surface, the shortcuts cheatsheet.
-                        if ui
-                            .button("Help")
-                            .on_hover_text(crate::keymap::tooltip(
-                                "Keyboard shortcuts & mouse gestures",
-                                crate::keymap::UiAction::ToggleShortcuts,
-                            ))
-                            .clicked()
-                        {
-                            state.windows.shortcuts = !state.windows.shortcuts;
-                        }
-                        ui.menu_button("View", |ui| {
-                            editor::layers_section(ui, &mut layers, &config)
-                        })
-                        .response
-                        .on_hover_text("Toggle view layers (agents, nutrient maps).");
-                    });
-                },
-            );
-        });
+                });
 
-    // Floating "Export video" window, toggled by the Export button. Driven through a
-    // local `open` (the window's [x]) so it does not alias the `&mut recorder_panel`
-    // the section needs — same pattern as the scenario "save as" dialog.
-    if state.windows.export {
+            // LEFT — the World stage (arena, sources, components, gene bounds, allometric
+            // costs, appearance). The old interaction-relations card is **gone**
+            // (interactions are emergent, Phase A) — a large simplification (ui-redesign §5).
+            egui::Panel::left("studio_world")
+                .default_size(320.0)
+                .resizable(true)
+                .size_range(280.0..=460.0)
+                .show_inside(&mut root, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("studio_world_scroll")
+                        .show(ui, |ui| {
+                            ui.strong("World");
+                            editor::world_section(ui, &mut config);
+                        });
+                });
+
+            // MIDDLE — the cast (master list): add / duplicate / reorder / delete; click a
+            // species to edit it in the detail on the right.
+            egui::Panel::left("studio_cast")
+                .default_size(240.0)
+                .resizable(true)
+                .size_range(200.0..=360.0)
+                .show_inside(&mut root, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("studio_cast_scroll")
+                        .show(ui, |ui| {
+                            ui.strong("Cast");
+                            editor::selector_section(
+                                ui,
+                                &mut palette,
+                                &mut config,
+                                &mut state.ui_status,
+                            );
+                        });
+                });
+
+            // CENTRE (a `CentralPanel`, added last) — the static food-web validation
+            // (A5) above the selected archetype's editor; fills the remaining width and
+            // hides the arena.
+            egui::CentralPanel::default().show_inside(&mut root, |ui| {
+                studio_validation(ui, &config);
+                ui.separator();
+                if palette
+                    .selected
+                    .is_some_and(|i| i < config.archetypes.len())
+                {
+                    if archetype_detail(ui, &mut palette, &mut config) {
+                        palette.selected = None;
+                    }
+                } else {
+                    ui.add_space(20.0);
+                    ui.vertical_centered(|ui| {
+                        ui.colored_label(
+                            crate::theme::INK_MUTED,
+                            "Select a species in the cast to edit it.",
+                        );
+                    });
+                }
+            });
+            egui::Rect::ZERO
+        }
+
+        Screen::Lab => {
+            // Headless breeding & sweeps — no live arena (ui-redesign §6). The breeding
+            // dashboard runs the generational loop over isolated worlds on a worker.
+            egui::CentralPanel::default().show_inside(&mut root, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("Lab");
+                    ui.label(
+                        egui::RichText::new("headless breeding & sweeps")
+                            .color(crate::theme::INK_MUTED),
+                    );
+                });
+                if state.ui_status.visible(now) {
+                    status_line(ui, &state.ui_status);
+                }
+                ui.separator();
+                if config.batch.is_some() {
+                    egui::ScrollArea::vertical()
+                        .id_salt("lab_scroll")
+                        .show(ui, |ui| {
+                            editor::card(ui, |ui| {
+                                ui.strong("Breeding (generational)");
+                                if let Some(act) = dashboard::breeding_panel(
+                                    ui,
+                                    &mut state.breeding,
+                                    &config,
+                                    &mut vtime,
+                                    &mut state.ui_status,
+                                ) {
+                                    dashboard::apply_action(
+                                        act,
+                                        &mut config,
+                                        &mut palette,
+                                        &state.runs_panel,
+                                        &mut state.ui_status,
+                                        &mut sim_controls,
+                                        &mut vtime,
+                                    );
+                                }
+                            });
+                            ui.add_space(8.0);
+                            ui.colored_label(
+                                crate::theme::INK_MUTED,
+                                "Sweeps (seed / parameter, and breed×sweep nesting) run via \
+                                 the `sweep` bin for now; an in-app setup form lands in a \
+                                 later stage.",
+                            );
+                        });
+                } else {
+                    ui.add_space(20.0);
+                    ui.vertical_centered(|ui| {
+                        ui.colored_label(
+                            crate::theme::INK_MUTED,
+                            "This scenario has no batch regime. Add a `batch` block in \
+                             Studio's World editor to breed a cohort here.",
+                        );
+                    });
+                }
+            });
+            egui::Rect::ZERO
+        }
+
+        Screen::Library => {
+            placeholder_screen(
+                &mut root,
+                "Library",
+                false,
+                "Browse Worlds and Species, compose a Scenario in a few clicks, and manage \
+                 the catalog. The catalog and drop-only composition land in a later stage; \
+                 for now, compose and edit scenarios in Studio.",
+            );
+            egui::Rect::ZERO
+        }
+
+        Screen::Analyze => {
+            placeholder_screen(
+                &mut root,
+                "Post-hoc comparison",
+                true,
+                "Overlay populations, gene trajectories and component quantities across \
+                 saved runs, compare species side by side, and export the data (CSV / PNG) \
+                 for the falsifiable-knowledge deliverable. Deferred until run records exist.",
+            );
+            egui::Rect::ZERO
+        }
+    };
+    central.0 = arena_rect;
+
+    // Floating "Export video" window — **Observe only** (it renders the current run).
+    // Driven through a local `open` (the window's [x]) so it does not alias the
+    // `&mut recorder_panel` the section needs.
+    if screen.shows_arena() && state.windows.export {
         let mut open = true;
         egui::Window::new("Export video")
             .collapsible(true)
@@ -509,9 +957,8 @@ pub fn dock(
         }
     }
 
-    // Keyboard-shortcuts cheatsheet (toggled by `?` / F1 / Help menu). A floating
-    // window over [`crate::keymap::BINDINGS`] + [`crate::keymap::MOUSE`] — the same
-    // table the tooltips read, so it cannot drift from the actual controls.
+    // Keyboard-shortcuts cheatsheet — **global** (any screen), toggled by `?` / F1 / the
+    // nav rail's Help. A floating window over the same keymap tables the tooltips read.
     if state.windows.shortcuts {
         let mut open = true;
         egui::Window::new(fonts::icon_label(icons::CARET_DOWN, "Keyboard shortcuts"))
@@ -525,374 +972,20 @@ pub fn dock(
         }
     }
 
-    // Whether an archetype is selected → the editor's **detail** half is shown. On a
-    // wide window it opens a second left column ([`layout::LeftMode::TwoColumn`]); on a
-    // narrow one it folds into the left panel in place ([`layout::LeftMode::SingleColumn`]),
-    // so the sim never drops below [`layout::CENTRAL_MIN`] (cf. `layout`).
-    let editor_open = palette
-        .selected
-        .is_some_and(|i| i < config.archetypes.len())
-        // The detail lives in / beside the left region: folded, it shows nowhere
-        // (reopening the region brings it back).
-        && state.windows.left_open;
-
-    // Left-region mode, from last frame's widths (a `SIDE_DEFAULT` fallback before a
-    // panel has rendered, so a freshly opened editor picks its mode without a one-frame
-    // flash). Only meaningful while `editor_open`, but tracked every frame for hysteresis.
-    let viewport_w = root.ctx().viewport_rect().width();
-    let est = |w: f32| {
-        if w > 1.0 {
-            w
-        } else {
-            crate::layout::SIDE_DEFAULT
-        }
-    };
-    let mode = crate::layout::left_mode(
-        layout.mode,
-        viewport_w,
-        est(layout.right_w),
-        est(layout.left_w),
-        est(layout.editor_w),
-    );
-    layout.mode = mode;
-    let detail_in_left = editor_open && mode == crate::layout::LeftMode::SingleColumn;
-    let two_column_editor = editor_open && mode == crate::layout::LeftMode::TwoColumn;
-
-    // Right column — **Analysis** of the current state: live *stats* (means) then the
-    // agent *inspector*, with *Observation* pinned above the scroll. Resizable within a
-    // range that always reserves [`layout::CENTRAL_MIN`] for the sim (its "other side" is
-    // last frame's left width — a harmless one-frame lag on a drag clamp). Rendered
-    // before the left panels so their ranges can read this frame's fresh right width.
-    // (The breeding dashboard docks in the bottom panel's left half — see below.)
-    let mut deselect = false;
-    let breeding_active = config.batch.is_some() && state.windows.breeding;
-    let right_w = if !state.windows.right_open {
-        // Folded: a thin rail keeps the region present and reopenable in place.
-        egui::Panel::right("right_rail")
-            .resizable(false)
-            .default_size(RAIL_W)
-            .size_range(RAIL_W..=RAIL_W)
-            .show_inside(&mut root, |ui| {
-                if rail_chevron(
-                    ui,
-                    icons::CARET_LEFT,
-                    "Show the Analysis panel",
-                    crate::keymap::UiAction::ToggleRightPanel,
-                ) {
-                    state.windows.right_open = true;
-                }
-            })
-            .response
-            .rect
-            .width()
-    } else {
-        egui::Panel::right("right_panel")
-            .default_size(crate::layout::SIDE_DEFAULT)
-            .resizable(true)
-            .size_range(crate::layout::side_range(viewport_w, layout.left_w))
-            .show_inside(&mut root, |ui| {
-                collapse_overlay(
-                    ui,
-                    icons::CARET_RIGHT,
-                    crate::keymap::UiAction::ToggleRightPanel,
-                    &mut state.windows.right_open,
-                );
-                // Observation (follow mode + view reset) stays pinned — flat, it is a
-                // single row; only the tall sections below scroll, so each working
-                // surface keeps its own scroll offset.
-                inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
-                egui::ScrollArea::vertical()
-                    .id_salt("analysis_scroll")
-                    .show(ui, |ui| {
-                        egui::CollapsingHeader::new("Live stats")
-                            .default_open(false)
-                            .show(ui, |ui| editor::stats_section(ui, &stats_agents, &config));
-                        // `inspector_section` **returns** any capture request (a derived
-                        // archetype); `body_returned` is `Some` only while the header is
-                        // expanded, so `flatten` maps the collapsed case to `None`. Applied
-                        // *after* the call (it borrows `config` shared) → the mutable borrow
-                        // is then allowed.
-                        let inspector_action = egui::CollapsingHeader::new("Agent inspector")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                inspector::inspector_section(
-                                    ui,
-                                    &obs.selection,
-                                    &config,
-                                    &mut palette.variant_name,
-                                    &inspector_agents,
-                                )
-                            })
-                            .body_returned
-                            .flatten();
-                        match inspector_action {
-                            // Capture → add the derived archetype to the current scenario.
-                            Some(inspector::InspectorAction::Capture(arch)) => {
-                                let from = arch.captured_from.clone().unwrap_or_default();
-                                config.archetypes.push(arch);
-                                palette.selected = Some(config.archetypes.len() - 1);
-                                // The capture selects the new archetype for editing: make
-                                // sure the region holding its editor is visible.
-                                state.windows.left_open = true;
-                                state
-                                    .ui_status
-                                    .set(format!("Captured to scenario (from {from})."));
-                            }
-                            // Save variant → write it to the library (species/saved/).
-                            Some(inspector::InspectorAction::SaveVariant { species, variant }) => {
-                                let scenario = state.runs_panel.origin_label();
-                                let msg = editor::save_variant(
-                                    &mut palette,
-                                    &config,
-                                    species as usize,
-                                    variant,
-                                    &scenario,
-                                );
-                                palette.variant_name.clear();
-                                state.ui_status.set_result(msg);
-                            }
-                            None => {}
-                        }
-                    });
-            })
-            .response
-            .rect
-            .width()
-    };
-
-    // Left column — **the world** (scenario params + the *Archetypes* list/library). On a
-    // narrow window with an archetype selected, its content becomes the archetype editor
-    // in place (single column); otherwise it stays the master list and the editor gets its
-    // own column below. Resizable, reserving the sim's minimum against this frame's right
-    // width. Drops its right separator in two-column mode so the world and the editor read
-    // as one contiguous surface.
-    let left_w = if !state.windows.left_open {
-        egui::Panel::left("left_rail")
-            .resizable(false)
-            .default_size(RAIL_W)
-            .size_range(RAIL_W..=RAIL_W)
-            .show_inside(&mut root, |ui| {
-                if rail_chevron(
-                    ui,
-                    icons::CARET_RIGHT,
-                    "Show the World panel",
-                    crate::keymap::UiAction::ToggleLeftPanel,
-                ) {
-                    state.windows.left_open = true;
-                }
-            })
-            .response
-            .rect
-            .width()
-    } else {
-        egui::Panel::left("left_tools")
-            .default_size(crate::layout::SIDE_DEFAULT)
-            .resizable(true)
-            .size_range(crate::layout::side_range(viewport_w, right_w))
-            .show_separator_line(!two_column_editor)
-            .show_inside(&mut root, |ui| {
-                collapse_overlay(
-                    ui,
-                    icons::CARET_LEFT,
-                    crate::keymap::UiAction::ToggleLeftPanel,
-                    &mut state.windows.left_open,
-                );
-                if detail_in_left {
-                    // Detail view swapped in place — under its own id scope so its widgets
-                    // never share auto-ids with the master content (stable ids on the swap).
-                    ui.push_id("detail", |ui| {
-                        if archetype_detail(ui, &mut palette, &mut config, true) {
-                            deselect = true;
-                        }
-                    });
-                } else {
-                    ui.push_id("master", |ui| {
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            egui::CollapsingHeader::new("World")
-                                .default_open(true)
-                                .show(ui, |ui| editor::world_section(ui, &mut config));
-                            egui::CollapsingHeader::new("Archetypes")
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    editor::selector_section(
-                                        ui,
-                                        &mut palette,
-                                        &mut config,
-                                        &mut state.ui_status,
-                                    )
-                                })
-                                .header_response
-                                .on_hover_text(
-                                    "Drag a species into the arena to place it; click one \
-                                     to edit it; Delete (cursor on an entity) removes it.",
-                                );
-                        });
-                    });
-                }
-            })
-            .response
-            .rect
-            .width()
-    };
-
-    // Bottom panel reserved **after** the side columns so it spans only the **central
-    // width** they leave free. The evolution **curves** with the unified **status line**.
-    // Created **before** the conditional `archetype_editor` so toggling that panel never
-    // shifts this one's egui ids, and so the editor docks above these curves (which keep
-    // the full central width). Height-**resizable** now: `hud_section` fills whatever
-    // height the panel gets between the two plots (cf. `hud`). The floor is set so the
-    // two plots at their minimum height plus the labels/legends still fit (no clipping).
-    // A taller ceiling while breeding is docked here: the dashboard (navigator + curve +
-    // metrics + leaderboard + network) is tall, so give the user room to drag it open.
-    let bottom_max = if breeding_active { 760.0 } else { 520.0 };
-    // The status line, coloured by kind and shown only while unexpired (info / success
-    // fade after a few seconds; errors persist — cf. `status`). Drawn in the open
-    // panel — or **on the rail** when folded, so feedback is never hidden.
-    let status_line = |ui: &mut egui::Ui, status: &crate::status::UiStatus| {
-        let color = match status.kind {
-            crate::status::StatusKind::Success => crate::theme::SUCCESS,
-            crate::status::StatusKind::Error => crate::theme::ERROR,
-            crate::status::StatusKind::Info => crate::theme::INK_MUTED,
-        };
-        ui.colored_label(color, &status.message);
-    };
-    if !state.windows.bottom_open {
-        egui::Panel::bottom("bottom_rail")
-            .resizable(false)
-            .default_size(RAIL_W)
-            .size_range(RAIL_W..=RAIL_W)
-            .show_inside(&mut root, |ui| {
-                ui.horizontal(|ui| {
-                    if rail_chevron(
-                        ui,
-                        icons::CARET_UP,
-                        "Show the curves strip",
-                        crate::keymap::UiAction::ToggleBottomPanel,
-                    ) {
-                        state.windows.bottom_open = true;
-                    }
-                    if state.ui_status.visible(now) {
-                        status_line(ui, &state.ui_status);
-                    }
-                });
-            });
-    } else {
-        egui::Panel::bottom("bottom_panel")
-            .resizable(true)
-            .default_size(if breeding_active { 360.0 } else { 300.0 })
-            .size_range(260.0..=bottom_max)
-            .show_inside(&mut root, |ui| {
-                collapse_overlay(
-                    ui,
-                    icons::CARET_DOWN,
-                    crate::keymap::UiAction::ToggleBottomPanel,
-                    &mut state.windows.bottom_open,
-                );
-                if state.ui_status.visible(now) {
-                    status_line(ui, &state.ui_status);
-                    ui.add_space(2.0);
-                }
-                // The panel IS the curves surface — no wrapping card or title (the two
-                // plots carry their own strong labels). The closure is shared by the
-                // breeding split and the full-width case.
-                let curves = |ui: &mut egui::Ui, history: &mut History, config: &SimConfig| {
-                    hud::hud_section(ui, history, config);
-                };
-                if breeding_active {
-                    // **Breeding dashboard** in the bottom panel's LEFT HALF, side by side with
-                    // the curves (P5): docked in the layout (not a floating popup over the sim),
-                    // it runs the generational loop + browses/replays generations while the
-                    // curves keep the right half. Config lives in the left World panel.
-                    ui.columns(2, |cols| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("breeding_scroll")
-                            .show(&mut cols[0], |ui| {
-                                editor::card(ui, |ui| {
-                                    ui.strong("Breeding (generational)");
-                                    if let Some(act) = dashboard::breeding_panel(
-                                        ui,
-                                        &mut state.breeding,
-                                        &config,
-                                        &mut vtime,
-                                        &mut state.ui_status,
-                                    ) {
-                                        dashboard::apply_action(
-                                            act,
-                                            &mut config,
-                                            &mut palette,
-                                            &state.runs_panel,
-                                            &mut state.ui_status,
-                                            &mut sim_controls,
-                                            &mut vtime,
-                                        );
-                                    }
-                                });
-                            });
-                        curves(&mut cols[1], &mut history, &config);
-                    });
-                } else {
-                    curves(ui, &mut history, &config);
-                }
-            });
+    // Sim-state overlay over the arena — **the arena screen only**: the run time (+ speed
+    // when not ×1), a paused chip, and a first-steps hint on an empty arena.
+    if screen.shows_arena() {
+        let painter = root.painter().with_clip_rect(central.0);
+        central_overlay(
+            &painter,
+            central.0,
+            history.latest_time(),
+            sim_controls.speed,
+            vtime.is_paused(),
+            stats_agents.is_empty(),
+            !config.archetypes.is_empty(),
+        );
     }
-
-    // Archetype editor — the **detail** half as a second left column, **two-column mode
-    // only** (in single column the detail lives in `left_tools` above). Created **last**,
-    // after every unconditional panel: an egui child panel's id mixes in the parent's
-    // running auto-id counter ([`egui::Ui::new_child`]), so a *conditional* panel inserted
-    // earlier would shift the *later* panels' widget ids each time it toggles → egui's
-    // "changed id between passes" warnings. Created last, the others keep stable ids.
-    let mut editor_w = 0.0;
-    if two_column_editor {
-        // Zero left inner margin: the editor's content butts against the world panel's
-        // (separator-less) right edge, so the two columns share a single ~8 px seam.
-        let editor_frame = egui::Frame::side_top_panel(root.style()).inner_margin(egui::Margin {
-            left: 0,
-            right: 8,
-            top: 2,
-            bottom: 2,
-        });
-        editor_w = egui::Panel::left("archetype_editor")
-            .default_size(crate::layout::SIDE_DEFAULT)
-            .resizable(true)
-            .size_range(crate::layout::side_range(viewport_w, right_w + left_w))
-            .frame(editor_frame)
-            .show_inside(&mut root, |ui| {
-                if archetype_detail(ui, &mut palette, &mut config, false) {
-                    deselect = true;
-                }
-            })
-            .response
-            .rect
-            .width();
-    }
-    if deselect {
-        palette.selected = None;
-    }
-
-    // Remember this frame's widths + mode for next frame's ranges and mode decision.
-    layout.left_w = left_w;
-    layout.right_w = right_w;
-    layout.editor_w = editor_w;
-
-    // The region left free by the panels: the central area where the sim is framed.
-    // Non-deprecated successor of `ctx.available_rect()`.
-    central.0 = root.available_rect_before_wrap();
-
-    // Sim-state overlay over that central area (egui composites over the Bevy sim):
-    // the run time (+ speed when not ×1), a paused chip, and a first-steps hint on an
-    // empty arena. The run time comes from the history's latest sample (resets with the
-    // world). Themed, so it matches the rest of the UI (cf. `theme`).
-    let painter = root.painter().with_clip_rect(central.0);
-    central_overlay(
-        &painter,
-        central.0,
-        history.latest_time(),
-        sim_controls.speed,
-        vtime.is_paused(),
-        stats_agents.is_empty(),
-        !config.archetypes.is_empty(),
-    );
     Ok(())
 }
 
@@ -952,9 +1045,9 @@ fn central_overlay(
     }
     if agents_empty {
         let hint = if has_archetypes {
-            "Drag a species from Archetypes into the arena"
+            "Press ▶ to run, or ⟲ Reset to (re)spawn the cast"
         } else {
-            "Scenario ▸ Open, or add an archetype to begin"
+            "Open a scenario, or add a species in Studio to begin"
         };
         painter.text(
             rect.center(),
@@ -974,10 +1067,6 @@ mod tests {
     fn ui_windows_defaults() {
         let w = UiWindows::default();
         assert!(!w.export, "Export starts closed");
-        assert!(
-            w.breeding,
-            "Breeding starts open (appears with a batch, as before)"
-        );
         assert!(!w.shortcuts, "the cheatsheet starts closed");
         assert!(
             w.left_open && w.right_open && w.bottom_open,

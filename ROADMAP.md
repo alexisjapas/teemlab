@@ -24,9 +24,12 @@ body size), per-component nutrient stores, a static **food-web validator**, and 
 flora/fauna gene-category dissolution; faction combat removed. Binding doc + full stage
 status: [`docs/emergent-trophics.md`](docs/emergent-trophics.md) (*Implementation
 status*). The example scenarios are **not re-tuned** — 14 behavioural test drivers are
-`#[ignore]`d pending that rework. **Next:** the UI redesign
-([`docs/ui-redesign.md`](docs/ui-redesign.md), Phase B). Everything in this §0 *below*
-still describes `main` (pre-refactor); it will be rewritten when the branch lands.
+`#[ignore]`d pending that rework. **Phase B — the UI redesign
+([`docs/ui-redesign.md`](docs/ui-redesign.md), staged B1–B8 in its §11) — is now in
+flight: B1 (the five-screen router + nav rail) is done** (the existing content re-routed
+into Observe / Studio / Lab; Library / Analyze placeholders; the one-camera discipline).
+Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
+when the branch lands.
 
 **Direction (resolved 2026-07-14) — this is a research bench, not a game.** The
 project once carried two goals: (1) train competent behaviour for game mobs, and

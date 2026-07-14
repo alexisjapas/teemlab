@@ -1,15 +1,15 @@
-//! Windowed-UI **layout math**: the panel width ranges and the master/detail mode
-//! of the left region. Pure functions (no egui, no ECS) so [`panels::dock`] stays a
-//! thin caller and the sizing rules are unit-tested.
+//! Windowed-UI **layout math**: the resizable side-panel width ranges. A pure
+//! function (no egui, no ECS) so [`panels::dock`] stays a thin caller and the sizing
+//! rule is unit-tested.
 //!
 //! [`panels::dock`]: crate::panels::dock
 //!
-//! The rules exist to solve one problem: the side panels used to be a fixed 370 pt
-//! each and, with the archetype editor open, the left region doubled — 1110 pt of
-//! chrome that squeezed the sim to a sliver on a laptop. Now the side panels are
-//! **resizable** within a range that always reserves [`CENTRAL_MIN`] for the sim,
-//! and on a narrow window the archetype editor **folds into** the left panel
-//! (single column) instead of opening a second one.
+//! The rule exists to solve one problem: a side panel dragged too wide would squeeze
+//! the sim to a sliver on a laptop. The side panels are **resizable** within a range
+//! that always reserves [`CENTRAL_MIN`] for the sim, so neither can be dragged into
+//! the arena's space. (The old two-column archetype-editor fold is gone: the Phase B
+//! Studio gives the editor its own screen and the arena no longer competes with it —
+//! `docs/ui-redesign.md`.)
 
 use std::ops::RangeInclusive;
 
@@ -21,13 +21,8 @@ pub const SIDE_DEFAULT: f32 = 370.0;
 /// Widest a side panel may be dragged: past this it is just wasted space.
 pub const SIDE_MAX: f32 = 520.0;
 /// The sim area is never allowed below this (egui points): a drag on either
-/// separator stops here, and the two-column left mode is refused when it would break
-/// this floor.
+/// separator stops here.
 pub const CENTRAL_MIN: f32 = 480.0;
-/// Dead-band (egui points) around the two-/single-column threshold: the mode only
-/// flips once the window crosses the boundary by this much, so dragging the window
-/// edge across it doesn't make the layout flicker.
-pub const HYSTERESIS: f32 = 24.0;
 
 /// The allowed width range for a side panel, given the viewport width and the
 /// **other** side panel's current width. The maximum is whatever leaves
@@ -38,41 +33,6 @@ pub const HYSTERESIS: f32 = 24.0;
 pub fn side_range(viewport_w: f32, other_side_w: f32) -> RangeInclusive<f32> {
     let max = (viewport_w - other_side_w - CENTRAL_MIN).clamp(SIDE_MIN, SIDE_MAX);
     SIDE_MIN..=max
-}
-
-/// Whether the left region shows the world and the archetype editor as **two
-/// columns** or folds the editor into a **single column**.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum LeftMode {
-    /// World panel + a separate archetype-editor panel (wide windows).
-    #[default]
-    TwoColumn,
-    /// One left panel whose content is the world **or** the archetype editor
-    /// (narrow windows) — the detail view replaces the master in place.
-    SingleColumn,
-}
-
-/// Picks the left-region mode with hysteresis. Two columns are used only when the
-/// viewport can hold `right_w + world_w + editor_w + CENTRAL_MIN`; the `prev` mode is
-/// kept while the viewport sits within [`HYSTERESIS`] of that threshold, so crossing
-/// the boundary while resizing the window doesn't flip-flop the layout.
-pub fn left_mode(
-    prev: LeftMode,
-    viewport_w: f32,
-    right_w: f32,
-    world_w: f32,
-    editor_w: f32,
-) -> LeftMode {
-    let threshold = right_w + world_w + editor_w + CENTRAL_MIN;
-    // Widen the "stay" band around the threshold by ±HYSTERESIS, keyed on `prev`:
-    // to switch *up* to two columns we must clear `threshold + HYSTERESIS`; to fall
-    // *back* to one we must drop below `threshold - HYSTERESIS`. In between, hold.
-    match prev {
-        LeftMode::TwoColumn if viewport_w >= threshold - HYSTERESIS => LeftMode::TwoColumn,
-        LeftMode::TwoColumn => LeftMode::SingleColumn,
-        LeftMode::SingleColumn if viewport_w >= threshold + HYSTERESIS => LeftMode::TwoColumn,
-        LeftMode::SingleColumn => LeftMode::SingleColumn,
-    }
 }
 
 #[cfg(test)]
@@ -104,60 +64,5 @@ mod tests {
                 assert!(*r.start() >= SIDE_MIN);
             }
         }
-    }
-
-    #[test]
-    fn left_mode_threshold_and_hysteresis() {
-        let (right, world, editor) = (370.0, 370.0, 370.0);
-        let threshold = right + world + editor + CENTRAL_MIN; // 1590
-
-        // Comfortably wide → two columns; comfortably narrow → single.
-        assert_eq!(
-            left_mode(
-                LeftMode::SingleColumn,
-                threshold + 100.0,
-                right,
-                world,
-                editor
-            ),
-            LeftMode::TwoColumn
-        );
-        assert_eq!(
-            left_mode(LeftMode::TwoColumn, threshold - 100.0, right, world, editor),
-            LeftMode::SingleColumn
-        );
-
-        // Inside the band the previous mode holds (no flip-flop while dragging).
-        assert_eq!(
-            left_mode(LeftMode::TwoColumn, threshold, right, world, editor),
-            LeftMode::TwoColumn
-        );
-        assert_eq!(
-            left_mode(LeftMode::SingleColumn, threshold, right, world, editor),
-            LeftMode::SingleColumn
-        );
-
-        // Flipping up requires clearing threshold + HYSTERESIS; down requires
-        // dropping below threshold - HYSTERESIS.
-        assert_eq!(
-            left_mode(
-                LeftMode::SingleColumn,
-                threshold + HYSTERESIS - 1.0,
-                right,
-                world,
-                editor
-            ),
-            LeftMode::SingleColumn
-        );
-        assert_eq!(
-            left_mode(
-                LeftMode::TwoColumn,
-                threshold - HYSTERESIS + 1.0,
-                right,
-                world,
-                editor
-            ),
-            LeftMode::TwoColumn
-        );
     }
 }

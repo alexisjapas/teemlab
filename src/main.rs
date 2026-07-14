@@ -20,6 +20,7 @@ mod panels;
 mod plot;
 mod recorder;
 mod runs;
+mod screen;
 mod status;
 mod theme;
 
@@ -83,6 +84,10 @@ fn main() {
         .insert_resource(panels::UiWindows::at_launch(
             std::env::args().nth(1).is_some(),
         ))
+        // The top-level screen router (Observe · Library · Studio · Lab · Analyze —
+        // cf. `screen`). Starts on Observe (the launch landing, the only live-arena
+        // screen). The nav rail switches it; `panels::dock` dispatches on it.
+        .init_resource::<screen::Router>()
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()
