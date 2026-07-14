@@ -267,37 +267,113 @@ impl Fields {
     }
 }
 
-/// A per-agent **nutrient store** (the second axis of T2): filled by
-/// [`absorb_nutrients`] from the nutrient [`Field`], spent at reproduction
-/// ([`crate::ecology::reproduce`]) to pay for a child. Attached to **every** agent
-/// at spawn; with the nutrient genes at `0` it is inert (`max == 0`, nothing
-/// absorbed, nothing paid) → byte-identical for existing scenarios.
+/// A per-agent **component store**: how much of each scenario component
+/// ([`SimConfig::components`](crate::config::SimConfig::components)) the agent holds.
+/// Filled by [`absorb_nutrients`] from each component's [`Field`], carried up the food
+/// chain by predation ([`crate::interaction`]), spent at reproduction
+/// ([`crate::ecology::reproduce`]) and returned to the field at death
+/// ([`crate::ecology::reap`]). Attached to **every** agent at spawn, sized to the
+/// scenario's component count; with no capacity it is inert → byte-identical for a
+/// scenario off the resource axis.
+///
+/// **Component `0` is the nutrient** (the T2 axis): [`fraction`](Self::fraction) — the
+/// proprioceptive channel — and the reproduction gate read it, so existing single-axis
+/// scenarios are unchanged. Higher indices are other components (any of which a scenario
+/// may give a store). This generalizes the former single `{current, max}` nutrient store
+/// (the "becomes a per-component `Stores`" note of the component-emission plan, now
+/// realized — the MVP prerequisite for emergent digestibility,
+/// `docs/emergent-trophics.md`).
 ///
 /// Deliberately distinct from [`Reserve`](crate::components::Reserve) (energy,
 /// sun-/food-fed → *survival*): a missing nutrient stops **reproduction**, it never
 /// causes death — the two-axis design that fixes the T1 death spiral.
-///
-/// **NB (component-emission plan, Phase 2):** this single store becomes a per-component
-/// `Stores` when the declarative `FieldRelation` table lands; Phase 1 keeps it, and the
-/// nutrient is the field of index `0` by convention.
-#[derive(Component, Clone, Copy, Debug, Default)]
+#[derive(Component, Clone, Debug, Default)]
 pub struct Nutrients {
-    /// Current amount stored.
-    pub current: f32,
-    /// Capacity (the `nutrient_capacity` gene at spawn).
-    pub max: f32,
+    /// Amount of each component currently held, indexed like
+    /// [`SimConfig::components`](crate::config::SimConfig::components).
+    current: Vec<f32>,
+    /// Capacity for each component (`0` = holds none), same indexing — the `capacity`
+    /// verb of each [`FieldRelation`](crate::config::FieldRelation), read at spawn.
+    capacity: Vec<f32>,
 }
 
 impl Nutrients {
-    /// Fill fraction in `[0, 1]` (`0` if `max` is zero — an entity outside the
-    /// nutrient axis). Mirrors [`Reserve::fraction`](crate::components::Reserve::fraction)
-    /// so the inspector can show the nutrient store as a second reservoir bar.
-    pub fn fraction(&self) -> f32 {
-        if self.max > 0.0 {
-            (self.current / self.max).clamp(0.0, 1.0)
+    /// A store with the given per-component capacities, holding nothing.
+    pub fn new(capacity: Vec<f32>) -> Self {
+        Self {
+            current: vec![0.0; capacity.len()],
+            capacity,
+        }
+    }
+
+    /// Amount of component `c` held (`0` off the axis / out of range).
+    pub fn current(&self, c: usize) -> f32 {
+        self.current.get(c).copied().unwrap_or(0.0)
+    }
+
+    /// Capacity for component `c` (`0` if none / out of range).
+    pub fn capacity(&self, c: usize) -> f32 {
+        self.capacity.get(c).copied().unwrap_or(0.0)
+    }
+
+    /// Number of component slots (the scenario's component count at spawn).
+    pub fn len(&self) -> usize {
+        self.current.len()
+    }
+
+    /// No component slots — an agent in a scenario without any component.
+    pub fn is_empty(&self) -> bool {
+        self.current.is_empty()
+    }
+
+    /// Apply a signed `delta` to component `c`, clamped to `[0, capacity]` (surplus is
+    /// lost, mirroring energy beyond `Reserve::max`). The single mutation point for
+    /// absorption and trophic transfer.
+    pub fn apply_delta(&mut self, c: usize, delta: f32) {
+        if let Some(cur) = self.current.get_mut(c) {
+            let cap = self.capacity.get(c).copied().unwrap_or(0.0);
+            *cur = (*cur + delta).clamp(0.0, cap);
+        }
+    }
+
+    /// Remove up to `amount` of component `c`; returns what was actually taken
+    /// (`≤ amount`, `≤ held`). Used to spend the reproduction cost.
+    pub fn take(&mut self, c: usize, amount: f32) -> f32 {
+        if let Some(cur) = self.current.get_mut(c) {
+            let taken = amount.min(cur.max(0.0));
+            *cur -= taken;
+            taken
         } else {
             0.0
         }
+    }
+
+    /// Set component `c` to `v`, clamped to `[0, capacity]`. A seeding helper (tests,
+    /// tooling); the running sim mutates via [`apply_delta`](Self::apply_delta) /
+    /// [`take`](Self::take).
+    pub fn set(&mut self, c: usize, v: f32) {
+        if let Some(cur) = self.current.get_mut(c) {
+            let cap = self.capacity.get(c).copied().unwrap_or(0.0);
+            *cur = v.clamp(0.0, cap);
+        }
+    }
+
+    /// Fill fraction of the **nutrient** (component `0`) in `[0, 1]` — the second
+    /// reservoir shown in the inspector and the proprioceptive `self_state` channel
+    /// (`0` off the axis). Mirrors
+    /// [`Reserve::fraction`](crate::components::Reserve::fraction).
+    pub fn fraction(&self) -> f32 {
+        let (cur, cap) = (self.current(0), self.capacity(0));
+        if cap > 0.0 {
+            (cur / cap).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// True if this agent has capacity for **any** component (on the resource axis).
+    pub fn on_axis(&self) -> bool {
+        self.capacity.iter().any(|&c| c > 0.0)
     }
 }
 
@@ -381,35 +457,41 @@ pub fn decay_nutrients(mut fields: ResMut<Fields>) {
     }
 }
 
-/// ABSORB: each agent pulls nutrient from the **nutrient field** (component `0`, by
-/// the Phase-1 convention) into its [`Nutrients`] store, capped by its **absorb**
-/// [`FieldRelation`](crate::config::FieldRelation) rate and remaining capacity.
-/// Conservation: the store gains exactly what the cell loses ([`Field::take`]). An
-/// agent whose nutrient relation has `absorb == 0` is skipped; no component `0` →
-/// no-op → byte-identical.
+/// ABSORB: each agent pulls **each component it absorbs**
+/// ([`FieldRelation`](crate::config::FieldRelation) `absorb > 0`) from that component's
+/// [`Field`] into its [`Nutrients`] store, capped by the `absorb` rate and the remaining
+/// capacity. Conservation: the store gains exactly what the cell loses ([`Field::take`]).
+/// A scenario with no absorbing relation is a no-op (early return); before the
+/// per-component store only component `0` (the nutrient) was absorbed, so existing
+/// single-axis scenarios are unchanged.
 pub fn absorb_nutrients(
     time: Res<Time>,
     config: Res<SimConfig>,
     mut fields: ResMut<Fields>,
     mut agents: Query<(&Transform, &Species, &mut Nutrients), With<Agent>>,
 ) {
-    let Some(field) = fields.get_mut(0) else {
+    if !config.field_relations.iter().any(|f| f.absorb > 0.0) {
         return;
-    };
+    }
     let dt = time.delta_secs();
     for (transform, species, mut store) in &mut agents {
-        // The absorption rate is the species' nutrient FieldRelation (component 0); the
-        // store cap (`store.max`) was set at spawn from the same table.
-        let absorb = config.nutrient_of(species.0).0;
-        if absorb <= 0.0 {
-            continue;
+        let pos = transform.translation.truncate();
+        for fr in config
+            .field_relations
+            .iter()
+            .filter(|f| f.species == species.0 && f.absorb > 0.0)
+        {
+            let Some(field) = fields.get_mut(fr.component) else {
+                continue;
+            };
+            let want =
+                (fr.absorb * dt).min(store.capacity(fr.component) - store.current(fr.component));
+            if want <= 0.0 {
+                continue;
+            }
+            let got = field.take(pos, want);
+            store.apply_delta(fr.component, got);
         }
-        let want = (absorb * dt).min(store.max - store.current);
-        if want <= 0.0 {
-            continue;
-        }
-        let got = field.take(transform.translation.truncate(), want);
-        store.current += got;
     }
 }
 

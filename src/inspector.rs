@@ -307,14 +307,15 @@ pub(crate) fn inspector_section(
             .field_relations
             .iter()
             .any(|f| f.capacity > 0.0 || f.absorb > 0.0 || f.repro_cost > 0.0);
-    if nutrients.max > 0.0 || scenario_uses_nutrients {
+    if nutrients.capacity(0) > 0.0 || scenario_uses_nutrients {
         card(ui, |ui| {
             ui.strong("Nutrient store");
-            if nutrients.max > 0.0 {
-                ui.add(
-                    egui::ProgressBar::new(nutrients.fraction())
-                        .text(format!("{:.1} / {:.0}", nutrients.current, nutrients.max)),
-                )
+            if nutrients.capacity(0) > 0.0 {
+                ui.add(egui::ProgressBar::new(nutrients.fraction()).text(format!(
+                    "{:.1} / {:.0}",
+                    nutrients.current(0),
+                    nutrients.capacity(0)
+                )))
                 .on_hover_text("Absorbed from the field / eaten; spent to reproduce.");
             } else {
                 // A nutrient world, but this entity is off the axis (capacity 0).

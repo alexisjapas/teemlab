@@ -144,14 +144,17 @@ pub fn reap(
     for (entity, reserve, transform, nutrients, species) in &agents {
         if reserve.current <= 0.0 {
             let pos = transform.translation.truncate();
-            // Return the accumulated nutrient store to the substrate at the body's cell
-            // (the conserving loop — into the nutrient field, component 0, the Phase-1
-            // convention). Gated on `> 0` so an inert store never touches the field →
-            // byte-identical.
-            if nutrients.current > 0.0
-                && let Some(field) = fields.get_mut(0)
-            {
-                field.add(pos, nutrients.current);
+            // Return each accumulated component store to its field at the body's cell
+            // (the conserving loop). Gated on `> 0` so an inert store never touches the
+            // field → byte-identical; a single-axis body returns only the nutrient
+            // (component 0), exactly as before the per-component store.
+            for c in 0..nutrients.len() {
+                let held = nutrients.current(c);
+                if held > 0.0
+                    && let Some(field) = fields.get_mut(c)
+                {
+                    field.add(pos, held);
+                }
             }
             // Corpse / carrion (TURNOVER): `emit_at_death` deposits a fixed biomass of a
             // component into its field at death — the agent→environment write AT death, the
@@ -255,7 +258,7 @@ pub fn reproduce(
         if genotype.reproduction_threshold <= 0.0
             || reserve.current < genotype.reproduction_threshold
             || reserve.current < genotype.offspring_energy
-            || nutrients.current < repro_cost
+            || nutrients.current(0) < repro_cost
         {
             continue;
         }
@@ -263,7 +266,7 @@ pub fn reproduce(
         // Spend the nutrient cost from the parent's store — it is **consumed**, not
         // handed to the child (which is born empty, see below): this is what makes
         // the nutrient a true limiting resource. `0` (no nutrient relation) → no-op.
-        nutrients.current -= repro_cost;
+        nutrients.take(0, repro_cost);
         let child = genotype.mutate(&mut rng.0, &config.mutable_of(species.0), &config);
         // The child is born offset. The distance is the **seed-dispersal** gene
         // (flora) if non-zero, otherwise the default close offset (radius × 2.5) —

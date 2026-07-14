@@ -96,7 +96,7 @@ pub fn interact(
     mut hits: Local<Vec<(Entity, Entity, f32, bool)>>,
     mut demand: Local<HashMap<Entity, f32>>,
     mut deltas: Local<HashMap<Entity, f32>>,
-    mut nut_deltas: Local<HashMap<Entity, f32>>,
+    mut nut_deltas: Local<HashMap<(Entity, usize), f32>>,
     // Reach colliders, one per relation — cached across ticks (rebuilt only when the
     // scenario changes, cf. below): the shape is scenario data, not per-tick state.
     mut reaches: Local<Vec<Collider>>,
@@ -178,20 +178,22 @@ pub fn interact(
         *deltas.entry(target).or_insert(0.0) -= actual;
         if transfer {
             *deltas.entry(actor).or_insert(0.0) += actual;
-            // Trophic nutrient transfer: the nutrient embodied in the eaten
-            // biomass follows the energy. Eating a fraction `actual/avail` of the
-            // target's reserve carries that same fraction of its nutrient store —
-            // conservative on the target side (the per-actor fractions sum to ≤ 1),
-            // and a no-op when the prey carries no nutrient (pre-T3 → byte-identical).
-            if avail > 0.0 {
-                let store = nutrients
-                    .get(target)
-                    .map(|n| n.current.max(0.0))
-                    .unwrap_or(0.0);
-                if store > 0.0 {
-                    let moved = (actual / avail) * store;
-                    *nut_deltas.entry(target).or_insert(0.0) -= moved;
-                    *nut_deltas.entry(actor).or_insert(0.0) += moved;
+            // Trophic transfer (T3): the components embodied in the eaten biomass
+            // follow the energy. Eating a fraction `actual/avail` of the target's
+            // reserve carries that same fraction of **each** of its component stores —
+            // conservative on the target side (the per-actor fractions sum to ≤ 1), and
+            // a no-op when the prey holds nothing (pre-T3 → byte-identical). A
+            // single-axis prey moves only component `0`, exactly as before.
+            if avail > 0.0
+                && let Ok(store) = nutrients.get(target)
+            {
+                for c in 0..store.len() {
+                    let held = store.current(c).max(0.0);
+                    if held > 0.0 {
+                        let moved = (actual / avail) * held;
+                        *nut_deltas.entry((target, c)).or_insert(0.0) -= moved;
+                        *nut_deltas.entry((actor, c)).or_insert(0.0) += moved;
+                    }
                 }
             }
         }
@@ -203,13 +205,13 @@ pub fn interact(
         }
     }
 
-    // Apply the nutrient transfers. Empty when no prey carried nutrient → the store
-    // is never touched (byte-identical). Clamp at the actor's capacity: the surplus
-    // is lost, mirroring energy beyond `reserve.max` (the "clamp & lose" choice — an
-    // interim leak closed later by recycling).
-    for (&entity, &delta) in nut_deltas.iter() {
+    // Apply the per-component transfers. Empty when no prey held anything → no store is
+    // touched (byte-identical). `apply_delta` clamps at the actor's capacity: the
+    // surplus is lost, mirroring energy beyond `reserve.max` (the "clamp & lose" choice
+    // — an interim leak closed by recycling).
+    for (&(entity, c), &delta) in nut_deltas.iter() {
         if let Ok(mut store) = nutrients.get_mut(entity) {
-            store.current = (store.current + delta).clamp(0.0, store.max);
+            store.apply_delta(c, delta);
         }
     }
 }

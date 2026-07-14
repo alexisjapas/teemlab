@@ -206,10 +206,13 @@ pub fn spawn_agent_with_brain(
         (
             Generation(generation),
             Age(age),
-            Nutrients {
-                current: nutrients,
-                // Store capacity from the species' nutrient FieldRelation (component 0).
-                max: config.nutrient_of(species.0).1,
+            // Per-component store sized to the scenario's components; the `nutrients`
+            // param seeds the nutrient (component 0). Founders and children are born
+            // empty (`nutrients == 0`) → byte-identical.
+            {
+                let mut store = Nutrients::new(config.capacities_of(species.0));
+                store.set(0, nutrients);
+                store
             },
         ),
         genotype.locomotion(),

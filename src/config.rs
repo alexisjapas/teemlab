@@ -899,6 +899,37 @@ impl SimConfig {
             .unwrap_or((0.0, 0.0, 0.0))
     }
 
+    /// The per-component **store capacities** of `species` — the `capacity` verb of its
+    /// [`FieldRelation`] rows, one entry per scenario [`component`](Self::components)
+    /// (`0` where it has none). Sizes the agent's
+    /// [`Nutrients`](crate::nutrients::Nutrients) store at spawn. A single-axis scenario
+    /// (capacity only on component `0`) yields `[cap, 0, …]` → byte-identical with the
+    /// former single `max` from [`nutrient_of`](Self::nutrient_of).
+    ///
+    /// The store spans **at least** every component the species' relations reference, so
+    /// a store can exist without a declared field (a nutrient held but never absorbed —
+    /// e.g. the trophic-transfer test's forager, which cannot absorb). For a well-formed
+    /// scenario (every referenced component declared) this equals `components.len()`.
+    pub fn capacities_of(&self, species: u16) -> Vec<f32> {
+        let n = self.components.len().max(
+            self.field_relations
+                .iter()
+                .filter(|f| f.species == species)
+                .map(|f| f.component + 1)
+                .max()
+                .unwrap_or(0),
+        );
+        (0..n)
+            .map(|c| {
+                self.field_relations
+                    .iter()
+                    .find(|f| f.species == species && f.component == c)
+                    .map(|f| f.capacity)
+                    .unwrap_or(0.0)
+            })
+            .collect()
+    }
+
     /// The components `species` **senses** (a [`FieldRelation`] with `sense: true`),
     /// sorted by component index — the order in which their local concentrations fill
     /// [`Perception::field_state`](crate::components::Perception::field_state) and the

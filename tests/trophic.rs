@@ -151,7 +151,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
             move |mut q: Query<(&Species, &mut Nutrients), With<Agent>>| {
                 for (species, mut store) in &mut q {
                     if species.0 == 1 {
-                        store.current = plant_nutrient0;
+                        store.set(0, plant_nutrient0);
                     }
                 }
             },
@@ -170,8 +170,8 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
     let mut plant = None;
     for (species, store) in q.iter(world) {
         match species.0 {
-            0 => forager = Some(store.current),
-            1 => plant = Some(store.current),
+            0 => forager = Some(store.current(0)),
+            1 => plant = Some(store.current(0)),
             _ => {}
         }
     }
@@ -294,7 +294,7 @@ fn destruction_without_transfer_moves_no_nutrient() {
             move |mut q: Query<(&Species, &mut Nutrients), With<Agent>>| {
                 for (species, mut store) in &mut q {
                     if species.0 == 1 {
-                        store.current = victim_nutrient0;
+                        store.set(0, victim_nutrient0);
                     }
                 }
             },
@@ -310,7 +310,7 @@ fn destruction_without_transfer_moves_no_nutrient() {
     let attacker = q
         .iter(world)
         .find(|(s, _)| s.0 == 0)
-        .map(|(_, n)| n.current)
+        .map(|(_, n)| n.current(0))
         .expect("the attacker still exists");
     assert_eq!(
         attacker, 0.0,

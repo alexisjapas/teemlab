@@ -104,7 +104,7 @@ fn world_with_one_body(config: &SimConfig, stored: f32) -> App {
     app.world_mut()
         .run_system_once(move |mut q: Query<&mut Nutrients, With<Agent>>| {
             for mut store in &mut q {
-                store.current = stored;
+                store.set(0, stored);
             }
         })
         .expect("seed the body's nutrient store");
