@@ -1017,6 +1017,108 @@ impl SimConfig {
             && self.digestibility(actor, target) > 0.0
     }
 
+    /// The scenario's **component count** — every declared [`component`](Self::components)
+    /// plus any referenced by a source or a field relation, so an index is never missed.
+    fn component_count(&self) -> usize {
+        let from_fr = self
+            .field_relations
+            .iter()
+            .map(|f| f.component + 1)
+            .max()
+            .unwrap_or(0);
+        let from_src = self
+            .sources
+            .iter()
+            .map(|s| s.component + 1)
+            .max()
+            .unwrap_or(0);
+        self.components.len().max(from_fr).max(from_src)
+    }
+
+    /// `true` if component `c` **enters the world** from the environment: a source emits
+    /// it, or some species emits it into the field (the `emit` verb). The base case of
+    /// reachability — the rest of a food web is reached by absorbing or eating from there.
+    fn field_available(&self, c: usize) -> bool {
+        self.sources
+            .iter()
+            .any(|s| s.component == c && s.rate > 0.0)
+            || self
+                .field_relations
+                .iter()
+                .any(|f| f.component == c && f.emit > 0.0)
+    }
+
+    /// **Food-web validation** (`docs/emergent-trophics.md` §6.1): every `(species,
+    /// component)` need the scenario **cannot satisfy** — a *broken trophic chain*. Empty
+    /// ⇒ viable. A need is met if the species can **hold** the component (`capacity > 0`)
+    /// and obtain it, either by **absorbing** it from a field a source/emitter feeds, or
+    /// by **eating** ([`can_eat`](Self::can_eat)) something that itself obtains it — a
+    /// reachability fixpoint over the emergent food web. Topological (spatial reach is a
+    /// later refinement); the static check the editor runs live as the scenario is edited.
+    #[allow(clippy::needless_range_loop)] // index loops: the fixpoint reads obtains[b] while filling obtains[a]
+    pub fn broken_chains(&self) -> Vec<(u16, usize)> {
+        let n = self.archetypes.len();
+        let nc = self.component_count();
+        let capacity: Vec<Vec<f32>> = (0..n).map(|a| self.capacities_of(a as u16)).collect();
+        let absorb: Vec<Vec<f32>> = (0..n)
+            .map(|a| self.per_component(a as u16, |f| f.absorb))
+            .collect();
+        let held = |v: &[Vec<f32>], a: usize, c: usize| v[a].get(c).copied().unwrap_or(0.0);
+
+        // `obtains[a][c]`: species `a` can end up holding component `c`.
+        let mut obtains = vec![vec![false; nc]; n];
+        // Base: absorb `c` from a fed field (needs the capacity to hold it).
+        for a in 0..n {
+            for c in 0..nc {
+                if held(&capacity, a, c) > 0.0
+                    && held(&absorb, a, c) > 0.0
+                    && self.field_available(c)
+                {
+                    obtains[a][c] = true;
+                }
+            }
+        }
+        // Fixpoint: eat something that already obtains `c` (and have room to hold it).
+        loop {
+            let mut changed = false;
+            for a in 0..n {
+                for b in 0..n {
+                    if a != b && self.can_eat(a as u16, b as u16) {
+                        for c in 0..nc {
+                            if !obtains[a][c] && obtains[b][c] && held(&capacity, a, c) > 0.0 {
+                                obtains[a][c] = true;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        // Flag every need that is never obtained.
+        let mut broken = Vec::new();
+        for a in 0..n {
+            for (c, &need) in self.needs_of(a as u16).iter().enumerate() {
+                if need > 0.0 && !obtains[a].get(c).copied().unwrap_or(false) {
+                    broken.push((a as u16, c));
+                }
+            }
+        }
+        broken
+    }
+
+    /// The components `species` **needs but cannot reach** — the per-archetype view of
+    /// [`broken_chains`](Self::broken_chains), for the editor's inline flag.
+    pub fn unreachable_needs(&self, species: u16) -> Vec<usize> {
+        self.broken_chains()
+            .into_iter()
+            .filter(|(s, _)| *s == species)
+            .map(|(_, c)| c)
+            .collect()
+    }
+
     /// The components `species` **senses** (a [`FieldRelation`] with `sense: true`),
     /// sorted by component index — the order in which their local concentrations fill
     /// [`Perception::field_state`](crate::components::Perception::field_state) and the
@@ -1562,6 +1664,92 @@ mod tests {
         assert!(
             cfg.archetypes[0].genotype.photosynthesis > 0.0,
             "the flora lives on photosynthesis"
+        );
+    }
+
+    /// A source that feeds a component (`0`), a small plant that absorbs+holds it, and a
+    /// bigger herbivore that needs it and can eat the plant → every need is **reachable**,
+    /// no broken chain (`docs/emergent-trophics.md` §6.1).
+    #[test]
+    fn broken_chains_pass_a_viable_web() {
+        let mut herb = Archetype::new_agent(0);
+        herb.radius = 12.0; // dominates the plant
+        let mut plant = Archetype::new_food(1);
+        plant.radius = 6.0;
+        let cfg = SimConfig {
+            archetypes: vec![herb, plant],
+            components: vec![ComponentConfig::default()],
+            sources: vec![Source {
+                pos: [0.0, 0.0],
+                component: 0,
+                rate: 5.0,
+                color: [1.0, 0.5, 0.2],
+                radius: 4.0,
+                solid: false,
+            }],
+            field_relations: vec![
+                // Plant absorbs & holds the nutrient (fed by the source).
+                FieldRelation {
+                    species: 1,
+                    component: 0,
+                    absorb: 1.0,
+                    capacity: 10.0,
+                    ..default()
+                },
+                // Herbivore needs & can hold it — reached by eating the plant.
+                FieldRelation {
+                    species: 0,
+                    component: 0,
+                    need: 1.0,
+                    capacity: 10.0,
+                    ..default()
+                },
+            ],
+            ..SimConfig::default()
+        };
+        assert!(
+            cfg.broken_chains().is_empty(),
+            "the herbivore reaches its need by eating the plant: {:?}",
+            cfg.broken_chains()
+        );
+    }
+
+    /// The falsifiable contrast: a species that **needs** a component nothing provides is
+    /// a broken chain — and adding a source that feeds it makes the web viable.
+    #[test]
+    fn broken_chains_flag_an_unreachable_need_then_a_source_fixes_it() {
+        let mut cfg = SimConfig {
+            archetypes: vec![Archetype::new_agent(0)],
+            components: vec![ComponentConfig::default()],
+            // Absorbs+needs component 0, but no source/emitter feeds the field.
+            field_relations: vec![FieldRelation {
+                species: 0,
+                component: 0,
+                absorb: 1.0,
+                capacity: 10.0,
+                need: 1.0,
+                ..default()
+            }],
+            ..SimConfig::default()
+        };
+        assert_eq!(
+            cfg.broken_chains(),
+            vec![(0, 0)],
+            "an unfed need is a broken chain"
+        );
+        assert_eq!(cfg.unreachable_needs(0), vec![0]);
+        // Feed the field: the need becomes reachable.
+        cfg.sources.push(Source {
+            pos: [0.0, 0.0],
+            component: 0,
+            rate: 5.0,
+            color: [1.0, 0.5, 0.2],
+            radius: 4.0,
+            solid: false,
+        });
+        assert!(
+            cfg.broken_chains().is_empty(),
+            "with a source, the absorbed need is reachable"
         );
     }
 }
