@@ -167,68 +167,101 @@ pub(crate) fn controls_section(
     // Play/Pause and Step are **icon-only, fixed-size** buttons: their width no longer
     // changes with the label ("Play" ↔ "Pause"), so the whole group's width is constant
     // and the top-bar centering (which pads by the last-frame width) never visibly shifts.
-    let icon_button = |ui: &mut egui::Ui, glyph: char| {
-        ui.add(egui::Button::new(fonts::icon(glyph)).min_size(egui::vec2(30.0, 22.0)))
-    };
     let paused = vtime.is_paused();
     let play_glyph = if paused { icons::PLAY } else { icons::PAUSE };
-    // The play/pause is the transport's **primary** control — teal (the comp's accent2).
-    if ui
-        .add(
-            egui::Button::new(fonts::icon(play_glyph).color(crate::theme::ON_ACCENT2))
-                .fill(crate::theme::ACCENT2)
-                .min_size(egui::vec2(34.0, 24.0))
-                .corner_radius(egui::CornerRadius::same(8)),
-        )
-        .on_hover_text(keymap::tooltip("Play / pause", UiAction::PlayPause))
-        .clicked()
-    {
-        if paused {
-            vtime.unpause();
-        } else {
-            vtime.pause();
-        }
-    }
-    // Single-stepping only makes sense when stopped.
-    ui.add_enabled_ui(paused, |ui| {
-        if icon_button(ui, icons::STEP)
-            .on_hover_text(keymap::tooltip(
-                "Advance one tick (when paused)",
-                UiAction::StepOnce,
-            ))
-            .clicked()
-        {
-            controls.steps_pending += 1;
-        }
-    });
+    // Play/pause + step share one card-filled cluster (the comp's transport group:
+    // 4 pt padding, 11 pt radius). Play is the transport's **primary** control — teal
+    // (the comp's accent2) with the **filled** glyph weight, 38×34 like the comp.
+    egui::Frame::new()
+        .fill(crate::theme::CARD)
+        .corner_radius(egui::CornerRadius::same(11))
+        .inner_margin(egui::Margin::same(4))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            if ui
+                .add(
+                    egui::Button::new(fonts::icon_fill(play_glyph).color(crate::theme::ON_ACCENT2))
+                        .fill(crate::theme::ACCENT2)
+                        .min_size(egui::vec2(38.0, 34.0))
+                        .corner_radius(egui::CornerRadius::same(8)),
+                )
+                .on_hover_text(keymap::tooltip("Play / pause", UiAction::PlayPause))
+                .clicked()
+            {
+                if paused {
+                    vtime.unpause();
+                } else {
+                    vtime.pause();
+                }
+            }
+            // Single-stepping only makes sense when stopped. Same footprint as Play
+            // (the group's width stays constant), quiet fill.
+            ui.add_enabled_ui(paused, |ui| {
+                if ui
+                    .add(
+                        egui::Button::new(fonts::icon(icons::STEP))
+                            .min_size(egui::vec2(38.0, 34.0))
+                            .corner_radius(egui::CornerRadius::same(8)),
+                    )
+                    .on_hover_text(keymap::tooltip(
+                        "Advance one tick (when paused)",
+                        UiAction::StepOnce,
+                    ))
+                    .clicked()
+                {
+                    controls.steps_pending += 1;
+                }
+            });
+        });
 
     ui.add_space(8.0);
-    // Logarithmic-scale slider (fixed width so the group stays a constant size): fine
-    // tuning from ×0.1 to ×10 on a single handle, with quick presets beside it.
+    // The comp's speed block: a faint mono "SPEED" caption, the log slider (an
+    // addition kept from the previous transport — fine tuning ×0.1–×10 on one
+    // handle), then the presets as the comp's segmented control.
+    crate::theme::caption(ui, "Speed");
     ui.spacing_mut().slider_width = 120.0;
     if ui
-        .add(
-            egui::Slider::new(&mut controls.speed, 0.1..=10.0)
-                .logarithmic(true)
-                .text("Speed ×"),
-        )
+        .add(egui::Slider::new(&mut controls.speed, 0.1..=10.0).logarithmic(true))
         .changed()
     {
         vtime.set_relative_speed(controls.speed);
     }
     // Quick presets: exact ×1 / ×2 / ×5 / ×10 are hard to land on a logarithmic
-    // slider, and "compare runs at ×5" is a real use. The active one stays highlighted.
-    for &s in &[1.0f32, 2.0, 5.0, 10.0] {
-        let active = (controls.speed - s).abs() < 1e-3;
-        if ui
-            .selectable_label(active, format!("×{s:.0}"))
-            .on_hover_text(format!("Set the speed to ×{s:.0}"))
-            .clicked()
-        {
-            controls.speed = s;
-            vtime.set_relative_speed(s);
-        }
-    }
+    // slider, and "compare runs at ×5" is a real use. Rendered as the comp's
+    // segmented control: a card-filled group (4 pt pad, 11 pt radius), 40×30
+    // segments at 7 pt, the active one on the raised-2 tone, mono digits.
+    egui::Frame::new()
+        .fill(crate::theme::CARD)
+        .corner_radius(egui::CornerRadius::same(11))
+        .inner_margin(egui::Margin::same(4))
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            for &s in &[1.0f32, 2.0, 5.0, 10.0] {
+                let active = (controls.speed - s).abs() < 1e-3;
+                let (fill, ink) = if active {
+                    (crate::theme::RAISED_2, crate::theme::INK)
+                } else {
+                    (egui::Color32::TRANSPARENT, crate::theme::INK_MUTED)
+                };
+                let text = egui::RichText::new(format!("×{s:.0}"))
+                    .monospace()
+                    .size(12.5)
+                    .color(ink);
+                if ui
+                    .add(
+                        egui::Button::new(text)
+                            .fill(fill)
+                            .min_size(egui::vec2(40.0, 30.0))
+                            .corner_radius(egui::CornerRadius::same(7)),
+                    )
+                    .on_hover_text(format!("Set the speed to ×{s:.0}"))
+                    .clicked()
+                {
+                    controls.speed = s;
+                    vtime.set_relative_speed(s);
+                }
+            }
+        });
 
     ui.add_space(8.0);
     // Accent the Reset while the running world no longer matches the config on the

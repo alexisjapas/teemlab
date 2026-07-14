@@ -16,13 +16,22 @@ use std::ops::RangeInclusive;
 /// Narrowest a side panel may be dragged (egui points): still fits the densest
 /// content (the gene grid) without clipping.
 pub const SIDE_MIN: f32 = 280.0;
-/// The side panel's width on a fresh launch — the historical fixed width.
-pub const SIDE_DEFAULT: f32 = 370.0;
+/// The side panel's width on a fresh launch (the comp's inspector column).
+pub const SIDE_DEFAULT: f32 = 300.0;
 /// Widest a side panel may be dragged: past this it is just wasted space.
 pub const SIDE_MAX: f32 = 520.0;
 /// The sim area is never allowed below this (egui points): a drag on either
 /// separator stops here.
 pub const CENTRAL_MIN: f32 = 480.0;
+
+/// Narrowest the **live-stats** panel (Observe, left) may be dragged: the comp's
+/// 216 px stat column — its content (stat cards) is narrower than the gene grid
+/// that sets [`SIDE_MIN`].
+pub const STATS_MIN: f32 = 216.0;
+/// The live-stats panel's width on a fresh launch (the comp's fixed width).
+pub const STATS_DEFAULT: f32 = 216.0;
+/// Widest the live-stats panel may be dragged.
+pub const STATS_MAX: f32 = 360.0;
 
 /// The allowed width range for a side panel, given the viewport width and the
 /// **other** side panel's current width. The maximum is whatever leaves
@@ -33,6 +42,13 @@ pub const CENTRAL_MIN: f32 = 480.0;
 pub fn side_range(viewport_w: f32, other_side_w: f32) -> RangeInclusive<f32> {
     let max = (viewport_w - other_side_w - CENTRAL_MIN).clamp(SIDE_MIN, SIDE_MAX);
     SIDE_MIN..=max
+}
+
+/// [`side_range`] for the live-stats panel: the same central-minimum guarantee,
+/// with its own (narrower) bounds.
+pub fn stats_range(viewport_w: f32, other_side_w: f32) -> RangeInclusive<f32> {
+    let max = (viewport_w - other_side_w - CENTRAL_MIN).clamp(STATS_MIN, STATS_MAX);
+    STATS_MIN..=max
 }
 
 #[cfg(test)]
@@ -52,6 +68,21 @@ mod tests {
         let tight = side_range(600.0, 370.0);
         assert_eq!(*tight.start(), SIDE_MIN);
         assert_eq!(*tight.end(), SIDE_MIN);
+    }
+
+    #[test]
+    fn stats_range_preserves_central_min_and_never_inverts() {
+        // Same guarantee as `side_range`, on the stats panel's own bounds.
+        let r = stats_range(1920.0, 370.0);
+        assert!(*r.end() + 370.0 + CENTRAL_MIN <= 1920.0 + 0.01);
+        assert!(*r.end() <= STATS_MAX);
+        for &vw in &[320.0_f32, 800.0, 1280.0, 1920.0] {
+            for &other in &[SIDE_MIN, SIDE_DEFAULT, SIDE_MAX] {
+                let r = stats_range(vw, other);
+                assert!(*r.start() <= *r.end(), "inverted at vw={vw}, other={other}");
+                assert!(*r.start() >= STATS_MIN);
+            }
+        }
     }
 
     #[test]

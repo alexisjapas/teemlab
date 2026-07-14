@@ -1,6 +1,6 @@
 [package]
 name = "teemlab"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "Evolutionary simulation engine — one engine, many scenarios."
 license = "MIT OR Apache-2.0"

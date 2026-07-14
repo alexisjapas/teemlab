@@ -31,6 +31,7 @@ use std::sync::Arc;
 const INTER: (&str, &str) = ("Inter", "assets/fonts/Inter-Regular.ttf");
 const DEPARTURE: (&str, &str) = ("DepartureMono", "assets/fonts/DepartureMono-Regular.otf");
 const PHOSPHOR: (&str, &str) = ("Phosphor", "assets/fonts/Phosphor.ttf");
+const PHOSPHOR_FILL: (&str, &str) = ("PhosphorFill", "assets/fonts/Phosphor-Fill.ttf");
 
 /// `true` once [`setup_ui_fonts`]'s fonts are **live** (the pass after `set_fonts`).
 /// The panel system skips its first render until then, so an icon (which needs the
@@ -70,7 +71,9 @@ pub mod icons {
     pub const ATOM: char = '\u{E5E4}'; // the app mark
     pub const EYE: char = '\u{E220}'; // Observe
     pub const SQUARES: char = '\u{E464}'; // Library (squares-four)
-    pub const PENCIL_RULER: char = '\u{E906}'; // Studio
+    // Assembly metaphor (the comp's `ph-puzzle-piece`); codepoint verified against
+    // the @phosphor-icons/web@2.1.1 regular stylesheet.
+    pub const PUZZLE_PIECE: char = '\u{E596}'; // Studio
     pub const FLASK: char = '\u{E79E}'; // Lab
     pub const CHART: char = '\u{E156}'; // Analyze (chart-line-up)
     pub const QUESTION: char = '\u{E3E8}'; // Help
@@ -81,11 +84,24 @@ pub fn phosphor() -> egui::FontFamily {
     egui::FontFamily::Name("phosphor".into())
 }
 
+/// The egui font family carrying the **filled** Phosphor weight. The fill font shares
+/// the regular weight's codepoints (one cmap per major version), so the [`icons`]
+/// constants work in both families.
+pub fn phosphor_fill() -> egui::FontFamily {
+    egui::FontFamily::Name("phosphor-fill".into())
+}
+
 /// A [`egui::RichText`] for a Phosphor `glyph` (cf. [`icons`]) — for an icon-only
 /// button or label: `ui.button(fonts::icon(icons::TRASH))`. For an icon **+** a text
 /// label (which need different families), use [`icon_label`].
 pub fn icon(glyph: char) -> egui::RichText {
     egui::RichText::new(glyph).family(phosphor())
+}
+
+/// [`icon`] in the **filled** weight — where the comp uses `ph-fill` (the Play
+/// triangle, the atom app mark).
+pub fn icon_fill(glyph: char) -> egui::RichText {
+    egui::RichText::new(glyph).family(phosphor_fill())
 }
 
 /// A [`egui::WidgetText`] mixing a Phosphor `glyph` (icon family) and a `label` (Inter):
@@ -213,6 +229,17 @@ pub fn setup_ui_fonts(
         family.extend(proportional.iter().cloned());
     }
     fonts.families.insert(phosphor(), family);
+
+    // The filled weight, same pattern (fill first, Proportional appended as the
+    // replacement-glyph fallback; a pure alias when the file is missing).
+    let mut fill_family = Vec::new();
+    if load(&mut fonts, PHOSPHOR_FILL) {
+        fill_family.push(PHOSPHOR_FILL.0.to_owned());
+    }
+    if let Some(proportional) = fonts.families.get(&egui::FontFamily::Proportional) {
+        fill_family.extend(proportional.iter().cloned());
+    }
+    fonts.families.insert(phosphor_fill(), fill_family);
 
     // The global style (semantic colors, corner radii, text sizes — cf. `theme`).
     // Set here, next to the fonts, so the whole look is installed in one place;

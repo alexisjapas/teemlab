@@ -322,8 +322,8 @@ fn shortcuts_cheatsheet(ui: &mut egui::Ui) {
 }
 
 /// Width of the persistent **nav rail** (egui points): the router's left strip, on
-/// every screen (`docs/ui-redesign.md` §9).
-const NAV_W: f32 = 78.0;
+/// every screen (`docs/ui-redesign.md` §9; the comp's 76 px).
+const NAV_W: f32 = 76.0;
 
 /// The persistent **screen router** rail on the far left: the five destinations
 /// (Observe · Library · Studio · Lab · Analyze, [`Screen::ALL`]) in fixed order, plus
@@ -336,7 +336,7 @@ fn nav_icon(screen: Screen) -> char {
     match screen {
         Screen::Observe => icons::EYE,
         Screen::Library => icons::SQUARES,
-        Screen::Studio => icons::PENCIL_RULER,
+        Screen::Studio => icons::PUZZLE_PIECE,
         Screen::Lab => icons::FLASK,
         Screen::Analyze => icons::CHART,
     }
@@ -344,14 +344,22 @@ fn nav_icon(screen: Screen) -> char {
 
 /// One nav-rail entry: a Phosphor icon **over** a small label, custom-painted (egui
 /// buttons are single-line, so they can't stack). **Active** = accent ink + a left
-/// accent strip + a soft-accent background; hovered = a card wash.
-fn nav_entry(ui: &mut egui::Ui, glyph: char, label: &str, active: bool) -> egui::Response {
+/// accent strip + a neutral card fill (the comp keeps the wash neutral — the gold is
+/// the ink and the strip); hovered = the same card wash. `dimmed` marks a deferred
+/// destination (the comp's "soon" state).
+fn nav_entry(
+    ui: &mut egui::Ui,
+    glyph: char,
+    label: &str,
+    active: bool,
+    dimmed: bool,
+) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 48.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 58.0), egui::Sense::click());
     let painter = ui.painter();
     let pill = rect.shrink2(egui::vec2(4.0, 2.0));
     if active {
-        painter.rect_filled(pill, 11.0, crate::theme::soft(crate::theme::ACCENT));
+        painter.rect_filled(pill, 11.0, crate::theme::CARD);
         let strip = egui::Rect::from_min_size(
             egui::pos2(rect.left() - 4.0, rect.center().y - 13.0),
             egui::vec2(3.0, 26.0),
@@ -371,18 +379,20 @@ fn nav_entry(ui: &mut egui::Ui, glyph: char, label: &str, active: bool) -> egui:
     }
     let color = if active {
         crate::theme::ACCENT
+    } else if dimmed {
+        crate::theme::INK_FAINT
     } else {
         crate::theme::INK_MUTED
     };
     painter.text(
-        egui::pos2(rect.center().x, rect.top() + 15.0),
+        egui::pos2(rect.center().x, rect.top() + 19.0),
         egui::Align2::CENTER_CENTER,
         glyph.to_string(),
-        egui::FontId::new(21.0, fonts::phosphor()),
+        egui::FontId::new(23.0, fonts::phosphor()),
         color,
     );
     painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 10.0),
+        egui::pos2(rect.center().x, rect.bottom() - 11.0),
         egui::Align2::CENTER_CENTER,
         label,
         egui::FontId::proportional(10.5),
@@ -418,7 +428,7 @@ fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     icons::ATOM.to_string(),
-                    egui::FontId::new(22.0, fonts::phosphor()),
+                    egui::FontId::new(22.0, fonts::phosphor_fill()),
                     crate::theme::ACCENT,
                 );
             });
@@ -429,6 +439,8 @@ fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
                     nav_icon(screen),
                     screen.label(),
                     router.current == screen,
+                    // Analyze is deferred (a placeholder screen) — the comp dims it.
+                    screen == Screen::Analyze,
                 )
                 .clicked()
                 {
@@ -437,11 +449,11 @@ fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
                 ui.add_space(2.0);
             }
             // Help pinned to the bottom.
-            let rem = ui.available_height() - 48.0;
+            let rem = ui.available_height() - 58.0;
             if rem > 0.0 {
                 ui.add_space(rem);
             }
-            if nav_entry(ui, icons::QUESTION, "Help", windows.shortcuts)
+            if nav_entry(ui, icons::QUESTION, "Help", windows.shortcuts, false)
                 .on_hover_text(crate::keymap::tooltip(
                     "Keyboard shortcuts & mouse gestures",
                     crate::keymap::UiAction::ToggleShortcuts,
@@ -514,7 +526,7 @@ fn placeholder_screen(
             ui.painter().rect_stroke(
                 rect,
                 18.0,
-                egui::Stroke::new(1.0, crate::theme::GRID),
+                egui::Stroke::new(1.0, crate::theme::LINE),
                 egui::StrokeKind::Inside,
             );
             ui.painter().text(
@@ -682,7 +694,7 @@ fn world_thumbnail(painter: &egui::Painter, rect: egui::Rect, seed: u64) {
 fn overlay_frame() -> egui::Frame {
     egui::Frame::default()
         .fill(egui::Color32::from_black_alpha(180))
-        .stroke(egui::Stroke::new(1.0, crate::theme::GRID))
+        .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
         .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin::symmetric(9, 6))
 }
@@ -847,8 +859,11 @@ pub fn dock(
             // screen — so the Observe strip is purely watch-a-run controls.
             egui::Panel::top("observe_top")
                 .resizable(false)
+                .default_size(56.0)
+                .size_range(56.0..=56.0)
                 .show_inside(&mut root, |ui| {
-                    let row_h = ui.spacing().interact_size.y;
+                    // The comp's 56 px strip; the row spans it so content centres.
+                    let row_h = ui.available_height();
                     ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(), row_h),
                         egui::Layout::left_to_right(egui::Align::Center),
@@ -885,8 +900,27 @@ pub fn dock(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
+                                    // The comp's Export affordance: a gold-washed chip
+                                    // (accent-soft fill, accent hairline, accent ink).
+                                    // TODO(icons): the comp shows `video-camera`; that
+                                    // codepoint is unverified in the bundled font, so
+                                    // the verified RECORD glyph stands in (cf.
+                                    // `fonts::icons`).
                                     if ui
-                                        .button(fonts::icon_label(icons::RECORD, "Export…"))
+                                        .add(
+                                            egui::Button::new(fonts::icon_label_tinted(
+                                                icons::RECORD,
+                                                "Export video",
+                                                crate::theme::ACCENT,
+                                            ))
+                                            .fill(crate::theme::soft(crate::theme::ACCENT))
+                                            .stroke(egui::Stroke::new(
+                                                1.0,
+                                                crate::theme::line(crate::theme::ACCENT),
+                                            ))
+                                            .corner_radius(egui::CornerRadius::same(9))
+                                            .min_size(egui::vec2(0.0, 34.0)),
+                                        )
                                         .on_hover_text(
                                             "Render the current scenario to a video \
                                              (opens the export panel).",
@@ -1024,9 +1058,9 @@ pub fn dock(
                     .width()
             } else {
                 egui::Panel::left("observe_left")
-                    .default_size(crate::layout::SIDE_DEFAULT)
+                    .default_size(crate::layout::STATS_DEFAULT)
                     .resizable(true)
-                    .size_range(crate::layout::side_range(content_w, right_w))
+                    .size_range(crate::layout::stats_range(content_w, right_w))
                     .show_inside(&mut root, |ui| {
                         collapse_overlay(
                             ui,
@@ -1109,7 +1143,17 @@ pub fn dock(
             layout.left_w = left_w;
             layout.right_w = right_w;
             // The transparent centre: where `set_sim_camera` frames the live arena.
-            root.available_rect_before_wrap()
+            // The comp frames the arena with a strong hairline (`--line-2`); its
+            // rounded corners + shadow don't survive the camera compositing (the sim
+            // renders beneath egui), so only the stroke ports.
+            let arena = root.available_rect_before_wrap();
+            root.painter().rect_stroke(
+                arena.shrink(0.5),
+                0.0,
+                egui::Stroke::new(1.0, crate::theme::LINE_2),
+                egui::StrokeKind::Inside,
+            );
+            arena
         }
 
         Screen::Studio => {
@@ -1658,7 +1702,7 @@ pub fn dock(
                                         w.path.clone(),
                                         state.library.chosen_world == Some(i),
                                     );
-                                    ui.allocate_ui(egui::vec2(224.0, 194.0), |ui| {
+                                    ui.allocate_ui(egui::vec2(224.0, 208.0), |ui| {
                                         egui::Frame::default()
                                             .fill(crate::theme::SURFACE)
                                             .stroke(egui::Stroke::new(
@@ -1666,14 +1710,14 @@ pub fn dock(
                                                 if selected {
                                                     crate::theme::line(crate::theme::ACCENT)
                                                 } else {
-                                                    crate::theme::GRID
+                                                    crate::theme::LINE
                                                 },
                                             ))
                                             .corner_radius(egui::CornerRadius::same(14))
                                             .show(ui, |ui| {
                                                 ui.set_width(224.0);
                                                 let (thumb, _) = ui.allocate_exact_size(
-                                                    egui::vec2(224.0, 116.0),
+                                                    egui::vec2(224.0, 130.0),
                                                     egui::Sense::hover(),
                                                 );
                                                 world_thumbnail(ui.painter(), thumb, seed);
@@ -1782,7 +1826,7 @@ pub fn dock(
                                     ui.allocate_ui(egui::vec2(224.0, 78.0), |ui| {
                                         egui::Frame::default()
                                             .fill(crate::theme::SURFACE)
-                                            .stroke(egui::Stroke::new(1.0, crate::theme::GRID))
+                                            .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
                                             .corner_radius(egui::CornerRadius::same(14))
                                             .inner_margin(egui::Margin::same(13))
                                             .show(ui, |ui| {

@@ -13,12 +13,17 @@
 
 use bevy_egui::egui;
 
-/// **Primary accent** — the amber for *attention / selection*: the paused chip, the
+/// **Primary accent** — the gold for *attention / selection*: the paused chip, the
 /// dirty document marker, a breeding run in flight, the active nav strip, sliders and
 /// the layer toggles. Also fed to egui as `warn_fg_color` and the widget/selection
-/// accent. (The design comp splits this into a gold `--accent` and a warmer `--amber`;
-/// we collapse them — they read as one warm accent.)
-pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(240, 180, 80);
+/// accent. The comp's `--accent` (#cba250) — distinct from the warmer [`AMBER`],
+/// which the comp reserves for gauge fills and the sunlight swatch.
+pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(203, 162, 80);
+/// The warm **amber** (the comp's `--amber`): gauge fills and the sunlight-nutrient
+/// swatch — never a navigation/selection accent (that is the quieter gold
+/// [`ACCENT`]). Reserved until the inspector gauges adopt it.
+#[allow(dead_code)]
+pub const AMBER: egui::Color32 = egui::Color32::from_rgb(240, 180, 80);
 /// **Secondary accent** — the teal for *primary calls-to-action*: Play, New, Save-as-new,
 /// Run, and the Library launch buttons (the comp's `--accent2`). Text on it is
 /// [`ON_ACCENT2`].
@@ -50,11 +55,17 @@ pub const SURFACE: egui::Color32 = egui::Color32::from_rgb(27, 27, 30);
 /// …the **card** surface — the panel-within-a-panel tint (`editor::card`), a step up
 /// again so grouping reads from tone, not strokes…
 pub const CARD: egui::Color32 = egui::Color32::from_rgb(33, 33, 36);
-/// …and the **raised** surface — steppers, segmented controls, a toggle's off track.
+/// …and the **raised** surface — steppers, segmented controls, a toggle's off track…
 pub const RAISED: egui::Color32 = egui::Color32::from_rgb(43, 43, 47);
-/// The hairline **line** — separators and card borders (the comp's `--line`, also the
-/// plots' grid).
-pub const GRID: egui::Color32 = egui::Color32::from_rgb(42, 42, 46);
+/// …topped by **raised-2** — the active segment of a segmented control (the comp's
+/// `--raised-2`).
+pub const RAISED_2: egui::Color32 = egui::Color32::from_rgb(53, 53, 58);
+/// The hairline **line** — separators and card borders (the comp's `--line`).
+pub const LINE: egui::Color32 = egui::Color32::from_rgb(42, 42, 46);
+/// The **strong line** — emphasized borders: the arena frame (the comp's `--line-2`).
+pub const LINE_2: egui::Color32 = egui::Color32::from_rgb(60, 60, 66);
+/// The plots' **grid** lines (the comp's `--grid`, one step quieter than [`LINE`]).
+pub const GRID: egui::Color32 = egui::Color32::from_rgb(41, 41, 45);
 /// Three text inks: faint (hover cursors, structural strokes, captions)…
 pub const INK_FAINT: egui::Color32 = egui::Color32::from_rgb(110, 110, 116);
 /// …muted (axis ticks, secondary read-outs, sub-labels)…
@@ -113,26 +124,28 @@ pub fn style() -> egui::Style {
     visuals.widgets.open.weak_bg_fill = RAISED;
     // Selected rows / text tie to the accent instead of egui's default blue.
     visuals.selection.bg_fill = ACCENT.gamma_multiply(0.35);
-    let widget_radius = egui::CornerRadius::same(4);
+    // The comp's radii: 9 pt controls, 14 pt windows/menus (cards sit at 12,
+    // cf. `editor::card`).
+    let widget_radius = egui::CornerRadius::same(9);
     visuals.widgets.noninteractive.corner_radius = widget_radius;
     visuals.widgets.inactive.corner_radius = widget_radius;
     visuals.widgets.hovered.corner_radius = widget_radius;
     visuals.widgets.active.corner_radius = widget_radius;
     visuals.widgets.open.corner_radius = widget_radius;
-    visuals.window_corner_radius = egui::CornerRadius::same(6);
-    visuals.menu_corner_radius = egui::CornerRadius::same(6);
+    visuals.window_corner_radius = egui::CornerRadius::same(14);
+    visuals.menu_corner_radius = egui::CornerRadius::same(14);
     // Quiet chrome: controls are FLAT at rest (no idle outline — the fill is enough)
     // and grow a hairline on hover; separators and frame strokes drop to the faint
     // grid gray, so structure reads from spacing and surface tones, not from lines.
     visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, GRID);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, LINE);
     style.visuals = visuals;
 
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     // An 8-pt rhythm: roomier controls and menus — the cramped egui defaults read
     // as "dense instrument panel".
-    style.spacing.button_padding = egui::vec2(10.0, 4.0);
-    style.spacing.interact_size.y = 24.0;
+    style.spacing.button_padding = egui::vec2(12.0, 5.0);
+    style.spacing.interact_size.y = 28.0;
     style.spacing.menu_margin = egui::Margin::same(8);
 
     let body = FontId::new(BODY_SIZE, FontFamily::Proportional);
@@ -159,12 +172,12 @@ pub fn apply(ctx: &egui::Context) {
 /// A colour at ~14 % opacity — the comp's `-soft` fills (an accent-tinted chip / panel
 /// background). Over the dark surfaces this reads as a faint wash of the hue.
 pub fn soft(color: egui::Color32) -> egui::Color32 {
-    color.gamma_multiply(0.16)
+    color.gamma_multiply(0.14)
 }
 
 /// A colour at ~35 % opacity — the comp's `-line` (a chip's or panel's accent hairline).
 pub fn line(color: egui::Color32) -> egui::Color32 {
-    color.gamma_multiply(0.4)
+    color.gamma_multiply(0.35)
 }
 
 /// A section **caption** (the comp's block headers): UPPERCASE, mono, faint — quieter
@@ -217,7 +230,7 @@ pub fn chip(ui: &mut egui::Ui, color: egui::Color32, text: impl Into<egui::RichT
     egui::Frame::default()
         .fill(soft(color))
         .stroke(egui::Stroke::new(1.0, line(color)))
-        .corner_radius(egui::CornerRadius::same(8))
+        .corner_radius(egui::CornerRadius::same(20)) // the comp's pill
         .inner_margin(egui::Margin::symmetric(9, 4))
         .show(ui, |ui| {
             ui.label(text.into().color(color));
@@ -256,7 +269,12 @@ mod tests {
         assert_ne!(ACCENT, ACCENT2);
         assert_ne!(ON_ACCENT, ON_ACCENT2);
         // The surface ramp climbs from bg → surface → card → raised.
-        for (lo, hi) in [(BG, SURFACE), (SURFACE, CARD), (CARD, RAISED)] {
+        for (lo, hi) in [
+            (BG, SURFACE),
+            (SURFACE, CARD),
+            (CARD, RAISED),
+            (RAISED, RAISED_2),
+        ] {
             assert!(hi.r() > lo.r(), "surface ramp must lighten");
         }
     }
