@@ -55,11 +55,13 @@ fn main() {
         // resource.
         .add_plugins(SelectionRenderPlugin)
         // **Auto-follow** — the same observation modes as the video recorder
-        // (`SelectionRoll`), driven from the UI's "Follow" selector. Mounted **Off**
-        // so the default stays manual mouse picking; the driver then *holds* whatever
-        // the user clicks until it dies (cf. `selection::drive_selection`).
+        // (`SelectionRoll`), driven from the UI's "Follow" selector. Mounted
+        // **Vanguard** so the view opens on the evolutionary frontier (a newest-
+        // generation agent, rotating species at each death); a manual click still
+        // overrides and the driver then *holds* it until it dies (cf.
+        // `selection::drive_selection`).
         .add_plugins(AutoSelectPlugin {
-            roll: SelectionRoll::Off,
+            roll: SelectionRoll::Vanguard,
             interval: 4.0,
         })
         // Curve sampling (`History` resource + `sample_history`), shared with the

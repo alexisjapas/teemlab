@@ -98,6 +98,31 @@ impl SelectionRoll {
         }
     }
 
+    /// One-line explanation of what the mode follows — shown as the per-option hover
+    /// text in the UI so the difference between the views is legible at a glance.
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::Off => "Manual: nothing is auto-followed — click an agent to inspect it.",
+            Self::Sticky => "One agent, held while it lives; re-picked when it dies.",
+            Self::Cycle => "Round-robin: steps to the next agent every interval.",
+            Self::Active => {
+                "The agent whose rays perceive the most (vision + prey + threat), \
+                 re-picked every interval — best to watch raycasts at work."
+            }
+            Self::SpeciesTour => {
+                "Rotates through the species every interval, showing each one's most \
+                 active agent — every species gets screen time."
+            }
+            Self::Eldest => {
+                "The oldest living agent; changes only when it dies — a calm, steady follow."
+            }
+            Self::Vanguard => {
+                "The evolutionary frontier: a random newest-generation agent of one \
+                 species, held until it dies, then rotates to another species."
+            }
+        }
+    }
+
     /// `true` if this mode re-evaluates **at a regular interval** (and therefore
     /// shows/uses the interval). `Off`, `Sticky`, `Eldest` and `Vanguard` have no
     /// timer: they change only at the target's death.
@@ -124,10 +149,10 @@ impl Plugin for SelectionRenderPlugin {
 /// to [`SelectionRenderPlugin`].
 ///
 /// Used by the **recorder** (fixed `roll` from the CLI) **and** the windowed build
-/// (mounted with `Off`; the UI then flips [`AutoSelect::roll`] live — the same
-/// follow modes as the video). Manual picking still works: a click overrides the
-/// auto target, which the driver then *holds* until that agent dies (cf.
-/// [`drive_selection`]).
+/// (mounted with `Vanguard`, so the view opens on the evolutionary frontier; the UI
+/// then flips [`AutoSelect::roll`] live — the same follow modes as the video). Manual
+/// picking still works: a click overrides the auto target, which the driver then
+/// *holds* until that agent dies (cf. [`drive_selection`]).
 pub struct AutoSelectPlugin {
     /// Chosen roll mode.
     pub roll: SelectionRoll,

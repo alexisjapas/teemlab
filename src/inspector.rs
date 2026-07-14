@@ -157,7 +157,8 @@ pub(crate) fn follow_combo(ui: &mut egui::Ui, id_salt: &str, roll: &mut Selectio
         .selected_text(roll.label())
         .show_ui(ui, |ui| {
             for mode in SelectionRoll::ALL {
-                ui.selectable_value(roll, mode, mode.label());
+                ui.selectable_value(roll, mode, mode.label())
+                    .on_hover_text(mode.hint());
             }
         });
 }
@@ -176,7 +177,9 @@ pub(crate) fn observation_section(
 ) {
     ui.horizontal(|ui| {
         ui.label("Follow (view):").on_hover_text(
-            "None = manual: click an agent. The other modes auto-follow, like the video.",
+            "What the view auto-follows (same modes as the video). Hover an option for what \
+             it tracks; None = manual (click an agent). A manual click always overrides, \
+             held until that agent dies.",
         );
         follow_combo(ui, "follow_mode", &mut auto.roll);
         if ui
