@@ -13,9 +13,20 @@
 
 use bevy_egui::egui;
 
-/// Attention / pending state: the paused chip, the dirty document marker, a
-/// breeding run in flight. The one amber — also fed to egui as `warn_fg_color`.
+/// **Primary accent** — the amber for *attention / selection*: the paused chip, the
+/// dirty document marker, a breeding run in flight, the active nav strip, sliders and
+/// the layer toggles. Also fed to egui as `warn_fg_color` and the widget/selection
+/// accent. (The design comp splits this into a gold `--accent` and a warmer `--amber`;
+/// we collapse them — they read as one warm accent.)
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(240, 180, 80);
+/// **Secondary accent** — the teal for *primary calls-to-action*: Play, New, Save-as-new,
+/// Run, and the Library launch buttons (the comp's `--accent2`). Text on it is
+/// [`ON_ACCENT2`].
+pub const ACCENT2: egui::Color32 = egui::Color32::from_rgb(47, 145, 136);
+/// Ink **on** the amber accent (dark, for text on an [`ACCENT`]-filled control).
+pub const ON_ACCENT: egui::Color32 = egui::Color32::from_rgb(24, 18, 6);
+/// Ink **on** the teal accent (near-white, for text on an [`ACCENT2`] CTA).
+pub const ON_ACCENT2: egui::Color32 = egui::Color32::from_rgb(234, 252, 248);
 /// A finished / successful state ("Done", a successful save).
 pub const SUCCESS: egui::Color32 = egui::Color32::from_rgb(120, 200, 120);
 /// Soft error ink (readable on the dark theme, less shouty than pure red) — also
@@ -27,21 +38,26 @@ pub const TARGET: egui::Color32 = egui::Color32::from_rgb(220, 130, 40);
 /// …and the **threat** channel.
 pub const THREAT: egui::Color32 = egui::Color32::from_rgb(210, 60, 60);
 
-/// The ink ramp — the chrome grays of the dark theme, collapsing the per-module
-/// one-off `from_gray` picks (18/25/36/80/90/130/140/165) to five steps: the darkest
-/// **surface** (plot and graph backgrounds — also egui's `extreme_bg_color`)…
-pub const SURFACE: egui::Color32 = egui::Color32::from_gray(18);
-/// …the **card** surface — the borderless panel-within-a-panel tint (`editor::card`):
-/// slightly recessed from the panel fill, so grouping reads from tone, not strokes…
-pub const CARD: egui::Color32 = egui::Color32::from_gray(23);
-/// …the hairline **grid** of the plots…
-pub const GRID: egui::Color32 = egui::Color32::from_gray(36);
-/// …and three text inks: faint (hover cursors, structural strokes)…
-pub const INK_FAINT: egui::Color32 = egui::Color32::from_gray(90);
-/// …muted (axis ticks, secondary read-outs)…
-pub const INK_MUTED: egui::Color32 = egui::Color32::from_gray(140);
-/// …and full ink (primary painted text, e.g. the MLP graph's channel labels).
-pub const INK: egui::Color32 = egui::Color32::from_gray(165);
+/// The surface ramp — four steps of depth (the comp's `--bg` / `--surface` / `--card` /
+/// `--raised`): the app **background** behind everything (the arena's off-game, the
+/// nav rail's gutter)…
+pub const BG: egui::Color32 = egui::Color32::from_rgb(19, 19, 21);
+/// …the **panel** fill (side panels, top strips — one step up from [`BG`])…
+pub const SURFACE: egui::Color32 = egui::Color32::from_rgb(27, 27, 30);
+/// …the **card** surface — the panel-within-a-panel tint (`editor::card`), a step up
+/// again so grouping reads from tone, not strokes…
+pub const CARD: egui::Color32 = egui::Color32::from_rgb(33, 33, 36);
+/// …and the **raised** surface — steppers, segmented controls, a toggle's off track.
+pub const RAISED: egui::Color32 = egui::Color32::from_rgb(43, 43, 47);
+/// The hairline **line** — separators and card borders (the comp's `--line`, also the
+/// plots' grid).
+pub const GRID: egui::Color32 = egui::Color32::from_rgb(42, 42, 46);
+/// Three text inks: faint (hover cursors, structural strokes, captions)…
+pub const INK_FAINT: egui::Color32 = egui::Color32::from_rgb(110, 110, 116);
+/// …muted (axis ticks, secondary read-outs, sub-labels)…
+pub const INK_MUTED: egui::Color32 = egui::Color32::from_rgb(167, 167, 172);
+/// …and full ink (primary text — near-white on this dark theme).
+pub const INK: egui::Color32 = egui::Color32::from_rgb(236, 236, 238);
 
 /// MLP-graph encodings, one sign convention for nodes and edges: warm/orange =
 /// positive, cold/blue = negative. A node's activation lerps from [`ACT_REST`]
@@ -81,7 +97,17 @@ pub fn style() -> egui::Style {
     let mut visuals = egui::Visuals::dark();
     visuals.warn_fg_color = ACCENT;
     visuals.error_fg_color = ERROR;
-    visuals.extreme_bg_color = SURFACE;
+    // The surface ramp: panels a step above the app background, text-edit / scroll /
+    // plot backgrounds the deepest, striped rows on the card tint.
+    visuals.panel_fill = SURFACE;
+    visuals.window_fill = SURFACE;
+    visuals.extreme_bg_color = BG;
+    visuals.faint_bg_color = CARD;
+    // Buttons read as cards: a card fill at rest, raised on hover / active / open.
+    visuals.widgets.inactive.weak_bg_fill = CARD;
+    visuals.widgets.hovered.weak_bg_fill = RAISED;
+    visuals.widgets.active.weak_bg_fill = RAISED;
+    visuals.widgets.open.weak_bg_fill = RAISED;
     // Selected rows / text tie to the accent instead of egui's default blue.
     visuals.selection.bg_fill = ACCENT.gamma_multiply(0.35);
     let widget_radius = egui::CornerRadius::same(4);
@@ -127,6 +153,85 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_global_style(style());
 }
 
+/// A colour at ~14 % opacity — the comp's `-soft` fills (an accent-tinted chip / panel
+/// background). Over the dark surfaces this reads as a faint wash of the hue.
+pub fn soft(color: egui::Color32) -> egui::Color32 {
+    color.gamma_multiply(0.16)
+}
+
+/// A colour at ~35 % opacity — the comp's `-line` (a chip's or panel's accent hairline).
+pub fn line(color: egui::Color32) -> egui::Color32 {
+    color.gamma_multiply(0.4)
+}
+
+/// A section **caption** (the comp's block headers): UPPERCASE, mono, faint — quieter
+/// and more structural than `ui.strong`. Use for "LIVE STATS", "IDENTITY", "GENES", …
+pub fn caption(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text.to_uppercase())
+            .monospace()
+            .size(11.0)
+            .color(INK_FAINT),
+    );
+}
+
+/// A **pill toggle** switch (the comp's Layers / run-record affordance): a rounded track
+/// with a sliding knob, [`ACCENT`] on / [`RAISED`] off. Flips `*on` on click; returns the
+/// `Response`. Replaces a bare `ui.checkbox` where the comp shows a switch.
+pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let t = ui.ctx().animate_bool(resp.id, *on);
+    let radius = rect.height() * 0.5;
+    let track = if *on { ACCENT } else { RAISED };
+    ui.painter().rect_filled(rect, radius, track);
+    let knob_x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), t);
+    let knob = if *on { ON_ACCENT } else { INK_MUTED };
+    ui.painter()
+        .circle_filled(egui::pos2(knob_x, rect.center().y), radius - 2.5, knob);
+    resp
+}
+
+/// A labelled **toggle row** (the comp's Layers / options layout): the label on the
+/// left, a [`toggle`] pinned right. Returns the toggle's `Response`.
+pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            toggle(ui, on)
+        })
+        .inner
+    })
+    .inner
+}
+
+/// A rounded **chip** — a soft-filled pill with `color` text (a viability flag, a
+/// "deferred" badge, an inline warning). Soft fill + hairline in the same hue.
+pub fn chip(ui: &mut egui::Ui, color: egui::Color32, text: impl Into<egui::RichText>) {
+    egui::Frame::default()
+        .fill(soft(color))
+        .stroke(egui::Stroke::new(1.0, line(color)))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(9, 4))
+        .show(ui, |ui| {
+            ui.label(text.into().color(color));
+        });
+}
+
+/// A **primary** call-to-action button (the comp's teal): [`ACCENT2`] fill, rounded. The
+/// caller colours the text [`ON_ACCENT2`] (plain `RichText::color` or
+/// `fonts::icon_label_tinted`). Returns the `Response`.
+pub fn primary_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.add(
+        egui::Button::new(text)
+            .fill(ACCENT2)
+            .corner_radius(egui::CornerRadius::same(9)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,8 +241,27 @@ mod tests {
         let s = style();
         assert_eq!(s.visuals.warn_fg_color, ACCENT);
         assert_eq!(s.visuals.error_fg_color, ERROR);
-        assert_eq!(s.visuals.extreme_bg_color, SURFACE);
+        assert_eq!(s.visuals.panel_fill, SURFACE);
+        assert_eq!(s.visuals.extreme_bg_color, BG);
         assert_eq!(s.visuals.selection.bg_fill, ACCENT.gamma_multiply(0.35));
+    }
+
+    #[test]
+    fn the_two_accents_and_their_inks_are_distinct() {
+        // The primary (amber) and CTA (teal) accents must not collapse, and each has a
+        // legible on-ink.
+        assert_ne!(ACCENT, ACCENT2);
+        assert_ne!(ON_ACCENT, ON_ACCENT2);
+        // The surface ramp climbs from bg → surface → card → raised.
+        for (lo, hi) in [(BG, SURFACE), (SURFACE, CARD), (CARD, RAISED)] {
+            assert!(hi.r() > lo.r(), "surface ramp must lighten");
+        }
+    }
+
+    #[test]
+    fn toggle_flips_and_soft_is_translucent() {
+        // `soft` reduces opacity (a wash, not the solid hue).
+        assert!(soft(ACCENT).a() < ACCENT.a());
     }
 
     #[test]

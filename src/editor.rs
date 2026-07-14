@@ -1474,11 +1474,8 @@ pub(crate) fn draw_mlp_graph(
 /// nutrient layers share an opacity budget (`N` active ⇒ `1/N` each), so the label
 /// states it for the user.
 pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &SimConfig) {
-    ui.checkbox(&mut layers.agents, "Agents (main)");
+    crate::theme::toggle_row(ui, "Agents", &mut layers.agents);
     if !layers.nutrients.is_empty() {
-        ui.separator();
-        // A group caption (not help): names what the toggles below are.
-        ui.weak("Component maps — background, shared opacity:");
         // One toggle per component field, labelled by the scenario's component name
         // (Nutrient / Pheromone / Toxicity / Detritus…) so each map is findable. The
         // per-row id ([`egui::Ui::push_id`]) keeps two same-named components distinct.
@@ -1486,9 +1483,9 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &Si
             let label = config
                 .components
                 .get(i)
-                .map(|c| c.name.as_str())
-                .unwrap_or("Component");
-            ui.push_id(i, |ui| ui.checkbox(on, label));
+                .map(|c| format!("{} map", c.name))
+                .unwrap_or_else(|| "Component map".to_string());
+            ui.push_id(i, |ui| crate::theme::toggle_row(ui, &label, on));
         }
     }
 }

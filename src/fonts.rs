@@ -65,6 +65,15 @@ pub mod icons {
     pub const SPARKLE: char = '\u{E6A2}'; // captured weights
     pub const DOWNLOAD: char = '\u{E20C}'; // import (download-simple)
     pub const FLOPPY: char = '\u{E248}'; // save to library
+    // Nav-rail destinations + logo (Phosphor v2.1.1 codepoints, verified present in the
+    // bundled `Phosphor.ttf` cmap against `@phosphor-icons/web@2.1.1`).
+    pub const ATOM: char = '\u{E5E4}'; // the app mark
+    pub const EYE: char = '\u{E220}'; // Observe
+    pub const SQUARES: char = '\u{E464}'; // Library (squares-four)
+    pub const PENCIL_RULER: char = '\u{E906}'; // Studio
+    pub const FLASK: char = '\u{E79E}'; // Lab
+    pub const CHART: char = '\u{E156}'; // Analyze (chart-line-up)
+    pub const QUESTION: char = '\u{E3E8}'; // Help
 }
 
 /// The egui font family carrying the **Phosphor** icons.

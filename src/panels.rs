@@ -331,60 +331,117 @@ const NAV_W: f32 = 78.0;
 /// its right changes. Rendered **first** in [`dock`], so it is unconditional and its
 /// ids never shift (§2.5 of `docs/ui-spec.md`). Clicking a destination writes
 /// [`Router::current`]; the active one is accented.
+/// The Phosphor glyph for a nav destination (comp iconography).
+fn nav_icon(screen: Screen) -> char {
+    match screen {
+        Screen::Observe => icons::EYE,
+        Screen::Library => icons::SQUARES,
+        Screen::Studio => icons::PENCIL_RULER,
+        Screen::Lab => icons::FLASK,
+        Screen::Analyze => icons::CHART,
+    }
+}
+
+/// One nav-rail entry: a Phosphor icon **over** a small label, custom-painted (egui
+/// buttons are single-line, so they can't stack). **Active** = accent ink + a left
+/// accent strip + a soft-accent background; hovered = a card wash.
+fn nav_entry(ui: &mut egui::Ui, glyph: char, label: &str, active: bool) -> egui::Response {
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 48.0), egui::Sense::click());
+    let painter = ui.painter();
+    let pill = rect.shrink2(egui::vec2(4.0, 2.0));
+    if active {
+        painter.rect_filled(pill, 11.0, crate::theme::soft(crate::theme::ACCENT));
+        let strip = egui::Rect::from_min_size(
+            egui::pos2(rect.left() - 4.0, rect.center().y - 13.0),
+            egui::vec2(3.0, 26.0),
+        );
+        painter.rect_filled(
+            strip,
+            egui::CornerRadius {
+                nw: 0,
+                ne: 3,
+                sw: 0,
+                se: 3,
+            },
+            crate::theme::ACCENT,
+        );
+    } else if resp.hovered() {
+        painter.rect_filled(pill, 11.0, crate::theme::CARD);
+    }
+    let color = if active {
+        crate::theme::ACCENT
+    } else {
+        crate::theme::INK_MUTED
+    };
+    painter.text(
+        egui::pos2(rect.center().x, rect.top() + 15.0),
+        egui::Align2::CENTER_CENTER,
+        glyph.to_string(),
+        egui::FontId::new(21.0, fonts::phosphor()),
+        color,
+    );
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 10.0),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::proportional(10.5),
+        color,
+    );
+    resp
+}
+
 fn nav_rail(root: &mut egui::Ui, router: &mut Router, windows: &mut UiWindows) {
     egui::Panel::left("nav_rail")
         .resizable(false)
         .default_size(NAV_W)
         .size_range(NAV_W..=NAV_W)
+        .frame(
+            egui::Frame::default()
+                .fill(crate::theme::SURFACE)
+                .inner_margin(egui::Margin::symmetric(8, 12)),
+        )
         .show_inside(root, |ui| {
-            ui.add_space(8.0);
-            // Plain-text wordmark (not a glyph — the embedded Inter subset renders some
-            // PUA symbols as tofu, cf. the `*` dirty marker in `runs`).
+            // The app mark: the atom glyph in an accent-soft rounded square.
             ui.vertical_centered(|ui| {
-                ui.label(
-                    egui::RichText::new("teem")
-                        .strong()
-                        .size(13.0)
-                        .color(crate::theme::ACCENT),
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(rect, 11.0, crate::theme::soft(crate::theme::ACCENT));
+                ui.painter().rect_stroke(
+                    rect,
+                    11.0,
+                    egui::Stroke::new(1.0, crate::theme::line(crate::theme::ACCENT)),
+                    egui::StrokeKind::Inside,
+                );
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    icons::ATOM.to_string(),
+                    egui::FontId::new(22.0, fonts::phosphor()),
+                    crate::theme::ACCENT,
                 );
             });
-            ui.add_space(12.0);
-            let w = ui.available_width();
+            ui.add_space(14.0);
             for screen in Screen::ALL {
-                let active = router.current == screen;
-                let mut text = egui::RichText::new(screen.label())
-                    .size(11.5)
-                    .color(if active {
-                        crate::theme::ACCENT
-                    } else {
-                        crate::theme::INK_MUTED
-                    });
-                if active {
-                    text = text.strong();
-                }
-                if ui
-                    .add_sized([w, 34.0], egui::Button::selectable(active, text))
-                    .clicked()
+                if nav_entry(
+                    ui,
+                    nav_icon(screen),
+                    screen.label(),
+                    router.current == screen,
+                )
+                .clicked()
                 {
                     router.current = screen;
                 }
                 ui.add_space(2.0);
             }
-            // Push Help to the bottom of the rail.
-            let rem = ui.available_height() - 36.0;
+            // Help pinned to the bottom.
+            let rem = ui.available_height() - 48.0;
             if rem > 0.0 {
                 ui.add_space(rem);
             }
-            if ui
-                .add_sized(
-                    [w, 30.0],
-                    egui::Button::new(
-                        egui::RichText::new("Help")
-                            .size(11.5)
-                            .color(crate::theme::INK_MUTED),
-                    )
-                    .frame(false),
-                )
+            if nav_entry(ui, icons::QUESTION, "Help", windows.shortcuts)
                 .on_hover_text(crate::keymap::tooltip(
                     "Keyboard shortcuts & mouse gestures",
                     crate::keymap::UiAction::ToggleShortcuts,
@@ -447,7 +504,7 @@ fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &s
             ui.heading(title);
             if deferred {
                 ui.add_space(6.0);
-                ui.colored_label(crate::theme::ACCENT, "Deferred · placeholder");
+                crate::theme::chip(ui, crate::theme::ACCENT, "Deferred · placeholder");
             }
             ui.add_space(10.0);
             ui.allocate_ui_with_layout(
@@ -776,11 +833,15 @@ pub fn dock(
                                 // Analyze. Default off (observation is throwaway); inert
                                 // until records land (cf. `RunRecord`).
                                 ui.separator();
-                                ui.checkbox(&mut state.run_record.enabled, "Record this run")
-                                    .on_hover_text(
-                                        "Persist this run's metrics for the Analyze screen \
-                                         (deferred — inert for now).",
-                                    );
+                                crate::theme::toggle_row(
+                                    ui,
+                                    "Record this run",
+                                    &mut state.run_record.enabled,
+                                )
+                                .on_hover_text(
+                                    "Persist this run's metrics for the Analyze screen \
+                                     (deferred — inert for now).",
+                                );
                             });
                     })
                     .response
@@ -831,9 +892,10 @@ pub fn dock(
                                     .default_open(true)
                                     .show(ui, |ui| {
                                         editor::layers_section(ui, &mut layers, &config);
-                                        ui.checkbox(
-                                            &mut state.windows.trophic_overlay,
+                                        crate::theme::toggle_row(
+                                            ui,
                                             "Trophic graph",
+                                            &mut state.windows.trophic_overlay,
                                         )
                                         .on_hover_text(
                                             "Overlay the derived food web on the arena: node \
@@ -1079,11 +1141,15 @@ pub fn dock(
                             }
 
                             editor::card(ui, |ui| {
-                                ui.checkbox(&mut state.lab.run_record, "Save run record")
-                                    .on_hover_text(
-                                        "Persist this run's metrics for Analyze (default on for \
-                                         the Lab; inert until records land).",
-                                    );
+                                crate::theme::toggle_row(
+                                    ui,
+                                    "Save run record",
+                                    &mut state.lab.run_record,
+                                )
+                                .on_hover_text(
+                                    "Persist this run's metrics for Analyze (default on for the \
+                                     Lab; inert until records land).",
+                                );
                                 ui.separator();
                                 ui.horizontal(|ui| {
                                     ui.add(
@@ -1239,7 +1305,7 @@ pub fn dock(
                 .resizable(true)
                 .size_range(260.0..=380.0)
                 .show_inside(&mut root, |ui| {
-                    ui.strong("Compose");
+                    crate::theme::caption(ui, "Compose");
                     ui.separator();
                     match state
                         .library
@@ -1254,7 +1320,7 @@ pub fn dock(
                         }
                     }
                     ui.add_space(6.0);
-                    ui.label("Cast");
+                    crate::theme::caption(ui, "Cast");
                     let mut remove = None;
                     for (i, item) in state.library.cast.iter_mut().enumerate() {
                         ui.horizontal(|ui| {
@@ -1289,9 +1355,10 @@ pub fn dock(
                     if let Some(cfg) = &composed {
                         let g = crate::trophic::TrophicGraph::derive(cfg);
                         if g.is_viable() {
-                            ui.colored_label(crate::theme::SUCCESS, "Food web viable");
+                            crate::theme::chip(ui, crate::theme::SUCCESS, "Food web is viable");
                         } else {
-                            ui.colored_label(
+                            crate::theme::chip(
+                                ui,
                                 crate::theme::ERROR,
                                 format!("{} broken chain(s) — refine in Studio", g.broken.len()),
                             );
@@ -1308,9 +1375,15 @@ pub fn dock(
                                     state.router.current = target;
                                 }
                             };
-                        if ui
-                            .button(fonts::icon_label(icons::PLAY, "Observe"))
-                            .clicked()
+                        if crate::theme::primary_button(
+                            ui,
+                            fonts::icon_label_tinted(
+                                icons::PLAY,
+                                "Observe",
+                                crate::theme::ON_ACCENT2,
+                            ),
+                        )
+                        .clicked()
                         {
                             launch(Screen::Observe, &mut state, &composed);
                         }
