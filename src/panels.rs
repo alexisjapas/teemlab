@@ -114,6 +114,17 @@ impl UiWindows {
     }
 }
 
+/// Whether the current run's metrics are **persisted for Analyze** (ui-redesign §3).
+/// Default **off** on Observe (observation is usually throwaway; the Lab default-on
+/// lives in that screen's own toggle). **Inert** at this stage — the run-record store
+/// rides with Analyze (companion doc §9) — so this only holds the user's intent; a
+/// dedicated resource is its honest home, wired when records land (B8).
+#[derive(Resource, Default)]
+pub struct RunRecord {
+    /// The user's persist-this-run intent. Read by nothing yet.
+    pub enabled: bool,
+}
+
 /// Cross-panel resources [`dock`] writes, bundled into one [`SystemParam`] so the
 /// system stays within Bevy's 16-parameter limit (like [`ObsParams`]): the scenario
 /// document model, the recorder settings, the unified status line and the
@@ -128,6 +139,8 @@ pub struct DockState<'w> {
     pub recorder_panel: ResMut<'w, RecorderPanel>,
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
+    /// The Observe run-record toggle's intent (inert until Analyze — see [`RunRecord`]).
+    pub run_record: ResMut<'w, RunRecord>,
     /// The breeding session (P5) — the **Lab** screen's dashboard reads/drives it (the
     /// generational `run → score → breed` loop over isolated worlds). Bundled here so
     /// `dock` stays within Bevy's 16-parameter limit.
@@ -137,11 +150,10 @@ pub struct DockState<'w> {
     pub world_baseline: Res<'w, controls::WorldBaseline>,
 }
 
-/// **Observation** state of the right panel, bundled into one [`SystemParam`] so
-/// [`dock`] stays within Bevy's 16-parameter limit: the current [`Selection`]
-/// (read), the auto-follow mode ([`AutoSelect`]) and the sim view's pan/zoom
-/// ([`crate::ViewControl`]) — all written/read by `inspector::observation_section`
-/// and the inspector.
+/// **Observation** state Observe reads, bundled into one [`SystemParam`] so [`dock`]
+/// stays within Bevy's 16-parameter limit: the current [`Selection`] (read, by the
+/// inspector), the auto-follow mode ([`AutoSelect`]) and the sim view's pan/zoom
+/// ([`crate::ViewControl`]) — the latter two written by [`arena_controls`].
 #[derive(SystemParam)]
 pub struct ObsParams<'w> {
     pub selection: Res<'w, Selection>,
@@ -429,6 +441,68 @@ fn placeholder_screen(root: &mut egui::Ui, title: &str, deferred: bool, body: &s
     });
 }
 
+/// The Observe **arena overlays** (interactive, floating over the live arena): the
+/// *follow* selector (bottom-left) and the *zoom / fit* controls (bottom-right), as
+/// small `Area`s (ui-redesign §3). They write the auto-follow mode and the
+/// [`crate::ViewControl`] — rendering only, never the sim. On a non-Background layer,
+/// so `pointer_over_ui` counts a click on them as UI (not a sim click / deselect).
+fn arena_controls(
+    ctx: &egui::Context,
+    rect: egui::Rect,
+    auto: &mut AutoSelect,
+    view: &mut crate::ViewControl,
+) {
+    if rect.width() < 60.0 || rect.height() < 60.0 {
+        return;
+    }
+    // Follow — bottom-left.
+    egui::Area::new(egui::Id::new("arena_follow"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 12.0))
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Follow").on_hover_text(
+                        "What the view auto-follows (same modes as the video). None = \
+                         manual (click an agent); a manual click always overrides.",
+                    );
+                    inspector::follow_combo(ui, "arena_follow_combo", &mut auto.roll);
+                    if auto.roll.rolls() {
+                        ui.add(egui::Slider::new(&mut auto.interval, 0.5..=20.0).text("s"));
+                    }
+                });
+            });
+        });
+    // Zoom / fit — bottom-right.
+    egui::Area::new(egui::Id::new("arena_view"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::pos2(rect.right() - 12.0, rect.bottom() - 12.0))
+        .pivot(egui::Align2::RIGHT_BOTTOM)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("+").on_hover_text("Zoom in").clicked() {
+                        view.zoom_by(1.25);
+                    }
+                    if ui.button("-").on_hover_text("Zoom out").clicked() {
+                        view.zoom_by(0.8);
+                    }
+                    if ui
+                        .button(fonts::icon_label(icons::RESET, "Fit"))
+                        .on_hover_text(crate::keymap::tooltip(
+                            "Recenter on the whole arena",
+                            crate::keymap::UiAction::ResetView,
+                        ))
+                        .clicked()
+                    {
+                        *view = crate::ViewControl::default();
+                    }
+                });
+            });
+        });
+}
+
 /// Builds the whole windowed layout in one pass: one background-layer root `Ui`, the
 /// persistent [`nav_rail`], then the panels of the **current screen**
 /// ([`Router::current`]) `show_inside` it. Chained **before** the interaction systems
@@ -613,7 +687,6 @@ pub fn dock(
                             crate::keymap::UiAction::ToggleRightPanel,
                             &mut state.windows.right_open,
                         );
-                        inspector::observation_section(ui, &mut obs.auto_select, &mut obs.view);
                         egui::ScrollArea::vertical()
                             .id_salt("observe_inspector_scroll")
                             .show(ui, |ui| {
@@ -664,6 +737,15 @@ pub fn dock(
                                     }
                                     None => {}
                                 }
+                                // Run-record toggle — persist this run's metrics for
+                                // Analyze. Default off (observation is throwaway); inert
+                                // until records land (cf. `RunRecord`).
+                                ui.separator();
+                                ui.checkbox(&mut state.run_record.enabled, "Record this run")
+                                    .on_hover_text(
+                                        "Persist this run's metrics for the Analyze screen \
+                                         (deferred — inert for now).",
+                                    );
                             });
                     })
                     .response
@@ -973,7 +1055,8 @@ pub fn dock(
     }
 
     // Sim-state overlay over the arena — **the arena screen only**: the run time (+ speed
-    // when not ×1), a paused chip, and a first-steps hint on an empty arena.
+    // when not ×1), a paused chip, and a first-steps hint on an empty arena; then the
+    // interactive follow / zoom controls floating over the arena's corners.
     if screen.shows_arena() {
         let painter = root.painter().with_clip_rect(central.0);
         central_overlay(
@@ -985,6 +1068,7 @@ pub fn dock(
             stats_agents.is_empty(),
             !config.archetypes.is_empty(),
         );
+        arena_controls(root.ctx(), central.0, &mut obs.auto_select, &mut obs.view);
     }
     Ok(())
 }

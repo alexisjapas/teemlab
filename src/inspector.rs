@@ -19,7 +19,7 @@ use teemlab::components::{
 use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::nutrients::Nutrients;
-use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
+use teemlab::selection::{Selection, SelectionRoll};
 
 use crate::editor::{Palette, card, draw_mlp_graph};
 use crate::fonts::{self, icons};
@@ -161,43 +161,6 @@ pub(crate) fn follow_combo(ui: &mut egui::Ui, id_salt: &str, roll: &mut Selectio
                     .on_hover_text(mode.hint());
             }
         });
-}
-
-/// **Observation controls** (windowed): the *follow* mode — the **same options as
-/// the video recorder** ([`SelectionRoll`]) — plus the camera **Reset view**. All
-/// rendering-side: it writes the auto-follow mode and the [`crate::ViewControl`],
-/// never the sim. `None` leaves selection to **manual mouse picking** (click an
-/// agent); the other modes auto-follow as in a video. A manual click still works in
-/// any mode — the driver then *holds* the clicked agent until it dies (cf.
-/// [`teemlab::selection`]).
-pub(crate) fn observation_section(
-    ui: &mut egui::Ui,
-    auto: &mut AutoSelect,
-    view: &mut crate::ViewControl,
-) {
-    ui.horizontal(|ui| {
-        ui.label("Follow (view):").on_hover_text(
-            "What the view auto-follows (same modes as the video). Hover an option for what \
-             it tracks; None = manual (click an agent). A manual click always overrides, \
-             held until that agent dies.",
-        );
-        follow_combo(ui, "follow_mode", &mut auto.roll);
-        if ui
-            .button(fonts::icon_label(icons::RESET, "Reset view"))
-            .on_hover_text(crate::keymap::tooltip(
-                "Recenter on the whole arena (pan / zoom)",
-                crate::keymap::UiAction::ResetView,
-            ))
-            .clicked()
-        {
-            *view = crate::ViewControl::default();
-        }
-    });
-    // The interval only matters for the "timer" modes (cycle / active / species tour).
-    if auto.roll.rolls() {
-        ui.add(egui::Slider::new(&mut auto.interval, 0.5..=20.0).text("interval (s)"));
-    }
-    // The view gestures (scroll/drag/Home) live in the `?` cheatsheet, not here.
 }
 
 /// What the inspector asks the caller to do this frame (it never writes the sim/config

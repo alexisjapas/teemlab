@@ -88,6 +88,10 @@ fn main() {
         // cf. `screen`). Starts on Observe (the launch landing, the only live-arena
         // screen). The nav rail switches it; `panels::dock` dispatches on it.
         .init_resource::<screen::Router>()
+        // Whether the current run's metrics are persisted for Analyze (ui-redesign §3):
+        // default **off** on Observe (observation is usually throwaway). Inert until the
+        // run-record store lands (deferred with Analyze) — a toggle that only holds a bool.
+        .init_resource::<panels::RunRecord>()
         // Breeding dashboard (P5): the generational session handle (owns the worker
         // thread). Drawn as a floating window by `dashboard::draw` when a `batch` is set.
         .init_resource::<dashboard::BreedingSession>()
@@ -249,6 +253,13 @@ impl ViewControl {
     /// Zoom bounds: a little out (see beyond the arena) up to a deep close-up.
     const ZOOM_MIN: f32 = 0.4;
     const ZOOM_MAX: f32 = 40.0;
+
+    /// Multiply the zoom by `factor` (toward the view centre), clamped to the bounds —
+    /// the Observe arena's `+` / `−` buttons (the cursor-anchored variant lives in
+    /// `camera_navigation`). Rendering only.
+    pub(crate) fn zoom_by(&mut self, factor: f32) {
+        self.zoom = (self.zoom * factor).clamp(Self::ZOOM_MIN, Self::ZOOM_MAX);
+    }
 }
 
 /// World units per egui point at the base (fit-the-arena, zoom = 1) framing — the
