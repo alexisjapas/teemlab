@@ -52,12 +52,12 @@ pub struct Genotype {
     /// [`Genotype::ray_count`]). More rays = finer vision *but* more expensive
     /// ([`Vision::metabolic_cost`]) — the cost coupling that bounds its drift.
     pub vision_rays: f32,
-    /// **Flora gene** (Phase 3): energy **gained** per second, passively — the
+    /// **Photosynthesis** (Phase 3): energy **gained** per second, passively — the
     /// *photosynthesis*. It is a sessile entity's energy source, the counterpart
     /// of "eating" for fauna. `0` for fauna (inert). Added at the **end** (like
     /// `vision_rays`) to preserve [`mutate`](Genotype::mutate)'s draw stream.
     pub photosynthesis: f32,
-    /// **Flora gene** (Phase 3): distance at which an offspring is seeded from the
+    /// **Dispersal** (Phase 3): distance at which an offspring is seeded from the
     /// parent (the *dispersal*). `0` → falls back to the default close offset
     /// (radius × 2.5, fauna behavior, unchanged). A flora increases it to scatter
     /// its seeds instead of clustering.
@@ -225,10 +225,8 @@ pub enum GeneCategory {
     Vision,
     /// The base cost of staying alive.
     Metabolism,
-    /// Making offspring: threshold, endowment, mutation.
+    /// Making offspring: threshold, endowment, mutation, seeding distance.
     Reproduction,
-    /// The sessile life: passive gain and seeding.
-    Flora,
 }
 
 impl GeneCategory {
@@ -236,12 +234,11 @@ impl GeneCategory {
     /// each, the [`TRAITS`] filtered by `category` — so a new category must be
     /// listed here to appear (the counterpart, for the grouping, of adding a gene
     /// to `TRAITS`).
-    pub const ALL: [GeneCategory; 5] = [
+    pub const ALL: [GeneCategory; 4] = [
         GeneCategory::Locomotion,
         GeneCategory::Vision,
         GeneCategory::Metabolism,
         GeneCategory::Reproduction,
-        GeneCategory::Flora,
     ];
 
     /// The section's display label.
@@ -251,20 +248,17 @@ impl GeneCategory {
             GeneCategory::Vision => "Vision",
             GeneCategory::Metabolism => "Metabolism",
             GeneCategory::Reproduction => "Reproduction",
-            GeneCategory::Flora => "Flora",
         }
     }
 
     /// Whether the section starts **expanded**, given whether the edited entity is
-    /// `immobile` (a sessile plant — zero max speed). The open sections follow the
-    /// entity's *kind*: the **flora / nutrient** axes are the sessile ones (open for a
-    /// plant, collapsed for fauna); the **locomotion / vision** axes are the mobile
-    /// ones (open for fauna, collapsed for a plant — only a residual gene survives the
-    /// immobile filter, the max-speed switch / brain cost, so it stays reachable but
-    /// out of focus); **metabolism / reproduction** are always relevant.
+    /// `immobile` (zero max speed). The **locomotion / vision** axes are the mobile ones
+    /// (open for a mover, collapsed for an immobile entity — only a residual gene survives
+    /// the immobile filter, so it stays reachable but out of focus); **metabolism /
+    /// reproduction** — which now also hold the former flora genes, photosynthesis and
+    /// dispersal — are always relevant.
     pub fn default_open(self, immobile: bool) -> bool {
         match self {
-            GeneCategory::Flora => immobile,
             GeneCategory::Locomotion | GeneCategory::Vision => !immobile,
             GeneCategory::Metabolism | GeneCategory::Reproduction => true,
         }
@@ -437,7 +431,7 @@ pub const TRAITS: [TraitSpec; 12] = [
     },
     TraitSpec {
         name: "Photosynthesis/s",
-        category: GeneCategory::Flora,
+        category: GeneCategory::Metabolism,
         is_cost: false,
         get: |g| g.photosynthesis,
         set: |g, v| g.photosynthesis = v,
@@ -451,7 +445,7 @@ pub const TRAITS: [TraitSpec; 12] = [
     },
     TraitSpec {
         name: "Dispersal",
-        category: GeneCategory::Flora,
+        category: GeneCategory::Reproduction,
         is_cost: false,
         get: |g| g.seed_dispersal,
         set: |g, v| g.seed_dispersal = v,
@@ -540,9 +534,7 @@ mod tests {
         // Fauna (mobile): the mobile axes open, the sessile axes collapsed.
         assert!(GeneCategory::Locomotion.default_open(false));
         assert!(GeneCategory::Vision.default_open(false));
-        assert!(!GeneCategory::Flora.default_open(false));
-        // Plant (immobile): the sessile axis opens, the mobile axes collapsed.
-        assert!(GeneCategory::Flora.default_open(true));
+        // Immobile entity: the mobile axes collapse.
         assert!(!GeneCategory::Locomotion.default_open(true));
         assert!(!GeneCategory::Vision.default_open(true));
         // Metabolism / reproduction are always open.

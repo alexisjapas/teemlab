@@ -1752,4 +1752,18 @@ mod tests {
             "with a source, the absorbed need is reachable"
         );
     }
+
+    /// The bundled "Algae" library preset parses — a sessile photosynthetic producer
+    /// (no engine flora kind: just a `Sessile` brain + photosynthesis, SIM Law 11).
+    #[test]
+    fn bundled_algae_preset_is_a_sessile_producer() {
+        let text = include_str!("../species/examples/algae.ron");
+        let entry: SpeciesEntry = ron::from_str(text).expect("valid algae species");
+        assert_eq!(entry.archetype.brain, BrainKind::Sessile);
+        assert!(
+            entry.archetype.genotype.photosynthesis > 0.0,
+            "algae is a producer (lives on the sun)"
+        );
+        assert!(!entry.is_variant(), "the preset is a base form");
+    }
 }

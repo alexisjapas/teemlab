@@ -1,0 +1,26 @@
+// Reusable species (library): "Algae" — a **primary producer**. A small, immobile,
+// photosynthetic patch that lives on the sun (`photosynthesis`) and does not move or
+// reproduce on its own — the base of a food web. It is **not** an engine "flora kind":
+// just an agent with a `Sessile` brain and photosynthesis (SIM Law 11). Bigger foragers
+// that need what it holds prey on it through emergent targeting (no wiring). A
+// `SpeciesEntry` wrapper; the inner archetype's partial genotype omits genes that take
+// their default. Drop it into a scenario, then declare its component absorption/holding
+// in the World's field-relations (scenario-level).
+(
+    archetype: (
+        name: "Algae",
+        color: (0.3, 0.8, 0.45),
+        count: 60,
+        radius: 6.0,
+        reserve_max: 50.0,
+        genotype: (
+            max_speed: 0.0,
+            vision_range: 30.0,
+            vision_rays: 1.0,
+            reproduction_threshold: 0.0,
+            photosynthesis: 6.0,
+        ),
+        brain: Sessile,
+        mutable: (),
+    ),
+)
