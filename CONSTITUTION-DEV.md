@@ -162,47 +162,56 @@ import-by-copy).
 
 ---
 
-## Rule 11 — Version is semver of the shipped artifact; tag on request or before a minor bump
+## Rule 11 — Strict SemVer, auto-bumped; a major bump needs confirmation
 
-`Cargo.toml`'s `version` is the single source of truth, and it is **semver of the
-shipped artifact** (the released binaries) — not a commit counter:
+`Cargo.toml`'s `version` is the single source of truth, and it is **strict
+[SemVer](https://semver.org) of the shipped artifact** (the released binaries) — not
+a commit counter. **Every change that touches the shipped artifact bumps the version
+in the same change**, classified by SemVer:
 
-- `fix:` → **patch** (`x.y.Z`): a backwards-compatible bug fix.
-- `feat:` → **minor** (`x.Y.0`): new backwards-compatible capability.
-- a breaking change → **major** (`X.0.0`).
-- `chore:` / `docs:` / `test:` / `ci:` / `refactor:` that do **not** change the
-  shipped binaries → **no bump** (dev-only tooling — benches, CI, the dev shell —
-  is not part of what is versioned).
+- **patch** (`x.y.Z`) — a backwards-compatible bug fix (`fix:`).
+- **minor** (`x.Y.0`) — new backwards-compatible functionality, including any purely
+  **additive** public API (`feat:` — a new item, never a removal or a signature change).
+- **major** (`X.0.0`) — a **breaking** change: a removed / renamed / retyped public
+  item, a changed public signature, a new variant on an exhaustive public `enum`, or a
+  behavioral contract a consumer relies on being broken.
 
-Every release **tag** is `v<that exact version>` (e.g. `Cargo.toml = 0.3.1` → tag
-`v0.3.1`); the release CI **fails** the run if they disagree. A tag is cut in two
-cases: **(a) on explicit request** — any version, a `fix:` patch included, can be
-released when you decide it ships; and **(b) before a minor/major bump** — when you
-roll `Cargo.toml` onto a new minor or major (`feat:` / breaking), first tag the
-*outgoing* version if it is not already tagged, so the last state of the closing line
-is captured before the line moves on (e.g. sitting at `0.3.7`, bumping to `0.4.0` →
-tag `v0.3.7` first, then bump). A patch you don't ask to release simply lands in
-`Cargo.toml` untagged and rides along under whichever tag captures its line. Pushing a
-`vX.Y.Z` tag is the *only* trigger for a release — build → archive (Linux / Windows /
-macOS, `dist` profile, runtime-perf tuned) → GitHub Release. To pin an arbitrary build
-to its commit, use the **git SHA** (optionally as semver build metadata,
-`0.3.1+a1b2c3d`, ignored for precedence) — the version field tracks *behavior*, not
-every commit.
+A change with **no effect on the shipped artifact** — `docs:` / `test:` / `ci:`, or a
+`chore:` / `refactor:` confined to dev-only tooling (benches, CI, the dev shell) —
+has no SemVer category and therefore **does not bump**. Version the artifact's
+*behavior*, never the repo's activity.
 
-The tag is **annotated** (`git tag -a`), and its message **is the changelog**: a
-hand-written description of the evolutions since the previous tag. The release CI
-lifts that message into the release notes (and appends GitHub's auto "Full
-Changelog" link), so a lightweight tag — or an annotated tag with an empty message
-— is a defect, not a shortcut.
+**Patch and minor bumps are applied automatically** — classify the change and roll
+`Cargo.toml` as part of it, no need to ask. **A major bump requires explicit
+confirmation before it is applied**: a breaking release is consequential, so state
+*that* the change is breaking and *why*, and get the go-ahead before incrementing the
+major. Never break the public contract silently to dodge the bump.
 
-**Why.** Semver keyed to the *artifact's behavior* — not the repo's activity — is
-what lets a reader map a release to what actually changed; bumping the patch on
-every chore turns the version into a meaningless commit counter. The git SHA, not an
-inflated patch number, is what pins an arbitrary build. Tagging on demand — plus a
-guaranteed tag of the outgoing version whenever a new minor line opens — keeps the
-milestones legible without forcing a tag on every patch, and an auto-generated commit
-list is not a changelog — the human "what changed and why" is the part a reader
-actually needs.
+**Pre-1.0 caveat (we are at `0.y.z`).** Cargo treats the left-most non-zero component
+as the "major", so while under `0.y` the roles shift down by one: a **breaking**
+change bumps the minor (`0.Y.0`) — *this* is the major-equivalent that needs
+confirmation — and any **backwards-compatible** change, feature or fix alike, bumps
+the patch (`0.y.Z`), applied automatically. The `1.0.0` release is itself a major
+bump and so needs confirmation.
+
+Every release **tag** is `v<that exact version>` (e.g. `Cargo.toml = 0.6.1` → tag
+`v0.6.1`); the release CI **fails** the run if they disagree. Tags are cut **on
+explicit request** (pushing a `vX.Y.Z` tag is the *only* release trigger — build →
+archive for Linux / Windows / macOS, `dist` profile → GitHub Release); before rolling
+onto a new minor/major line, first tag the *outgoing* version if untagged, so the last
+state of the closing line is captured. To pin an arbitrary build to its commit, use the
+**git SHA** (optionally as SemVer build metadata, `0.6.1+a1b2c3d`, ignored for
+precedence). The tag is **annotated** (`git tag -a`) and its message **is the
+changelog** — a hand-written description of the evolutions since the previous tag,
+which the release CI lifts into the release notes; a lightweight tag, or an annotated
+tag with an empty message, is a defect.
+
+**Why.** Auto-bumping keyed to each change keeps `Cargo.toml` a truthful, always-current
+statement of the artifact's compatibility, so a reader (and Cargo's resolver) can map a
+version to what actually changed. Gating only the *major* bump on a human puts the
+friction exactly where the stakes are — a broken contract — while letting the routine
+patch/minor bumps flow. Versioning behavior, not activity, is what keeps a docs-only or
+CI-only change from inflating the number.
 
 **Anchored in.** `Cargo.toml` (`version`); `.github/workflows/release.yml`
 (`version-check` guard, the `dist` build matrix); `Cargo.toml` `[profile.dist]`.
