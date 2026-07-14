@@ -28,11 +28,11 @@ read-only** costs (companion §5), and the theme switcher is designer exploratio
 
 **Prerequisite status.** The simulation model this UI is built against — the
 emergent-trophics refactor ([`emergent-trophics.md`](emergent-trophics.md)) — is
-**implemented**: its *Phase A* is complete on branch `redesign/emergent-trophics` (see
-that doc's *Implementation status*). This UI (**Phase B**) is **in progress**: the
-staged plan and status are in **§11** below (**B1 — the screen router — is done**). It is
-built against the settled model — no relation table, per-component stores, allometric
-costs, and the static food-web validator (`broken_chains`) the Studio surfaces.
+**implemented** (*Phase A* complete). This UI (**Phase B**) is now **complete (B1–B8)**
+on branch `redesign/emergent-trophics`: the five-screen router and all four working
+screens + the Analyze placeholder are built, the World is a first-class artifact, and the
+derived trophic graph is surfaced three ways. The staged plan, per-stage status, and the
+honest deviations are in **§11** below.
 
 **Framing (why the shape is what it is).** The project's resolved direction
 (ROADMAP §0, 2026-07-14) is **a research bench, not a game**: the deliverable is
@@ -390,25 +390,37 @@ commit that builds / `fmt` / `clippy` clean, keeps the sim **byte-identical** (t
 rather than rewriting them. Screens are re-implemented from the visual comp
 ([`ui-mockups/`](ui-mockups/)) in egui.
 
-| Stage | Scope | Nature |
-|---|---|---|
-| **B1** | **Screen router + nav rail.** Top-level `Screen` state (Observe · Library · Studio · Lab · Analyze) + a persistent nav rail; the existing content re-routed — **Observe** (arena-leading: transport, live stats + layers, inspector, curves), **Studio** (world + cast + archetype editor, with the static food-web validator inline), **Lab** (the breeding dashboard); **Library** + **Analyze** placeholders. The one-camera discipline (§1): only Observe frames the arena. | **done** · UI-only, byte-identical |
-| **B2** | **Observe finish.** Reconcile with the comp: the inspector's identity/energy/per-component stores/genotype/action/perception blocks + Capture; follow selector and view controls *on* the arena; the run-record toggle (present, inert until Analyze); polish the foldable regions. | UI |
-| **B3** | **Studio finish.** World editor sections (arena/sources/rocks/components/gene-bounds/**allometric costs**/appearance — no relations card); archetype detail with **derived read-only costs** (companion §5), **neutral gene categories** (companion §7, A6), **nutritional profile**; the trophic-graph **validation panel** (the derived graph, not just the flat `broken_chains` list); explicit **overwrite / save-as-new** buttons. | UI (+ derived-graph compute) |
-| **B4** | **The World object.** Split the abiotic stage (arena, sources/rocks, components, gene bounds, cost law, appearance, seed) from the cast into a first-class **catalog artifact**; a *Scenario* = World + cast (counts). Data-model change in `config.rs`; migrate the example scenarios; **keep the sim byte-identical**. Prerequisite for Library (§2). | data-model · migration |
-| **B5** | **Library screen.** Worlds + Species galleries; catalog management (create/duplicate/rename/tag/delete/provenance; committed `examples/` vs local `saved/`); the **compose tray** (a World + Species with counts); **drop-only composition** backed by the B3 validator; launch → Observe / Studio / Lab. | UI (+ catalog IO) |
-| **B6** | **Lab finish.** Experiment setup — **breeding + sweep, nestable** (2D search, §6); run control + progress + parallelism; results (fitness curves, per-config scores, elite leaderboard) + the **web-fragility metric** (companion §6.4); capture to catalog; **save the Experiment** (params — the MVP persistence unit); run-record toggle (default ON); hand-off to Observe. | UI (+ sweep/fragility) |
-| **B7** | **Trophic graph — three surfaces.** Build the derived graph **once**, skin it three ways: Studio **static validator** (B3), Observe **dynamic fragility overlay** (node size = population, edge thickness = flow, edge colour = dependency — companion §6.2–6.3), Lab **fragility metric** (B6). | compute + UI |
-| **B8** | **Analyze placeholder + cross-cutting.** Finalise the Analyze router placeholder; one unified feedback surface; hover-first help + the single shortcuts surface; **video-as-feature** (never permanent chrome); wire the run-record toggles (inert until records land). | UI · cleanup |
+**Status: Phase B complete (B1–B8)** on branch `redesign/emergent-trophics`, one commit
+per stage, each `fmt` / `clippy --all-targets` clean and the sim **byte-identical**
+(`cargo test --no-fail-fast`: 0 failed, the 14 Phase-A behavioural drivers still
+`#[ignore]`d; the count grew only with new pure unit tests — screen / trophic / World /
+library / experiment).
 
-**B1 notes (this stage).** The router lives in [`src/screen.rs`](../src/screen.rs)
-(`Screen` + `Router`, pure + unit-tested); [`src/panels.rs`](../src/panels.rs) renders
-the rail then dispatches per screen. Only Observe leaves a transparent centre for the
-arena; the others cover the viewport with an opaque `CentralPanel` and record an empty
-central rect, so the camera / picking systems idle. The old two-column
-archetype-editor fold (`layout::left_mode`) is **removed** — Studio gives the editor its
-own screen, so the arena no longer competes with it. Known B1 gaps handed to later
-stages: manual *drag-to-place* from the cast list (the arena and the list now live on
-different screens — spawning is via counts + Reset meanwhile); the World object (B4) and
-the real catalog (B5); the derived trophic graph beyond the flat `broken_chains` flags
-(B3/B7).
+| Stage | Scope | Status |
+|---|---|---|
+| **B1** | **Screen router + nav rail.** Top-level `Screen` state (Observe · Library · Studio · Lab · Analyze) + a persistent nav rail; the existing content re-routed. The one-camera discipline (§1): only Observe frames the arena; every other screen covers the viewport (opaque `CentralPanel`) and records an empty central rect, so the camera / picking systems idle. Two-column editor fold (`layout::left_mode`) removed. | **done** |
+| **B2** | **Observe finish.** Follow selector + zoom/fit controls *on* the arena (interactive `Area`s); the inspector alone on the right (its identity/energy/store/genotype/action/perception blocks + Capture already existed); a run-record toggle (`RunRecord`, off, inert). | **done** |
+| **B3** | **Studio finish.** The reusable `trophic::TrophicGraph` (derive + paint); Studio's validation panel = the derived graph + broken-chain flags; **derived read-only costs** + **nutritional profile** cards in the archetype editor; an **allometric costs** card in the World editor. (Neutral gene categories already landed with A6.) | **done** |
+| **B4** | **The World object.** `config::World` = the abiotic stage as a savable catalog artifact, with `extract` / `apply` / `into_scenario` / RON IO. **Additive** (SimConfig unchanged), so byte-identical and **no scenario migration** — a World is a derived view. | **done** |
+| **B5** | **Library screen.** Worlds (derived from the committed scenarios, deduped) + Species galleries; search / examples-vs-saved filter; delete for saved entries; the **compose tray** (World + cast with counts) with a live viability chip; launch → Observe / Studio / Lab (`RunsPanel::load_config`). | **done** |
+| **B6** | **Lab finish.** Setup aside (mode Breed/Sweep/Both, sweep params, run-record ON, **Save Experiment** — the persistence unit); results (species / trophic-links / **web-fragility** tiles over the breeding dashboard). `trophic::web_fragility` (Herfindahl diet concentration, §6.4). | **done** |
+| **B7** | **Trophic graph — three surfaces.** `paint_into` shared by the static (Studio) and **dynamic Observe overlay** (node size ∝ population, edge colour ∝ **dependency**, §6.3); a "Trophic graph" view-layer toggle; structural fragility line in Studio; the Lab metric (B6). | **done** |
+| **B8** | **Analyze + cross-cutting.** Analyze finalised (a dimmed Records aside listing saved Experiments + the deferred-comparison placeholder). The cross-cutting invariants already hold: one status-line feedback sink, hover-first help + the single shortcuts surface, video-as-feature (Observe Export window only), the run-record toggles (inert). | **done** |
+
+**Deviations from the sketch, recorded honestly.** (a) **B4 took the additive route** — a
+`World` *view* over an unchanged `SimConfig` rather than a struct split, so existing
+scenarios load bit-for-bit and no migration was needed. (b) **In-app sweep running is
+deferred** — the Lab authors + saves a sweep as an Experiment, but runs it via the `sweep`
+bin; only the *breeding* search runs in-app (the dashboard). (c) **A library species'
+nutritional profile does not yet travel with it** — composed species get bodies; diets are
+set per-species in Studio (the `field_relations` are scenario-level, not on `SpeciesEntry`).
+(d) **Manual drag-to-place** from the cast list is gone (arena and list live on different
+screens); spawning is via counts + Reset. (e) The screens are **functional
+re-implementations** of the comp, not pixel-exact (galleries are card *lists*, not a
+masonry grid; icons are text where a Phosphor glyph wasn't verified).
+
+**Follow-ups (post-Phase-B).** Run records (persisted time series) + the real Analyze
+comparison; an in-app nested-sweep runner; species-level nutritional profiles (so diets
+travel through the catalog); catalog duplicate/rename/tag; place-by-click sources; the
+metabolic-recipe editor (rides with metabolization — companion §9); a visual polish pass
+against the comp with the app running.

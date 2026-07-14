@@ -25,9 +25,11 @@ flora/fauna gene-category dissolution; faction combat removed. Binding doc + ful
 status: [`docs/emergent-trophics.md`](docs/emergent-trophics.md) (*Implementation
 status*). The example scenarios are **not re-tuned** — 14 behavioural test drivers are
 `#[ignore]`d pending that rework. **Phase B — the UI redesign
-([`docs/ui-redesign.md`](docs/ui-redesign.md), staged B1–B8 in its §11) — is now in
-flight: B1 (the five-screen router + nav rail) is done** (the existing content re-routed
-into Observe / Studio / Lab; Library / Analyze placeholders; the one-camera discipline).
+([`docs/ui-redesign.md`](docs/ui-redesign.md), staged B1–B8 in its §11) — is COMPLETE**:
+the five-screen router (Observe · Library · Studio · Lab · Analyze) + a first-class
+**World** catalog artifact + the derived trophic graph surfaced three ways (Studio
+validator, Observe dynamic overlay, Lab fragility metric); one-camera discipline; sim
+byte-identical throughout (recorded deviations + follow-ups in that doc's §11).
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.
 

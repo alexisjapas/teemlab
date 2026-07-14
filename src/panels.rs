@@ -1438,13 +1438,43 @@ pub fn dock(
         }
 
         Screen::Analyze => {
+            // LEFT — the record selector (ui-redesign §7). The **Experiment** params
+            // saved from the Lab are the MVP persistence unit; the multi-select +
+            // comparison over full **run records** (time series) are deferred, so the
+            // list is shown dimmed.
+            egui::Panel::left("analyze_records")
+                .resizable(false)
+                .default_size(250.0)
+                .size_range(250.0..=250.0)
+                .show_inside(&mut root, |ui| {
+                    ui.strong("Records");
+                    ui.weak("Select saved runs to compare.");
+                    ui.separator();
+                    let experiments = crate::files::ron_files(EXPERIMENTS_DIR);
+                    if experiments.is_empty() {
+                        ui.weak("No saved experiments yet — save one from the Lab.");
+                    } else {
+                        ui.add_enabled_ui(false, |ui| {
+                            for path in &experiments {
+                                let stem = std::path::Path::new(path)
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(path);
+                                let mut selected = false;
+                                ui.checkbox(&mut selected, stem);
+                            }
+                        });
+                    }
+                });
+            // CENTRE — the deferred comparison placeholder.
             placeholder_screen(
                 &mut root,
                 "Post-hoc comparison",
                 true,
                 "Overlay populations, gene trajectories and component quantities across \
                  saved runs, compare species side by side, and export the data (CSV / PNG) \
-                 for the falsifiable-knowledge deliverable. Deferred until run records exist.",
+                 for the falsifiable-knowledge deliverable. Deferred until run records \
+                 (persisted time series) exist.",
             );
             egui::Rect::ZERO
         }
