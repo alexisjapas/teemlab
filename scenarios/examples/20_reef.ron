@@ -112,15 +112,6 @@
     // The grazer (1) eats the kelp (0): predation carries energy AND the nutrient in the
     // eaten biomass. A short range (reach ≈ contact) so feeding keeps the grazer pressed
     // against the kelp — which is what shoves it past its anchor tension.
-    relations: [
-        (
-            actor: 1,
-            target: 0,
-            transfer: true,
-            rate: 40.0,
-            range: 9.0,
-        ),
-    ],
     field_resolution: 256,
     components: [
         (

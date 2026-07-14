@@ -40,7 +40,6 @@
             ),
         ),
     ],
-    relations: [],
     speed_bounds: (
         min: 40.0,
         max: 260.0,

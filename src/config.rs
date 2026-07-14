@@ -39,10 +39,6 @@ pub struct SimConfig {
     /// [`BrainKind::Sessile`] brain (Phase 3b), without number collision. Empty →
     /// inert world (nothing at spawn).
     pub archetypes: Vec<Archetype>,
-    /// Interaction table: who can act on whom (cf. §3, §4). `actor`/`target` are
-    /// **archetype indices**. Empty by default → no interaction (inert world, as
-    /// before item 7).
-    pub relations: Vec<Relation>,
     /// Cells-per-side of **every** component [`Field`](crate::nutrients::Field) (one
     /// shared grid resolution over the arena). Default 48; only meaningful when
     /// [`components`](Self::components) is non-empty.
@@ -591,34 +587,6 @@ impl Default for Mutability {
     }
 }
 
-/// An entry of the interaction table. Materializes the §3 insight — *eating and
-/// attacking are the same verb*: a directed interaction where the actor reduces
-/// the target's reserve, within range. The only semantic axis in v1 is `transfer`:
-///
-/// - `transfer: true`  → **predation**: what is removed from the target is gained
-///   by the actor.
-/// - `transfer: false` → **combat**: the reserve is destroyed, without transfer.
-///
-/// `actor`/`target` are **[`Archetype`] indices**. (The energy/HP distinction will
-/// wait until an agent carries *several* reserves; v1 has only one.)
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Relation {
-    /// Archetype index of the actor.
-    pub actor: u16,
-    /// Archetype index of the target.
-    pub target: u16,
-    /// Transfer (predation) or plain destruction (combat).
-    pub transfer: bool,
-    /// Amount of reserve transferred/destroyed **per second** of simulated time.
-    pub rate: f32,
-    /// Action range as a **surface-to-surface clearance**, in world units: the
-    /// actor acts on a target while the gap between their bodies is `≤ range`, so
-    /// `0` (the default for a new relation) means **contact**. Effective reach =
-    /// `range + actor_radius (+ target_radius)`, cf. [`crate::interaction`].
-    pub range: f32,
-}
-
 /// A **component**: a diffusible substrate (nutrient / toxin / pheromone / biomass),
 /// rendered as a [`Field`](crate::nutrients::Field). Differentiated only by the
 /// (species, component) relations that reference it (Law 11), never by a type. The
@@ -826,10 +794,6 @@ pub enum Fitness {
     /// peak) — how far the in-match neuroevolution got. NB *perverse* on a free reproducer
     /// (rewards reproduce-to-collapse) — prefer `Population`; kept for skill-gated foraging.
     BestEvolved,
-    /// Combat **dominance** (terminal): the scored species' living count **minus** its living
-    /// rivals (every other non-sessile agent — food excluded) at the match's end. Rewards both
-    /// surviving *and* eliminating the enemy — the battle / factions primitive (item 19).
-    Dominance,
 }
 
 impl Default for BatchConfig {
@@ -854,7 +818,6 @@ impl Default for SimConfig {
             tick_hz: 64.0,
             arena_half_extent: 400.0,
             archetypes: vec![Archetype::new_agent(0)],
-            relations: Vec::new(),
             field_resolution: 48,
             components: Vec::new(),
             sources: Vec::new(),
@@ -1137,16 +1100,6 @@ impl SimConfig {
             .unwrap_or_else(|| Archetype::default_color(species as usize))
     }
 
-    /// `true` if archetype `actor` can act on archetype `target` — a [`Relation`]
-    /// allows it. It is the **target filter** of the interaction primitive (§3:
-    /// *eating and attacking are the same verb*): what makes an entity a *target* in
-    /// `Brain::Hunter`'s perception channel (item 16).
-    pub fn acts_on(&self, actor: u16, target: u16) -> bool {
-        self.relations
-            .iter()
-            .any(|r| r.actor == actor && r.target == target)
-    }
-
     /// Builds the scenario from the 1st positional argument (RON path), with
     /// `fallback` when no argument is given.
     ///
@@ -1345,13 +1298,6 @@ mod tests {
     fn ron_roundtrip_is_lossless() {
         let mut cfg = SimConfig::default();
         cfg.archetypes.push(Archetype::new_food(1));
-        cfg.relations.push(Relation {
-            actor: 0,
-            target: 1,
-            transfer: true,
-            rate: 12.0,
-            range: 9.0,
-        });
         let text = cfg.to_ron_string().expect("RON serialization");
         let back = SimConfig::from_ron_str(&text).expect("RON re-read");
         assert_eq!(cfg, back);
@@ -1475,38 +1421,6 @@ mod tests {
         assert!(cfg.archetypes.iter().all(|a| a.count == 0));
     }
 
-    /// The relation table parses, and an unknown field is rejected in it.
-    #[test]
-    fn relations_parse_from_ron() {
-        let cfg = SimConfig::from_ron_str(
-            "(relations: [(actor: 0, target: 1, transfer: true, rate: 40.0, range: 28.0)])",
-        )
-        .expect("valid RON");
-        assert_eq!(cfg.relations.len(), 1);
-        assert_eq!(cfg.relations[0].actor, 0);
-        assert_eq!(cfg.relations[0].target, 1);
-        assert!(cfg.relations[0].transfer);
-
-        assert!(
-            SimConfig::from_ron_str(
-                "(relations: [(actor: 0, target: 1, transfer: true, rate: 1.0, range: 1.0, oops: 2)])"
-            )
-            .is_err()
-        );
-    }
-
-    /// `acts_on` reflects the relation table (the target filter, directed).
-    #[test]
-    fn acts_on_follows_relations() {
-        let cfg = SimConfig::from_ron_str(
-            "(relations: [(actor: 0, target: 1, transfer: true, rate: 1.0, range: 1.0)])",
-        )
-        .unwrap();
-        assert!(cfg.acts_on(0, 1));
-        assert!(!cfg.acts_on(1, 0), "the relation is directed");
-        assert!(!cfg.acts_on(0, 2), "species not targeted");
-    }
-
     /// The per-archetype resolvers read the index entry, with an out-of-list fallback.
     #[test]
     fn resolvers_read_archetype_by_index() {
@@ -1536,14 +1450,9 @@ mod tests {
         let text = include_str!("../scenarios/examples/05_hunt.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid hunt scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
-        let food = cfg
-            .archetypes
-            .iter()
-            .position(|a| a.is_sessile())
-            .expect("a sessile source") as u16;
         assert!(
-            cfg.relations.iter().any(|r| r.target == food),
-            "the hunter needs a designated target (the food)"
+            cfg.archetypes.iter().any(|a| a.is_sessile()),
+            "a sessile food source underpins the hunt"
         );
     }
 
@@ -1559,25 +1468,10 @@ mod tests {
             "a pyramid wants prey ≫ predators"
         );
         assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
-        // The predator eats a species that itself eats a food.
-        let prey = cfg
-            .relations
-            .iter()
-            .find(|r| r.actor == 0 && r.transfer)
-            .expect("the predator eats someone")
-            .target;
-        let foods: Vec<u16> = cfg
-            .archetypes
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.is_sessile())
-            .map(|(i, _)| i as u16)
-            .collect();
+        // A three-level pyramid rests on at least one sessile food source.
         assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.actor == prey && foods.contains(&r.target) && r.transfer),
-            "the predator's prey must itself graze a food (3 levels)"
+            cfg.archetypes.iter().any(|a| a.is_sessile()),
+            "the chain rests on a food source"
         );
     }
 
@@ -1622,19 +1516,10 @@ mod tests {
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "species 1 = naive control"
         );
-        let food = cfg
-            .archetypes
-            .iter()
-            .position(|a| a.is_sessile())
-            .expect("a sessile source") as u16;
-        for s in [0u16, 1] {
-            assert!(
-                cfg.relations
-                    .iter()
-                    .any(|r| r.actor == s && r.target == food && r.transfer),
-                "species {s} must be able to eat the food"
-            );
-        }
+        assert!(
+            cfg.archetypes.iter().any(|a| a.is_sessile()),
+            "a shared sessile food source is present"
+        );
     }
 
     /// The MLP scenario pits a LEARNED brain (species 0) against the wander control
@@ -1668,88 +1553,15 @@ mod tests {
         );
     }
 
-    /// The battle-breeding scenario (P5 item 19): a generational `batch` scored by **combat
-    /// dominance**, with two factions waging mutual `transfer:false` war. The scored faction
-    /// is bred to dominate. Guardrail on the combat-fitness schema + the scenario wiring.
+    /// The flora scenario (Phase 3): a **sessile** plant that lives on photosynthesis.
     #[test]
-    fn bundled_battle_breed_is_a_combat_dominance_regime() {
-        let text = include_str!("../scenarios/examples/14_battle_breed.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid battle-breeding scenario");
-        let batch = cfg.batch.as_ref().expect("a batch regime");
-        assert_eq!(
-            batch.fitness,
-            Fitness::Dominance,
-            "scored by combat dominance"
-        );
-        let scored = batch.scored_species[0];
-        // The scored faction is a mobile fighter, not the sessile food.
-        assert!(!cfg.archetypes[scored as usize].is_sessile());
-        // It is at war: a combat (transfer:false) relation where it is the actor…
-        assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.actor == scored && !r.transfer),
-            "the scored faction must wage combat (transfer:false)"
-        );
-        // …and the enemy strikes back (the war is mutual).
-        assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.target == scored && !r.transfer),
-            "the war is mutual (the enemy attacks the scored faction too)"
-        );
-    }
-
-    /// The Red-Queen scenario (P5 item 19, **co-evolution**): a generational `batch`
-    /// breeding **two** factions at once (`scored_species` has ≥ 2), each a mobile fighter
-    /// at mutual war, scored by `Dominance`. Guardrail on the multiple-scored-species schema.
-    #[test]
-    fn bundled_red_queen_breeds_two_warring_factions() {
-        let text = include_str!("../scenarios/examples/15_red_queen.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid Red-Queen scenario");
-        let batch = cfg.batch.as_ref().expect("a batch regime");
-        assert!(
-            batch.scored_species.len() >= 2,
-            "co-evolution breeds several factions"
-        );
-        assert_eq!(batch.fitness, Fitness::Dominance);
-        for &s in &batch.scored_species {
-            assert!(
-                !cfg.archetypes[s as usize].is_sessile(),
-                "a bred faction is a mobile fighter, not food"
-            );
-        }
-        // The two bred factions wage mutual combat (each attacks the other, transfer:false).
-        let (a, b) = (batch.scored_species[0], batch.scored_species[1]);
-        assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.actor == a && r.target == b && !r.transfer)
-                && cfg
-                    .relations
-                    .iter()
-                    .any(|r| r.actor == b && r.target == a && !r.transfer),
-            "the two bred factions are at war"
-        );
-    }
-
-    /// The flora scenario (Phase 3): a **sessile** plant that lives on
-    /// photosynthesis and **self-limits** through intraspecific competition (a
-    /// relation on itself, without transfer — the §3 interaction primitive).
-    #[test]
-    fn bundled_flora_is_a_self_competing_sessile_plant() {
+    fn bundled_flora_is_a_sessile_photosynthetic_plant() {
         let text = include_str!("../scenarios/examples/03_flora.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid flora scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
         assert!(
             cfg.archetypes[0].genotype.photosynthesis > 0.0,
             "the flora lives on photosynthesis"
-        );
-        assert!(
-            cfg.relations
-                .iter()
-                .any(|r| r.actor == 0 && r.target == 0 && !r.transfer),
-            "self-competition expected (Plant→Plant, without transfer)"
         );
     }
 }

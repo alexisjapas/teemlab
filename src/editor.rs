@@ -17,9 +17,7 @@ use std::collections::{HashMap, HashSet};
 use teemlab::SimConfig;
 use teemlab::brain::{BrainKind, GrazerBrain, MlpBrain};
 use teemlab::components::{Agent, Reserve, Species};
-use teemlab::config::{
-    Archetype, BatchConfig, ComponentConfig, Fitness, Relation, Source, SpeciesEntry,
-};
+use teemlab::config::{Archetype, BatchConfig, ComponentConfig, Fitness, Source, SpeciesEntry};
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
 use teemlab::visuals::Layers;
@@ -634,17 +632,6 @@ fn catalog_section(
 fn remove_archetype(config: &mut SimConfig, i: usize) {
     config.archetypes.remove(i);
     let removed = i as u16;
-    config
-        .relations
-        .retain(|r| r.actor != removed && r.target != removed);
-    for r in &mut config.relations {
-        if r.actor > removed {
-            r.actor -= 1;
-        }
-        if r.target > removed {
-            r.target -= 1;
-        }
-    }
     config.field_relations.retain(|fr| fr.species != removed);
     for fr in &mut config.field_relations {
         if fr.species > removed {
@@ -697,10 +684,6 @@ fn swap_archetypes(config: &mut SimConfig, i: usize, j: usize) {
             *x = i;
         }
     };
-    for r in &mut config.relations {
-        transpose(&mut r.actor);
-        transpose(&mut r.target);
-    }
     for fr in &mut config.field_relations {
         transpose(&mut fr.species);
     }
@@ -1411,20 +1394,6 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
             );
     });
 
-    // RELATIONS — the interaction table (acts live).
-    card(ui, |ui| {
-        egui::CollapsingHeader::new("Relations")
-            .default_open(true)
-            .show(ui, |ui| relations_section(ui, config))
-            .header_response
-            .on_hover_text(
-                "An actor reduces a target's reserve within range — the gap between \
-                 their bodies, so range = 0 means contact. This is what makes an \
-                 archetype a TARGET (what Brain::Hunter pursues). transfer = predation \
-                 (the actor gains the energy); otherwise plain destruction. Acts live.",
-            );
-    });
-
     // BREEDING — the generational regime (P5). Authored here (saved with the scenario);
     // the run itself happens in the Breeding window / the `breed` bin.
     batch_section(ui, config);
@@ -1681,89 +1650,10 @@ fn gene_bounds_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     });
 }
 
-/// The relation table, **addressed by archetype**: each actor/target is chosen in
-/// an archetype menu (name + color). No more bare numbers nor possible collision
-/// with the food — which is a full-fledged archetype, with its index.
-fn relations_section(ui: &mut egui::Ui, config: &mut SimConfig) {
-    // What a relation *means* lives on the "Relations" header's hover (cf. the
-    // caller, `world_section`).
-    // Snapshot (name, color) of the archetypes for the menus — captured before
-    // borrowing `config.relations` mutably.
-    let archs: Vec<(String, egui::Color32)> = config
-        .archetypes
-        .iter()
-        .map(|a| (a.name.clone(), archetype_color32(a)))
-        .collect();
-    if archs.len() < 2 {
-        ui.weak("Create at least two archetypes to define a relation.");
-        return;
-    }
-    let mut to_remove = None;
-    for (i, rel) in config.relations.iter_mut().enumerate() {
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                archetype_combo(ui, ("rel_actor", i), &mut rel.actor, &archs);
-                ui.label(fonts::icon(icons::ARROW_RIGHT));
-                archetype_combo(ui, ("rel_target", i), &mut rel.target, &archs);
-                if ui
-                    .button(fonts::icon(icons::TRASH))
-                    .on_hover_text("Remove this relation")
-                    .clicked()
-                {
-                    to_remove = Some(i);
-                }
-            });
-            ui.checkbox(&mut rel.transfer, "transfer (predation)");
-            egui::Grid::new(("relation_fields", i))
-                .num_columns(2)
-                .spacing([8.0, 6.0])
-                .show(ui, |ui| {
-                    ui.label("rate/s");
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::Slider::new(&mut rel.rate, 0.0..=400.0))
-                    });
-                    ui.end_row();
-
-                    ui.label("range (0 = contact)");
-                    fonts::value(ui, |ui| {
-                        ui.add(egui::Slider::new(&mut rel.range, 0.0..=100.0))
-                    });
-                    ui.end_row();
-                });
-        });
-    }
-    if let Some(i) = to_remove {
-        config.relations.remove(i);
-    }
-    if ui
-        .button(fonts::icon_label(icons::PLUS, "Add a relation"))
-        .clicked()
-    {
-        // Default: the first mobile agent eats the first sessile source (common case).
-        let actor = config
-            .archetypes
-            .iter()
-            .position(|a| !a.is_sessile())
-            .unwrap_or(0) as u16;
-        let target = config
-            .archetypes
-            .iter()
-            .position(|a| a.is_sessile())
-            .unwrap_or(0) as u16;
-        config.relations.push(Relation {
-            actor,
-            target,
-            transfer: true,
-            rate: 100.0,
-            range: 0.0, // contact by default (surface-to-surface clearance).
-        });
-    }
-}
-
 /// The **generational (breeding) regime** (P5): toggle a `batch` on the scenario and edit
 /// its parameters. The run itself happens in the **Breeding** window (the dashboard) or
 /// the `breed` bin headless; this card only *authors* the [`BatchConfig`] (saved with the
-/// scenario, like the relations / nutrients). A framed card with a collapsible header
+/// scenario, like the nutrients). A framed card with a collapsible header
 /// (default closed — most scenarios are continuous).
 fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
@@ -1889,7 +1779,7 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// sync with the enum (a new variant must be handled here).
 fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
     // (variant, label, tooltip) — the single source the closure and the selected text share.
-    const OPTIONS: [(Fitness, &str, &str); 5] = [
+    const OPTIONS: [(Fitness, &str, &str); 4] = [
         (
             Fitness::Population,
             "population (sustained)",
@@ -1910,11 +1800,6 @@ fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
             "best evolved (lineage)",
             "Deepest lineage reached — neuroevolution depth. Perverse on a free reproducer \
              (prefer population); for skill-gated foraging.",
-        ),
-        (
-            Fitness::Dominance,
-            "dominance (combat)",
-            "Own survivors minus living rivals at the match's end — the battle fitness.",
         ),
     ];
     let text = OPTIONS
@@ -2069,50 +1954,9 @@ fn place(
 mod tests {
     use super::*;
 
-    /// Helper: a relation `actor → target` (trivial rate/range, of no interest here).
-    fn rel(actor: u16, target: u16) -> Relation {
-        Relation {
-            actor,
-            target,
-            transfer: true,
-            rate: 1.0,
-            range: 1.0,
-        }
-    }
-
-    /// Reordering swaps two archetypes AND **transposes** their indices in the
-    /// relations (the index IS the species identity). Swapping archetypes 0 and 1: a
-    /// relation `0→2` becomes `1→2`, and `1→0` becomes `0→1`; a third index (2) does
-    /// not move.
-    #[test]
-    fn swap_transposes_relation_indices() {
-        let mut config = SimConfig {
-            archetypes: vec![
-                Archetype::new_agent(0),
-                Archetype::new_agent(1),
-                Archetype::new_food(2),
-            ],
-            relations: vec![rel(0, 2), rel(1, 0)],
-            ..SimConfig::default()
-        };
-        swap_archetypes(&mut config, 0, 1);
-        // The archetype formerly at 0 ("Species 0") is now at 1, and vice versa.
-        assert_eq!(config.archetypes[0].name, "Species 1");
-        assert_eq!(config.archetypes[1].name, "Species 0");
-        // 0→2 ⇒ 1→2 (the third target 2 is intact); 1→0 ⇒ 0→1.
-        assert_eq!(
-            (config.relations[0].actor, config.relations[0].target),
-            (1, 2)
-        );
-        assert_eq!(
-            (config.relations[1].actor, config.relations[1].target),
-            (0, 1)
-        );
-    }
-
-    /// Deleting an archetype **remaps every index-keyed table**: relations and field
-    /// relations referencing it are dropped and higher indices slide down; the
-    /// batch's scored species and the transient founder pools follow the same rule.
+    /// Deleting an archetype **remaps every index-keyed table**: field relations
+    /// referencing it are dropped and higher indices slide down; the batch's scored
+    /// species and the transient founder pools follow the same rule.
     #[test]
     fn remove_remaps_every_index_keyed_table() {
         use teemlab::config::FieldRelation;
@@ -2122,7 +1966,6 @@ mod tests {
                 Archetype::new_agent(1),
                 Archetype::new_food(2),
             ],
-            relations: vec![rel(0, 1), rel(2, 0)],
             field_relations: vec![
                 FieldRelation {
                     species: 1,
@@ -2142,12 +1985,6 @@ mod tests {
         config.founder_pools.insert(1, Vec::new());
         config.founder_pools.insert(2, Vec::new());
         remove_archetype(&mut config, 1);
-        // Relations referencing 1 are gone; 2→0 slid to 1→0.
-        assert_eq!(config.relations.len(), 1);
-        assert_eq!(
-            (config.relations[0].actor, config.relations[0].target),
-            (1, 0)
-        );
         // Field relations: species 1's row dropped, species 2's slid to 1.
         assert_eq!(config.field_relations.len(), 1);
         assert_eq!(config.field_relations[0].species, 1);
@@ -2159,7 +1996,7 @@ mod tests {
     }
 
     /// Reordering transposes the indices in the field relations, the batch's scored
-    /// species and the founder pools, exactly like in the relations.
+    /// species and the founder pools.
     #[test]
     fn swap_transposes_field_relations_batch_and_pools() {
         use teemlab::config::FieldRelation;
@@ -2186,13 +2023,12 @@ mod tests {
         assert!(config.founder_pools.contains_key(&1));
     }
 
-    /// Duplicating adds a clone **at the end** (without shifting the existing indices
-    /// → relations intact), with the same body as the original, named "… (copy)".
+    /// Duplicating adds a clone **at the end** (without shifting the existing indices),
+    /// with the same body as the original, named "… (copy)".
     #[test]
-    fn duplicate_appends_a_clone_without_touching_relations() {
+    fn duplicate_appends_a_clone() {
         let mut config = SimConfig {
             archetypes: vec![Archetype::new_agent(0), Archetype::new_food(1)],
-            relations: vec![rel(0, 1)],
             ..SimConfig::default()
         };
         let new = duplicate_archetype(&mut config, 0).expect("clone of a valid index");
@@ -2202,12 +2038,6 @@ mod tests {
         // Same body as the original (everything but the name).
         assert_eq!(config.archetypes[2].genotype, config.archetypes[0].genotype);
         assert_eq!(config.archetypes[2].brain, config.archetypes[0].brain);
-        // Relations unchanged: the clone is at the end, no index slid.
-        assert_eq!(config.relations.len(), 1);
-        assert_eq!(
-            (config.relations[0].actor, config.relations[0].target),
-            (0, 1)
-        );
     }
 
     /// An out-of-list index duplicates nothing.

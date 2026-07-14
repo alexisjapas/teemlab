@@ -23,7 +23,7 @@ use bevy::time::TimeUpdateStrategy;
 use teemlab::SimPlugin;
 use teemlab::brain::{Brain, BrainKind};
 use teemlab::components::{Agent, Generation, Reserve, Species};
-use teemlab::config::{Relation, SimConfig, SpeciesEntry};
+use teemlab::config::{SimConfig, SpeciesEntry};
 use teemlab::genotype::Genotype;
 
 fn main() {
@@ -119,22 +119,6 @@ fn main() {
 
     let mut evolved = config.clone();
     evolved.archetypes = vec![mlp, wander, flora];
-    evolved.relations = vec![
-        Relation {
-            actor: 0,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        },
-        Relation {
-            actor: 1,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        },
-    ];
     let evolved_header = "\
 // MLP evolved — a TRAINED learned brain in action (the payoff of the learning story:
 // mlp_brain = naive baseline, mlp_train = the training ground, this = the trained

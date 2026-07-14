@@ -53,7 +53,6 @@ fn config(mortal: bool) -> SimConfig {
             captured_from: None,
             anchor: None,
         }],
-        relations: vec![],
         components: vec![ComponentConfig {
             name: "Carrion".into(),
             diffusion: 0.0, // stays put → total() is exact

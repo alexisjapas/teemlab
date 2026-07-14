@@ -35,7 +35,6 @@ fn world(captured: Option<Brain>, count: usize) -> SimConfig {
     };
     SimConfig {
         archetypes: vec![arch],
-        relations: Vec::new(),
         seed: 0x5EED,
         cost_law: CostLaw::inert(),
         ..SimConfig::default()

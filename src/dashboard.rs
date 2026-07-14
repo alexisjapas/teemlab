@@ -678,8 +678,8 @@ fn cohort_section(
                     ui,
                     "dom",
                     "Terminal dominance — own minus living rivals at the last sample \
-                     (fitness: Dominance).",
-                    driving == Some(Fitness::Dominance),
+                     (a diagnostic; no longer a selectable fitness).",
+                    false,
                 );
                 metric_header(
                     ui,

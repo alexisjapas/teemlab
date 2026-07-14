@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
-use teemlab::config::{Archetype, CostLaw, FieldRelation, Mutability, Relation};
+use teemlab::config::{Archetype, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
 use teemlab::nutrients::Nutrients;
 use teemlab::spawn::spawn_agent;
@@ -54,7 +54,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 name: "Forager".into(),
                 color: Archetype::default_color(0),
                 count: 0,
-                radius: 8.0,
+                radius: 10.0, // dominates the plant in size (emergent predation)
                 reserve_max: 1000.0,
                 genotype: inert_genotype(),
                 brain: BrainKind::Sessile,
@@ -68,7 +68,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 name: "Plant".into(),
                 color: Archetype::default_color(1),
                 count: 0,
-                radius: 8.0,
+                radius: 6.0, // smaller → the forager can prey on it
                 reserve_max: 1000.0,
                 genotype: inert_genotype(),
                 brain: BrainKind::Sessile,
@@ -81,13 +81,6 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
         ],
         // Forager (0) eats the plant (1): predation (transfer) at a steady rate, in
         // contact range. No source/field exists → absorption is impossible.
-        relations: vec![Relation {
-            actor: 0,
-            target: 1,
-            transfer: true,
-            rate: 100.0,
-            range: 30.0,
-        }],
         // The forager (species 0) can hold nutrient (capacity 100) — the store it eats
         // into, without clamping. Declared in the field-relations table, not a gene.
         field_relations: vec![
@@ -95,6 +88,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 species: 0,
                 component: 0,
                 capacity: 100.0,
+                need: 1.0, // needs the nutrient → the plant (which holds it) is digestible
                 ..default()
             },
             FieldRelation {
@@ -193,126 +187,5 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
         "nutrient must be conserved: forager {forager:.3} + plant {plant:.3} \
          should equal {plant_nutrient0} (Δ {:.3})",
         (forager + plant - plant_nutrient0).abs()
-    );
-}
-
-/// The falsifiable **contrast**: a relation that does **not** transfer (combat —
-/// the reserve is destroyed, not eaten) moves **no** nutrient. This pins the
-/// transfer to *predation* specifically, not to mere proximity or contact.
-#[test]
-fn destruction_without_transfer_moves_no_nutrient() {
-    let config = SimConfig {
-        arena_half_extent: 400.0,
-        archetypes: vec![
-            Archetype {
-                name: "Attacker".into(),
-                color: Archetype::default_color(0),
-                count: 0,
-                radius: 8.0,
-                reserve_max: 1000.0,
-                genotype: inert_genotype(),
-                brain: BrainKind::Sessile,
-                mutable: Mutability::default(),
-                source: None,
-                captured_brain: None,
-                captured_from: None,
-                anchor: None,
-            },
-            Archetype {
-                name: "Victim".into(),
-                color: Archetype::default_color(1),
-                count: 0,
-                radius: 8.0,
-                reserve_max: 1000.0,
-                genotype: inert_genotype(),
-                brain: BrainKind::Sessile,
-                mutable: Mutability::default(),
-                source: None,
-                captured_brain: None,
-                captured_from: None,
-                anchor: None,
-            },
-        ],
-        // transfer: false → combat: the victim's reserve is destroyed without the
-        // attacker gaining it. The nutrient must not move either.
-        relations: vec![Relation {
-            actor: 0,
-            target: 1,
-            transfer: false,
-            rate: 100.0,
-            range: 30.0,
-        }],
-        field_relations: vec![
-            FieldRelation {
-                species: 0,
-                component: 0,
-                capacity: 100.0,
-                ..default()
-            },
-            FieldRelation {
-                species: 1,
-                component: 0,
-                capacity: 100.0,
-                ..default()
-            },
-        ],
-        cost_law: CostLaw::inert(),
-        ..SimConfig::default()
-    };
-
-    let mut app = common::stepping_app(&config);
-    let victim_nutrient0 = 50.0_f32;
-    app.world_mut()
-        .run_system_once(move |mut commands: Commands, config: Res<SimConfig>| {
-            spawn_agent(
-                &mut commands,
-                &config,
-                config.genotype_of(0),
-                Species(0),
-                Vec2::ZERO,
-                0.0,
-                0,
-                config.reserve_max_of(0),
-                0,
-            );
-            spawn_agent(
-                &mut commands,
-                &config,
-                config.genotype_of(1),
-                Species(1),
-                Vec2::new(20.0, 0.0),
-                0.0,
-                1,
-                config.reserve_max_of(1),
-                0,
-            );
-        })
-        .expect("one-off spawn");
-    app.world_mut()
-        .run_system_once(
-            move |mut q: Query<(&Species, &mut Nutrients), With<Agent>>| {
-                for (species, mut store) in &mut q {
-                    if species.0 == 1 {
-                        store.set(0, victim_nutrient0);
-                    }
-                }
-            },
-        )
-        .expect("seed the victim's nutrient store");
-
-    for _ in 0..40 {
-        app.update();
-    }
-
-    let world = app.world_mut();
-    let mut q = world.query_filtered::<(&Species, &Nutrients), With<Agent>>();
-    let attacker = q
-        .iter(world)
-        .find(|(s, _)| s.0 == 0)
-        .map(|(_, n)| n.current(0))
-        .expect("the attacker still exists");
-    assert_eq!(
-        attacker, 0.0,
-        "combat (transfer: false) must move no nutrient (attacker has {attacker:.3})"
     );
 }

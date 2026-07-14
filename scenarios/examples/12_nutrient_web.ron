@@ -104,15 +104,6 @@
     ],
     // The herbivore (1) eats the plant (0): predation (transfer) — energy AND, since
     // link 1, the nutrient embodied in the eaten biomass, proportional to the bite.
-    relations: [
-        (
-            actor: 1,
-            target: 0,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-    ],
     field_resolution: 256,
     components: [
         (

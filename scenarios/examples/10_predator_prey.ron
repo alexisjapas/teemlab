@@ -117,24 +117,6 @@
             ),
         ),
     ],
-    relations: [
-        // Predators (0) eat prey (1): predation up the chain.
-        (
-            actor: 0,
-            target: 1,
-            transfer: true,
-            rate: 26.0,
-            range: 12.0,
-        ),
-        // Prey (1) graze the flora (2).
-        (
-            actor: 1,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-    ],
     field_resolution: 256,
     components: [
         (

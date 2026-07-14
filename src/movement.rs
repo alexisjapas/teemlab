@@ -148,23 +148,27 @@ pub fn perceive(
                 Some(hit) => {
                     let proximity = 1.0 - (hit.distance / vision.range).clamp(0.0, 1.0);
                     perception.vision[i] = proximity;
-                    // "target" and "threat" channels, inverse symmetric: we read
-                    // the nearest hit's species **only once**, and the (directed)
-                    // relation table decides both directions — we act on it
-                    // (target, it attracts us) or it acts on us (threat, it makes
-                    // us flee). A wall (without [`Species`]) or a species with no
-                    // relation either way → both at 0.
-                    let (is_target, is_threat) =
-                        species_of
-                            .get(hit.entity)
-                            .map_or((false, false), |hit_species| {
-                                (
-                                    config.acts_on(species.0, hit_species.0),
-                                    config.acts_on(hit_species.0, species.0),
-                                )
-                            });
-                    perception.target[i] = if is_target { proximity } else { 0.0 };
-                    perception.threat[i] = if is_threat { proximity } else { 0.0 };
+                    // "target" and "threat" channels, from the **emergent** filter
+                    // (§3, SIM Law 8): we read the nearest hit's species once, and
+                    // `can_eat` decides both directions — we can eat it (target, graded
+                    // by how digestible/appetising it is) or it can eat us (threat, we
+                    // flee). A wall (no [`Species`]) or a size/diet mismatch either way →
+                    // both at 0.
+                    let (target, threat) = species_of.get(hit.entity).map_or((0.0, 0.0), |hs| {
+                        let target = if config.can_eat(species.0, hs.0) {
+                            proximity * config.digestibility(species.0, hs.0)
+                        } else {
+                            0.0
+                        };
+                        let threat = if config.can_eat(hs.0, species.0) {
+                            proximity
+                        } else {
+                            0.0
+                        };
+                        (target, threat)
+                    });
+                    perception.target[i] = target;
+                    perception.threat[i] = threat;
                 }
                 None => {
                     perception.vision[i] = 0.0;

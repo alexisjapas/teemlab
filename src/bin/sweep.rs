@@ -122,10 +122,8 @@ impl Knob {
                     a.genotype.photosynthesis = v as f32;
                 }
             }
-            Self::Rate(i) => {
-                if let Some(r) = config.relations.get_mut(i) {
-                    r.rate = v as f32;
-                }
+            Self::Rate(_) => {
+                config.predation.rate = v as f32;
             }
         }
     }

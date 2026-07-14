@@ -175,25 +175,6 @@
             ),
         ),
     ],
-    relations: [
-        // Both foragers graze the SAME flora, with the SAME capability (rate, range) —
-        // only the Grazer's appetite gate differs. They are neutral to each other (no
-        // relation between 0 and 1): they compete for flora, they do not fight.
-        (
-            actor: 0,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-        (
-            actor: 1,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-    ],
     field_resolution: 256,
     components: [
         (

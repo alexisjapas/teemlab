@@ -51,15 +51,6 @@
     // Self-competition: a Plant→Plant relation WITHOUT transfer (combat — destroys
     // reserve without gain). Crowded plants drain each other below their photosynthesis
     // and die, bounding the density into the equilibrium plateau.
-    relations: [
-        (
-            actor: 0,
-            target: 0,
-            transfer: false,
-            rate: 7.0,
-            range: 28.0,
-        ),
-    ],
     field_resolution: 48,
     components: [
         (

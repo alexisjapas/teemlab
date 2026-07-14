@@ -56,7 +56,6 @@
             ),
         ),
     ],
-    relations: [],
     field_resolution: 256,
     components: [
         (

@@ -666,22 +666,6 @@
             ),
         ),
     ],
-    relations: [
-        (
-            actor: 0,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-        (
-            actor: 1,
-            target: 2,
-            transfer: true,
-            rate: 45.0,
-            range: 16.0,
-        ),
-    ],
     field_resolution: 256,
     components: [
         (

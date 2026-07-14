@@ -63,7 +63,6 @@ pub mod icons {
     pub const CARET_LEFT: char = '\u{E138}';
     pub const CARET_UP: char = '\u{E13C}';
     pub const SPARKLE: char = '\u{E6A2}'; // captured weights
-    pub const ARROW_RIGHT: char = '\u{E06C}'; // relation actor → target
     pub const DOWNLOAD: char = '\u{E20C}'; // import (download-simple)
     pub const FLOPPY: char = '\u{E248}'; // save to library
 }

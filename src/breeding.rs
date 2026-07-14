@@ -57,7 +57,7 @@ pub struct MatchSample {
     /// Deepest lineage (max `Generation`) among the scored species at this sample.
     pub best_gen: u32,
     /// Living **non-sessile rivals** at this sample (every other non-sessile agent — food
-    /// excluded), for the combat `Dominance` reading.
+    /// excluded) — the `dominance` diagnostic's input.
     pub rivals: usize,
     /// Sum of the scored species' energy reserves (÷ population = the sample's mean reserve).
     pub reserve_sum: f64,
@@ -82,8 +82,9 @@ pub struct MatchMetrics {
     /// in-match neuroevolution got, caught at its peak (before any collapse). NB: *perverse* on
     /// a free reproducer (rewards reproduce-to-collapse) — prefer `Population`.
     pub best_evolved: f64,
-    /// TERMINAL combat dominance ([`Fitness::Dominance`]) — own − living non-sessile rivals at
-    /// the last sample (the battle outcome is by nature terminal: who is left standing).
+    /// TERMINAL dominance **diagnostic** — own − living non-sessile rivals at the last
+    /// sample. No longer a selectable `Fitness`: non-nutritional combat was removed with
+    /// the relation table (kept as a diagnostic; `docs/emergent-trophics.md` §9).
     pub dominance: f64,
     /// MEAN energy reserve of survivors over the match — a foraging-health / efficiency proxy
     /// (a diagnostic, not a selectable [`Fitness`]). `0` when the species never lived.
@@ -129,7 +130,6 @@ impl MatchMetrics {
             Fitness::Peak => self.peak_population,
             Fitness::Survival => self.survival,
             Fitness::BestEvolved => self.best_evolved,
-            Fitness::Dominance => self.dominance,
         }
     }
 }
@@ -647,7 +647,6 @@ mod tests {
         assert_eq!(m.of(Fitness::Peak), 2.0);
         assert_eq!(m.of(Fitness::Survival), 0.5);
         assert_eq!(m.of(Fitness::BestEvolved), 3.0);
-        assert_eq!(m.of(Fitness::Dominance), -4.0);
     }
 
     /// [`seed_founders`] (the replay mechanism) fills a `count`-sized founder pool led by the

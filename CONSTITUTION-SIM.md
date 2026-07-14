@@ -126,18 +126,27 @@ the trait converge trivially and removes it from the evolutionary game.
 
 ---
 
-## Law 8 — One interaction primitive
+## Law 8 — One interaction primitive, an emergent target filter
 
-Eating and attacking are the **same directed interaction**: an actor reduces a
-target's reserve, within range. The engine exposes one verb; the scenario sets its
-semantics — *transfer* → predation, *destroy* → combat — and the target filter
-(trophic or factional). Perception is symmetric: spatial queries are engine
-machinery, the scenario chooses which channels become brain inputs.
+Eating is a **single directed interaction**: an actor reduces a target's reserve,
+within reach, and gains its share — **predation** (the reduced reserve transfers). The
+engine exposes one verb. The **target filter is emergent**, computed by the engine from
+the two bodies' data: a **dominance** test (size) and a **nutritional** test (does the
+target hold the components the actor needs?). It is never an authored per-pair table.
+Perception derives from the same rule: an actor perceives as **prey** what it can eat
+and as **threat** what can eat it.
 
-**Why.** Two verbs would be two code paths to keep in sync; one primitive + a
-relation table covers predation, combat and competition with no new mechanism.
+**Why.** An authored trophic table is bespoke per-scenario wiring (against Law 1) and
+un-checkable — you cannot ask whether the food web is even viable. An emergent filter
+makes the web *data the engine computes*, and therefore statically analysable.
 
-**Anchored in.** `interaction.rs`, `config.rs` (`Relation` table).
+**Deferred.** Non-nutritional interaction — factional combat, intraspecific
+aggression, territorial / anti-predator defence — which the nutritional filter does
+not express, and which was removed with the relation table pending a dedicated
+mechanism.
+
+**Anchored in.** `interaction.rs`, `config.rs` (`SimConfig::can_eat` /
+`SimConfig::digestibility`, `Predation`). See `docs/emergent-trophics.md`.
 
 ---
 
@@ -178,12 +187,13 @@ Every living entity — fauna or flora, predator or prey, mover or source — is
 `Agent` driven by the **same** base systems: the *perceive → decide → act* loop, the
 interaction primitive, and the life economy (`metabolize`, `reap` for death,
 `reproduce` for birth). What distinguishes one life form from another is **only its
-data** — its **genes** (configuration), its **brain and body** (capabilities), and
-the **relation table** (relations). There is **no per-kind code path**: no
+data** — its **genes** (configuration), its **brain and body** (capabilities), and its
+**nutritional profile** (the components it needs and holds, from which trophic
+interactions emerge — Law 8). There is **no per-kind code path**: no
 `if is_flora`, no privileged death, reproduction, or feeding rule, and no schedule
 ordering tuned to exempt one kind. A "plant" is just an agent with a sessile brain and
 photosynthesis; any difference in its behavior must be an *emergent consequence of its
-genes and relations*, never of a special-cased system.
+genes and nutritional profile*, never of a special-cased system.
 
 **Why.** The day one life form earns its own rule in the engine, the "one engine,
 scenarios as data" abstraction (Law 1) has leaked into the biology: a privileged kind,

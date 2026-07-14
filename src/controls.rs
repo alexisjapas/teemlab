@@ -89,7 +89,6 @@ pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
         seed,
         founder_pools,
         // Live-applied: read from the config every tick/frame, never stale in the world.
-        relations: _,
         field_relations: _,
         speed_bounds: _,
         agility_bounds: _,

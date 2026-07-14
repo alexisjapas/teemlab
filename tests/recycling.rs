@@ -61,7 +61,6 @@ fn one_agent_config() -> SimConfig {
         // No relations, no sources: the field is inert except for what recycling
         // deposits. A single nutrient component (index 0) is where `reap` recycles;
         // diffusion & decay 0 → the deposit stays put, `total()` is exact.
-        relations: vec![],
         components: vec![ComponentConfig {
             name: "Nutrient".into(),
             diffusion: 0.0,
