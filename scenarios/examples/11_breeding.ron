@@ -1,0 +1,105 @@
+// 11 · Breeding — the generational regime (run → score → breed).
+//
+// Every scenario so far ran the CONTINUOUS regime: reproduction happens IN the sim,
+// fitness is implicit (whoever eats and breeds). This is the other canonical regime
+// (ROADMAP §4): reproduction batched at a GENERATION boundary, fitness EXPLICIT. An
+// outside-sim orchestrator runs a cohort of headless matches, SCORES each MLP lineage
+// by a chosen fitness (`Population` — sustained standing biomass), keeps the top
+// `survivors`, and RE-SEEDS the next generation's founders from those elites (a diverse
+// pool, not clones) — a directed search the single continuous run cannot do. The inner
+// match is the byte-identical sim; only where reproduction and fitness live changes.
+//
+// Not a continuous watch-me scenario — it carries a `batch` block instead. Run it
+// headless with the `breed` bin (it prints fitness per generation and captures the best
+// genome to species/saved/), or open it in the app and drive the breeding DASHBOARD
+// (Run/Stop, the fitness-vs-generation curve, the cohort leaderboard):
+//
+//     cargo run --bin breed -- scenarios/examples/11_breeding.ron [generations]
+//
+// The economy is 08's oasis (where an MLP can forage); `batch.scored_species` selects
+// the MLP. Neuroevolution on living food plateaus near parity (ROADMAP §7), so expect a
+// noisy fitness signal that holds near a plateau, not a runaway climb.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 400.0,
+    archetypes: [
+        (
+            name: "MLP",
+            color: (0.45, 0.65, 1.0),
+            count: 40,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 140.0,
+                agility: 0.12,
+                vision_range: 150.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 90.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.12,
+                vision_rays: 7.0,
+                brain_cost: 0.02,
+            ),
+            brain: Mlp(hidden: [10]),
+            mutable: (mutation_rate: false, brain_cost: false),
+        ),
+        (
+            name: "Flora",
+            color: (0.4, 0.85, 0.4),
+            count: 180,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 22.0,
+                offspring_energy: 14.0,
+                mutation_rate: 0.0,
+                photosynthesis: 6.0,
+                seed_dispersal: 24.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+    ],
+    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002),
+    predation: (size_margin: 0.1, range: 20.0, rate: 20.0),
+    field_resolution: 128,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-200.0, 200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (200.0, 200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-200.0, -200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (200.0, -200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
+        (species: 1, component: 0, absorb: 1.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+    ],
+    batch: Some((
+        generations: 8,
+        matches_per_gen: 5,
+        match_ticks: 5000,
+        scored_species: [0],
+        fitness: Population,
+        survivors: 4,
+        seed_base: 1,
+    )),
+    seed: 0,
+)
