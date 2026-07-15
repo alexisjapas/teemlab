@@ -658,7 +658,9 @@ const OVERLAY_RADIUS: u8 = 10;
 /// on top of it.
 fn overlay_frame() -> egui::Frame {
     egui::Frame::default()
-        .fill(egui::Color32::from_black_alpha(135))
+        // Strong enough that light ink stays readable over the sunlit sand
+        // showing through the frosted backdrop.
+        .fill(egui::Color32::from_black_alpha(190))
         .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
         .corner_radius(egui::CornerRadius::same(OVERLAY_RADIUS))
         .inner_margin(egui::Margin::symmetric(9, 6))
@@ -2052,21 +2054,23 @@ fn central_overlay(
 ) {
     let cx = rect.center().x;
     // Run-time read-out in a frosted pill (blurred world + translucent wash).
+    // Full-contrast ink on a strong wash: the read-out floats over sunlit sand
+    // now, muted gray on a light wash was unreadable (user feedback).
     let galley = painter.layout_no_wrap(
         overlay_label(run_time, speed),
         egui::FontId::monospace(11.0),
-        crate::theme::INK_MUTED,
+        crate::theme::INK,
     );
     let pill = egui::Rect::from_center_size(
         egui::pos2(cx, rect.top() + 6.0 + galley.size().y * 0.5),
         galley.size() + egui::vec2(16.0, 6.0),
     );
     glass_rect(painter, pill, 8, blur);
-    painter.rect_filled(pill, 8.0, egui::Color32::from_black_alpha(110));
+    painter.rect_filled(pill, 8.0, egui::Color32::from_black_alpha(175));
     painter.galley(
         egui::pos2(cx - galley.size().x * 0.5, rect.top() + 6.0),
         galley,
-        crate::theme::INK_MUTED,
+        crate::theme::INK,
     );
     if paused {
         let text = "Paused — Space to run";
@@ -2078,6 +2082,9 @@ fn central_overlay(
             galley.size() + egui::vec2(20.0, 8.0),
         );
         glass_rect(painter, chip, 6, blur);
+        // Dark wash first: the accent text needs a dark ground to pop over the
+        // bright sand behind the glass.
+        painter.rect_filled(chip, 6.0, egui::Color32::from_black_alpha(165));
         painter.rect_filled(chip, 6.0, crate::theme::ACCENT.gamma_multiply(0.15));
         painter.rect_stroke(
             chip,

@@ -53,7 +53,11 @@ structure stay independent, draws in **fixed order**:
   centers (x, y each).
 - `rng_tex = Lcg(visual_seed ^ 0x9E37_79B9)`: 1 draw per texel row-major (the
   same sample drives ramp jitter and grain, as in the spec's prototype), then
-  22 pebbles (x, y, size — 3 draws each).
+  22 pebbles (x, y, size — 3 draws each), then the water sparkles (x, y, shape
+  — 3 draws each, consumed whether or not the spot lands in water).
+- The depth-band dithering and speckle use a **stateless per-texel hash**
+  (`texel_hash`, salted with `visual_seed`), not stream draws — band noise must
+  not disturb the documented order.
 
 ## 3. Geometry
 
@@ -91,28 +95,31 @@ prototype); the texture is `Rgba8UnormSrgb`, sampler **nearest**.
    anywhere; the ones under the pool get blurred + tinted → read as submerged.
 3. **Bank bands** (`sdf ≤ 0`): crest shadow `rgba(28,18,8, 0.42)` for
    `sdf ∈ (−5, 0]`; sunlit lip `rgba(255,247,218, 0.18)` for `sdf ∈ (−13, −5]`.
-4. **Interior** (`sdf > 0`), in order: (a) 1-texel separable gaussian blur of
-   the sand (sampling the unblurred copy) — "sand seen through water", baked
-   once; (b) **2-step depth tint, water wall-to-wall**:
-   `t = min(sdf/(0.40·M), 1)`, `c = 1 − (1 − t)^1.8`,
-   `a = min(floor(2c) + 1, 2)/2 · 0.748`, multiply toward water
-   `rgb(66,178,192)` — a *tinted* shallow ledge from the very first texel, then
-   the wide uniform deep plateau. (The spec's untinted first step and its
-   submerged wall shadow are deliberately NOT ported — user feedback: the pool
-   must read as water up to the bank, with no inward shadow.)
+4. **Interior** (`sdf > 0`): **granular depth bands** (user feedback +
+   reference image — dithered pixel-art seams, neither crisp contours nor
+   smooth gradients). Eased depth `c = 1 − (1 − min(sdf/(0.85·M), 1))^1.4` is
+   jittered by coarse-lattice noise (3-texel clumps + fine grain, ±0.6 band)
+   before quantizing into 6 bands; alpha `a = 0.80·(0.28 + 0.72·band/5)` ±
+   a 2-texel tonal speckle (0.10), multiply toward water `rgb(66,178,192)`.
+   Water from the very first texel; the deep center is uniform but speckled.
+   Then **sparkles**: ~`n²/3000` small light-cyan glint clusters (2–6 texels)
+   strewn over the water. Deliberately NOT ported from the spec (feedback):
+   the untinted first step, the submerged wall shadow, and the floor blur —
+   the sand grain stays crisp under the tint.
 5. **Waterline** (last): interior texels with an exterior 4-neighbor get a 1-texel
    liner per side — white `0.22`/`0.16` toward up/left, black `0.34`/`0.28`
    toward down/right.
 
 ## 5. Water film (above entities) & entity style
 
-- **Film texture** (straight alpha, transparent outside the pool): radial water
-  tint `α = lerp(0.42, 0.08, r)·0.8` + film `lerp(0.14, 0.05, r)` (`r` = dist
-  from center / M, clamped), color ≈ `rgb(94,193,205)`; plus 2 soft white spots
-  (`α = 0.05·(1 − d/r)²`, radius ≈ 0.18·side_wu) — makes entities read as
-  immersed. v1 uses standard sprite alpha blending; a true multiply
-  `Material2d` (BlendState `Dst·Src`) sampling the same texture is a drop-in
-  follow-up.
+- **Film texture** (straight alpha, transparent outside the pool): a
+  **darkening** radial tint — deep color `rgb(40,110,122)` at
+  `α = lerp(0.22, 0.05, r)` (`r` = dist from center / M, clamped) — the
+  straight-alpha stand-in for the spec's *multiply* (a light film would wash
+  the depth out, feedback); plus 2 soft white spots (`α = 0.05·(1 − d/r)²`,
+  radius ≈ 0.16·side_wu) — makes entities read as immersed. A true multiply
+  `Material2d` (BlendState `Dst·Src`) sampling the same texture stays the
+  drop-in follow-up.
 - **Entity style**: bodies are **pixel-art disc sprites** — one cached
   nearest-sampled white disc texture per radius bucket (`radius_px =
   round(r / 2 wu)`, `decor::disc_image`), tinted per entity via `Sprite::color`

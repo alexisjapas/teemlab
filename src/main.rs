@@ -141,7 +141,7 @@ fn main() {
         // Sim rendering (mesh, arena, vision) lives in `VisualsPlugin`; curve
         // sampling in `MetricsPlugin` (lib, shared); here, the only observer
         // specific to the binary is the video-recording driver.
-        .add_systems(Update, recorder::drive_recorder)
+        .add_systems(Update, (recorder::drive_recorder, debug_screenshot))
         // egui UI — **fixed docked panels** around the central simulation area, all
         // assembled by the single `panels::dock` system (one root `Ui`,
         // `show_inside`). The order is **chained** and matters: `dock` first (it
@@ -218,6 +218,26 @@ fn keyboard_shortcuts(
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
+
+/// Dev aid, inert unless `TEEMLAB_DEBUG_SHOT=<path.png>` is set: shoots the
+/// window (egui included) after ~5 s and exits — lets a headless session (CI,
+/// an agent) eyeball the real windowed UI without a human at the screen.
+/// Rendering only.
+fn debug_screenshot(mut frames: Local<u32>, mut commands: Commands) {
+    let Ok(path) = std::env::var("TEEMLAB_DEBUG_SHOT") else {
+        return;
+    };
+    *frames += 1;
+    if *frames == 300 {
+        use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(path));
+    }
+    if *frames == 420 {
+        std::process::exit(0);
+    }
 }
 
 /// Breathing margin around the arena for the **base** framing (1.0 = flush with the

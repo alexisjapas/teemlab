@@ -49,14 +49,37 @@ const SAND_RAMP: [(f32, [f32; 3]); 4] = [
 ];
 /// Depth-tint water (multiplied into the basin floor).
 const WATER: [f32; 3] = [66.0, 178.0, 192.0];
-/// Upper-film tint: the water lightened — reads as surface, not depth.
-const FILM: [f32; 3] = [94.0, 193.0, 205.0];
+/// Upper-film tint: a **deep** water tone — the film alpha-blends it over the
+/// entities/floor, approximating the spec's *multiply* (it darkens the center,
+/// never washes it out).
+const FILM: [f32; 3] = [40.0, 110.0, 122.0];
 const PEBBLE_DARK: [f32; 3] = [107.0, 96.0, 78.0];
 const PEBBLE_LIGHT: [f32; 3] = [214.0, 204.0, 182.0];
 /// Shaded crest of the basin wall (`sdf ∈ (−5, 0]`).
 const CREST: [f32; 3] = [28.0, 18.0, 8.0];
 /// Sunlit lip just outside the crest (`sdf ∈ (−13, −5]`).
 const LIP: [f32; 3] = [255.0, 247.0, 218.0];
+/// Light ripple glint strewn across the water (the reference's sparkles).
+const SPARKLE: [f32; 3] = [214.0, 246.0, 248.0];
+/// Number of water-depth bands between the shore and the deep center.
+const BANDS: f32 = 6.0;
+/// Per-texel jitter at the band seams, in band widths (≈ how far two adjacent
+/// bands grain into each other — big enough to read as dithering, small enough
+/// that the bands stay distinguishable).
+const DITHER: f32 = 0.6;
+/// Where the deepest band settles, as a fraction of the basin midline: the
+/// bands spread across most of the pool (reference image), the center stays a
+/// uniform speckled deep.
+const PLATEAU: f32 = 0.85;
+/// Shore-compression of the band spread (1 = evenly spaced bands).
+const DEPTH_EASE: f32 = 1.4;
+/// Texel clusters a sparkle can take (diagonal glints, 2–6 texels).
+const SPARKLE_SHAPES: [&[(isize, isize)]; 4] = [
+    &[(0, 0), (1, -1), (1, 0)],
+    &[(0, 0), (1, 0), (2, -1), (3, -1)],
+    &[(0, 0), (-1, 1), (0, 1)],
+    &[(0, 0), (1, -1), (2, -2), (2, -1), (3, -2), (0, -1)],
+];
 
 /// The spec's LCG (Numerical Recipes), reimplemented verbatim so the *integer*
 /// stream is bit-exact on every platform. Deliberately **not**
@@ -213,41 +236,16 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
         }
     }
 
-    // -- P4.1 basin floor: 1-texel separable blur ("sand seen through water") --
-    // Horizontal pass over everything (cheap), vertical pass written back only
-    // where there is water — the banks stay crisp.
-    let copy = base.clone();
-    let mut blurred = copy.clone();
-    for j in 0..n {
-        for i in 0..n {
-            let l = copy[j * n + i.saturating_sub(1)];
-            let c = copy[j * n + i];
-            let r = copy[j * n + (i + 1).min(n - 1)];
-            for k in 0..3 {
-                blurred[j * n + i][k] = 0.25 * l[k] + 0.5 * c[k] + 0.25 * r[k];
-            }
-        }
-    }
-    for j in 0..n {
-        for i in 0..n {
-            let idx = j * n + i;
-            if sdf[idx] <= 0.0 {
-                continue;
-            }
-            let u = blurred[j.saturating_sub(1) * n + i];
-            let c = blurred[idx];
-            let d = blurred[(j + 1).min(n - 1) * n + i];
-            for k in 0..3 {
-                base[idx][k] = 0.25 * u[k] + 0.5 * c[k] + 0.25 * d[k];
-            }
-        }
-    }
-
-    // -- P4.2 depth steps -------------------------------------------------------
-    // Water from the very first texel: a tinted shallow ledge hugging the shore,
-    // then the wide uniform deep plateau — the pool reads as water wall-to-wall
-    // (no untinted "beach" ring, no submerged wall shadow: user feedback).
-    let plateau = 0.40 * m;
+    // -- P4 depth bands, granular ----------------------------------------------
+    // Several depth bands **dissolving into each other with per-texel noise**
+    // (user feedback + reference image: dithered pixel-art seams — neither crisp
+    // contours nor smooth gradients). The eased depth is jittered by about a
+    // band's width before quantizing, so each seam is a wide grainy mix; a tonal
+    // speckle then varies every band from within. Water from the very first
+    // texel (wall-to-wall), the deep center uniform but speckled. No floor blur
+    // (removed on feedback): the sand grain stays crisp under the tint.
+    let plateau = PLATEAU * m;
+    let salt = visual_seed(seed);
     for j in 0..n {
         for i in 0..n {
             let idx = j * n + i;
@@ -256,10 +254,39 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
                 continue;
             }
             let t = (s / plateau).min(1.0);
-            let ease = 1.0 - (1.0 - t).powf(1.8);
-            let a = ((ease * 2.0).floor() + 1.0).min(2.0) / 2.0 * 0.748;
+            let ease = 1.0 - (1.0 - t).powf(DEPTH_EASE);
+            // Coarse-lattice noise (3-texel clumps, salted with a little per-texel
+            // grain): the dither reads as chunky pixel-art mottling even zoomed
+            // out, instead of averaging into a smooth gradient.
+            let clump = texel_hash(i as u32 / 3, j as u32 / 3, salt) - 0.5;
+            let fine = texel_hash(i as u32, j as u32, salt) - 0.5;
+            let x = ease * BANDS + (0.7 * clump + 0.3 * fine) * DITHER;
+            let band = x.floor().clamp(0.0, BANDS - 1.0);
+            let speckle = texel_hash(i as u32 / 2, j as u32 / 2, salt ^ 0x5F35_6495) - 0.5;
+            let a = (0.80 * (0.28 + 0.72 * band / (BANDS - 1.0)) + speckle * 0.10).clamp(0.0, 1.0);
             for k in 0..3 {
                 base[idx][k] *= 1.0 - a + a * WATER[k] / 255.0;
+            }
+        }
+    }
+
+    // -- sparkles: tiny light ripple clusters strewn across the water -----------
+    // (texture stream, after the pebbles — the draws are consumed whether or not
+    // the spot lands in water, so the stream stays aligned.)
+    let sparkle_count = (n * n / 3000).max(8);
+    for _ in 0..sparkle_count {
+        let sx = ((rng_tex.next_f32() * n as f32) as usize).min(n - 1) as isize;
+        let sy = ((rng_tex.next_f32() * n as f32) as usize).min(n - 1) as isize;
+        let shape = ((rng_tex.next_f32() * SPARKLE_SHAPES.len() as f32) as usize)
+            .min(SPARKLE_SHAPES.len() - 1);
+        for &(dx, dy) in SPARKLE_SHAPES[shape] {
+            let (x, y) = (sx + dx, sy + dy);
+            if x < 0 || y < 0 || x >= n as isize || y >= n as isize {
+                continue;
+            }
+            let idx = y as usize * n + x as usize;
+            if sdf[idx] > 0.0 {
+                blend_over(&mut base[idx], SPARKLE, 0.7);
             }
         }
     }
@@ -310,14 +337,12 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
             }
             let wx = (i as f32 + 0.5 - n as f32 / 2.0) * TEXEL_WU;
             let r = ((wx * wx + wy * wy).sqrt() / m).clamp(0.0, 1.0);
-            let tint = (0.42 + (0.08 - 0.42) * r) * 0.8;
-            let mut color = [WATER[0] * tint, WATER[1] * tint, WATER[2] * tint];
+            // A *darkening* radial tint (the spec's multiply, approximated with
+            // a deep film color): strongest over the center so the depth reads
+            // through the film instead of being washed out by it.
+            let tint = 0.22 + (0.05 - 0.22) * r;
+            let mut color = [FILM[0] * tint, FILM[1] * tint, FILM[2] * tint];
             let mut alpha = tint;
-            let sheen = 0.14 + (0.05 - 0.14) * r;
-            for k in 0..3 {
-                color[k] = FILM[k] * sheen + color[k] * (1.0 - sheen);
-            }
-            alpha = sheen + alpha * (1.0 - sheen);
             for spot in &spots {
                 let d = ((wx - spot[0]).powi(2) + (wy - spot[1]).powi(2)).sqrt();
                 if d < spot_radius {
@@ -380,6 +405,22 @@ fn tone(u: f32) -> [f32; 3] {
         prev = *stop;
     }
     SAND_RAMP[SAND_RAMP.len() - 1].1
+}
+
+/// Deterministic per-texel noise in `[0, 1)` — a stateless integer hash, **not**
+/// a stream draw: the band dithering must not disturb the documented draw order
+/// (and must not correlate texels through a sequential state).
+fn texel_hash(i: u32, j: u32, salt: u32) -> f32 {
+    let mut h = i
+        .wrapping_mul(0x9E37_79B9)
+        .wrapping_add(j.wrapping_mul(0x85EB_CA6B))
+        ^ salt;
+    h ^= h >> 16;
+    h = h.wrapping_mul(0x7FEB_352D);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x846C_A68B);
+    h ^= h >> 16;
+    (f64::from(h) / 4_294_967_296.0) as f32
 }
 
 /// Classic "over" blend of `src` at opacity `a` onto `dst`, per channel.
