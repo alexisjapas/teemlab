@@ -1,0 +1,68 @@
+// 03 · Springs — a scarce nutrient, and a real carrying capacity.
+//
+// 02's meadow was capped only by space. Here a second, DECOUPLED axis enters
+// (Liebig's law of the minimum): energy (sunlight) still governs SURVIVAL, but a
+// scarce NUTRIENT now governs REPRODUCTION. A few vents (`sources`) leak the
+// nutrient into a diffusing FIELD (toggle View ▸ Layers → Nutrient heatmap); a plant
+// ABSORBS it into a small store and SPENDS it to seed (`repro_cost`) — and the spent
+// nutrient is CONSUMED, not handed down, so it is a genuinely limiting resource.
+// The vents supply it slowly, so seeding is nutrient-THROTTLED: the meadow grows far
+// slower than 02's and stays pinned to the vents (nowhere else has nutrient to seed
+// with). A dying plant RECYCLES its store back to the field (`emit_at_death`) —
+// latent here (well-fed plants rarely die), it becomes the loop that carries the
+// nutrient up the chain once a grazer starts killing them (04+). NB with immortal
+// producers the nutrient bounds the growth RATE, not the standing crop; a firm
+// carrying capacity needs turnover — which arrives with grazing.
+//
+// Watch: plants cluster into tight OASES around the three vents; the rest stays bare.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 340.0,
+    archetypes: [
+        (
+            name: "Reed",
+            color: (0.35, 0.8, 0.42),
+            count: 24,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 25.0,
+                offspring_energy: 15.0,
+                mutation_rate: 0.0,
+                photosynthesis: 5.0,
+                seed_dispersal: 22.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+    ],
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-150.0, 120.0), component: 0, rate: 4.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, 100.0), component: 0, rate: 4.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (0.0, -160.0), component: 0, rate: 4.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        (species: 0, component: 0, absorb: 1.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 8.0),
+    ],
+    seed: 7,
+)
