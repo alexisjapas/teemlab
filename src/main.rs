@@ -215,9 +215,10 @@ fn setup_camera(mut commands: Commands) {
 }
 
 /// Breathing margin around the arena for the **base** framing (1.0 = flush with the
-/// edges). Shared by `camera_navigation` (cursor-anchored zoom math) and
+/// edges): "Fit arena" shows the walls *plus* a band of bank/sand around them.
+/// Shared by `camera_navigation` (cursor-anchored zoom math) and
 /// `set_sim_camera` (the actual framing), so the two agree on the base scale.
-const VIEW_MARGIN: f32 = 1.06;
+const VIEW_MARGIN: f32 = 1.18;
 
 /// User pan/zoom of the sim view, layered on top of the automatic fit-the-arena
 /// framing. **Rendering only** (a windowed-build resource, read in the egui pass);
@@ -382,6 +383,17 @@ fn camera_navigation(
     if panning && origin_on_sim && delta != egui::Vec2::ZERO {
         view.look_at += Vec2::new(-delta.x, delta.y) * s_eff;
         view.set_free(); // a manual pan leaves any Fit/Follow lock
+    }
+
+    // Keep the view tethered to the arena: the pan target never leaves the walls
+    // (`±h`), so the basin stays on screen and the decor's finite sand margin is
+    // all a view can ever reach (cf. `decor::SIDE_RATIO`). Covers both the pan
+    // and the cursor-anchored zoom shift above. (Guarded write: no spurious
+    // change tick on an untouched view.)
+    let h = config.arena_half_extent;
+    let clamped = view.look_at.clamp(Vec2::splat(-h), Vec2::splat(h));
+    if clamped != view.look_at {
+        view.look_at = clamped;
     }
     Ok(())
 }
