@@ -1,17 +1,17 @@
-//! `train` — generate the trained-MLP showcase from a training scenario.
+//! `train` — generate the trained-MLP showcase (`08_learning`) from a training scenario.
 //!
-//! Step 3's *generator* in the MLP learning story (mlp_brain = naive baseline;
-//! mlp_train = the training ground; mlp_evolved = the trained variant in action). It
-//! runs the training scenario **headless**, captures the best-evolved MLP seen **over
-//! the whole run** (highest generation, tie-broken by current reserve — sampled
-//! periodically, so the peak-generation lineage is caught before the living-food
-//! population fades, not the dying remnant at the final tick), and writes:
+//! The *generator* in the MLP learning story: it runs a training scenario **headless**,
+//! captures the best-evolved MLP seen **over the whole run** (highest generation,
+//! tie-broken by current reserve — sampled periodically, so the peak-generation lineage
+//! is caught before the living-food population fades, not the dying remnant at the final
+//! tick), and writes:
 //!   - `species/examples/mlp_trained.ron` — the reusable catalog **variant** (the
 //!     evolved genotype + the frozen `captured_brain`), as if exported from the
 //!     inspector's "Save as variant";
-//!   - `scenarios/examples/09_mlp_evolved.ron` — a **self-contained** showcase: the
-//!     trained MLP vs a WANDER control on the same oasis flora (import = copy, so the
-//!     trained brain is embedded inline).
+//!   - `scenarios/examples/08_learning.ron` — a **self-contained** showcase: the trained
+//!     MLP (species 0) vs a WANDER control (species 1) on the oasis flora (species 2),
+//!     the trained brain embedded inline (the diet/absorption relations are remapped to
+//!     the 3-species layout).
 //!
 //! A one-off generator, not part of the test suite. Re-run to regenerate the artifacts.
 //! Usage: `cargo run --bin train -- [train_scenario.ron] [ticks] [seed]`.
@@ -74,13 +74,9 @@ fn main() {
     );
     println!("captured MLP: generation {generation}, reserve {reserve:.1}");
 
-    // Quality floor. The committed capture (07/09/mlp_trained) is the artifact the
-    // `tests/mlp` learning tripwire scores; a *fluke* early-generation brain (few
-    // rounds of selection) is a weak forager that can flake the tripwire on a marginal
-    // seed. Rather than silently commit one on a regeneration, fail **loudly** so the
-    // seed is re-picked — the pinned default seed (`08_mlp_train.ron`) clears this by a
-    // wide margin (generation 9). This does not weaken the tripwire (DEV Rule 3); it
-    // guards the *generator's* output quality.
+    // Quality floor. A *fluke* early-generation brain (few rounds of selection) is a weak
+    // forager: rather than silently commit one on a regeneration, fail **loudly** so the
+    // seed is re-picked. This guards the generator's output quality, not the sim.
     const MIN_CAPTURE_GENERATION: u32 = 6;
     assert!(
         generation >= MIN_CAPTURE_GENERATION,
@@ -93,7 +89,8 @@ fn main() {
     // showcase's species 0.
     let captured = base.capture(genotype, brain, generation);
 
-    // (1) Catalog variant.
+    // (1) Catalog variant (the reusable, evolved species — as if exported from the
+    // inspector's "Save as variant"). A nice library artifact independent of the scenario.
     let entry = SpeciesEntry::variant(
         captured.clone(),
         base.name.clone(),
@@ -105,11 +102,14 @@ fn main() {
     )
     .expect("write mlp_trained.ron");
 
-    // (2) Self-contained showcase: trained MLP (sp0) vs a WANDER control (sp1) — same
-    // evolved body, naive brain — on the oasis flora (sp2). Only the brain differs.
+    // (2) Self-contained showcase `08_learning.ron`: the TRAINED MLP (sp0, a frozen
+    // `captured_brain`) vs a WANDER control (sp1) — same evolved body, naive brain — on
+    // the oasis flora (sp2). Only the brain differs, so the scene is the payoff of the
+    // learning story: the evolved network forages on par with (or better than) the
+    // coin-flip baseline it started level with.
     let mut mlp = captured;
     mlp.name = "Trained MLP".into();
-    mlp.count = 14;
+    mlp.count = 6;
     let mut wander = mlp.clone();
     wander.name = "Wanderer".into();
     wander.color = [0.95, 0.8, 0.3];
@@ -119,50 +119,64 @@ fn main() {
 
     let mut evolved = config.clone();
     evolved.archetypes = vec![mlp, wander, flora];
+    // A representative default view seed for the showcase (independent of the training
+    // seed): one on which the trained MLP holds a healthy parity with the wander control.
+    evolved.seed = 0;
+    // Remap the field relations for the 3-species showcase. The training ground had
+    // species 0 = forager, 1 = flora; inserting the WANDER control at index 1 shifts the
+    // flora to index 2, so the diet/absorption rows must move with them or the flora
+    // stops being digestible (foragers starve amid a carpet). The wander shares the
+    // forager's diet (only its brain differs).
+    evolved.field_relations = config
+        .field_relations
+        .iter()
+        .flat_map(|fr| match fr.species {
+            0 => {
+                let mut wander_diet = fr.clone();
+                wander_diet.species = 1;
+                vec![fr.clone(), wander_diet]
+            }
+            1 => {
+                let mut flora_row = fr.clone();
+                flora_row.species = 2;
+                vec![flora_row]
+            }
+            _ => vec![fr.clone()],
+        })
+        .collect();
     let evolved_header = "\
-// MLP evolved — a TRAINED learned brain in action (the payoff of the learning story:
-// mlp_brain = naive baseline, mlp_train = the training ground, this = the trained
-// variant reused). Species 0 carries a frozen `captured_brain` evolved in mlp_train;
-// it forages the oasis flora on PAR with the wander control — a far cry from the naive
-// MLP of mlp_brain, which the wanderer out-forages. (Parity, not domination: see
-// ROADMAP — neuroevolution in the living-food window plateaus at parity.)
+// 08 · Learning — an evolved brain, and the control it must beat.
+//
+// Every forager so far ran a HAND-WRITTEN brain (Wander, Hunter, Grazer). Species 0's
+// decider is instead a neural network whose weights were DELIVERED BY EVOLUTION: an
+// `Mlp` brain that, from RANDOM weights, mutated and was selected by the ordinary
+// continuous economy (neuroevolution — no gradient, no labels, just who eats and
+// breeds) on the training ground, until a competent forager emerged. That evolved
+// network is frozen here as a `captured_brain` and its founders are born with it. Its
+// I/O is fixed by the body (SIM Law 4 — vision × rays + target/threat + proprioception
+// in, steering + eat intent out); its neurons are PRICED (`brain_cost`).
+//
+// A WANDER control (species 1) shares the same oasis flora — the honest baseline of
+// §4.2: a learned brain that cannot out-forage a coin-flip has learned nothing. From
+// random the two start level (a fresh MLP even loses — its random `act` output often
+// never eats); the TRAINED brain here forages on par with or ahead of the wanderer.
+// Watch the network graph (click a Trained MLP → brain view) and compare the two
+// populations. (Living-food neuroevolution plateaus near parity — the honest ROADMAP §7
+// target; a longer, offline search is the `breed` regime, 11.)
+//
 // GENERATED by `cargo run --bin train` — do not hand-edit; re-run to regenerate.\n";
     std::fs::write(
-        "scenarios/examples/09_mlp_evolved.ron",
+        "scenarios/examples/08_learning.ron",
         format!(
             "{evolved_header}{}",
             evolved.to_ron_string().expect("serialize evolved scenario")
         ),
     )
-    .expect("write mlp_evolved.ron");
-
-    // (3) The NAIVE baseline: the same showcase, but species 0 is a FRESH MLP (random
-    // weights from the seed, no `captured_brain`) — what the trained variant started
-    // from. Same economy as mlp_evolved, so the only difference is naive vs trained.
-    let mut naive = evolved.clone();
-    naive.archetypes[0].name = "MLP".into();
-    naive.archetypes[0].color = [0.8, 0.45, 1.0];
-    naive.archetypes[0].captured_brain = None;
-    naive.archetypes[0].captured_from = None;
-    let naive_header = "\
-// MLP brain — the NAIVE learned brain: a from-random MLP vs a wander control on the
-// oasis flora (step 1 of the MLP learning story). With random weights the MLP forages
-// no better than chance — the wanderer out-forages it. Train it (mlp_train) and reuse
-// the evolved variant (mlp_evolved) to see it reach parity. Inspect the MLP network in
-// action (activations) in the inspector.
-// GENERATED by `cargo run --bin train` — do not hand-edit; re-run to regenerate.\n";
-    std::fs::write(
-        "scenarios/examples/07_mlp_brain.ron",
-        format!(
-            "{naive_header}{}",
-            naive.to_ron_string().expect("serialize naive scenario")
-        ),
-    )
-    .expect("write mlp_brain.ron");
+    .expect("write 08_learning.ron");
 
     println!(
-        "wrote species/examples/mlp_trained.ron + scenarios/examples/09_mlp_evolved.ron + \
-         scenarios/examples/07_mlp_brain.ron"
+        "wrote species/examples/mlp_trained.ron + scenarios/examples/08_learning.ron \
+         (captured generation {generation})"
     );
 }
 
