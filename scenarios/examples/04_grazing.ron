@@ -1,0 +1,99 @@
+// 04 · Grazing — emergent predation, and the nutrient carried up the chain.
+//
+// The first mobile forager, and the first EATING. There is no authored "who eats
+// whom" table (SIM Law 8): the HERBIVORE eats the reeds because the engine COMPUTES
+// it can — it DOMINATES them in size (radius 8 vs 6, past `predation.size_margin`)
+// AND finds them DIGESTIBLE (it `need`s the nutrient the reeds hold). Its `target`
+// perception channel lights up on exactly those it can eat, and the deterministic
+// `Hunter` brain steers toward the nearest.
+//
+// A bite transfers ENERGY (survival) and, proportional to the bite, the NUTRIENT the
+// reed had absorbed — trophic transfer, link 1. The herbivore CANNOT absorb from the
+// field (`absorb: 0`): its nutrient store rises ONLY by eating, and it must hold
+// `repro_cost` to breed — so its reproduction is coupled to the nutrient it harvests
+// up the chain. Grazing also gives the reeds TURNOVER (03 lacked it): an eaten reed
+// dies and RECYCLES its nutrient to the field, where survivors re-absorb it.
+//
+// The two levels coexist and oscillate (Lotka-Volterra — a lively example to watch,
+// not a fixed steady state; ROADMAP §7). A roomy arena gives the reeds refuges from
+// an over-grazed patch. Watch the nutrient heatmap breathe as it cycles.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 420.0,
+    archetypes: [
+        (
+            name: "Reed",
+            color: (0.35, 0.8, 0.42),
+            count: 100,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 20.0,
+                offspring_energy: 12.0,
+                mutation_rate: 0.0,
+                photosynthesis: 6.0,
+                seed_dispersal: 24.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+        (
+            name: "Herbivore",
+            color: (1.0, 0.55, 0.35),
+            count: 6,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 100.0,
+                agility: 0.12,
+                vision_range: 110.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 130.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Hunter,
+            mutable: (
+                mutation_rate: false,
+            ),
+        ),
+    ],
+    // A gentler bite than the default 40/s: the herbivore mouths a reed over ~2 s
+    // instead of vaporising it, so grazing pressure stays below the reeds' regrowth.
+    predation: (size_margin: 0.1, range: 20.0, rate: 16.0),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-160.0, 160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, 160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-160.0, -160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, -160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        // Reed: absorbs & holds the nutrient, spends it to seed, recycles at death.
+        (species: 0, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        // Herbivore: NEEDS the nutrient (makes reeds digestible), holds it, no
+        // absorption (store rises only by eating), breeds on it, recycles at death.
+        (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),
+    ],
+    seed: 1,
+)
