@@ -240,25 +240,77 @@ pub(crate) fn inspector_section(
     // section — characteristics without effect, that would have nothing to show.
     let immobile = genotype.locomotion().is_immobile();
 
-    // The whole Analysis panel scrolls as one (cf. `panels::dock`); these sections
-    // render directly here, with no nested inner scroll area.
-    // IDENTITY.
-    card(ui, |ui| {
-        ui.strong("Identity");
-        ui.label(format!("Species: {}", species.0));
-        ui.label(format!("Brain: {}", brain.name()));
-        ui.label(format!("Generation: {}", generation.0));
-        ui.label(format!("Age: {:.1} s", age.0));
-    });
+    // CAPTURE — pinned right under the panel title (review): freeze this agent
+    // (evolved genome + concrete weights) into a new reusable archetype, as the
+    // comp's gold-washed chip. We do not touch the sim: we build the derived
+    // archetype (cf. `Archetype::capture`) and return it — the caller applies it.
+    if ui
+        .add_sized(
+            egui::vec2(ui.available_width(), 36.0),
+            egui::Button::new(fonts::icon_label_tinted(
+                icons::SPARKLE,
+                "Capture to scenario",
+                crate::theme::ACCENT,
+            ))
+            .fill(crate::theme::soft(crate::theme::ACCENT))
+            .stroke(egui::Stroke::new(
+                1.0,
+                crate::theme::line(crate::theme::ACCENT),
+            ))
+            .corner_radius(egui::CornerRadius::same(10)),
+        )
+        .on_hover_text(
+            "Creates a new archetype freezing this agent's evolved genome AND weights \
+             (to reuse trained weights). The original species stays intact.",
+        )
+        .clicked()
+    {
+        request = config.archetypes.get(species.0 as usize).map(|src| {
+            InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0))
+        });
+    }
+    ui.add_space(10.0);
 
-    // ENERGY.
-    card(ui, |ui| {
-        ui.strong("Energy / reserve");
-        ui.add(
-            egui::ProgressBar::new(reserve.fraction())
-                .text(format!("{:.1} / {:.0}", reserve.current, reserve.max)),
+    // IDENTITY — the comp's 2×2 mini-cards: a faint label over a mono value.
+    crate::theme::caption(ui, "Identity");
+    let identity_cell = |ui: &mut egui::Ui, label: &str, value: String| {
+        card(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.label(
+                egui::RichText::new(label)
+                    .size(11.0)
+                    .color(crate::theme::INK_FAINT),
+            );
+            ui.label(egui::RichText::new(value).monospace().size(14.0));
+        });
+    };
+    let species_name = config
+        .archetypes
+        .get(species.0 as usize)
+        .map(|a| a.name.clone())
+        .unwrap_or_default();
+    ui.columns(2, |cols| {
+        identity_cell(
+            &mut cols[0],
+            "Species",
+            format!("{} · {species_name}", species.0),
         );
+        identity_cell(&mut cols[1], "Generation", generation.0.to_string());
     });
+    ui.columns(2, |cols| {
+        identity_cell(&mut cols[0], "Age", format!("{:.1} s", age.0));
+        identity_cell(&mut cols[1], "Brain", brain.name().to_string());
+    });
+    ui.add_space(10.0);
+
+    // ENERGY — comp gauge: caption + mono read-out over a slim amber bar.
+    crate::theme::caption_value(
+        ui,
+        "Energy / reserve",
+        &format!("{:.1} / {:.0}", reserve.current, reserve.max),
+    );
+    crate::theme::gauge(ui, reserve.fraction(), crate::theme::AMBER);
+    ui.add_space(10.0);
 
     // NUTRIENT STORE (T3 — the second reservoir). Energy (sun/food) governs survival,
     // the nutrient governs reproduction. Shown whenever the **scenario** uses the
@@ -271,25 +323,32 @@ pub(crate) fn inspector_section(
             .iter()
             .any(|f| f.capacity > 0.0 || f.absorb > 0.0 || f.repro_cost > 0.0);
     if nutrients.capacity(0) > 0.0 || scenario_uses_nutrients {
-        card(ui, |ui| {
-            ui.strong("Nutrient store");
-            if nutrients.capacity(0) > 0.0 {
-                ui.add(egui::ProgressBar::new(nutrients.fraction()).text(format!(
-                    "{:.1} / {:.0}",
-                    nutrients.current(0),
-                    nutrients.capacity(0)
-                )))
-                .on_hover_text("Absorbed from the field / eaten; spent to reproduce.");
-            } else {
-                // A nutrient world, but this entity is off the axis (capacity 0).
-                ui.weak("Not on the nutrient axis (capacity 0).");
-            }
-        });
+        if nutrients.capacity(0) > 0.0 {
+            crate::theme::caption_value(
+                ui,
+                "Nutrient store",
+                &format!("{:.1} / {:.0}", nutrients.current(0), nutrients.capacity(0)),
+            );
+            // The comp's nutrient blue (#6aa6ff) — a channel encoding local to the
+            // inspector, like TARGET / THREAT.
+            crate::theme::gauge(
+                ui,
+                nutrients.fraction(),
+                egui::Color32::from_rgb(106, 166, 255),
+            )
+            .on_hover_text("Absorbed from the field / eaten; spent to reproduce.");
+        } else {
+            // A nutrient world, but this entity is off the axis (capacity 0).
+            crate::theme::caption(ui, "Nutrient store");
+            ui.weak("Not on the nutrient axis (capacity 0).");
+        }
+        ui.add_space(10.0);
     }
 
     // GENOTYPE.
+    crate::theme::caption(ui, "Genotype (inherited genes)");
     card(ui, |ui| {
-        ui.strong("Genotype (inherited genes)");
+        ui.set_min_width(ui.available_width());
         if immobile {
             // A state explanation of *absent* content: stays visible (nothing to hover).
             ui.weak("Immobile — locomotion and vision genes hidden (no effect).");
@@ -320,35 +379,32 @@ pub(crate) fn inspector_section(
         });
     });
 
-    // ACTION.
+    // ACTION — heading read-out + the comp's accent throttle gauge.
+    ui.add_space(10.0);
+    crate::theme::caption(ui, "Action (brain output)");
     card(ui, |ui| {
-        ui.strong("Action (brain output)");
+        ui.set_min_width(ui.available_width());
         let throttle = action.throttle;
         let heading_deg = if action.dir.length_squared() > 1e-6 {
             action.dir.to_angle().to_degrees()
         } else {
             0.0
         };
-        ui.label(format!("desired heading: {heading_deg:+.0}°"));
-        ui.add(egui::ProgressBar::new(throttle).text(format!("throttle {throttle:.2}")));
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("desired heading")
+                    .size(12.5)
+                    .color(crate::theme::INK_MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.monospace(format!("{heading_deg:+.0}°"));
+            });
+        });
+        crate::theme::caption_value(ui, "throttle", &format!("{throttle:.2}"));
+        crate::theme::gauge(ui, throttle, crate::theme::ACCENT);
     });
 
-    // CAPTURE (a standalone action): freeze this agent (evolved genome + concrete
-    // weights) into a new reusable archetype. We do not touch the sim: we build the
-    // derived archetype (a clone of the original species, cf. `Archetype::capture`)
-    // and return it — the caller will add it to the config.
-    if ui
-        .button(fonts::icon_label(icons::SPARKLE, "Capture to scenario"))
-        .on_hover_text(
-            "Creates a new archetype freezing this agent's evolved genome AND weights \
-                 (to reuse trained weights). The original species stays intact.",
-        )
-        .clicked()
-    {
-        request = config.archetypes.get(species.0 as usize).map(|src| {
-            InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0))
-        });
-    }
+    // (Capture moved under the panel title — review.)
 
     // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
     // but written to the catalog as a NAMED variant of this species (species/saved/),
@@ -400,48 +456,46 @@ pub(crate) fn inspector_section(
     // Perception section reserved for entities that see: a flora (immobile,
     // without a ray) has no channel to show.
     if !immobile {
+        // Proprioception summary in the header read-out (comp); one slim gauge per
+        // ray (obstacle proximity, gray) with two fixed swatches whose **opacity**
+        // encodes the target / threat channels.
+        ui.add_space(10.0);
+        let [nrg, nut, spd] = perception.self_state;
+        crate::theme::caption_value(
+            ui,
+            &format!("Perception · {} rays", vision.ray_count),
+            &format!("nrg {nrg:.2} · nut {nut:.2} · spd {spd:.2}"),
+        );
         card(ui, |ui| {
-            ui.strong(format!("Perception — vision ({} rays)", vision.ray_count))
-                .on_hover_text(
-                    "obstacle (gray) · edible target (orange) · threat (red) — \
-                     0 = nothing, 1 = in contact",
-                );
-            // Proprioception: the scalar self-state channels the brain reads about
-            // *itself* (normalized [0,1]) — the substrate for modulating on its own
-            // state (eat when hungry, not on contact). See `Perception::self_state`.
-            let [nrg, nut, spd] = perception.self_state;
-            ui.horizontal(|ui| {
-                ui.strong("self");
-                ui.label(format!("nrg {nrg:.2} · nut {nut:.2} · spd {spd:.2}"));
-            });
+            ui.set_min_width(ui.available_width());
             for (i, &proximity) in perception.vision.iter().enumerate() {
                 let target = perception.target.get(i).copied().unwrap_or(0.0);
                 let threat = perception.threat.get(i).copied().unwrap_or(0.0);
                 ui.horizontal(|ui| {
-                    // Fill the card width: split the row across the three channels in
-                    // the obstacle:target:threat proportion (the obstacle bar keeps a
-                    // little more room for its "r{i} · v" label), minus the two gaps.
-                    // The 0.5 px shave keeps float rounding from wrapping the last bar.
+                    ui.label(
+                        egui::RichText::new(format!("r{i}"))
+                            .monospace()
+                            .size(11.0)
+                            .color(crate::theme::INK_FAINT),
+                    );
+                    // The proximity gauge takes what the two 12 px swatches leave.
                     let gap = ui.spacing().item_spacing.x;
-                    let avail = (ui.available_width() - 2.0 * gap - 0.5).max(0.0);
-                    let width = |share: f32| (avail * share / (95.0 + 85.0 + 85.0)).max(1.0);
-                    ui.add(
-                        egui::ProgressBar::new(proximity)
-                            .desired_width(width(95.0))
-                            .text(format!("r{i} · {proximity:.2}")),
-                    );
-                    ui.add(
-                        egui::ProgressBar::new(target)
-                            .desired_width(width(85.0))
-                            .fill(crate::theme::TARGET)
-                            .text(format!("{target:.2}")),
-                    );
-                    ui.add(
-                        egui::ProgressBar::new(threat)
-                            .desired_width(width(85.0))
-                            .fill(crate::theme::THREAT)
-                            .text(format!("{threat:.2}")),
-                    );
+                    let bar_w = (ui.available_width() - 2.0 * (12.0 + gap) - 0.5).max(1.0);
+                    crate::theme::gauge_sized(ui, proximity, crate::theme::INK_MUTED, bar_w, 9.0)
+                        .on_hover_text(format!("obstacle {proximity:.2}"));
+                    for (v, c, ch) in [
+                        (target, crate::theme::TARGET, "target"),
+                        (threat, crate::theme::THREAT, "threat"),
+                    ] {
+                        let (r, resp) =
+                            ui.allocate_exact_size(egui::vec2(12.0, 9.0), egui::Sense::hover());
+                        ui.painter().rect_filled(
+                            r,
+                            3.0,
+                            c.gamma_multiply(0.2 + 0.8 * v.clamp(0.0, 1.0)),
+                        );
+                        resp.on_hover_text(format!("{ch} {v:.2} — 0 = nothing, 1 = in contact"));
+                    }
                 });
             }
         });

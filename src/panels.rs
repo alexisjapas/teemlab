@@ -620,6 +620,7 @@ fn dot_caption(ui: &mut egui::Ui, color: egui::Color32, text: &str) {
 /// read-outs.
 fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str, color: egui::Color32) {
     editor::card(ui, |ui| {
+        ui.set_min_width(ui.available_width());
         ui.vertical(|ui| {
             crate::theme::caption(ui, label);
             ui.label(
@@ -900,35 +901,44 @@ pub fn dock(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    // The comp's Export affordance: a gold-washed chip
-                                    // (accent-soft fill, accent hairline, accent ink).
-                                    // TODO(icons): the comp shows `video-camera`; that
-                                    // codepoint is unverified in the bundled font, so
-                                    // the verified RECORD glyph stands in (cf.
-                                    // `fonts::icons`).
-                                    if ui
-                                        .add(
-                                            egui::Button::new(fonts::icon_label_tinted(
-                                                icons::RECORD,
-                                                "Export video",
-                                                crate::theme::ACCENT,
-                                            ))
-                                            .fill(crate::theme::soft(crate::theme::ACCENT))
-                                            .stroke(egui::Stroke::new(
-                                                1.0,
-                                                crate::theme::line(crate::theme::ACCENT),
-                                            ))
-                                            .corner_radius(egui::CornerRadius::same(9))
-                                            .min_size(egui::vec2(0.0, 34.0)),
+                                    // Record cluster (review): recording is the top-bar
+                                    // affordance; video export is one of its options.
+                                    // Gold while armed.
+                                    let armed = state.run_record.enabled;
+                                    let rec_label = if armed {
+                                        fonts::icon_label_tinted(
+                                            icons::RECORD,
+                                            "Recording",
+                                            crate::theme::ACCENT,
+                                        )
+                                    } else {
+                                        fonts::icon_label(icons::RECORD, "Record")
+                                    };
+                                    ui.menu_button(rec_label, |ui| {
+                                        crate::theme::toggle_row(
+                                            ui,
+                                            "Record this run",
+                                            &mut state.run_record.enabled,
                                         )
                                         .on_hover_text(
-                                            "Render the current scenario to a video \
-                                             (opens the export panel).",
-                                        )
-                                        .clicked()
-                                    {
-                                        state.windows.export = !state.windows.export;
-                                    }
+                                            "Persist this run's metrics for the Analyze \
+                                             screen (deferred — inert for now).",
+                                        );
+                                        ui.separator();
+                                        if ui
+                                            .button(fonts::icon_label(
+                                                icons::RECORD,
+                                                "Export video…",
+                                            ))
+                                            .on_hover_text(
+                                                "Render the current scenario to a video \
+                                                 (opens the export panel).",
+                                            )
+                                            .clicked()
+                                        {
+                                            state.windows.export = !state.windows.export;
+                                        }
+                                    });
                                 },
                             );
                         },
@@ -970,24 +980,20 @@ pub fn dock(
                         egui::ScrollArea::vertical()
                             .id_salt("observe_inspector_scroll")
                             .show(ui, |ui| {
-                                // `inspector_section` returns a capture request; it is
-                                // `Some` only while the header is expanded (`flatten`), and
-                                // applied *after* the call so its shared `config` borrow has
+                                // Comp header: a plain bold title, no collapsible chrome
+                                // (the panel fold is the chevron overlay).
+                                ui.strong("Agent inspector");
+                                ui.separator();
+                                // `inspector_section` returns a capture request, applied
+                                // *after* the call so its shared `config` borrow has
                                 // ended before the mutable one.
-                                let inspector_action =
-                                    egui::CollapsingHeader::new("Agent inspector")
-                                        .default_open(true)
-                                        .show(ui, |ui| {
-                                            inspector::inspector_section(
-                                                ui,
-                                                &obs.selection,
-                                                &config,
-                                                &mut palette.variant_name,
-                                                &inspector_agents,
-                                            )
-                                        })
-                                        .body_returned
-                                        .flatten();
+                                let inspector_action = inspector::inspector_section(
+                                    ui,
+                                    &obs.selection,
+                                    &config,
+                                    &mut palette.variant_name,
+                                    &inspector_agents,
+                                );
                                 match inspector_action {
                                     Some(inspector::InspectorAction::Capture(arch)) => {
                                         let from = arch.captured_from.clone().unwrap_or_default();
@@ -1017,19 +1023,6 @@ pub fn dock(
                                     }
                                     None => {}
                                 }
-                                // Run-record toggle — persist this run's metrics for
-                                // Analyze. Default off (observation is throwaway); inert
-                                // until records land (cf. `RunRecord`).
-                                ui.separator();
-                                crate::theme::toggle_row(
-                                    ui,
-                                    "Record this run",
-                                    &mut state.run_record.enabled,
-                                )
-                                .on_hover_text(
-                                    "Persist this run's metrics for the Analyze screen \
-                                     (deferred — inert for now).",
-                                );
                             });
                     })
                     .response
@@ -1073,11 +1066,6 @@ pub fn dock(
                             .show(ui, |ui| {
                                 crate::theme::caption(ui, "Live stats");
                                 observe_population(ui, &history, &config);
-                                egui::CollapsingHeader::new("Per-gene means")
-                                    .default_open(false)
-                                    .show(ui, |ui| {
-                                        editor::stats_section(ui, &stats_agents, &config)
-                                    });
                                 ui.add_space(12.0);
                                 crate::theme::caption(ui, "Layers");
                                 editor::layers_section(ui, &mut layers, &config);
@@ -1091,6 +1079,14 @@ pub fn dock(
                                      population, edge colour = dependency \
                                      (docs/emergent-trophics.md §6).",
                                 );
+                                // Pinned last (review): a removal candidate — cf.
+                                // docs/review-2026-07-15.md.
+                                ui.add_space(12.0);
+                                egui::CollapsingHeader::new("Per-gene means")
+                                    .default_open(false)
+                                    .show(ui, |ui| {
+                                        editor::stats_section(ui, &stats_agents, &config)
+                                    });
                             });
                     })
                     .response
@@ -1123,8 +1119,8 @@ pub fn dock(
             } else {
                 egui::Panel::bottom("observe_bottom")
                     .resizable(true)
-                    .default_size(300.0)
-                    .size_range(260.0..=520.0)
+                    .default_size(190.0)
+                    .size_range(140.0..=520.0)
                     .show_inside(&mut root, |ui| {
                         collapse_overlay(
                             ui,
@@ -1166,23 +1162,8 @@ pub fn dock(
                 .show_inside(&mut root, |ui| {
                     ui.horizontal(|ui| {
                         ui.heading("Studio");
-                        // The document: origin name + amber dirty marker (the comp's
-                        // "Studio reef *").
-                        let dirty = state.runs_panel.dirty(&config);
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{}{}",
-                                state.runs_panel.origin_label(),
-                                if dirty { " *" } else { "" }
-                            ))
-                            .monospace()
-                            .color(if dirty {
-                                crate::theme::ACCENT
-                            } else {
-                                crate::theme::INK_MUTED
-                            }),
-                        );
-                        ui.separator();
+                        // The scenario menu chip carries the document name + dirty
+                        // marker (cf. `runs::scenario_section`) — nothing repeated here.
                         runs::scenario_section(
                             ui,
                             &mut state.runs_panel,
@@ -1281,21 +1262,51 @@ pub fn dock(
                             ui.add_space(6.0);
                             crate::theme::caption(ui, "Scenario");
                             editor::card(ui, |ui| {
-                                ui.label(state.runs_panel.origin_label());
+                                ui.set_min_width(ui.available_width());
+                                ui.label(
+                                    egui::RichText::new(state.runs_panel.origin_label())
+                                        .monospace(),
+                                );
                             });
                             ui.add_space(8.0);
 
-                            ui.horizontal(|ui| {
-                                for (m, label) in [
-                                    (LabMode::Breed, "Breed"),
-                                    (LabMode::Sweep, "Sweep"),
-                                    (LabMode::Both, "Both (nested)"),
-                                ] {
-                                    if ui.selectable_label(state.lab.mode == m, label).clicked() {
-                                        state.lab.mode = m;
+                            // The comp's mode selector: a card-filled segmented control,
+                            // equal thirds, the active segment on the raised tone.
+                            egui::Frame::new()
+                                .fill(crate::theme::CARD)
+                                .corner_radius(egui::CornerRadius::same(10))
+                                .inner_margin(egui::Margin::same(4))
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    let seg_w = ((ui.available_width() - 8.0) / 3.0).max(40.0);
+                                    for (m, label) in [
+                                        (LabMode::Breed, "Breed"),
+                                        (LabMode::Sweep, "Sweep"),
+                                        (LabMode::Both, "Both (nested)"),
+                                    ] {
+                                        let active = state.lab.mode == m;
+                                        let (fill, ink) = if active {
+                                            (crate::theme::RAISED, crate::theme::INK)
+                                        } else {
+                                            (egui::Color32::TRANSPARENT, crate::theme::INK_MUTED)
+                                        };
+                                        if ui
+                                            .add_sized(
+                                                egui::vec2(seg_w, 28.0),
+                                                egui::Button::new(
+                                                    egui::RichText::new(label)
+                                                        .size(12.5)
+                                                        .color(ink),
+                                                )
+                                                .fill(fill)
+                                                .corner_radius(egui::CornerRadius::same(7)),
+                                            )
+                                            .clicked()
+                                        {
+                                            state.lab.mode = m;
+                                        }
                                     }
-                                }
-                            });
+                                });
                             ui.add_space(6.0);
 
                             if state.lab.mode.has_sweep() {
@@ -1352,7 +1363,7 @@ pub fn dock(
                             }
                             if state.lab.mode.has_breed() {
                                 editor::card(ui, |ui| {
-                                    dot_caption(ui, crate::theme::ACCENT, "Inner · breed");
+                                    dot_caption(ui, crate::theme::AMBER, "Inner · breed");
                                     if config.batch.is_some() {
                                         ui.weak(
                                             "Config in Studio's World editor; run it in the \
@@ -1419,21 +1430,22 @@ pub fn dock(
                 }
                 let frag = crate::trophic::web_fragility(&config);
                 let graph = crate::trophic::TrophicGraph::derive(&config);
-                ui.horizontal(|ui| {
+                // Comp: three equal tiles across the results width.
+                ui.columns(3, |cols| {
                     metric_tile(
-                        ui,
+                        &mut cols[0],
                         "SPECIES",
                         &config.archetypes.len().to_string(),
                         crate::theme::INK,
                     );
                     metric_tile(
-                        ui,
+                        &mut cols[1],
                         "TROPHIC LINKS",
                         &graph.edge_count().to_string(),
                         crate::theme::INK,
                     );
                     metric_tile(
-                        ui,
+                        &mut cols[2],
                         "WEB FRAGILITY",
                         &format!("{:.2}", frag.worst),
                         crate::theme::ACCENT,
@@ -1673,65 +1685,80 @@ pub fn dock(
 
             // CENTRE — the gallery (a scrollable list of cards, filtered by tab / source
             // / search).
-            egui::CentralPanel::default().show_inside(&mut root, |ui| {
-                let search = state.library.search.trim().to_lowercase();
-                let source = state.library.source;
-                egui::ScrollArea::vertical()
-                    .id_salt("library_gallery")
-                    .show(ui, |ui| match state.library.tab {
-                        LibraryTab::Worlds => {
-                            let mut choose = None;
-                            let mut delete = None;
-                            let ids: Vec<usize> = (0..state.library.worlds.len())
-                                .filter(|&i| {
-                                    let w = &state.library.worlds[i];
-                                    w.source == source
-                                        && (search.is_empty()
-                                            || w.name.to_lowercase().contains(&search))
-                                })
-                                .collect();
-                            ui.horizontal_wrapped(|ui| {
-                                for i in ids {
-                                    let w = &state.library.worlds[i];
-                                    let (name, seed, ncomp, nsrc, derived, path, selected) = (
-                                        w.name.clone(),
-                                        w.world.seed,
-                                        w.world.components.len(),
-                                        w.world.sources.len(),
-                                        w.derived_from,
-                                        w.path.clone(),
-                                        state.library.chosen_world == Some(i),
-                                    );
-                                    ui.allocate_ui(egui::vec2(224.0, 208.0), |ui| {
-                                        egui::Frame::default()
-                                            .fill(crate::theme::SURFACE)
-                                            .stroke(egui::Stroke::new(
-                                                1.0,
-                                                if selected {
-                                                    crate::theme::line(crate::theme::ACCENT)
-                                                } else {
-                                                    crate::theme::LINE
-                                                },
-                                            ))
-                                            .corner_radius(egui::CornerRadius::same(14))
-                                            .show(ui, |ui| {
-                                                ui.set_width(224.0);
-                                                let (thumb, _) = ui.allocate_exact_size(
-                                                    egui::vec2(224.0, 130.0),
-                                                    egui::Sense::hover(),
-                                                );
-                                                world_thumbnail(ui.painter(), thumb, seed);
+            // The gallery sits on the page tone (comp: surface cards on `--bg`).
+            egui::CentralPanel::default()
+                .frame(
+                    egui::Frame::new()
+                        .fill(crate::theme::BG)
+                        .inner_margin(egui::Margin::same(18)),
+                )
+                .show_inside(&mut root, |ui| {
+                    let search = state.library.search.trim().to_lowercase();
+                    let source = state.library.source;
+                    egui::ScrollArea::vertical()
+                        .id_salt("library_gallery")
+                        .show(ui, |ui| match state.library.tab {
+                            LibraryTab::Worlds => {
+                                let mut choose = None;
+                                let mut delete = None;
+                                let ids: Vec<usize> = (0..state.library.worlds.len())
+                                    .filter(|&i| {
+                                        let w = &state.library.worlds[i];
+                                        w.source == source
+                                            && (search.is_empty()
+                                                || w.name.to_lowercase().contains(&search))
+                                    })
+                                    .collect();
+                                ui.horizontal_wrapped(|ui| {
+                                    // The comp's 16 px grid gap.
+                                    ui.spacing_mut().item_spacing = egui::vec2(14.0, 14.0);
+                                    for i in ids {
+                                        let w = &state.library.worlds[i];
+                                        let (name, seed, ncomp, nsrc, derived, path, selected) = (
+                                            w.name.clone(),
+                                            w.world.seed,
+                                            w.world.components.len(),
+                                            w.world.sources.len(),
+                                            w.derived_from,
+                                            w.path.clone(),
+                                            state.library.chosen_world == Some(i),
+                                        );
+                                        // Force a top-down card: inside `horizontal_wrapped`
+                                        // a child ui inherits the wrapping horizontal layout,
+                                        // which would lay the thumbnail and body side by side.
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(224.0, 208.0),
+                                            egui::Layout::top_down(egui::Align::Min),
+                                            |ui| {
                                                 egui::Frame::default()
-                                                    .inner_margin(egui::Margin::same(12))
+                                                    .fill(crate::theme::SURFACE)
+                                                    .stroke(egui::Stroke::new(
+                                                        1.0,
+                                                        if selected {
+                                                            crate::theme::line(crate::theme::ACCENT)
+                                                        } else {
+                                                            crate::theme::LINE
+                                                        },
+                                                    ))
+                                                    .corner_radius(egui::CornerRadius::same(14))
                                                     .show(ui, |ui| {
-                                                        ui.horizontal(|ui| {
-                                                            ui.strong(&name);
-                                                            ui.with_layout(
-                                                                egui::Layout::right_to_left(
-                                                                    egui::Align::Center,
-                                                                ),
-                                                                |ui| {
-                                                                    ui.label(
+                                                        ui.set_width(224.0);
+                                                        let (thumb, _) = ui.allocate_exact_size(
+                                                            egui::vec2(224.0, 130.0),
+                                                            egui::Sense::hover(),
+                                                        );
+                                                        world_thumbnail(ui.painter(), thumb, seed);
+                                                        egui::Frame::default()
+                                                            .inner_margin(egui::Margin::same(12))
+                                                            .show(ui, |ui| {
+                                                                ui.horizontal(|ui| {
+                                                                    ui.strong(&name);
+                                                                    ui.with_layout(
+                                                                        egui::Layout::right_to_left(
+                                                                            egui::Align::Center,
+                                                                        ),
+                                                                        |ui| {
+                                                                            ui.label(
                                                                         egui::RichText::new(
                                                                             format!(
                                                                                 "#{}",
@@ -1744,36 +1771,42 @@ pub fn dock(
                                                                             crate::theme::INK_FAINT,
                                                                         ),
                                                                     );
-                                                                },
-                                                            );
-                                                        });
-                                                        ui.label(
-                                                            egui::RichText::new(format!(
-                                                                "{ncomp} component(s) · \
-                                                                 {nsrc} source(s)"
-                                                            ))
-                                                            .color(crate::theme::INK_MUTED)
-                                                            .size(12.0),
+                                                                        },
+                                                                    );
+                                                                });
+                                                                ui.add(
+                                                            egui::Label::new(
+                                                                egui::RichText::new(format!(
+                                                                    "{ncomp} components · \
+                                                                     {nsrc} sources"
+                                                                ))
+                                                                .color(crate::theme::INK_MUTED)
+                                                                .size(12.0),
+                                                            )
+                                                            .truncate(),
                                                         );
-                                                        ui.horizontal(|ui| {
-                                                            if derived > 0 {
-                                                                ui.label(
+                                                                ui.horizontal(|ui| {
+                                                                    if derived > 0 {
+                                                                        ui.label(
                                                                     egui::RichText::new(format!(
                                                                         "{derived} scenario(s)"
                                                                     ))
                                                                     .color(crate::theme::INK_FAINT)
                                                                     .size(11.0),
                                                                 );
-                                                            }
-                                                            ui.with_layout(
-                                                                egui::Layout::right_to_left(
-                                                                    egui::Align::Center,
-                                                                ),
-                                                                |ui| {
-                                                                    if ui.button("Use").clicked() {
-                                                                        choose = Some(i);
                                                                     }
-                                                                    if path.is_some()
+                                                                    ui.with_layout(
+                                                                        egui::Layout::right_to_left(
+                                                                            egui::Align::Center,
+                                                                        ),
+                                                                        |ui| {
+                                                                            if ui
+                                                                                .button("Use")
+                                                                                .clicked()
+                                                                            {
+                                                                                choose = Some(i);
+                                                                            }
+                                                                            if path.is_some()
                                                                         && ui
                                                                             .small_button(
                                                                                 fonts::icon(
@@ -1784,105 +1817,118 @@ pub fn dock(
                                                                     {
                                                                         delete = path.clone();
                                                                     }
+                                                                        },
+                                                                    );
+                                                                });
+                                                            });
+                                                    });
+                                            },
+                                        );
+                                    }
+                                });
+                                if let Some(i) = choose {
+                                    state.library.chosen_world = Some(i);
+                                }
+                                if let Some(path) = delete {
+                                    let _ = std::fs::remove_file(&path);
+                                    state.library.chosen_world = None; // indices change on rescan
+                                    state.library.reload();
+                                }
+                            }
+                            LibraryTab::Species => {
+                                let mut add = None;
+                                let mut delete = None;
+                                let ids: Vec<usize> = (0..state.library.species.len())
+                                    .filter(|&i| {
+                                        let s = &state.library.species[i];
+                                        s.source == source
+                                            && (search.is_empty()
+                                                || s.name.to_lowercase().contains(&search))
+                                    })
+                                    .collect();
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(14.0, 14.0);
+                                    for i in ids {
+                                        let s = &state.library.species[i];
+                                        let (name, brain, color, saved, path, entry) = (
+                                            s.name.clone(),
+                                            s.entry.archetype.brain.name().to_string(),
+                                            s.entry.archetype.color,
+                                            s.source == CatalogSource::Saved,
+                                            s.path.clone(),
+                                            s.entry.clone(),
+                                        );
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(224.0, 78.0),
+                                            egui::Layout::top_down(egui::Align::Min),
+                                            |ui| {
+                                                egui::Frame::default()
+                                                    .fill(crate::theme::SURFACE)
+                                                    .stroke(egui::Stroke::new(
+                                                        1.0,
+                                                        crate::theme::LINE,
+                                                    ))
+                                                    .corner_radius(egui::CornerRadius::same(14))
+                                                    .inner_margin(egui::Margin::same(13))
+                                                    .show(ui, |ui| {
+                                                        ui.set_width(224.0);
+                                                        ui.horizontal(|ui| {
+                                                            let (dot, _) = ui.allocate_exact_size(
+                                                                egui::vec2(14.0, 14.0),
+                                                                egui::Sense::hover(),
+                                                            );
+                                                            ui.painter().circle_filled(
+                                                                dot.center(),
+                                                                6.0,
+                                                                crate::theme::rgb(color),
+                                                            );
+                                                            ui.vertical(|ui| {
+                                                                ui.strong(&name);
+                                                                ui.label(
+                                                                    egui::RichText::new(&brain)
+                                                                        .color(
+                                                                            crate::theme::INK_MUTED,
+                                                                        )
+                                                                        .size(11.5),
+                                                                );
+                                                            });
+                                                            ui.with_layout(
+                                                                egui::Layout::right_to_left(
+                                                                    egui::Align::Center,
+                                                                ),
+                                                                |ui| {
+                                                                    if ui.button("Add").clicked() {
+                                                                        add = Some(entry.clone());
+                                                                    }
+                                                                    if saved
+                                                                        && ui
+                                                                            .small_button(
+                                                                                fonts::icon(
+                                                                                    icons::TRASH,
+                                                                                ),
+                                                                            )
+                                                                            .clicked()
+                                                                    {
+                                                                        delete = Some(path.clone());
+                                                                    }
                                                                 },
                                                             );
                                                         });
                                                     });
-                                            });
-                                    });
+                                            },
+                                        );
+                                    }
+                                });
+                                if let Some(entry) = add {
+                                    state.library.add_to_cast(entry);
                                 }
-                            });
-                            if let Some(i) = choose {
-                                state.library.chosen_world = Some(i);
-                            }
-                            if let Some(path) = delete {
-                                let _ = std::fs::remove_file(&path);
-                                state.library.chosen_world = None; // indices change on rescan
-                                state.library.reload();
-                            }
-                        }
-                        LibraryTab::Species => {
-                            let mut add = None;
-                            let mut delete = None;
-                            let ids: Vec<usize> = (0..state.library.species.len())
-                                .filter(|&i| {
-                                    let s = &state.library.species[i];
-                                    s.source == source
-                                        && (search.is_empty()
-                                            || s.name.to_lowercase().contains(&search))
-                                })
-                                .collect();
-                            ui.horizontal_wrapped(|ui| {
-                                for i in ids {
-                                    let s = &state.library.species[i];
-                                    let (name, brain, color, saved, path, entry) = (
-                                        s.name.clone(),
-                                        s.entry.archetype.brain.name().to_string(),
-                                        s.entry.archetype.color,
-                                        s.source == CatalogSource::Saved,
-                                        s.path.clone(),
-                                        s.entry.clone(),
-                                    );
-                                    ui.allocate_ui(egui::vec2(224.0, 78.0), |ui| {
-                                        egui::Frame::default()
-                                            .fill(crate::theme::SURFACE)
-                                            .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
-                                            .corner_radius(egui::CornerRadius::same(14))
-                                            .inner_margin(egui::Margin::same(13))
-                                            .show(ui, |ui| {
-                                                ui.set_width(224.0);
-                                                ui.horizontal(|ui| {
-                                                    let (dot, _) = ui.allocate_exact_size(
-                                                        egui::vec2(14.0, 14.0),
-                                                        egui::Sense::hover(),
-                                                    );
-                                                    ui.painter().circle_filled(
-                                                        dot.center(),
-                                                        6.0,
-                                                        crate::theme::rgb(color),
-                                                    );
-                                                    ui.vertical(|ui| {
-                                                        ui.strong(&name);
-                                                        ui.label(
-                                                            egui::RichText::new(&brain)
-                                                                .color(crate::theme::INK_MUTED)
-                                                                .size(11.5),
-                                                        );
-                                                    });
-                                                    ui.with_layout(
-                                                        egui::Layout::right_to_left(
-                                                            egui::Align::Center,
-                                                        ),
-                                                        |ui| {
-                                                            if ui.button("Add").clicked() {
-                                                                add = Some(entry.clone());
-                                                            }
-                                                            if saved
-                                                                && ui
-                                                                    .small_button(fonts::icon(
-                                                                        icons::TRASH,
-                                                                    ))
-                                                                    .clicked()
-                                                            {
-                                                                delete = Some(path.clone());
-                                                            }
-                                                        },
-                                                    );
-                                                });
-                                            });
-                                    });
+                                if let Some(path) = delete {
+                                    let _ = std::fs::remove_file(&path);
+                                    state.library.reload();
                                 }
-                            });
-                            if let Some(entry) = add {
-                                state.library.add_to_cast(entry);
                             }
-                            if let Some(path) = delete {
-                                let _ = std::fs::remove_file(&path);
-                                state.library.reload();
-                            }
-                        }
-                    });
-            });
+                        });
+                });
             egui::Rect::ZERO
         }
 

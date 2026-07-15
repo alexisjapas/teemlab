@@ -191,6 +191,52 @@ pub fn caption(ui: &mut egui::Ui, text: &str) {
     );
 }
 
+/// A [`caption`] row with a **mono read-out pinned right** — the comp's gauge headers
+/// ("ENERGY / RESERVE … 119.9 / 120") and dense list headers.
+pub fn caption_value(ui: &mut egui::Ui, text: &str, value: &str) {
+    ui.horizontal(|ui| {
+        caption(ui, text);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(value)
+                    .monospace()
+                    .size(12.0)
+                    .color(INK_MUTED),
+            );
+        });
+    });
+}
+
+/// A comp-style **gauge**: a slim fully-rounded track ([`RAISED`]) with a `frac`-wide
+/// `fill`. Replaces `egui::ProgressBar` (chunky, text inside) wherever the comp shows
+/// its 9–12 px bars — the value belongs in a mono label *beside* the bar
+/// ([`caption_value`]), never inside it. Full available width, 12 px tall.
+pub fn gauge(ui: &mut egui::Ui, frac: f32, fill: egui::Color32) -> egui::Response {
+    let width = ui.available_width();
+    gauge_sized(ui, frac, fill, width, 12.0)
+}
+
+/// [`gauge`] with an explicit size (the perception rays use 9 px bars in a row).
+pub fn gauge_sized(
+    ui: &mut egui::Ui,
+    frac: f32,
+    fill: egui::Color32,
+    width: f32,
+    height: f32,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let radius = height * 0.5;
+    ui.painter().rect_filled(rect, radius, RAISED);
+    let w = rect.width() * frac.clamp(0.0, 1.0);
+    if w >= 1.0 {
+        // Never narrower than the cap radius, so the fill keeps its pill shape.
+        let fill_rect =
+            egui::Rect::from_min_size(rect.min, egui::vec2(w.max(height), rect.height()));
+        ui.painter().rect_filled(fill_rect, radius, fill);
+    }
+    resp
+}
+
 /// A **pill toggle** switch (the comp's Layers / run-record affordance): a rounded track
 /// with a sliding knob, [`ACCENT`] on / [`RAISED`] off. Flips `*on` on click; returns the
 /// `Response`. Replaces a bare `ui.checkbox` where the comp shows a switch.

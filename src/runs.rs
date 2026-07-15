@@ -160,6 +160,9 @@ impl RunsPanel {
     /// Whether the in-memory config has **unsaved edits** vs the last load/save baseline
     /// (the amber `*` marker). The transient founder pools never count as an edit (they
     /// never reach the file), mirroring [`scenario_section`]'s dirty check.
+    // Currently unreferenced (the Studio strip now reads the dirty state from the
+    // scenario menu chip) — kept for the explicit Overwrite / Save-as-new buttons.
+    #[allow(dead_code)]
     pub(crate) fn dirty(&self, config: &SimConfig) -> bool {
         let mut baseline = self.baseline.clone();
         baseline.founder_pools = config.founder_pools.clone();
@@ -262,7 +265,19 @@ pub(crate) fn scenario_section(
     let mut want_save_as = false;
     let mut menu_open = false;
 
-    ui.menu_button(fonts::icon_label(icons::CARET_DOWN, "Scenario"), |ui| {
+    // The menu button IS the document chip (the comp's "20_reef.ron ⌄"): name +
+    // amber dirty marker, so nothing repeats the file name beside it.
+    let name = loaded_name(loaded_path.as_deref());
+    let menu_label = if dirty {
+        fonts::icon_label_tinted(
+            icons::CARET_DOWN,
+            &format!("{name} *"),
+            crate::theme::ACCENT,
+        )
+    } else {
+        fonts::icon_label(icons::CARET_DOWN, name)
+    };
+    let menu_resp = ui.menu_button(menu_label, |ui| {
         menu_open = true;
         if ui
             .button(fonts::icon_label(icons::PLUS, "New (empty)"))
@@ -314,24 +329,15 @@ pub(crate) fn scenario_section(
             want_save_as = true;
         }
     });
-    // The scenario list refreshes itself **when the menu opens** (no manual rescan):
-    // we detect the closed→open transition and rescan once.
-    let rescan = menu_open && !panel.menu_was_open;
-    panel.menu_was_open = menu_open;
-
-    // Current document name + a *modified* marker (amber name + "*"). We avoid a glyph
-    // marker (e.g. "●"): the embedded DejaVu subset renders some symbols as tofu.
-    let name = loaded_name(loaded_path.as_deref());
-    let text = if dirty {
-        egui::RichText::new(format!("{name} *")).color(crate::theme::ACCENT)
-    } else {
-        egui::RichText::new(name)
-    };
-    ui.label(text).on_hover_text(match &loaded_path {
+    menu_resp.response.on_hover_text(match &loaded_path {
         Some(p) if dirty => format!("{p} — unsaved edits"),
         Some(p) => p.clone(),
         None => "Not saved yet".to_string(),
     });
+    // The scenario list refreshes itself **when the menu opens** (no manual rescan):
+    // we detect the closed→open transition and rescan once.
+    let rescan = menu_open && !panel.menu_was_open;
+    panel.menu_was_open = menu_open;
 
     // Resolve intents (full &mut access here, no egui closure borrow in flight).
     panel.scenario_path = scenario_path;

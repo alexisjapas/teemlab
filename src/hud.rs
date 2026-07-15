@@ -30,18 +30,16 @@ pub(crate) fn hud_section(ui: &mut egui::Ui, history: &mut History, config: &Sim
         }
     });
     ui.separator();
-    // Split the height left after the header/separator between the two plots: each gets
-    // half, minus ~44 pt for its own strong label + legend + spacing. Clamped so neither
-    // collapses nor grows unwieldy. The bottom panel's `size_range` floor (cf. `panels`)
-    // is chosen so that at the minimum height `each` lands at its clamp floor and the two
-    // plots still fit — the curves never clip.
-    let each = (ui.available_height() / 2.0 - 44.0).clamp(64.0, 240.0);
+    // The comp's curves strip: the two plots **side by side** across the full width
+    // (population left, gene drift right), caption + plot + legend in each column.
+    let each = (ui.available_height() - 56.0).clamp(64.0, 260.0);
     let history: &History = history;
-    ui.strong("Population per species");
-    draw_population(ui, history, config, each);
-    ui.add_space(10.0);
-    ui.strong("Gene drift — mutable genes (normalized 0–1)");
-    draw_traits(ui, history, config, each);
+    ui.columns(2, |cols| {
+        crate::theme::caption(&mut cols[0], "Population / species");
+        draw_population(&mut cols[0], history, config, each);
+        crate::theme::caption(&mut cols[1], "Gene drift — mutable genes (normalized 0–1)");
+        draw_traits(&mut cols[1], history, config, each);
+    });
 }
 
 fn draw_population(ui: &mut egui::Ui, history: &History, config: &SimConfig, height: f32) {
