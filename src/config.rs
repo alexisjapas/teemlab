@@ -105,6 +105,9 @@ pub struct SimConfig {
     /// `[r, g, b]`. A presentation setting (windowed rendering only, `ClearColor`),
     /// saved with the scenario.
     pub off_game_color: [f32; 3],
+    /// The pixel-art **backdrop** (sand + water basin, `crate::decor`) — a
+    /// presentation setting like the two colors above, saved with the scenario.
+    pub decor: DecorConfig,
     /// RNG seed: replay an *experiment config*, not bit-for-bit.
     pub seed: u64,
     /// **Generational regime** parameters (§4 axis A — batched reproduction). `None`
@@ -213,6 +216,25 @@ impl Default for Predation {
             range: 20.0,
             rate: 40.0,
         }
+    }
+}
+
+/// The purely-visual pixel-art backdrop ("arena decor", `docs/arena-decor.md`):
+/// a sunny sand square with a shallow water basin covering the playable area,
+/// baked deterministically from a seed *derived* from [`SimConfig::seed`]. A
+/// **presentation** setting like [`SimConfig::play_area_color`] — never read by
+/// the simulation (DEV Rule 3), saved with the scenario.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DecorConfig {
+    /// Off → back to the flat [`play_area_color`](SimConfig::play_area_color) /
+    /// [`off_game_color`](SimConfig::off_game_color) look, unchanged.
+    pub enabled: bool,
+}
+
+impl Default for DecorConfig {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
@@ -877,6 +899,7 @@ impl Default for SimConfig {
             // the tints previously hard-coded in `main`.)
             play_area_color: [0.07, 0.07, 0.09],
             off_game_color: [0.17, 0.17, 0.19],
+            decor: DecorConfig::default(),
             seed: 0x00C0_FFEE,
             batch: None,
             founder_pools: std::collections::HashMap::new(),
@@ -1311,6 +1334,8 @@ pub struct World {
     pub play_area_color: [f32; 3],
     /// Off-game background colour.
     pub off_game_color: [f32; 3],
+    /// The pixel-art backdrop (presentation, like the two colors above).
+    pub decor: DecorConfig,
     /// RNG seed.
     pub seed: u64,
 }
@@ -1349,6 +1374,7 @@ impl World {
             predation: c.predation.clone(),
             play_area_color: c.play_area_color,
             off_game_color: c.off_game_color,
+            decor: c.decor,
             seed: c.seed,
         }
     }
@@ -1377,6 +1403,7 @@ impl World {
         c.predation = self.predation.clone();
         c.play_area_color = self.play_area_color;
         c.off_game_color = self.off_game_color;
+        c.decor = self.decor;
         c.seed = self.seed;
     }
 
@@ -1486,6 +1513,28 @@ mod tests {
 
         let empty = SimConfig::from_ron_str("()").expect("valid empty RON");
         assert_eq!(empty, SimConfig::default());
+    }
+
+    /// The decor is a purely-additive presentation field: omitted → enabled (every
+    /// existing scenario adopts the backdrop), and an explicit `enabled: false`
+    /// round-trips losslessly and survives the World extract/apply mirror.
+    #[test]
+    fn decor_defaults_on_and_roundtrips() {
+        let empty = SimConfig::from_ron_str("()").expect("valid empty RON");
+        assert!(empty.decor.enabled, "omitted decor falls back to enabled");
+
+        let off = SimConfig::from_ron_str("(decor: (enabled: false))").expect("valid RON");
+        assert!(!off.decor.enabled);
+        let text = off.to_ron_string().expect("RON serialization");
+        let back = SimConfig::from_ron_str(&text).expect("RON re-read");
+        assert_eq!(off, back);
+
+        // The World catalog carries the decor with the rest of the stage.
+        let world = World::extract(&off);
+        assert!(!world.decor.enabled, "extract carries the decor");
+        let mut fresh = SimConfig::default();
+        world.apply(&mut fresh);
+        assert!(!fresh.decor.enabled, "apply writes the decor back");
     }
 
     /// A RON hexadecimal literal indeed yields the expected seed.
