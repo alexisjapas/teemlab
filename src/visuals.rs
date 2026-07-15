@@ -9,7 +9,7 @@
 //! re-render* of a run).
 
 use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
-use crate::config::{SimConfig, Source};
+use crate::config::SimConfig;
 use crate::nutrients::{Field, Fields};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
@@ -42,6 +42,8 @@ impl Plugin for VisualsPlugin {
             // The fill value for newly-appearing nutrient layers (cf. `sync_layer_flags`).
             // Default `true` (windowed: show every component); the recorder overrides it.
             .init_resource::<NewLayerVisible>()
+            // Shared pixel-disc textures for the entity bodies (cf. `pixel_disc`).
+            .init_resource::<DiscCache>()
             .add_systems(
                 Update,
                 (
@@ -56,8 +58,6 @@ impl Plugin for VisualsPlugin {
                     render_nutrient_layers,
                     apply_agent_layer,
                     crate::decor::render_decor,
-                    crate::decor::style_entity_decor,
-                    render_source_decor,
                 ),
             );
     }
@@ -132,69 +132,64 @@ fn entity_color(config: &SimConfig, species: Species) -> Srgba {
     Srgba::new(r, g, b, 1.0)
 }
 
-/// Dark rim behind a body (decor entity style): the pixel-art "liseré".
-pub const DECOR_OUTLINE_COLOR: Color = Color::srgba(4.0 / 255.0, 26.0 / 255.0, 26.0 / 255.0, 0.5);
-/// Extra radius of the rim beyond the body, in world units.
-pub const DECOR_OUTLINE_GROW: f32 = 0.8;
-/// White glint offset up-left on a body (decor entity style): the "reflet".
-pub const DECOR_HIGHLIGHT_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.4);
+/// Shared **pixel-art disc** textures for the entity bodies, keyed by radius in
+/// texels — one tiny white disc per distinct size, tinted per entity through
+/// `Sprite::color` (cf. [`crate::decor::disc_image`]).
+#[derive(Resource, Default)]
+struct DiscCache(std::collections::HashMap<u32, Handle<Image>>);
 
-/// Rendering only: give a visible mesh to freshly spawned agents, tinted by their
-/// archetype's color — plus the decor's outline/highlight discs as **children**
-/// (they ride the sim transform, despawn with the agent, and are invisible to
-/// [`shade_by_reserve`], which only dims the parent's own material).
+/// The pixel-art body of an entity: a cached nearest disc texture shown at the
+/// **exact** world diameter `2·radius_wu` (the sim's proportions stay honest; the
+/// texel lands at ≈ the decor's 2 wu grain).
+fn pixel_disc(
+    images: &mut Assets<Image>,
+    cache: &mut DiscCache,
+    radius_wu: f32,
+    color: Color,
+) -> Sprite {
+    let radius_px = (radius_wu / crate::decor::TEXEL_WU).round().max(1.0) as u32;
+    let image = cache
+        .0
+        .entry(radius_px)
+        .or_insert_with(|| images.add(crate::decor::disc_image(radius_px)))
+        .clone();
+    Sprite {
+        image,
+        custom_size: Some(Vec2::splat(2.0 * radius_wu)),
+        color,
+        ..default()
+    }
+}
+
+/// Rendering only: give a visible body to freshly spawned agents — a pixel-art
+/// disc sprite tinted by their archetype's color (same nearest grain as the
+/// decor). Runs in `Update` because it manipulates render assets.
 fn attach_visuals(
     mut commands: Commands,
     config: Res<SimConfig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Mesh2d>)>,
+    mut images: ResMut<Assets<Image>>,
+    mut cache: ResMut<DiscCache>,
+    new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Sprite>)>,
 ) {
     for (entity, radius, species) in &new_agents {
-        let decor_visibility = if config.decor.enabled {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
+        let color = Color::from(entity_color(&config, *species));
         commands
             .entity(entity)
-            .insert((
-                Mesh2d(meshes.add(Circle::new(radius.0))),
-                MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
-            ))
-            .with_children(|parent| {
-                parent.spawn((
-                    crate::decor::DecorOutline,
-                    Mesh2d(meshes.add(Circle::new(radius.0 + DECOR_OUTLINE_GROW))),
-                    MeshMaterial2d(materials.add(DECOR_OUTLINE_COLOR)),
-                    Transform::from_xyz(0.0, 0.0, -0.1),
-                    decor_visibility,
-                ));
-                parent.spawn((
-                    crate::decor::DecorHighlight,
-                    Mesh2d(meshes.add(Circle::new(0.4 * radius.0))),
-                    MeshMaterial2d(materials.add(DECOR_HIGHLIGHT_COLOR)),
-                    Transform::from_xyz(-0.35 * radius.0, 0.35 * radius.0, 0.1),
-                    decor_visibility,
-                ));
-            });
+            .insert(pixel_disc(&mut images, &mut cache, radius.0, color));
     }
 }
 
 /// Rendering only: darken an agent as its reserve drops, to *see* predation drain
-/// its prey. Each agent owns its own material (created in `attach_visuals`),
-/// which we modulate here by the reserve fraction.
+/// its prey. The body sprite's tint (set in `attach_visuals`) is modulated here
+/// by the reserve fraction.
 fn shade_by_reserve(
     config: Res<SimConfig>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    agents: Query<(&MeshMaterial2d<ColorMaterial>, &Species, &Reserve)>,
+    mut agents: Query<(&mut Sprite, &Species, &Reserve), With<Agent>>,
 ) {
-    for (handle, species, reserve) in &agents {
-        if let Some(mut material) = materials.get_mut(&handle.0) {
-            let dim = 0.25 + 0.75 * reserve.fraction();
-            let base = entity_color(&config, *species);
-            material.color = Color::srgb(base.red * dim, base.green * dim, base.blue * dim);
-        }
+    for (mut sprite, species, reserve) in &mut agents {
+        let dim = 0.25 + 0.75 * reserve.fraction();
+        let base = entity_color(&config, *species);
+        sprite.color = Color::srgb(base.red * dim, base.green * dim, base.blue * dim);
     }
 }
 
@@ -280,16 +275,12 @@ fn draw_sources(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
     }
 }
 
-/// A **filled body** for a solid source (a rock): a disc mesh tinted the source's color,
-/// under the agents (`z = -4`, above the play-area and the component heatmaps). One per
-/// **solid** [`Source`](crate::config::Source), reconciled against the config every frame
-/// — mirroring [`render_nutrient_layers`] — so editing a source (moving, resizing,
-/// toggling `solid`) shows live. It carries the index of the source it mirrors so a
-/// reconcile can find it again.
-///
-/// A unit circle scaled by the radius (never rebuilt on a resize). The gizmo ring
-/// ([`draw_sources`]) still crisps its edge; this fills the interior so a rock reads as a
-/// solid body rather than a hollow outline.
+/// A **filled body** for a solid source (a rock): a pixel-art disc sprite tinted the
+/// source's color, under the agents (`z = -4`, above the play-area and the component
+/// heatmaps). One per **solid** [`Source`](crate::config::Source), reconciled against
+/// the config every frame — mirroring [`render_nutrient_layers`] — so editing a source
+/// (moving, resizing, toggling `solid`) shows live. It carries the index of the source
+/// it mirrors so a reconcile can find it again.
 #[derive(Component)]
 struct SourceBody {
     /// Index into `config.sources` this disc mirrors.
@@ -300,30 +291,23 @@ struct SourceBody {
 /// placed from the config. Reconciles like [`render_nutrient_layers`]: update the discs
 /// that still map to a solid source, hide those whose source vanished or turned
 /// intangible, and spawn a disc for any solid source that lacks one. No solid source
-/// (every scenario before rocks) → nothing spawned.
+/// (every scenario before rocks) → nothing spawned. A live radius edit re-fetches the
+/// (cached) disc texture of the new size.
 fn render_source_bodies(
     mut commands: Commands,
     config: Res<SimConfig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut bodies: Query<(
-        &SourceBody,
-        &mut Transform,
-        &mut Visibility,
-        &MeshMaterial2d<ColorMaterial>,
-    )>,
+    mut images: ResMut<Assets<Image>>,
+    mut cache: ResMut<DiscCache>,
+    mut bodies: Query<(&SourceBody, &mut Transform, &mut Visibility, &mut Sprite)>,
 ) {
     let mut covered = vec![false; config.sources.len()];
-    for (body, mut tf, mut vis, material) in &mut bodies {
+    for (body, mut tf, mut vis, mut sprite) in &mut bodies {
         match config.sources.get(body.source) {
             Some(src) if src.solid => {
                 covered[body.source] = true;
                 *vis = Visibility::Visible;
                 tf.translation = Vec2::from(src.pos).extend(-4.0);
-                tf.scale = Vec3::splat(src.radius);
-                if let Some(mut mat) = materials.get_mut(&material.0) {
-                    mat.color = srgb3(src.color);
-                }
+                *sprite = pixel_disc(&mut images, &mut cache, src.radius, srgb3(src.color));
             }
             // The source was removed or its `solid` was turned off: hide the disc (kept,
             // to reuse if it becomes solid again — as the heatmap layers do).
@@ -334,89 +318,10 @@ fn render_source_bodies(
         if src.solid && !covered[index] {
             commands.spawn((
                 SourceBody { source: index },
-                Mesh2d(meshes.add(Circle::new(1.0))),
-                MeshMaterial2d(materials.add(srgb3(src.color))),
-                Transform::from_translation(Vec2::from(src.pos).extend(-4.0))
-                    .with_scale(Vec3::splat(src.radius)),
+                pixel_disc(&mut images, &mut cache, src.radius, srgb3(src.color)),
+                Transform::from_translation(Vec2::from(src.pos).extend(-4.0)),
             ));
         }
-    }
-}
-
-/// A rock's decor part (outline or highlight disc), keyed like [`SourceBody`]
-/// to the source it dresses. A **sibling** of the disc, not a child: the disc's
-/// scale is the radius on *all* axes, so a child's z-offset would be multiplied
-/// by it and land among the heatmaps.
-#[derive(Component)]
-struct SourceDecor {
-    /// Index into `config.sources` this part dresses.
-    source: usize,
-    /// `false` = the dark outline behind the disc, `true` = the up-left glint.
-    highlight: bool,
-}
-
-/// Rendering only: the decor outline + highlight of each **solid** source,
-/// reconciled against the config every frame exactly like
-/// [`render_source_bodies`]. Hidden while the decor is off (the agents' twin
-/// toggle is `decor::style_entity_decor`).
-fn render_source_decor(
-    mut commands: Commands,
-    config: Res<SimConfig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut parts: Query<(&SourceDecor, &mut Transform, &mut Visibility)>,
-) {
-    let mut covered = vec![[false; 2]; config.sources.len()];
-    for (part, mut tf, mut vis) in &mut parts {
-        match config.sources.get(part.source) {
-            Some(src) if src.solid && config.decor.enabled => {
-                covered[part.source][part.highlight as usize] = true;
-                *vis = Visibility::Visible;
-                place_source_decor(&mut tf, src, part.highlight);
-            }
-            _ => *vis = Visibility::Hidden,
-        }
-    }
-    if !config.decor.enabled {
-        return;
-    }
-    for (index, src) in config.sources.iter().enumerate() {
-        if !src.solid {
-            continue;
-        }
-        for highlight in [false, true] {
-            if covered[index][highlight as usize] {
-                continue;
-            }
-            let mut tf = Transform::default();
-            place_source_decor(&mut tf, src, highlight);
-            commands.spawn((
-                SourceDecor {
-                    source: index,
-                    highlight,
-                },
-                Mesh2d(meshes.add(Circle::new(1.0))),
-                MeshMaterial2d(materials.add(if highlight {
-                    DECOR_HIGHLIGHT_COLOR
-                } else {
-                    DECOR_OUTLINE_COLOR
-                })),
-                tf,
-            ));
-        }
-    }
-}
-
-/// Place one rock-decor part from its source: the outline slightly larger,
-/// behind the disc (z −4.2 < −4); the glint up-left, in front (z −3.8 > −4).
-fn place_source_decor(tf: &mut Transform, src: &Source, highlight: bool) {
-    let pos = Vec2::from(src.pos);
-    if highlight {
-        tf.translation = (pos + Vec2::new(-0.35, 0.35) * src.radius).extend(-3.8);
-        tf.scale = Vec3::splat(0.4 * src.radius);
-    } else {
-        tf.translation = pos.extend(-4.2);
-        tf.scale = Vec3::splat(src.radius + DECOR_OUTLINE_GROW);
     }
 }
 
@@ -443,7 +348,13 @@ fn draw_play_area(
     mut existing: Query<(&mut Transform, &MeshMaterial2d<ColorMaterial>), With<PlayAreaBg>>,
 ) {
     let side = 2.0 * config.arena_half_extent;
-    clear_color.0 = srgb3(config.off_game_color);
+    // Decor on → the off-game clear color continues the decor's border sand
+    // (same flat tone, cf. `decor::horizon_sand`): pan/zoom anywhere, sand.
+    clear_color.0 = if config.decor.enabled {
+        crate::decor::horizon_sand()
+    } else {
+        srgb3(config.off_game_color)
+    };
     let play_color = srgb3(config.play_area_color);
     if let Ok((mut tf, material)) = existing.single_mut() {
         tf.scale = Vec3::new(side, side, 1.0);

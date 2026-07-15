@@ -16,15 +16,24 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 /// World units per texel — the pixel-art grain (the spec's `DC`).
 pub const TEXEL_WU: f32 = 2.0;
-/// Decor square side as a multiple of the arena half-side. The spec's pool spans
-/// `0.34·S` per half-side; with the pool ≈ the playable square (`±h`), `S ≈
-/// h/0.34 ≈ 2.94·h` — the sand overflows past the walls into the off-game area.
-const SIDE_RATIO: f32 = 2.94;
-/// Side of the spec's prototype (wu). Its macro constants (wobble, bands, dune
-/// wavelengths) are absolute values *for this size*; we scale them by
-/// `side/REF_SIDE` so the composition is **scale-invariant** (spec §1) — a big
-/// arena gets the same look, only finer-grained (the texel stays 2 wu).
+/// Decor square side as a multiple of the arena half-side — how far the textured
+/// sand runs past the walls before fading to the flat [`horizon_sand`] tone,
+/// which the windowed `ClearColor` then continues to infinity: scroll anywhere,
+/// there is sand. (The camera pan is clamped to the arena — `main.rs` — so this
+/// margin is what a legitimate view can actually reach.)
+const SIDE_RATIO: f32 = 4.5;
+/// Side of the spec's prototype (wu); [`REF_POOL_HALF`] is its pool half-side
+/// (`0.34·S`). The spec's macro constants (wobble, bands, dune wavelengths) are
+/// absolute values *for that prototype*; we scale them by `h / REF_POOL_HALF` so
+/// the composition around the **basin** is scale-invariant (spec §1) whatever
+/// the arena size — and independent of how much sand margin [`SIDE_RATIO`] adds.
 const REF_SIDE: f32 = 460.0;
+/// Pool half-side of the spec's prototype: `0.34 · REF_SIDE`.
+const REF_POOL_HALF: f32 = 0.34 * REF_SIDE;
+/// Ramp position of the flat horizon tone ([`horizon_sand`], the border fade).
+const HORIZON_U: f32 = 0.68;
+/// Where the border fade begins, as a fraction of the decor half-side.
+const FADE_START: f32 = 0.72;
 /// Maximum bank-wobble amplitude (`4+3+2`, at [`REF_SIDE`]) — also the
 /// **outward** offset of the basin midline from the walls, so the water provably
 /// covers the whole playable square (`|wob| ≤ midline − h` ⇒ `sdf ≥ 0` inside,
@@ -102,7 +111,7 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
     let h = arena_half_extent.max(TEXEL_WU);
     let n = ((SIDE_RATIO * h / TEXEL_WU).round() as usize).max(4);
     let side = n as f32 * TEXEL_WU;
-    let scale = side / REF_SIDE; // macro features in fractions of the side (spec §1)
+    let scale = h / REF_POOL_HALF; // macro features scale with the basin (spec §1)
     let m = h + BANK_AMPLITUDE * scale; // basin midline half-side
 
     // -- structure stream ---------------------------------------------------
@@ -166,6 +175,25 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
         // Sun glint: one light texel diagonally up-left of the block.
         if px > 0 && py > 0 {
             base[(py - 1) * n + (px - 1)] = PEBBLE_LIGHT;
+        }
+    }
+
+    // -- horizon fade ---------------------------------------------------------
+    // The outer sand (grain, dunes, pebbles, light gradient) converges smoothly
+    // to the flat `horizon_sand` tone at the border; the windowed `ClearColor`
+    // (same tone) then continues it past the quad — no visible seam.
+    let horizon = tone(HORIZON_U);
+    let half = side / 2.0;
+    for j in 0..n {
+        let wy = ((n as f32 / 2.0 - (j as f32 + 0.5)) * TEXEL_WU).abs();
+        for i in 0..n {
+            let wx = ((i as f32 + 0.5 - n as f32 / 2.0) * TEXEL_WU).abs();
+            let a = wx.max(wy) / half;
+            if a <= FADE_START {
+                continue;
+            }
+            let t = ((a - FADE_START) / (1.0 - FADE_START)).clamp(0.0, 1.0);
+            blend_over(&mut base[j * n + i], horizon, t * t * (3.0 - 2.0 * t));
         }
     }
 
@@ -341,6 +369,14 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
     }
 }
 
+/// The flat sand tone the decor fades to at its border — also the windowed
+/// `ClearColor` while the decor is on ([`crate::visuals`]), so the sand visually
+/// runs to the horizon whatever the pan/zoom.
+pub fn horizon_sand() -> Color {
+    let [r, g, b] = tone(HORIZON_U);
+    Color::srgb(r / 255.0, g / 255.0, b / 255.0)
+}
+
 /// Linear interpolation on the sand ramp at `u ∈ [0, 1]` (clamped).
 fn tone(u: f32) -> [f32; 3] {
     let u = u.clamp(0.0, 1.0);
@@ -402,7 +438,7 @@ const FILM_Z: f32 = 5.0;
 /// What the current textures were baked from — rebake only when this changes
 /// (the `NutrientLayer` staleness idiom).
 #[derive(Clone, Copy, PartialEq)]
-struct DecorKey {
+pub(crate) struct DecorKey {
     seed: u64,
     half_extent_bits: u32,
 }
@@ -416,25 +452,21 @@ pub struct DecorLayer {
     film: bool,
 }
 
-/// Marker of the dark outline disc behind an **agent** body (a child entity).
-/// The rock counterpart lives in `visuals::render_source_bodies` (siblings, not
-/// children — a `SourceBody` child would inherit its radius z-scale).
-#[derive(Component)]
-pub struct DecorOutline;
-
-/// Marker of the white up-left highlight disc on an **agent** (a child entity).
-#[derive(Component)]
-pub struct DecorHighlight;
+/// Frames a *changed* key must hold steady before a rebake — soaks up a slider
+/// drag (arena size, seed) so we don't bake megapixels per moved frame. The
+/// first bake (nothing on screen yet) is immediate.
+const REBAKE_DEBOUNCE_FRAMES: u32 = 10;
 
 /// Rendering only: keep the two baked decor layers in sync with the scenario.
 /// Off → hidden (the flat `play_area_color` look underneath is intact). On →
 /// bake once per `(seed, arena_half_extent)` and show; editing either in the
-/// editor rebakes live, and a hot reset touches nothing.
-pub fn render_decor(
+/// editor rebakes (debounced), and a hot reset touches nothing.
+pub(crate) fn render_decor(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut images: ResMut<Assets<Image>>,
     mut layers: Query<(&mut DecorLayer, &mut Sprite, &mut Visibility)>,
+    mut pending: Local<Option<(DecorKey, u32)>>,
 ) {
     if !config.decor.enabled {
         for (_, _, mut vis) in &mut layers {
@@ -448,14 +480,32 @@ pub fn render_decor(
         seed: config.seed,
         half_extent_bits: config.arena_half_extent.to_bits(),
     };
-    if layers.iter().count() == 2 && layers.iter().all(|(l, ..)| l.key == key) {
+    let baked_layers = layers.iter().count();
+    if baked_layers == 2 && layers.iter().all(|(l, ..)| l.key == key) {
         for (_, _, mut vis) in &mut layers {
             if *vis != Visibility::Visible {
                 *vis = Visibility::Visible;
             }
         }
+        *pending = None;
         return;
     }
+    // Something is on screen but stale: wait for the key to settle (slider drag).
+    if baked_layers == 2 {
+        match &mut *pending {
+            Some((k, frames)) if *k == key => {
+                *frames += 1;
+                if *frames < REBAKE_DEBOUNCE_FRAMES {
+                    return;
+                }
+            }
+            _ => {
+                *pending = Some((key, 0));
+                return;
+            }
+        }
+    }
+    *pending = None;
 
     let baked = bake(config.seed, config.arena_half_extent);
     let size = Vec2::splat(baked.side_wu);
@@ -488,6 +538,26 @@ pub fn render_decor(
     }
 }
 
+/// A nearest-sampled **white disc** texture, `radius_px` texels of radius — the
+/// pixel-art body of an entity, tinted through `Sprite::color`. Shown at a world
+/// size of `2·radius` wu its texels read at ≈ [`TEXEL_WU`], the decor's grain,
+/// so entities and terrain pixelate alike.
+pub fn disc_image(radius_px: u32) -> Image {
+    let d = (2 * radius_px).max(1);
+    let mut data = vec![0_u8; (d * d * 4) as usize];
+    let r = radius_px as f32;
+    for j in 0..d {
+        for i in 0..d {
+            let (x, y) = (i as f32 + 0.5 - r, j as f32 + 0.5 - r);
+            if x * x + y * y <= r * r {
+                let o = ((j * d + i) * 4) as usize;
+                data[o..o + 4].copy_from_slice(&[255, 255, 255, 255]);
+            }
+        }
+    }
+    decor_image(d, data)
+}
+
 /// A nearest-sampled (crisp pixel-art) square RGBA texture from a baked buffer.
 fn decor_image(size: u32, data: Vec<u8>) -> Image {
     let mut image = Image::new(
@@ -503,26 +573,6 @@ fn decor_image(size: u32, data: Vec<u8>) -> Image {
     );
     image.sampler = ImageSampler::nearest();
     image
-}
-
-/// Rendering only: live-toggle the outline/highlight **children of agents** with
-/// the decor. `Inherited` — not `Visible` — so the agents-layer toggle
-/// (`visuals::apply_agent_layer`) hiding the parent hides them too. The rock
-/// parts are siblings reconciled by `visuals::render_source_bodies` instead.
-pub fn style_entity_decor(
-    config: Res<SimConfig>,
-    mut parts: Query<&mut Visibility, Or<(With<DecorOutline>, With<DecorHighlight>)>>,
-) {
-    let target = if config.decor.enabled {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
-    for mut vis in &mut parts {
-        if *vis != target {
-            *vis = target;
-        }
-    }
 }
 
 #[cfg(test)]
@@ -568,14 +618,30 @@ mod tests {
         assert_ne!(a.base, c.base, "the seed shapes the decor");
     }
 
-    /// The texture resolution follows the arena size (`S = 2.94·h`, 2 wu/texel).
+    /// The texture resolution follows the arena size (`S = 4.5·h`, 2 wu/texel).
     #[test]
     fn bake_size_follows_the_arena() {
         let baked = bake(42, 250.0);
-        assert_eq!(baked.size, 368); // round(2.94 · 250 / 2)
-        assert_eq!(baked.side_wu, 736.0);
-        assert_eq!(baked.base.len(), 368 * 368 * 4);
-        assert_eq!(baked.film.len(), 368 * 368 * 4);
+        assert_eq!(baked.size, 563); // round(4.5 · 250 / 2)
+        assert_eq!(baked.side_wu, 1126.0);
+        assert_eq!(baked.base.len(), 563 * 563 * 4);
+        assert_eq!(baked.film.len(), 563 * 563 * 4);
+    }
+
+    /// The border texels sit exactly on the horizon tone (the fade completes),
+    /// so the windowed `ClearColor` continues the sand without a seam.
+    #[test]
+    fn border_fades_to_the_horizon_tone() {
+        let baked = bake(42, 400.0);
+        let horizon = tone(HORIZON_U).map(|c| c.round() as u8);
+        for &corner in &[0_usize, baked.size as usize - 1] {
+            let o = corner * 4;
+            assert_eq!(
+                &baked.base[o..o + 3],
+                &horizon[..],
+                "corner texel off the horizon tone"
+            );
+        }
     }
 
     /// The bank never bites into the arena: the basin covers the whole playable
@@ -583,7 +649,7 @@ mod tests {
     #[test]
     fn water_covers_the_playable_square() {
         let h = 400.0;
-        let scale = SIDE_RATIO * h / REF_SIDE;
+        let scale = h / REF_POOL_HALF;
         let m = h + BANK_AMPLITUDE * scale;
         let mut rng = Lcg::new(visual_seed(0x00C0_FFEE));
         let mut phases = [0.0_f32; 12];

@@ -33,14 +33,15 @@ Three visual layers on top of the existing stack; everything else unchanged.
 | −10 | `PlayAreaBg` flat quad (kept: the decor-off look) | `visuals.rs` |
 | **−9** | **decor base**: sand + basin, baked `Image`, nearest | `decor.rs` |
 | −5 − 0.1·i | nutrient heatmaps (must stay readable → above the sand) | `visuals.rs` |
-| −4.2 / −4 / −3.8 | rock outline / `SourceBody` / rock highlight | `visuals.rs` |
-| −0.1 / 0 / +0.1 | agent outline (child) / body / highlight (child) | `visuals.rs` |
+| −4 | `SourceBody` rock discs (pixel-art sprites) | `visuals.rs` |
+| 0 | agent bodies (pixel-art disc sprites, cf. §5) | `visuals.rs` |
 | **+5** | **water film**: baked `Image`, straight alpha | `decor.rs` |
 | ∞ | gizmos (headings, selection, emitter rings) — always on top | Bevy |
 
 When the decor is enabled, the arena outline gizmo and the rings of **solid**
-sources are skipped (clutter; the rock outline takes over the "crisp edge"
-role). Intangible emitters keep their ring — it is their only trace.
+sources are skipped (clutter over the water). Intangible emitters keep their
+ring — it is their only trace. The off-game `ClearColor` becomes the flat
+[`horizon_sand`] tone, continuing the decor's border fade to infinity.
 
 ## 2. PRNG and draw order
 
@@ -57,9 +58,14 @@ structure stay independent, draws in **fixed order**:
 ## 3. Geometry
 
 - Arena: square centered on world `(0,0)`, half-side `h = arena_half_extent`.
-- Decor square side `side_wu = 2.94·h` (spec ratio: pool half-side = 0.34·S) —
-  the sand overflows past the walls into the off-game area. Texel = `DC = 2` wu
-  → `n = round(side_wu / 2)` texels per side (h = 400 → 588², ≈ 1.4 MB RGBA).
+- Decor square side `side_wu = 4.5·h` — the sand runs well past the walls, then
+  fades (outer 28 % of the half-side, smoothstep) to the flat `horizon_sand`
+  tone that `ClearColor` continues. Texel = `DC = 2` wu → `n = round(side_wu /
+  2)` texels per side (h = 400 → 900², ≈ 3.2 MB RGBA per layer).
+- The spec's macro constants (wobble, bands, dune wavelengths — absolute values
+  for its S = 460 prototype) are scaled by `h / (0.34·460)` so the composition
+  around the **basin** is scale-invariant (spec §1), independent of the sand
+  margin.
 - Texel `(i, j)` (top-left origin, y down) → world center:
   `x = (i + 0.5 − n/2)·2`, `y = (n/2 − (j + 0.5))·2` (the `paint_nutrient_image`
   vertical-flip idiom).
@@ -106,21 +112,24 @@ prototype); the texture is `Rgba8UnormSrgb`, sampler **nearest**.
   immersed. v1 uses standard sprite alpha blending; a true multiply
   `Material2d` (BlendState `Dst·Src`) sampling the same texture is a drop-in
   follow-up.
-- **Entity style** (the only part of the spec's P6 that is ported): dark outline
-  disc `srgba(4,26,26, 0.5)/255`, radius `r + 0.8` wu, behind; small white
-  highlight `srgba(255,255,255, 0.4)/255`, radius `0.4r`, offset `(−0.35r,
-  +0.35r)`, in front. Agents: child entities (auto-despawn, ignored by
-  `shade_by_reserve`). Rocks: index-keyed sibling entities (a `SourceBody`
-  child would inherit the radius z-scale — trap).
+- **Entity style**: bodies are **pixel-art disc sprites** — one cached
+  nearest-sampled white disc texture per radius bucket (`radius_px =
+  round(r / 2 wu)`, `decor::disc_image`), tinted per entity via `Sprite::color`
+  and shown at the exact world diameter `2r`, so entities pixelate at the same
+  ≈ 2 wu grain as the terrain. No outline / highlight (tried, removed on
+  feedback — the spec's P6 liseré/reflet are NOT ported). `shade_by_reserve`
+  dims the sprite tint.
 
 ## 6. Bake & reconcile
 
 One system, `Update`, in `VisualsPlugin`: two sprite entities keyed by
 `DecorKey { seed, half_extent_bits }` (the `NutrientLayer` staleness pattern).
 Key unchanged → no per-frame work; `enabled: false` → `Visibility::Hidden`
-(flat look intact underneath). No `Agent/Wall/Emits/NutrientLayer` marker → the
-layers survive hot-reset like `PlayAreaBg`. The recorder mounts the same plugin
-→ videos capture the decor with zero changes.
+(flat look intact underneath). A **changed** key rebakes only after ~10 stable
+frames (debounce: an arena-slider drag must not bake megapixels per frame);
+the very first bake is immediate. No `Agent/Wall/Emits/NutrientLayer` marker →
+the layers survive hot-reset like `PlayAreaBg`. The recorder mounts the same
+plugin → videos capture the decor with zero changes.
 
 ## 7. Camera notes (v1 scope)
 
