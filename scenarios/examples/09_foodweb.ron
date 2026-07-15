@@ -1,0 +1,115 @@
+// 09 · Food web — three trophic levels from one rule.
+//
+// 04 had two levels; here there are THREE, and the engine derives the whole web from
+// body size + diet with no authored table (SIM Law 8). FLORA (r 6) hold the nutrient;
+// the HERBIVORE (r 8) dominates and eats them; the CARNIVORE (r 11) dominates and eats
+// the herbivore. Each level's `target` channel lights up on what it can eat, its
+// `threat` channel on what can eat it — so the SAME `Hunter` brain produces different
+// behaviour at each tier: the herbivore FLEES when the carnivore closes (survival
+// short-circuits foraging — the flight reflex), while the apex, with no threat, is a
+// pure hunter. Open the trophic-graph overlay (Observe) or the Studio validator to see
+// the derived chain — and note the apex is an honest OMNIVORE: at the MVP one nutrient,
+// size lets it also graze flora directly (true level-locking waits on metabolization,
+// ROADMAP §9).
+//
+// A wide arena, so the herbivore has refuges to flee into and the three levels have room
+// to decouple. All three coexist for a lively window before the usual Lotka-Volterra
+// wind-down (an example to watch, ROADMAP §7). Watch a herbivore break off feeding and
+// bolt when a carnivore approaches.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 520.0,
+    archetypes: [
+        (
+            name: "Flora",
+            color: (0.4, 0.85, 0.4),
+            count: 160,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 20.0,
+                offspring_energy: 12.0,
+                mutation_rate: 0.0,
+                photosynthesis: 6.5,
+                seed_dispersal: 24.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+        (
+            name: "Herbivore",
+            color: (1.0, 0.75, 0.3),
+            count: 7,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 105.0,
+                agility: 0.12,
+                vision_range: 120.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 120.0,
+                offspring_energy: 42.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Hunter,
+            mutable: (mutation_rate: false),
+        ),
+        (
+            name: "Carnivore",
+            color: (0.9, 0.3, 0.35),
+            count: 2,
+            radius: 11.0,
+            reserve_max: 200.0,
+            genotype: (
+                max_speed: 115.0,
+                agility: 0.12,
+                vision_range: 150.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 165.0,
+                offspring_energy: 60.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Hunter,
+            mutable: (mutation_rate: false),
+        ),
+    ],
+    predation: (size_margin: 0.1, range: 20.0, rate: 12.0),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-220.0, 220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, 220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, -220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, -220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        // Flora: absorbs & holds the nutrient, seeds on it (oases), recycles at death.
+        (species: 0, component: 0, absorb: 2.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 5.0),
+        // Herbivore: needs the nutrient (flora digestible), harvests by eating, breeds on it.
+        (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 16.0, need: 1.0),
+        // Carnivore: needs the nutrient too — the herbivore (and flora) holds it, so both
+        // are digestible; size decides that its usual prey is the herbivore. Breeds on it.
+        (species: 2, component: 0, capacity: 45.0, emit_at_death: 3.0, repro_cost: 30.0, need: 1.0),
+    ],
+    seed: 4,
+)
