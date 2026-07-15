@@ -134,10 +134,27 @@ pub fn style() -> egui::Style {
     visuals.widgets.open.corner_radius = widget_radius;
     visuals.window_corner_radius = egui::CornerRadius::same(14);
     visuals.menu_corner_radius = egui::CornerRadius::same(14);
-    // Quiet chrome: controls are FLAT at rest (no idle outline — the fill is enough)
-    // and grow a hairline on hover; separators and frame strokes drop to the faint
-    // grid gray, so structure reads from spacing and surface tones, not from lines.
-    visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+    // Quiet chrome **with stable geometry**. An egui widget's box is
+    // `content + padding + 2·stroke.width`, and its hover/press state also `expansion`s
+    // it — so with the default asymmetry (no border at rest, a border on hover) a button
+    // GROWS when hovered, pressed, or given an accent border, jittering itself and the
+    // container it sits in. We give every interactive state the **same 1 px border
+    // width** — invisible at rest, a faint hairline on hover / press / open — and zero
+    // expansion, so only the *colour* changes between states, never the size. An accent
+    // border (`theme::line(ACCENT)`, also 1 px) is therefore size-neutral too.
+    let rest_border = egui::Stroke::new(1.0, egui::Color32::TRANSPARENT);
+    let hover_border = egui::Stroke::new(1.0, LINE_2);
+    for (w, stroke) in [
+        (&mut visuals.widgets.inactive, rest_border),
+        (&mut visuals.widgets.hovered, hover_border),
+        (&mut visuals.widgets.active, hover_border),
+        (&mut visuals.widgets.open, hover_border),
+    ] {
+        w.bg_stroke = stroke;
+        w.expansion = 0.0;
+    }
+    // Separators and card/frame strokes drop to the faint grid gray, so structure reads
+    // from spacing and surface tones, not from lines.
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, LINE);
     style.visuals = visuals;
 
@@ -240,13 +257,19 @@ pub fn gauge_sized(
 /// A **pill toggle** switch (the comp's Layers / run-record affordance): a rounded track
 /// with a sliding knob, [`ACCENT`] on / [`RAISED`] off. Flips `*on` on click; returns the
 /// `Response`. Replaces a bare `ui.checkbox` where the comp shows a switch.
-pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
-    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(34.0, 20.0), egui::Sense::click());
+///
+/// Takes an **explicit `id`** (rather than an allocation-order auto-id) so the toggle keeps
+/// its identity even when a widget appears/disappears earlier in the layout — otherwise
+/// egui warns "widget rect changed id between passes" and the knob animation resets. We
+/// `allocate_space` (which registers no interactive widget) and then `interact` with `id`.
+pub fn toggle(ui: &mut egui::Ui, id: egui::Id, on: &mut bool) -> egui::Response {
+    let (_, rect) = ui.allocate_space(egui::vec2(34.0, 20.0));
+    let mut resp = ui.interact(rect, id, egui::Sense::click());
     if resp.clicked() {
         *on = !*on;
         resp.mark_changed();
     }
-    let t = ui.ctx().animate_bool(resp.id, *on);
+    let t = ui.ctx().animate_bool(id, *on);
     let radius = rect.height() * 0.5;
     let track = if *on { ACCENT } else { RAISED };
     ui.painter().rect_filled(rect, radius, track);
@@ -259,11 +282,17 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
 
 /// A labelled **toggle row** (the comp's Layers / options layout): the label on the
 /// left, a [`toggle`] pinned right. Returns the toggle's `Response`.
+///
+/// The toggle's id is derived from **this ui's id + the label**, i.e. stable across
+/// frames regardless of what renders above it (see [`toggle`]). Callers that place two
+/// same-labelled rows under one parent disambiguate with their own `push_id`
+/// (cf. `editor::layers_section`).
 pub fn toggle_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> egui::Response {
+    let id = ui.id().with(("toggle_row", label));
     ui.horizontal(|ui| {
         ui.label(label);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            toggle(ui, on)
+            toggle(ui, id, on)
         })
         .inner
     })
@@ -292,6 +321,25 @@ pub fn primary_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> e
             .fill(ACCENT2)
             .corner_radius(egui::CornerRadius::same(9)),
     )
+}
+
+/// A **sticky menu button**: like `ui.menu_button`, but the menu stays open while you
+/// interact inside it — it closes only on a click **outside** (or when a child calls
+/// `ui.close()`). `ui.menu_button` closes on *any* inside click, which makes a menu of
+/// toggles / editable fields unusable. `button` is the (already styled) trigger; returns
+/// its `Response`.
+pub fn sticky_menu<R>(
+    ui: &mut egui::Ui,
+    button: egui::Button<'_>,
+    content: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::Response {
+    egui::containers::menu::MenuButton::from_button(button)
+        .config(
+            egui::containers::menu::MenuConfig::new()
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+        )
+        .ui(ui, content)
+        .0
 }
 
 #[cfg(test)]

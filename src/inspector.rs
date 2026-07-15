@@ -19,7 +19,7 @@ use teemlab::components::{
 use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::nutrients::Nutrients;
-use teemlab::selection::{Selection, SelectionRoll};
+use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
 
 use crate::editor::{Palette, card, draw_mlp_graph};
 use crate::fonts::{self, icons};
@@ -68,10 +68,12 @@ fn body_at<'a>(
 /// Selects the agent under the cursor on a click in the play area. A click in the
 /// void deselects; a click on an egui panel or during an archetype drag is
 /// ignored (the editor handles the latter).
+#[allow(clippy::too_many_arguments)]
 pub fn pick_agent(
     mut contexts: EguiContexts,
     central: Res<crate::panels::CentralRect>,
     mut selection: ResMut<Selection>,
+    mut auto: ResMut<AutoSelect>,
     palette: Res<Palette>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,
@@ -93,8 +95,14 @@ pub fn pick_agent(
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     if ctx.input(|i| i.pointer.any_click()) {
-        // Click on a body → select it; in the void → deselect.
+        // Click on a body → select it; in the void → deselect. Picking an agent by
+        // hand switches the Follow selector to **Manual** (`Off`), so the auto-follow
+        // stops overriding the choice the observer just made (it would otherwise hold
+        // the click only until that agent dies, then resume rolling).
         selection.0 = hovered;
+        if hovered.is_some() {
+            auto.roll = SelectionRoll::Off;
+        }
     }
     Ok(())
 }
@@ -149,9 +157,9 @@ pub fn delete_under_cursor(
 }
 
 /// The **follow-mode** combo box (a [`SelectionRoll`] picker), shared by the live
-/// *Observation* panel and the video *Export* panel. The two are **different
-/// settings** (what the live view follows vs. what the render follows), so only the
-/// widget is shared — each caller keeps its own label and interval control.
+/// *Observation* overlay and the **Record menu**'s video sub-options. The two are
+/// **different settings** (what the live view follows vs. what the render follows), so
+/// only the widget is shared — each caller keeps its own label and interval control.
 pub(crate) fn follow_combo(ui: &mut egui::Ui, id_salt: &str, roll: &mut SelectionRoll) {
     egui::ComboBox::from_id_salt(id_salt)
         .selected_text(roll.label())
@@ -205,11 +213,97 @@ pub(crate) fn inspector_section(
         With<Agent>,
     >,
 ) -> Option<InspectorAction> {
-    let Some(entity) = selection.0 else {
-        ui.weak("Click an agent in the area to inspect it.");
-        return None;
-    };
-    let Ok((
+    // Possible action request (cf. doc): set by the Capture menu, returned to the caller
+    // who applies it (add to the scenario, or save a library variant). Named `request`
+    // to avoid shadowing the `action` (`&Action`) component below.
+    let mut request: Option<InspectorAction> = None;
+
+    // Resolve the inspected agent up front — its data feeds the header's Capture menu. A
+    // tuple of shared refs is `Copy`, so we can read it in the header and again in the body.
+    let selected = selection.0.and_then(|e| agents.get(e).ok());
+
+    // HEADER — the panel title, with the **Capture** menu pinned right (only when an
+    // agent is inspected). Capture freezes this agent (evolved genome + concrete weights):
+    // **To scenario** adds it to the current scenario (opens Studio); **Save as library
+    // variant** writes it to the catalog under a name. We never touch the sim — we build
+    // the derived archetype (`Archetype::capture`) and **return** the request; the caller
+    // applies it. A **sticky** menu (closes only on a click outside), so the name field
+    // and the items behave.
+    ui.horizontal(|ui| {
+        ui.strong("Agent inspector");
+        if let Some((species, _, genotype, _, _, _, brain, generation, _, _)) = selected {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let cap_label =
+                    fonts::icon_label_tinted(icons::SPARKLE, "Capture", crate::theme::ACCENT);
+                let cap_button = egui::Button::new(cap_label)
+                    .fill(crate::theme::soft(crate::theme::ACCENT))
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        crate::theme::line(crate::theme::ACCENT),
+                    ));
+                crate::theme::sticky_menu(ui, cap_button, |ui| {
+                    // Cap the width: egui menus lay out justified (stretch to a wide
+                    // default), so only a `max_width` tightens them.
+                    ui.set_max_width(150.0);
+                    if ui
+                        .button(fonts::icon_label(icons::SPARKLE, "To scenario"))
+                        .on_hover_text(
+                            "Freeze this agent's evolved genome AND weights into a new \
+                             archetype of the current scenario (opens Studio). The original \
+                             species stays intact.",
+                        )
+                        .clicked()
+                    {
+                        request = config.archetypes.get(species.0 as usize).map(|src| {
+                            InspectorAction::Capture(src.capture(
+                                *genotype,
+                                brain.clone(),
+                                generation.0,
+                            ))
+                        });
+                        ui.close();
+                    }
+                    ui.separator();
+                    // Save as library variant — the same snapshot, written to the catalog
+                    // as a NAMED variant of this species (species/saved/), with a
+                    // "<scenario>-<n>" id the caller resolves. Name field on its own line,
+                    // the button below it.
+                    crate::theme::caption(ui, "Save as variant");
+                    ui.add(
+                        egui::TextEdit::singleline(variant_name)
+                            .hint_text("variant name")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let named = !variant_name.trim().is_empty();
+                    if ui
+                        .add_enabled(
+                            named,
+                            egui::Button::new(fonts::icon_label(icons::FLOPPY, "Save"))
+                                .min_size(egui::vec2(ui.available_width(), 30.0)),
+                        )
+                        .on_hover_text(
+                            "Save this evolved agent as a named variant of its species in \
+                             the library (species/saved/), reusable in any scenario.",
+                        )
+                        .clicked()
+                        && let Some(src) = config.archetypes.get(species.0 as usize)
+                    {
+                        let mut variant = src.capture(*genotype, brain.clone(), generation.0);
+                        variant.name = variant_name.trim().to_string();
+                        request = Some(InspectorAction::SaveVariant {
+                            species: species.0,
+                            variant,
+                        });
+                        ui.close();
+                    }
+                });
+            });
+        }
+    });
+    ui.separator();
+
+    // Body — the inspected agent, or a hint when nothing (valid) is selected.
+    let Some((
         species,
         reserve,
         genotype,
@@ -220,81 +314,51 @@ pub(crate) fn inspector_section(
         generation,
         age,
         nutrients,
-    )) = agents.get(entity)
+    )) = selected
     else {
-        ui.colored_label(
-            crate::theme::ERROR,
-            "The selected agent no longer exists (dead?).",
-        );
-        ui.weak("Click another agent, or in the void to deselect.");
-        return None;
+        if selection.0.is_some() {
+            // A selection that no longer resolves → the agent died.
+            ui.colored_label(
+                crate::theme::ERROR,
+                "The selected agent no longer exists (dead?).",
+            );
+            ui.weak("Click another agent, or in the void to deselect.");
+        } else {
+            ui.weak("Click an agent in the area to inspect it.");
+        }
+        return request;
     };
-
-    // Possible action request (cf. doc): set by the buttons below, returned to the
-    // caller who applies it (add to the scenario, or save a library variant). Named
-    // `request` to avoid shadowing the `action` (`&Action`) component above.
-    let mut request: Option<InspectorAction> = None;
 
     // An immobile entity (flora / sessile source) neither moves nor exploits
     // vision: we then hide the inert genes (locomotion, vision) and the perception
     // section — characteristics without effect, that would have nothing to show.
     let immobile = genotype.locomotion().is_immobile();
 
-    // CAPTURE — pinned right under the panel title (review): freeze this agent
-    // (evolved genome + concrete weights) into a new reusable archetype, as the
-    // comp's gold-washed chip. We do not touch the sim: we build the derived
-    // archetype (cf. `Archetype::capture`) and return it — the caller applies it.
-    if ui
-        .add_sized(
-            egui::vec2(ui.available_width(), 36.0),
-            egui::Button::new(fonts::icon_label_tinted(
-                icons::SPARKLE,
-                "Capture to scenario",
-                crate::theme::ACCENT,
-            ))
-            .fill(crate::theme::soft(crate::theme::ACCENT))
-            .stroke(egui::Stroke::new(
-                1.0,
-                crate::theme::line(crate::theme::ACCENT),
-            ))
-            .corner_radius(egui::CornerRadius::same(10)),
-        )
-        .on_hover_text(
-            "Creates a new archetype freezing this agent's evolved genome AND weights \
-             (to reuse trained weights). The original species stays intact.",
-        )
-        .clicked()
-    {
-        request = config.archetypes.get(species.0 as usize).map(|src| {
-            InspectorAction::Capture(src.capture(*genotype, brain.clone(), generation.0))
-        });
-    }
-    ui.add_space(10.0);
-
-    // IDENTITY — the comp's 2×2 mini-cards: a faint label over a mono value.
+    // IDENTITY — the comp's 2×2 mini-cards: a faint label over a mono value. All four
+    // cards share one height (a fixed content height) and the value **truncates**
+    // instead of wrapping, so a long name can never make one card taller than its row.
     crate::theme::caption(ui, "Identity");
     let identity_cell = |ui: &mut egui::Ui, label: &str, value: String| {
         card(ui, |ui| {
             ui.set_min_width(ui.available_width());
+            ui.set_min_height(30.0);
             ui.label(
                 egui::RichText::new(label)
                     .size(11.0)
                     .color(crate::theme::INK_FAINT),
             );
-            ui.label(egui::RichText::new(value).monospace().size(14.0));
+            ui.add(egui::Label::new(egui::RichText::new(value).monospace().size(14.0)).truncate());
         });
     };
+    // The species **name** only — the numeric id is shown nowhere else in the card and
+    // adds no information the inspector needs (review).
     let species_name = config
         .archetypes
         .get(species.0 as usize)
         .map(|a| a.name.clone())
         .unwrap_or_default();
     ui.columns(2, |cols| {
-        identity_cell(
-            &mut cols[0],
-            "Species",
-            format!("{} · {species_name}", species.0),
-        );
+        identity_cell(&mut cols[0], "Species", species_name);
         identity_cell(&mut cols[1], "Generation", generation.0.to_string());
     });
     ui.columns(2, |cols| {
@@ -345,38 +409,54 @@ pub(crate) fn inspector_section(
         ui.add_space(10.0);
     }
 
-    // GENOTYPE.
+    // GENOTYPE. One row per gene — the comp's dense list: a muted name on the left, a
+    // mono value **pinned right**, both at 12.5 pt (the comp's genotype size; the old
+    // 14 pt read oversized against the tight inspector column).
     crate::theme::caption(ui, "Genotype (inherited genes)");
+    let gene_row = |ui: &mut egui::Ui, name: &str, value: String| {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(name)
+                    .size(12.5)
+                    .color(crate::theme::INK_MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(value)
+                        .monospace()
+                        .size(12.5)
+                        .color(crate::theme::INK),
+                );
+            });
+        });
+    };
     card(ui, |ui| {
         ui.set_min_width(ui.available_width());
         if immobile {
             // A state explanation of *absent* content: stays visible (nothing to hover).
             ui.weak("Immobile — locomotion and vision genes hidden (no effect).");
         }
-        egui::Grid::new("genes").num_columns(2).show(ui, |ui| {
-            // One row per TRAITS characteristic: adding a trait displays it here
-            // without touching the inspector. On an immobile entity, we skip the
-            // inert genes (locomotion, vision).
-            for t in &TRAITS {
-                if immobile && t.inert_when_immobile {
-                    continue;
-                }
-                ui.label(t.name);
-                ui.label(
-                    egui::RichText::new(format!("{:.*}", t.decimals as usize, (t.get)(genotype)))
-                        .monospace(),
-                );
-                ui.end_row();
+        // One row per TRAITS characteristic: adding a trait displays it here without
+        // touching the inspector. On an immobile entity, we skip the inert genes
+        // (locomotion, vision).
+        for t in &TRAITS {
+            if immobile && t.inert_when_immobile {
+                continue;
             }
-            // The vision cost only makes sense for an entity that sees (rays > 0).
-            if !immobile {
-                ui.label("vision cost/s");
-                ui.label(
-                    egui::RichText::new(format!("{:.3}", vision.metabolic_cost())).monospace(),
-                );
-                ui.end_row();
-            }
-        });
+            gene_row(
+                ui,
+                t.name,
+                format!("{:.*}", t.decimals as usize, (t.get)(genotype)),
+            );
+        }
+        // The vision cost only makes sense for an entity that sees (rays > 0).
+        if !immobile {
+            gene_row(
+                ui,
+                "vision cost/s",
+                format!("{:.3}", vision.metabolic_cost()),
+            );
+        }
     });
 
     // ACTION — heading read-out + the comp's accent throttle gauge.
@@ -404,38 +484,7 @@ pub(crate) fn inspector_section(
         crate::theme::gauge(ui, throttle, crate::theme::ACCENT);
     });
 
-    // (Capture moved under the panel title — review.)
-
-    // SAVE AS LIBRARY VARIANT: the same snapshot (evolved genome + frozen weights),
-    // but written to the catalog as a NAMED variant of this species (species/saved/),
-    // with a "<scenario>-<n>" id — the caller resolves the base + id (cf. editor).
-    // Name field on its own line so it fills the fixed-width panel; the button sits
-    // below it (a side-by-side row would crush one or the other in 370 px).
-    ui.add(
-        egui::TextEdit::singleline(variant_name)
-            .hint_text("variant name")
-            .desired_width(f32::INFINITY),
-    );
-    let named = !variant_name.trim().is_empty();
-    if ui
-        .add_enabled(
-            named,
-            egui::Button::new(fonts::icon_label(icons::FLOPPY, "Save to library…")),
-        )
-        .on_hover_text(
-            "Save this evolved agent as a named variant of its species in the library \
-                 (species/saved/), reusable in any scenario.",
-        )
-        .clicked()
-        && let Some(src) = config.archetypes.get(species.0 as usize)
-    {
-        let mut variant = src.capture(*genotype, brain.clone(), generation.0);
-        variant.name = variant_name.trim().to_string();
-        request = Some(InspectorAction::SaveVariant {
-            species: species.0,
-            variant,
-        });
-    }
+    // (Capture + Save-as-variant moved under the panel title — review.)
 
     // MLP brain: the network in action (item 18b-viz). Nodes colored by their
     // current activation (the last `think`), edges by sign/weight — the learned
@@ -461,13 +510,22 @@ pub(crate) fn inspector_section(
         // encodes the target / threat channels.
         ui.add_space(10.0);
         let [nrg, nut, spd] = perception.self_state;
-        crate::theme::caption_value(
-            ui,
-            &format!("Perception · {} rays", vision.ray_count),
-            &format!("nrg {nrg:.2} · nut {nut:.2} · spd {spd:.2}"),
+        // Caption and proprioception read-out on **separate lines**: side by side (a
+        // `caption_value`) the two collided in the narrow inspector column — the
+        // "PERCEPTION · N RAYS" title overran the "nrg … nut … spd …" figures.
+        crate::theme::caption(ui, &format!("Perception · {} rays", vision.ray_count));
+        ui.label(
+            egui::RichText::new(format!("nrg {nrg:.2} · nut {nut:.2} · spd {spd:.2}"))
+                .monospace()
+                .size(11.0)
+                .color(crate::theme::INK_MUTED),
         );
         card(ui, |ui| {
             ui.set_min_width(ui.available_width());
+            // Tighten the rays into one dense block: **no** inter-row gap AND a reduced
+            // row height (each row is as tall as its tallest item — the `r{i}` label — so
+            // shrinking the label is what actually pulls the bars together).
+            ui.spacing_mut().item_spacing.y = 0.0;
             for (i, &proximity) in perception.vision.iter().enumerate() {
                 let target = perception.target.get(i).copied().unwrap_or(0.0);
                 let threat = perception.threat.get(i).copied().unwrap_or(0.0);
@@ -475,7 +533,8 @@ pub(crate) fn inspector_section(
                     ui.label(
                         egui::RichText::new(format!("r{i}"))
                             .monospace()
-                            .size(11.0)
+                            .size(9.0)
+                            .line_height(Some(9.0))
                             .color(crate::theme::INK_FAINT),
                     );
                     // The proximity gauge takes what the two 12 px swatches leave.

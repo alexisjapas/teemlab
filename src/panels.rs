@@ -41,7 +41,7 @@ use teemlab::components::{Action, Age, Agent, Generation, Perception, Reserve, S
 use teemlab::genotype::Genotype;
 use teemlab::metrics::History;
 use teemlab::nutrients::Nutrients;
-use teemlab::selection::{AutoSelect, Selection};
+use teemlab::selection::{AutoSelect, BrainFilter, Selection};
 use teemlab::visuals::Layers;
 
 use crate::controls::{self, SimControls};
@@ -52,21 +52,16 @@ use crate::fonts::{self, icons};
 use crate::hud;
 use crate::inspector;
 use crate::library::{CatalogSource, Library, LibraryTab};
-use crate::recorder::{self, RecorderPanel};
+use crate::recorder::RecorderPanel;
 use crate::runs::{self, RunsPanel};
 use crate::screen::{Router, Screen};
 use crate::status::UiStatus;
 
-/// Last frame's measured panel widths — the inputs the [`crate::layout`] range rule
-/// needs this frame (a one-frame lag, harmless for sizing). A single [`Local`] so
-/// [`dock`] adds no system parameter.
+/// Last frame's measured transport width — the input the top-bar centering needs this
+/// frame (a one-frame lag, harmless). A single [`Local`] so [`dock`] adds no system
+/// parameter. (Observe's panels are fixed-width now, so no side-width bookkeeping.)
 #[derive(Default)]
 pub struct DockLayout {
-    /// Left panel width, feeding the right panel's range (each side reserves the sim's
-    /// minimum against the *other* side's width).
-    left_w: f32,
-    /// Right panel width, feeding the left panel's range.
-    right_w: f32,
     /// Measured width of the centered transport controls (for centering — see below).
     ctrl_width: f32,
 }
@@ -77,60 +72,14 @@ pub struct DockLayout {
 /// reserved for genuine *selection*, e.g. `palette.selected`, never for visibility;
 /// a scenario's `batch` being set is a data *precondition* for the Lab dashboard,
 /// not its toggle.)
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct UiWindows {
-    /// The video **Export** window (Observe's Export button).
-    pub export: bool,
     /// The keyboard-shortcuts **cheatsheet** (`?` / the nav rail's Help).
     pub shortcuts: bool,
-    /// Observe's foldable regions, each collapsing to a thin **rail** so the arena can
-    /// take the space back: the left (live stats + layers) column…
-    pub left_open: bool,
-    /// …the right (inspector) column…
-    pub right_open: bool,
-    /// …and the bottom strip (status + curves).
-    pub bottom_open: bool,
     /// The **dynamic trophic-graph overlay** on the arena (ui-redesign §7): the derived
     /// web annotated with live population (node size) and dependency (edge colour). A
     /// view layer, off by default.
     pub trophic_overlay: bool,
-}
-
-impl Default for UiWindows {
-    fn default() -> Self {
-        Self {
-            export: false,
-            shortcuts: false,
-            left_open: true,
-            right_open: true,
-            bottom_open: true,
-            trophic_overlay: false,
-        }
-    }
-}
-
-impl UiWindows {
-    /// The launch layout: **composing** (the empty canvas — every tool deployed) vs
-    /// **observing** (a scenario passed on the CLI — the side columns folded, the
-    /// arena and the curves lead; the tooling is one key / rail-click away).
-    pub fn at_launch(observing: bool) -> Self {
-        Self {
-            left_open: !observing,
-            right_open: !observing,
-            ..Self::default()
-        }
-    }
-}
-
-/// Whether the current run's metrics are **persisted for Analyze** (ui-redesign §3).
-/// Default **off** on Observe (observation is usually throwaway; the Lab default-on
-/// lives in that screen's own toggle). **Inert** at this stage — the run-record store
-/// rides with Analyze (companion doc §9) — so this only holds the user's intent; a
-/// dedicated resource is its honest home, wired when records land (B8).
-#[derive(Resource, Default)]
-pub struct RunRecord {
-    /// The user's persist-this-run intent. Read by nothing yet.
-    pub enabled: bool,
 }
 
 /// Cross-panel resources [`dock`] writes, bundled into one [`SystemParam`] so the
@@ -147,8 +96,6 @@ pub struct DockState<'w> {
     pub recorder_panel: ResMut<'w, RecorderPanel>,
     pub ui_status: ResMut<'w, UiStatus>,
     pub windows: ResMut<'w, UiWindows>,
-    /// The Observe run-record toggle's intent (inert until Analyze — see [`RunRecord`]).
-    pub run_record: ResMut<'w, RunRecord>,
     /// The Library catalog + compose tray (Worlds / Species — cf. [`crate::library`]).
     pub library: ResMut<'w, Library>,
     /// The Lab screen's experiment-setup state (mode + sweep + run-record — [`LabSetup`]).
@@ -164,13 +111,15 @@ pub struct DockState<'w> {
 
 /// **Observation** state Observe reads, bundled into one [`SystemParam`] so [`dock`]
 /// stays within Bevy's 16-parameter limit: the current [`Selection`] (read, by the
-/// inspector), the auto-follow mode ([`AutoSelect`]) and the sim view's pan/zoom
-/// ([`crate::ViewControl`]) — the latter two written by [`arena_controls`].
+/// inspector), the auto-follow mode ([`AutoSelect`]), the sim view's pan/zoom
+/// ([`crate::ViewControl`] — written by [`arena_controls`]) and a read-only lookup of
+/// agent positions (so the Fit menu can centre the view on the selected entity).
 #[derive(SystemParam)]
-pub struct ObsParams<'w> {
+pub struct ObsParams<'w, 's> {
     pub selection: Res<'w, Selection>,
     pub auto_select: ResMut<'w, AutoSelect>,
     pub view: ResMut<'w, crate::ViewControl>,
+    pub bodies: Query<'w, 's, &'static Transform, With<Agent>>,
 }
 
 /// The central region left free by the docked panels (egui points), computed by
@@ -214,48 +163,6 @@ pub fn pointer_over_ui_at(ctx: &egui::Context, pos: egui::Pos2, central: egui::R
         // Background layer (panels live here): UI iff outside the sim's central rect.
         _ => !central.contains(pos),
     }
-}
-
-/// Width of a folded region's **rail** (egui points): just enough for its chevron.
-const RAIL_W: f32 = 26.0;
-
-/// Overlays a small frameless chevron in an open region's **top-right corner** —
-/// `ui.put` consumes no layout space, so the content keeps its full height — that
-/// folds the region to its rail. The rail's chevron (cf. the `dock` rails) is the
-/// mirror affordance, in the same spot the region folded from.
-fn collapse_overlay(
-    ui: &mut egui::Ui,
-    glyph: char,
-    action: crate::keymap::UiAction,
-    open: &mut bool,
-) {
-    let r = ui.max_rect();
-    let rect = egui::Rect::from_min_size(
-        egui::pos2(r.right() - 20.0, r.top() + 2.0),
-        egui::vec2(18.0, 18.0),
-    );
-    if ui
-        .put(
-            rect,
-            egui::Button::new(fonts::icon(glyph)).small().frame(false),
-        )
-        .on_hover_text(crate::keymap::tooltip("Fold this panel", action))
-        .clicked()
-    {
-        *open = false;
-    }
-}
-
-/// A rail's reopen chevron (frameless, quiet). Returns `true` when clicked.
-fn rail_chevron(
-    ui: &mut egui::Ui,
-    glyph: char,
-    tip: &str,
-    action: crate::keymap::UiAction,
-) -> bool {
-    ui.add(egui::Button::new(fonts::icon(glyph)).frame(false))
-        .on_hover_text(crate::keymap::tooltip(tip, action))
-        .clicked()
 }
 
 /// The Studio archetype-editor **detail** view: a header (the selected species' name,
@@ -690,6 +597,55 @@ fn world_thumbnail(painter: &egui::Painter, rect: egui::Rect, seed: u64) {
     }
 }
 
+/// The **Record** menu (top bar): the recording's **components** to capture — Video
+/// (wired, with its render sub-options when on), Sound / Metrics (planned, shown off +
+/// disabled) — then a single **Run record** button, the *only* entry point to launching
+/// a (headless) recording. A recording in flight swaps the launcher for a spinner +
+/// Cancel. Stays open while you edit it (closes only on a click outside).
+fn record_menu(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
+    // Cap the width: egui menus lay out **justified** (they stretch to fill the popup's
+    // width, which defaults very wide), so a `min_width` can't tighten them — only a
+    // `max_width` does.
+    ui.set_max_width(190.0);
+    crate::theme::caption(ui, "Add to recording");
+    crate::theme::toggle_row(ui, "Video", &mut panel.video)
+        .on_hover_text("Render the run to video.mp4 (headless).");
+    // Video's render sub-options appear (editable) when Video is on.
+    if panel.video {
+        panel.video_options_ui(ui);
+    }
+    // Sound / Metrics: planned — shown off and non-interactive for now (their disabled
+    // state carries the "not yet" — no wide caption needed).
+    ui.add_enabled_ui(false, |ui| {
+        let mut off = false;
+        crate::theme::toggle_row(ui, "Sound", &mut off);
+        crate::theme::toggle_row(ui, "Metrics", &mut off);
+    });
+    ui.separator();
+    if panel.is_recording() {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label("Recording…");
+            if ui.button(fonts::icon_label(icons::X, "Cancel")).clicked() {
+                panel.cancel();
+                ui.close();
+            }
+        });
+    } else if crate::theme::primary_button(
+        ui,
+        fonts::icon_label_tinted(icons::RECORD, "Run record", crate::theme::ON_ACCENT2),
+    )
+    .on_hover_text(
+        "Create a recording folder (outputs/run-NN/) with the scenario parameters and the \
+         selected components, then render it headless.",
+    )
+    .clicked()
+    {
+        panel.request_launch();
+        ui.close();
+    }
+}
+
 /// A translucent dark **overlay frame** for the arena's floating controls (the comp's
 /// blurred pills — egui has no backdrop-blur, so a dark wash + hairline approximates it).
 fn overlay_frame() -> egui::Frame {
@@ -698,6 +654,35 @@ fn overlay_frame() -> egui::Frame {
         .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
         .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin::symmetric(9, 6))
+}
+
+/// A framing-mode button (arena controls): **accent-filled** while its mode is `active`,
+/// `disabled` when `!enabled` (e.g. Follow with nothing selected). Returns the `Response`.
+///
+/// Both states carry a **1 px stroke** (accent when active, transparent otherwise): a
+/// button's frame grows by its stroke width, so a strokeless inactive button would jump
+/// bigger the moment it accents — the invisible stroke keeps the geometry identical.
+fn mode_button(
+    ui: &mut egui::Ui,
+    glyph: char,
+    label: &str,
+    active: bool,
+    enabled: bool,
+) -> egui::Response {
+    let button = if active {
+        egui::Button::new(fonts::icon_label_tinted(glyph, label, crate::theme::ACCENT))
+            .fill(crate::theme::soft(crate::theme::ACCENT))
+            .stroke(egui::Stroke::new(
+                1.0,
+                crate::theme::line(crate::theme::ACCENT),
+            ))
+    } else {
+        // No explicit stroke — the theme reserves a 1 px (transparent) border on the
+        // inactive state, matching the active button's accent border, so the two are the
+        // same size.
+        egui::Button::new(fonts::icon_label(glyph, label))
+    };
+    ui.add_enabled(enabled, button)
 }
 
 /// The Observe **arena overlays** (interactive, floating over the live arena): the
@@ -710,6 +695,7 @@ fn arena_controls(
     rect: egui::Rect,
     auto: &mut AutoSelect,
     view: &mut crate::ViewControl,
+    selected_pos: Option<Vec2>,
 ) {
     if rect.width() < 60.0 || rect.height() < 60.0 {
         return;
@@ -723,13 +709,38 @@ fn arena_controls(
             overlay_frame().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Follow").on_hover_text(
-                        "What the view auto-follows (same modes as the video). None = \
-                         manual (click an agent); a manual click always overrides.",
+                        "What the view auto-follows (same modes as the video). Manual = \
+                         click an agent; a manual click always switches back to Manual.",
                     );
                     inspector::follow_combo(ui, "arena_follow_combo", &mut auto.roll);
                     if auto.roll.rolls() {
                         ui.add(egui::Slider::new(&mut auto.interval, 0.5..=20.0).text("s"));
                     }
+                    // Brain filter — restrict the auto-follow to chosen brain families
+                    // (e.g. hunters + MLPs only). Every family is offered, flora
+                    // (Sessile) included — plants are entities like any other. The label
+                    // goes accent while a filter is in effect.
+                    let filtered = !auto.brains.is_all();
+                    let brains_label = egui::RichText::new("Brains").color(if filtered {
+                        crate::theme::ACCENT
+                    } else {
+                        crate::theme::INK_MUTED
+                    });
+                    // A sticky menu: toggling a family keeps it open (it closes only on a
+                    // click outside).
+                    crate::theme::sticky_menu(ui, egui::Button::new(brains_label), |ui| {
+                        for (fi, name) in Brain::FAMILIES.iter().enumerate() {
+                            crate::theme::toggle_row(ui, name, &mut auto.brains.0[fi]);
+                        }
+                        ui.separator();
+                        if ui.button("Include all").clicked() {
+                            auto.brains = BrainFilter::default();
+                        }
+                    })
+                    .on_hover_text(
+                        "Restrict the auto-follow to these brain families — a manual click \
+                         still selects any agent.",
+                    );
                 });
             });
         });
@@ -747,15 +758,37 @@ fn arena_controls(
                     if ui.button("-").on_hover_text("Zoom out").clicked() {
                         view.zoom_by(0.8);
                     }
-                    if ui
-                        .button(fonts::icon_label(icons::RESET, "Fit"))
-                        .on_hover_text(crate::keymap::tooltip(
-                            "Recenter on the whole arena",
-                            crate::keymap::UiAction::ResetView,
-                        ))
-                        .clicked()
+                    // Two separate framing buttons — the active one is accented; any
+                    // manual camera move de-accents both (cf. `ViewControl::set_free`).
+                    let mode = view.mode();
+                    // Fit arena.
+                    if mode_button(
+                        ui,
+                        icons::RESET,
+                        "Fit arena",
+                        mode == crate::ViewMode::FitArena,
+                        true,
+                    )
+                    .on_hover_text(crate::keymap::tooltip(
+                        "Frame the whole arena",
+                        crate::keymap::UiAction::ResetView,
+                    ))
+                    .clicked()
                     {
-                        *view = crate::ViewControl::default();
+                        view.fit_arena();
+                    }
+                    // Follow entity — only meaningful with a selection.
+                    if mode_button(
+                        ui,
+                        icons::EYE,
+                        "Follow entity",
+                        mode == crate::ViewMode::Follow,
+                        selected_pos.is_some(),
+                    )
+                    .on_hover_text("Keep the view centered on the selected entity")
+                    .clicked()
+                    {
+                        view.follow_selection();
                     }
                 });
             });
@@ -832,11 +865,6 @@ pub fn dock(
     // ids never shift, §2.5 of `docs/ui-spec.md`).
     nav_rail(&mut root, &mut state.router, &mut state.windows);
 
-    // Width available to a *screen's* own panels once the rail has taken its strip: the
-    // side-panel ranges reserve the sim's minimum against this, not the whole window.
-    let viewport_w = root.ctx().viewport_rect().width();
-    let content_w = (viewport_w - NAV_W).max(1.0);
-
     // A colour-by-kind status line (the transient feedback sink, cf. `status`), reused by
     // the screens that surface it (Observe's bottom strip, Lab).
     let status_line = |ui: &mut egui::Ui, status: &crate::status::UiStatus| {
@@ -901,43 +929,32 @@ pub fn dock(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    // Record cluster (review): recording is the top-bar
-                                    // affordance; video export is one of its options.
-                                    // Gold while armed.
-                                    let armed = state.run_record.enabled;
-                                    let rec_label = if armed {
-                                        fonts::icon_label_tinted(
-                                            icons::RECORD,
-                                            "Recording",
-                                            crate::theme::ACCENT,
-                                        )
+                                    // Record cluster (review): the top-bar affordance,
+                                    // styled like the comp's accented button (accent-soft
+                                    // fill, accent hairline, accent text). Its (sticky)
+                                    // menu lists the recording's **components** then a
+                                    // single *Run record* launcher — the only entry point
+                                    // to a recording. A stronger wash signals a recording
+                                    // is in flight.
+                                    let recording = state.recorder_panel.is_recording();
+                                    let rec_label = fonts::icon_label_tinted(
+                                        icons::RECORD,
+                                        if recording { "Recording" } else { "Record" },
+                                        crate::theme::ACCENT,
+                                    );
+                                    let rest = if recording {
+                                        crate::theme::ACCENT.gamma_multiply(0.28)
                                     } else {
-                                        fonts::icon_label(icons::RECORD, "Record")
+                                        crate::theme::soft(crate::theme::ACCENT)
                                     };
-                                    ui.menu_button(rec_label, |ui| {
-                                        crate::theme::toggle_row(
-                                            ui,
-                                            "Record this run",
-                                            &mut state.run_record.enabled,
-                                        )
-                                        .on_hover_text(
-                                            "Persist this run's metrics for the Analyze \
-                                             screen (deferred — inert for now).",
-                                        );
-                                        ui.separator();
-                                        if ui
-                                            .button(fonts::icon_label(
-                                                icons::RECORD,
-                                                "Export video…",
-                                            ))
-                                            .on_hover_text(
-                                                "Render the current scenario to a video \
-                                                 (opens the export panel).",
-                                            )
-                                            .clicked()
-                                        {
-                                            state.windows.export = !state.windows.export;
-                                        }
+                                    let rec_button = egui::Button::new(rec_label)
+                                        .fill(rest)
+                                        .stroke(egui::Stroke::new(
+                                            1.0,
+                                            crate::theme::line(crate::theme::ACCENT),
+                                        ));
+                                    crate::theme::sticky_menu(ui, rec_button, |ui| {
+                                        record_menu(ui, &mut state.recorder_panel);
                                     });
                                 },
                             );
@@ -945,199 +962,104 @@ pub fn dock(
                     );
                 });
 
-            // RIGHT — the agent inspector (foldable). Follow selector pinned above the
-            // scroll; a Capture routes the derived archetype into Studio to edit.
-            let right_w = if !state.windows.right_open {
-                egui::Panel::right("observe_right_rail")
-                    .resizable(false)
-                    .default_size(RAIL_W)
-                    .size_range(RAIL_W..=RAIL_W)
-                    .show_inside(&mut root, |ui| {
-                        if rail_chevron(
-                            ui,
-                            icons::CARET_LEFT,
-                            "Show the inspector",
-                            crate::keymap::UiAction::ToggleRightPanel,
-                        ) {
-                            state.windows.right_open = true;
-                        }
-                    })
-                    .response
-                    .rect
-                    .width()
-            } else {
-                egui::Panel::right("observe_right")
-                    .default_size(crate::layout::SIDE_DEFAULT)
-                    .resizable(true)
-                    .size_range(crate::layout::side_range(content_w, layout.left_w))
-                    .show_inside(&mut root, |ui| {
-                        collapse_overlay(
-                            ui,
-                            icons::CARET_RIGHT,
-                            crate::keymap::UiAction::ToggleRightPanel,
-                            &mut state.windows.right_open,
-                        );
-                        egui::ScrollArea::vertical()
-                            .id_salt("observe_inspector_scroll")
-                            .show(ui, |ui| {
-                                // Comp header: a plain bold title, no collapsible chrome
-                                // (the panel fold is the chevron overlay).
-                                ui.strong("Agent inspector");
-                                ui.separator();
-                                // `inspector_section` returns a capture request, applied
-                                // *after* the call so its shared `config` borrow has
-                                // ended before the mutable one.
-                                let inspector_action = inspector::inspector_section(
-                                    ui,
-                                    &obs.selection,
-                                    &config,
-                                    &mut palette.variant_name,
-                                    &inspector_agents,
-                                );
-                                match inspector_action {
-                                    Some(inspector::InspectorAction::Capture(arch)) => {
-                                        let from = arch.captured_from.clone().unwrap_or_default();
-                                        config.archetypes.push(arch);
-                                        palette.selected = Some(config.archetypes.len() - 1);
-                                        // Editing lives in Studio now — hand it there.
-                                        state.router.current = Screen::Studio;
-                                        state.ui_status.set(format!(
-                                            "Captured to scenario (from {from}). \
-                                             Opened in Studio."
-                                        ));
-                                    }
-                                    Some(inspector::InspectorAction::SaveVariant {
-                                        species,
-                                        variant,
-                                    }) => {
-                                        let scenario = state.runs_panel.origin_label();
-                                        let msg = editor::save_variant(
-                                            &mut palette,
-                                            &config,
-                                            species as usize,
-                                            variant,
-                                            &scenario,
-                                        );
-                                        palette.variant_name.clear();
-                                        state.ui_status.set_result(msg);
-                                    }
-                                    None => {}
-                                }
-                            });
-                    })
-                    .response
-                    .rect
-                    .width()
-            };
+            // BOTTOM — the evolution curves, full width: docked **before** the side
+            // panels so it spans the whole content width (the nav rail to the right edge,
+            // the comp's full-bleed footer), the side columns sitting above it. Fixed and
+            // tall enough to actually read the two plots — not resizable, not foldable.
+            egui::Panel::bottom("observe_bottom")
+                .resizable(false)
+                .default_size(crate::layout::BOTTOM_DEFAULT)
+                .size_range(crate::layout::BOTTOM_DEFAULT..=crate::layout::BOTTOM_DEFAULT)
+                .show_inside(&mut root, |ui| {
+                    hud::hud_section(ui, &mut history, &config);
+                });
 
-            // LEFT — live stats + view layers (foldable): both live here (ui-redesign §3).
-            let left_w = if !state.windows.left_open {
-                egui::Panel::left("observe_left_rail")
-                    .resizable(false)
-                    .default_size(RAIL_W)
-                    .size_range(RAIL_W..=RAIL_W)
-                    .show_inside(&mut root, |ui| {
-                        if rail_chevron(
-                            ui,
-                            icons::CARET_RIGHT,
-                            "Show live stats & layers",
-                            crate::keymap::UiAction::ToggleLeftPanel,
-                        ) {
-                            state.windows.left_open = true;
-                        }
-                    })
-                    .response
-                    .rect
-                    .width()
-            } else {
-                egui::Panel::left("observe_left")
-                    .default_size(crate::layout::STATS_DEFAULT)
-                    .resizable(true)
-                    .size_range(crate::layout::stats_range(content_w, right_w))
-                    .show_inside(&mut root, |ui| {
-                        collapse_overlay(
-                            ui,
-                            icons::CARET_LEFT,
-                            crate::keymap::UiAction::ToggleLeftPanel,
-                            &mut state.windows.left_open,
-                        );
-                        egui::ScrollArea::vertical()
-                            .id_salt("observe_left_scroll")
-                            .show(ui, |ui| {
-                                crate::theme::caption(ui, "Live stats");
-                                observe_population(ui, &history, &config);
-                                ui.add_space(12.0);
-                                crate::theme::caption(ui, "Layers");
-                                editor::layers_section(ui, &mut layers, &config);
-                                crate::theme::toggle_row(
-                                    ui,
-                                    "Trophic graph",
-                                    &mut state.windows.trophic_overlay,
-                                )
-                                .on_hover_text(
-                                    "Overlay the derived food web on the arena: node size = \
-                                     population, edge colour = dependency \
-                                     (docs/emergent-trophics.md §6).",
-                                );
-                                // Pinned last (review): a removal candidate — cf.
-                                // docs/review-2026-07-15.md.
-                                ui.add_space(12.0);
-                                egui::CollapsingHeader::new("Per-gene means")
-                                    .default_open(false)
-                                    .show(ui, |ui| {
-                                        editor::stats_section(ui, &stats_agents, &config)
-                                    });
-                            });
-                    })
-                    .response
-                    .rect
-                    .width()
-            };
-
-            // BOTTOM — status line + evolution curves (foldable), spanning the central
-            // width the side panels leave free.
-            if !state.windows.bottom_open {
-                egui::Panel::bottom("observe_bottom_rail")
-                    .resizable(false)
-                    .default_size(RAIL_W)
-                    .size_range(RAIL_W..=RAIL_W)
-                    .show_inside(&mut root, |ui| {
-                        ui.horizontal(|ui| {
-                            if rail_chevron(
+            // RIGHT — the agent inspector. Fixed width, always open (no fold, no drag): a
+            // Capture routes the derived archetype into Studio to edit.
+            egui::Panel::right("observe_right")
+                .resizable(false)
+                .default_size(crate::layout::INSPECTOR_DEFAULT)
+                .size_range(crate::layout::INSPECTOR_DEFAULT..=crate::layout::INSPECTOR_DEFAULT)
+                .show_inside(&mut root, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("observe_inspector_scroll")
+                        .show(ui, |ui| {
+                            // The header (title + the Capture menu, right-aligned) is drawn
+                            // by `inspector_section` itself — the Capture menu needs the
+                            // inspected agent's data. It returns a capture request, applied
+                            // *after* the call so its shared `config` borrow has ended
+                            // before the mutable one.
+                            let inspector_action = inspector::inspector_section(
                                 ui,
-                                icons::CARET_UP,
-                                "Show the curves strip",
-                                crate::keymap::UiAction::ToggleBottomPanel,
-                            ) {
-                                state.windows.bottom_open = true;
-                            }
-                            if state.ui_status.visible(now) {
-                                status_line(ui, &state.ui_status);
+                                &obs.selection,
+                                &config,
+                                &mut palette.variant_name,
+                                &inspector_agents,
+                            );
+                            match inspector_action {
+                                Some(inspector::InspectorAction::Capture(arch)) => {
+                                    let from = arch.captured_from.clone().unwrap_or_default();
+                                    config.archetypes.push(arch);
+                                    palette.selected = Some(config.archetypes.len() - 1);
+                                    // Editing lives in Studio now — hand it there.
+                                    state.router.current = Screen::Studio;
+                                    state.ui_status.set(format!(
+                                        "Captured to scenario (from {from}). Opened in Studio."
+                                    ));
+                                }
+                                Some(inspector::InspectorAction::SaveVariant {
+                                    species,
+                                    variant,
+                                }) => {
+                                    let scenario = state.runs_panel.origin_label();
+                                    let msg = editor::save_variant(
+                                        &mut palette,
+                                        &config,
+                                        species as usize,
+                                        variant,
+                                        &scenario,
+                                    );
+                                    palette.variant_name.clear();
+                                    state.ui_status.set_result(msg);
+                                }
+                                None => {}
                             }
                         });
-                    });
-            } else {
-                egui::Panel::bottom("observe_bottom")
-                    .resizable(true)
-                    .default_size(190.0)
-                    .size_range(140.0..=520.0)
-                    .show_inside(&mut root, |ui| {
-                        collapse_overlay(
-                            ui,
-                            icons::CARET_DOWN,
-                            crate::keymap::UiAction::ToggleBottomPanel,
-                            &mut state.windows.bottom_open,
-                        );
-                        if state.ui_status.visible(now) {
-                            status_line(ui, &state.ui_status);
-                            ui.add_space(2.0);
-                        }
-                        hud::hud_section(ui, &mut history, &config);
-                    });
-            }
+                });
 
-            layout.left_w = left_w;
-            layout.right_w = right_w;
+            // LEFT — live stats + view layers (ui-redesign §3). Fixed width, always open.
+            egui::Panel::left("observe_left")
+                .resizable(false)
+                .default_size(crate::layout::STATS_DEFAULT)
+                .size_range(crate::layout::STATS_DEFAULT..=crate::layout::STATS_DEFAULT)
+                .show_inside(&mut root, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("observe_left_scroll")
+                        .show(ui, |ui| {
+                            crate::theme::caption(ui, "Live stats");
+                            observe_population(ui, &history, &config);
+                            ui.add_space(12.0);
+                            crate::theme::caption(ui, "Layers");
+                            editor::layers_section(ui, &mut layers, &config);
+                            crate::theme::toggle_row(
+                                ui,
+                                "Trophic graph",
+                                &mut state.windows.trophic_overlay,
+                            )
+                            .on_hover_text(
+                                "Overlay the derived food web on the arena: node size = \
+                                 population, edge colour = dependency \
+                                 (docs/emergent-trophics.md §6).",
+                            );
+                            // Pinned last (review): a removal candidate — cf.
+                            // docs/review-2026-07-15.md.
+                            ui.add_space(12.0);
+                            egui::CollapsingHeader::new("Per-gene means")
+                                .default_open(false)
+                                .show(ui, |ui| editor::stats_section(ui, &stats_agents, &config));
+                        });
+                });
+
             // The transparent centre: where `set_sim_camera` frames the live arena.
             // The comp frames the arena with a strong hairline (`--line-2`); its
             // rounded corners + shadow don't survive the camera compositing (the sim
@@ -1982,24 +1904,6 @@ pub fn dock(
     };
     central.0 = arena_rect;
 
-    // Floating "Export video" window — **Observe only** (it renders the current run).
-    // Driven through a local `open` (the window's [x]) so it does not alias the
-    // `&mut recorder_panel` the section needs.
-    if screen.shows_arena() && state.windows.export {
-        let mut open = true;
-        egui::Window::new("Export video")
-            .collapsible(true)
-            .resizable(false)
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 36.0))
-            .open(&mut open)
-            .show(root.ctx(), |ui| {
-                recorder::recorder_section(ui, &mut state.recorder_panel);
-            });
-        if !open {
-            state.windows.export = false;
-        }
-    }
-
     // Keyboard-shortcuts cheatsheet — **global** (any screen), toggled by `?` / F1 / the
     // nav rail's Help. A floating window over the same keymap tables the tooltips read.
     if state.windows.shortcuts {
@@ -2044,13 +1948,37 @@ pub fn dock(
         central_overlay(
             &painter,
             central.0,
-            history.latest_time(),
+            // The **live** virtual-clock time, not the last metrics sample: the read-out
+            // then refreshes every frame down to its smallest shown digit (0.1 s) instead
+            // of stepping at the (coarser) sampling interval.
+            vtime.elapsed_secs(),
             sim_controls.speed,
             vtime.is_paused(),
             stats_agents.is_empty(),
             !config.archetypes.is_empty(),
         );
-        arena_controls(root.ctx(), central.0, &mut obs.auto_select, &mut obs.view);
+        // World position of the selected agent (if any), for the Fit menu's
+        // "Center on selection". Computed before the `&mut` borrows below (owned `Vec2`).
+        let selected_pos = obs
+            .selection
+            .0
+            .and_then(|e| obs.bodies.get(e).ok())
+            .map(|tf| tf.translation.truncate());
+        arena_controls(
+            root.ctx(),
+            central.0,
+            &mut obs.auto_select,
+            &mut obs.view,
+            selected_pos,
+        );
+        // Follow tracking: while locked to Follow, keep the view centred on the selected
+        // entity each frame; losing the target drops back to Free (de-accents the button).
+        if obs.view.mode() == crate::ViewMode::Follow {
+            match selected_pos {
+                Some(p) => obs.view.center_on(p),
+                None => obs.view.set_free(),
+            }
+        }
     }
     Ok(())
 }
@@ -2140,24 +2068,11 @@ mod tests {
 
     #[test]
     fn ui_windows_defaults() {
+        // The floating surfaces start closed; Observe's docked panels are fixed (no
+        // open/fold state to hold anymore).
         let w = UiWindows::default();
-        assert!(!w.export, "Export starts closed");
         assert!(!w.shortcuts, "the cheatsheet starts closed");
-        assert!(
-            w.left_open && w.right_open && w.bottom_open,
-            "composing: every region deployed"
-        );
-    }
-
-    #[test]
-    fn launch_layout_folds_side_tooling_when_observing() {
-        // A CLI scenario → observation: the side columns fold to rails, the arena and
-        // the curves lead; the empty canvas keeps everything open (composing).
-        let observing = UiWindows::at_launch(true);
-        assert!(!observing.left_open && !observing.right_open);
-        assert!(observing.bottom_open, "the curves are the observation tool");
-        let composing = UiWindows::at_launch(false);
-        assert!(composing.left_open && composing.right_open && composing.bottom_open);
+        assert!(!w.trophic_overlay, "the trophic overlay starts off");
     }
 
     #[test]

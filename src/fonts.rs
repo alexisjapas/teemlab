@@ -59,10 +59,6 @@ pub mod icons {
     pub const CIRCLE: char = '\u{E18A}'; // archetype bullet (unselected)
     pub const CARET_RIGHT: char = '\u{E13A}'; // selected mark
     pub const CARET_DOWN: char = '\u{E136}'; // menu caret
-    // caret-left / caret-up, derived from the verified alphabetical stride of the
-    // caret family (down E136 · left · right E13A · up ⇒ stride 2). Rail chevrons.
-    pub const CARET_LEFT: char = '\u{E138}';
-    pub const CARET_UP: char = '\u{E13C}';
     pub const SPARKLE: char = '\u{E6A2}'; // captured weights
     pub const DOWNLOAD: char = '\u{E20C}'; // import (download-simple)
     pub const FLOPPY: char = '\u{E248}'; // save to library

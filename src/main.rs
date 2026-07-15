@@ -80,21 +80,14 @@ fn main() {
         // the transport's Reset accents itself when the live config diverges from it.
         .init_resource::<controls::WorldBaseline>()
         .init_resource::<recorder::RecorderPanel>()
-        // Visibility of the toggleable surfaces (Export / Breeding / shortcuts) and
-        // the foldable docked regions — the one convention for "what's open". A CLI
-        // scenario starts in the **observing** layout (side columns folded to rails);
-        // the empty canvas starts **composing** (everything deployed).
-        .insert_resource(panels::UiWindows::at_launch(
-            std::env::args().nth(1).is_some(),
-        ))
+        // Visibility of the toggleable floating surfaces (the shortcuts cheatsheet, the
+        // trophic overlay) — the one convention for "what's open". Observe's docked
+        // panels are fixed (always open), so there is nothing to fold here.
+        .init_resource::<panels::UiWindows>()
         // The top-level screen router (Observe · Library · Studio · Lab · Analyze —
         // cf. `screen`). Starts on Observe (the launch landing, the only live-arena
         // screen). The nav rail switches it; `panels::dock` dispatches on it.
         .init_resource::<screen::Router>()
-        // Whether the current run's metrics are persisted for Analyze (ui-redesign §3):
-        // default **off** on Observe (observation is usually throwaway). Inert until the
-        // run-record store lands (deferred with Analyze) — a toggle that only holds a bool.
-        .init_resource::<panels::RunRecord>()
         // The Library catalog + compose tray (Worlds / Species, ui-redesign §4). Scanned
         // from disk on the first Library visit (cf. `library::Library::reload`).
         .init_resource::<library::Library>()
@@ -207,22 +200,12 @@ fn keyboard_shortcuts(
     if keymap::pressed(&keys, UiAction::ResetWorld) {
         controls.reset_requested = true;
     }
-    // Recenter the view on the whole arena (mirrors the "Reset view" button).
+    // Recenter the view on the whole arena (mirrors the "Fit arena" button).
     if keymap::pressed(&keys, UiAction::ResetView) {
-        *view = ViewControl::default();
+        view.fit_arena();
     }
     if keymap::pressed(&keys, UiAction::ToggleShortcuts) {
         windows.shortcuts = !windows.shortcuts;
-    }
-    // Fold / unfold the docked regions (mirrors the panels' chevrons and the rails).
-    if keymap::pressed(&keys, UiAction::ToggleLeftPanel) {
-        windows.left_open = !windows.left_open;
-    }
-    if keymap::pressed(&keys, UiAction::ToggleRightPanel) {
-        windows.right_open = !windows.right_open;
-    }
-    if keymap::pressed(&keys, UiAction::ToggleBottomPanel) {
-        windows.bottom_open = !windows.bottom_open;
     }
     Ok(())
 }
@@ -247,6 +230,23 @@ struct ViewControl {
     look_at: Vec2,
     /// Zoom factor: `1` = the fit-the-arena framing, `>1` zooms in, `<1` out.
     zoom: f32,
+    /// Which framing the view is locked to (the two accented arena buttons); any manual
+    /// move drops it back to [`ViewMode::Free`].
+    mode: ViewMode,
+}
+
+/// Which framing the Observe view is locked to — surfaced as the two accented arena
+/// buttons (Fit arena / Follow entity). Any **manual** camera move (scroll, drag, or the
+/// `±` buttons) drops back to [`ViewMode::Free`], de-accenting both.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ViewMode {
+    /// Manual — neither button accented.
+    #[default]
+    Free,
+    /// Framed to the whole arena (the default fit).
+    FitArena,
+    /// Tracking the selected entity each frame.
+    Follow,
 }
 
 impl Default for ViewControl {
@@ -254,6 +254,7 @@ impl Default for ViewControl {
         Self {
             look_at: Vec2::ZERO,
             zoom: 1.0,
+            mode: ViewMode::Free,
         }
     }
 }
@@ -265,9 +266,44 @@ impl ViewControl {
 
     /// Multiply the zoom by `factor` (toward the view centre), clamped to the bounds —
     /// the Observe arena's `+` / `−` buttons (the cursor-anchored variant lives in
-    /// `camera_navigation`). Rendering only.
+    /// `camera_navigation`). Zooming does **not** break a Follow lock (you can zoom in on
+    /// the tracked entity), but it does break a Fit-arena lock. Rendering only.
     pub(crate) fn zoom_by(&mut self, factor: f32) {
         self.zoom = (self.zoom * factor).clamp(Self::ZOOM_MIN, Self::ZOOM_MAX);
+        if self.mode != ViewMode::Follow {
+            self.mode = ViewMode::Free;
+        }
+    }
+
+    /// Frame the **whole arena** and lock to it (the "Fit arena" button / Home). Rendering only.
+    pub(crate) fn fit_arena(&mut self) {
+        self.look_at = Vec2::ZERO;
+        self.zoom = 1.0;
+        self.mode = ViewMode::FitArena;
+    }
+
+    /// Lock the view to **follow** the selected entity (the "Follow entity" button); the
+    /// per-frame tracking then feeds [`center_on`]. Rendering only.
+    pub(crate) fn follow_selection(&mut self) {
+        self.mode = ViewMode::Follow;
+    }
+
+    /// A **manual** camera move (scroll / drag) — drop any locked framing so the two
+    /// arena buttons de-accent. Rendering only.
+    pub(crate) fn set_free(&mut self) {
+        self.mode = ViewMode::Free;
+    }
+
+    /// The current framing lock (read by the arena buttons to accent the active one).
+    pub(crate) fn mode(&self) -> ViewMode {
+        self.mode
+    }
+
+    /// Recentre the view on a world point (`look_at` is what sits at the rect centre,
+    /// cf. [`set_sim_camera`]) — the per-frame Follow tracking. Keeps the current zoom
+    /// and the current mode. Rendering only.
+    pub(crate) fn center_on(&mut self, world: Vec2) {
+        self.look_at = world;
     }
 }
 
@@ -323,6 +359,11 @@ fn camera_navigation(
         let k = Vec2::new(p.x - c.x, c.y - p.y);
         view.look_at += k * (s_eff - s_new);
         view.zoom = new_zoom;
+        // A scroll-zoom breaks a Fit lock but **not** a Follow lock — you can zoom in on
+        // the tracked entity and keep following it.
+        if view.mode() != ViewMode::Follow {
+            view.set_free();
+        }
     }
 
     // MIDDLE / RIGHT drag → pan. The world point under the cursor follows it:
@@ -340,6 +381,7 @@ fn camera_navigation(
     let origin_on_sim = origin.is_some_and(|o| !panels::pointer_over_ui_at(ctx, o, rect));
     if panning && origin_on_sim && delta != egui::Vec2::ZERO {
         view.look_at += Vec2::new(-delta.x, delta.y) * s_eff;
+        view.set_free(); // a manual pan leaves any Fit/Follow lock
     }
     Ok(())
 }

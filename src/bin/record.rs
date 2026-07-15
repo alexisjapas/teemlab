@@ -39,11 +39,11 @@
 //! rotation.
 //!
 //! `--select` keeps a mobile agent **highlighted** during the video (ring + vision
-//! rays), to show the raycasts to viewers. MODE ∈ `off`, `sticky`, `cycle`,
-//! `active` (the most "active"), `species` (species tour), `eldest`, `vanguard` (a
+//! rays), to show the raycasts to viewers. MODE ∈ `off`, `cycle`,
+//! `active` (the most "active"), `species` (species tour), `vanguard` (a
 //! random newest-generation agent, rotating species at each death).
 //! `cycle`/`active`/`species` change every `--select-interval` s (default 4);
-//! `sticky`/`eldest`/`vanguard` change only at the target's death.
+//! `vanguard` changes only at the target's death.
 
 use bevy::app::{AppExit, ScheduleRunnerPlugin};
 use bevy::asset::RenderAssetUsages;
@@ -98,9 +98,9 @@ impl Settings {
             // Dimensions resolved from `hud` if not provided (cf. `main`).
             width: None,
             height: None,
-            // Eldest by default: we highlight the survivor (rays visible in the
-            // video); `--select off` disables.
-            select: SelectionRoll::Eldest,
+            // Vanguard by default: we highlight the evolutionary frontier (rays
+            // visible in the video); `--select off` disables.
+            select: SelectionRoll::Vanguard,
             select_interval: 4.0,
             // Visualizer overlaid **by default** (§ video); `--no-hud` turns it off.
             hud: true,

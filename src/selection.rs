@@ -13,7 +13,8 @@
 //! common to both: it only reads the [`Selection`] resource, wherever it comes
 //! from.
 
-use crate::components::{Age, Agent, Generation, Locomotion, Perception, Radius, Species, Vision};
+use crate::brain::Brain;
+use crate::components::{Agent, Generation, Locomotion, Perception, Radius, Species, Vision};
 use crate::rng::Rng;
 use bevy::prelude::*;
 
@@ -29,10 +30,9 @@ pub struct Selection(pub Option<Entity>);
 /// pleasant to watch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SelectionRoll {
-    /// No automatic selection: the recorder highlights nothing.
+    /// No automatic selection — **manual**: the view follows only what the user clicks
+    /// (the recorder highlights nothing). A manual pick switches the live selector here.
     Off,
-    /// **Sticky**: a single agent, kept while it lives (re-chosen at its death).
-    Sticky,
     /// **Cycle**: moves to the next agent at a regular interval (round-robin).
     Cycle,
     /// **Active**: the agent whose rays detect the most (vision+target+threat) —
@@ -41,29 +41,23 @@ pub enum SelectionRoll {
     /// **Species tour**: at each interval, the next species (one of its agents,
     /// the most "active") — each species thus gets its screen time.
     SpeciesTour,
-    /// **Eldest** (default): the oldest living one. Changes only at its death (age
-    /// grows for all at the same pace → the eldest stays the eldest): no timer, so
-    /// calm — a steady follow of the survivor, pleasant by default.
+    /// **Vanguard** (default): follows the evolutionary frontier. Picks, **at random**,
+    /// one of a species' **newest-generation** agents (the highest [`Generation`] — hence
+    /// one of the youngest by lineage depth) and **holds it until it dies**; at its death
+    /// it rotates to **another species** and applies the same rule. No timer (it changes
+    /// only at the target's death), but each death also steps the species — every
+    /// lineage's cutting edge gets its turn. Calm by default.
     #[default]
-    Eldest,
-    /// **Vanguard**: follows the evolutionary frontier. Picks, **at random**, one of
-    /// a species' **newest-generation** agents (the highest [`Generation`] — hence one
-    /// of the youngest by lineage depth) and **holds it until it dies**; at its death
-    /// it rotates to **another species** and applies the same rule. No timer (like
-    /// `Eldest`/`Sticky`, it changes only at the target's death), but each death also
-    /// steps the species — every lineage's cutting edge gets its turn.
     Vanguard,
 }
 
 impl SelectionRoll {
     /// All modes, to populate a UI selector.
-    pub const ALL: [SelectionRoll; 7] = [
+    pub const ALL: [SelectionRoll; 5] = [
         Self::Off,
-        Self::Sticky,
         Self::Cycle,
         Self::Active,
         Self::SpeciesTour,
-        Self::Eldest,
         Self::Vanguard,
     ];
 
@@ -71,11 +65,9 @@ impl SelectionRoll {
     pub fn cli(&self) -> &'static str {
         match self {
             Self::Off => "off",
-            Self::Sticky => "sticky",
             Self::Cycle => "cycle",
             Self::Active => "active",
             Self::SpeciesTour => "species",
-            Self::Eldest => "eldest",
             Self::Vanguard => "vanguard",
         }
     }
@@ -88,12 +80,10 @@ impl SelectionRoll {
     /// Label for the UI.
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Off => "None",
-            Self::Sticky => "Sticky",
+            Self::Off => "Manual",
             Self::Cycle => "Cycle",
             Self::Active => "Active",
             Self::SpeciesTour => "Species tour",
-            Self::Eldest => "Eldest",
             Self::Vanguard => "Vanguard",
         }
     }
@@ -103,7 +93,6 @@ impl SelectionRoll {
     pub fn hint(&self) -> &'static str {
         match self {
             Self::Off => "Manual: nothing is auto-followed — click an agent to inspect it.",
-            Self::Sticky => "One agent, held while it lives; re-picked when it dies.",
             Self::Cycle => "Round-robin: steps to the next agent every interval.",
             Self::Active => {
                 "The agent whose rays perceive the most (vision + prey + threat), \
@@ -113,9 +102,6 @@ impl SelectionRoll {
                 "Rotates through the species every interval, showing each one's most \
                  active agent — every species gets screen time."
             }
-            Self::Eldest => {
-                "The oldest living agent; changes only when it dies — a calm, steady follow."
-            }
             Self::Vanguard => {
                 "The evolutionary frontier: a random newest-generation agent of one \
                  species, held until it dies, then rotates to another species."
@@ -124,8 +110,8 @@ impl SelectionRoll {
     }
 
     /// `true` if this mode re-evaluates **at a regular interval** (and therefore
-    /// shows/uses the interval). `Off`, `Sticky`, `Eldest` and `Vanguard` have no
-    /// timer: they change only at the target's death.
+    /// shows/uses the interval). `Off` and `Vanguard` have no timer: they change only
+    /// at the target's death (or, for `Off`, only on a manual click).
     pub fn rolls(&self) -> bool {
         matches!(self, Self::Cycle | Self::Active | Self::SpeciesTour)
     }
@@ -143,10 +129,10 @@ impl Plugin for SelectionRenderPlugin {
     }
 }
 
-/// **Automatic selection**: always keeps a **mobile** agent highlighted, *rolling*
-/// it according to [`SelectionRoll`]. Targets mobile agents because they alone cast
-/// visible rays (immobile flora has none, cf. `movement`). To be added in addition
-/// to [`SelectionRenderPlugin`].
+/// **Automatic selection**: always keeps an agent highlighted, *rolling* it according
+/// to [`SelectionRoll`] and restricted to the brain families the [`BrainFilter`] allows
+/// (flora included — a plant shows a highlight ring, just no rays). To be added in
+/// addition to [`SelectionRenderPlugin`].
 ///
 /// Used by the **recorder** (fixed `roll` from the CLI) **and** the windowed build
 /// (mounted with `Vanguard`, so the view opens on the evolutionary frontier; the UI
@@ -173,6 +159,7 @@ impl Plugin for AutoSelectPlugin {
             .insert_resource(AutoSelect {
                 roll: self.roll,
                 interval: self.interval.max(0.1),
+                brains: BrainFilter::default(),
                 elapsed: 0.0,
                 cursor: 0,
                 rng: Rng::new(seed),
@@ -182,15 +169,43 @@ impl Plugin for AutoSelectPlugin {
     }
 }
 
+/// Which **brain families** the auto-follow may land on — a per-family include mask
+/// (indexed by [`Brain::family_index`]), so the observer can restrict the follow to,
+/// say, hunters and MLPs. Default = every family included. Only constrains the
+/// *automatic* selection; a manual click still selects any agent.
+#[derive(Clone, Copy)]
+pub struct BrainFilter(pub [bool; Brain::FAMILY_COUNT]);
+
+impl Default for BrainFilter {
+    fn default() -> Self {
+        Self([true; Brain::FAMILY_COUNT])
+    }
+}
+
+impl BrainFilter {
+    /// Whether `brain`'s family is currently included.
+    pub fn includes(&self, brain: &Brain) -> bool {
+        self.0.get(brain.family_index()).copied().unwrap_or(true)
+    }
+
+    /// `true` if every family is included (the default — no restriction in effect).
+    pub fn is_all(&self) -> bool {
+        self.0.iter().all(|&b| b)
+    }
+}
+
 /// State of the automatic selection driver. Public so the windowed UI can flip the
-/// mode/interval live ([`roll`](Self::roll), [`interval`](Self::interval)); the
-/// internal cursor/timer/RNG stay private.
+/// mode/interval/brain-filter live ([`roll`](Self::roll), [`interval`](Self::interval),
+/// [`brains`](Self::brains)); the internal cursor/timer/RNG stay private.
 #[derive(Resource)]
 pub struct AutoSelect {
     /// Active roll mode (the windowed "Follow" selector writes this).
     pub roll: SelectionRoll,
     /// Interval between changes for the "timer" modes, in seconds.
     pub interval: f32,
+    /// Brain-family include mask the auto-follow is restricted to (the "Brains"
+    /// picker beside the Follow selector).
+    pub brains: BrainFilter,
     /// Time elapsed since the last change, in seconds.
     elapsed: f32,
     /// Round-robin cursor: agent index (`Cycle`), or species index (`SpeciesTour`/`Vanguard`).
@@ -207,35 +222,26 @@ pub struct AutoSelect {
 struct Cand {
     entity: Entity,
     species: u16,
-    age: f32,
     /// Lineage depth (0 at a founder). Drives the `Vanguard` mode.
     generation: u32,
     /// Sum of the perception channels (vision + target + threat): "how much it sees".
     stim: f32,
 }
 
-/// `Update`: keeps a mobile agent selected according to the mode.
+/// `Update`: keeps an agent selected according to the mode.
 ///
-/// We **re-choose** only when the target has disappeared (death), when the mode was
-/// just **switched** (windowed selector → apply the new rule at once), or, for the
-/// timer modes ([`SelectionRoll::rolls`]), at the interval's deadline — never per
-/// frame. The target therefore holds a whole interval: no flicker, even when the
-/// metric (energy, speed, "active"…) fluctuates fast.
+/// Any living agent whose brain family the [`BrainFilter`] includes is a candidate —
+/// flora too (a plant is an entity like any other; it shows a highlight ring, just no
+/// rays). We **re-choose** only when the target has disappeared (death), when the mode
+/// was just **switched** (windowed selector → apply the new rule at once), when it falls
+/// outside the filter, or, for the timer modes ([`SelectionRoll::rolls`]), at the
+/// interval's deadline — never per frame. The target therefore holds a whole interval:
+/// no flicker, even when the metric (energy, speed, "active"…) fluctuates fast.
 fn drive_selection(
     time: Res<Time>,
     mut auto: ResMut<AutoSelect>,
     mut selection: ResMut<Selection>,
-    agents: Query<
-        (
-            Entity,
-            &Locomotion,
-            &Species,
-            &Age,
-            &Generation,
-            &Perception,
-        ),
-        With<Agent>,
-    >,
+    agents: Query<(Entity, &Species, &Generation, &Perception, &Brain), With<Agent>>,
 ) {
     if auto.roll == SelectionRoll::Off {
         return;
@@ -244,24 +250,26 @@ fn drive_selection(
     let due = auto.elapsed >= auto.interval;
     // The mode was switched live since the current selection was made.
     let mode_changed = auto.roll != auto.applied;
-    // Is the current target still a living mobile agent?
-    let valid = selection
-        .0
-        .is_some_and(|e| agents.get(e).is_ok_and(|(_, loco, ..)| !loco.is_immobile()));
-    // Hold the target: we re-choose only at death, at a mode switch, or — for timer
-    // modes — at the deadline.
+    // Is the current target still a living agent whose brain the filter keeps?
+    let valid = selection.0.is_some_and(|e| {
+        agents
+            .get(e)
+            .is_ok_and(|(_, _, _, _, brain)| auto.brains.includes(brain))
+    });
+    // Hold the target: we re-choose only at death (or a filter/mode change), or — for
+    // timer modes — at the deadline.
     if valid && !mode_changed && !(auto.roll.rolls() && due) {
         return;
     }
 
-    // Living MOBILE agents (the only ones showing rays) + their choice metrics.
+    // Living agents whose brain family the filter includes (the ones the auto-follow may
+    // land on), + their choice metrics.
     let mut cands: Vec<Cand> = agents
         .iter()
-        .filter(|(_, loco, ..)| !loco.is_immobile())
-        .map(|(entity, _, species, age, generation, perception)| Cand {
+        .filter(|(_, _, _, _, brain)| auto.brains.includes(brain))
+        .map(|(entity, species, generation, perception, _)| Cand {
             entity,
             species: species.0,
-            age: age.0,
             generation: generation.0,
             stim: perception
                 .vision
@@ -295,14 +303,13 @@ fn choose(roll: SelectionRoll, cands: &[Cand], auto: &mut AutoSelect) -> Entity 
             .map_or(cands[0].entity, |c| c.entity)
     };
     match roll {
-        // `Off` never reaches here (filtered); `Sticky` keeps the stable first one.
-        SelectionRoll::Off | SelectionRoll::Sticky => cands[0].entity,
+        // `Off` never reaches here (filtered): keep the stable first candidate.
+        SelectionRoll::Off => cands[0].entity,
         SelectionRoll::Cycle => {
             auto.cursor = (auto.cursor + 1) % cands.len();
             cands[auto.cursor].entity
         }
         SelectionRoll::Active => best(&|c| c.stim),
-        SelectionRoll::Eldest => best(&|c| c.age),
         // Species tour: next species (round-robin), then its most "active" agent.
         SelectionRoll::SpeciesTour => {
             let mut species: Vec<u16> = cands.iter().map(|c| c.species).collect();
@@ -408,6 +415,24 @@ pub fn draw_selected_vision(
 mod tests {
     use super::*;
 
+    /// The brain filter defaults to *everything included* (no restriction) and
+    /// tracks a single family being switched off — the include mask the auto-follow
+    /// consults per candidate.
+    #[test]
+    fn brain_filter_defaults_to_all_and_excludes_by_family() {
+        use crate::brain::HunterBrain;
+        let all = BrainFilter::default();
+        assert!(all.is_all());
+        assert_eq!(all.0.len(), Brain::FAMILY_COUNT);
+        let hunter = Brain::Hunter(HunterBrain);
+        assert!(all.includes(&hunter), "default includes every family");
+        // Switch off the hunter family → hunters excluded, the filter no longer "all".
+        let mut no_hunters = all;
+        no_hunters.0[hunter.family_index()] = false;
+        assert!(!no_hunters.is_all());
+        assert!(!no_hunters.includes(&hunter));
+    }
+
     /// CLI tokens round-trip, labels/tokens are unique and non-empty — a guardrail
     /// against an omission (or a duplicate) when adding a mode.
     #[test]
@@ -421,16 +446,11 @@ mod tests {
         assert_eq!(SelectionRoll::from_cli("unknown"), None);
     }
 
-    /// The **timer** modes (re-evaluated at an interval) "roll"; `Off`/`Sticky`/`Eldest`
-    /// change only at the target's death.
+    /// The **timer** modes (re-evaluated at an interval) "roll"; `Off`/`Vanguard`
+    /// change only at the target's death (or, for `Off`, a manual click).
     #[test]
     fn timer_modes_roll_others_dont() {
-        for m in [
-            SelectionRoll::Off,
-            SelectionRoll::Sticky,
-            SelectionRoll::Eldest,
-            SelectionRoll::Vanguard,
-        ] {
+        for m in [SelectionRoll::Off, SelectionRoll::Vanguard] {
             assert!(!m.rolls(), "{m:?} should not roll on a timer");
         }
         for m in [

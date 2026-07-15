@@ -333,21 +333,21 @@ the top — no wrapping collapsible; the tall sections below scroll:
 - Side effects go through a `BreedingAction` applied by `apply_action` (save →
   status line feedback; replay → seed + reset + un-pause + status).
 
-## 11. Floating windows & modals
+## 11. Menus, floating windows & modals
 
-- **Export video** (`recorder.rs`) — configures and launches the headless `record`
-  binary as a subprocess on a temp copy of the current config (editor edits
-  included): output file, duration, fps, size, the auto-selected/followed agent
-  (roll modes: Off / Sticky / Cycle / Active / Species tour / Eldest + interval),
-  and the 9:16 native-HUD overlay (+ rotation interval). An `Update` system
-  watches process exit; outcome lands in the status line. The default output is
-  the **first free `outputs/run-NN.mp4`** — advanced after each completed take
-  while the field is untouched, so the default flow never overwrites a render (a
-  hand-typed name is left alone). **Cancel** kills the subprocess and discards the
-  partial file. `record` is looked up
-  next to the current executable (hence the `play` wrapper builds all binaries);
-  `ffmpeg` is an external runtime dependency — a missing one must fail with a
-  clear message.
+- **Record menu** (`recorder.rs`, top-bar Record button) — the recording's
+  **components** to capture (Video now; Sound / Metrics shown off + disabled, for
+  later) then a single **Run record** button, the *only* entry point to a recording.
+  Run record builds `outputs/run-NN/` (the first free one), freezes the current config
+  (editor edits included) into it as `scenario.ron`, then launches the headless
+  `record` binary to render `video.mp4` beside it — the recording is a self-describing
+  folder. An `Update` system watches process exit; outcome lands in the status line.
+  While it runs, the button reads **Recording** (accent) and the menu offers a spinner
+  + **Cancel** (kills the subprocess, discards the partial folder). Render settings
+  (fps/size/duration/follow/HUD) are fixed sensible defaults for now. `record` is looked
+  up next to the current executable (hence the `play` wrapper builds all binaries);
+  `ffmpeg` is an external runtime dependency — a missing one must fail with a clear
+  message.
 - **Keyboard shortcuts** cheatsheet — toggled by `?` / `F1` or Help ▾; renders both
   halves of the keymap table (keys + mouse gestures).
 - **Confirm modals** (`runs.rs`) — discard-unsaved-edits (New/Open/Revert),
@@ -391,7 +391,6 @@ the top — no wrapping collapsible; the tall sections below scroll:
 | `Home` | Recenter the view | |
 | `Del` / `Backspace` | Delete the entity under the cursor | |
 | `?` (`/` + Shift) / `F1` | Toggle the shortcuts cheatsheet | |
-| `1` / `2` / `3` | Fold/unfold the World / Analysis / bottom regions | |
 | Scroll | Zoom toward the cursor | pointer on sim |
 | Middle / right drag | Pan the view | pointer on sim |
 | Click | Select an agent (void = deselect) | pointer on sim |
@@ -410,10 +409,10 @@ Shortcuts are ignored while a text field has keyboard focus.
 | Paused | accent chip in the sim area; Play button shows ▶ |
 | Speed ≠ ×1 | `· ×N` suffix on the time read-out; highlighted preset |
 | Empty arena | centered faint hint (two variants, §5) |
-| Transient outcome | one status line, bottom panel (§9 lifetimes) |
+| Transient outcome | one status line (Lab panel; §9 lifetimes) |
 | Breeding run | progress + status in the panel; live world paused |
 | First frame | panels withheld until `FontsReady` |
-| Region folded | thin rail with a reopen chevron (bottom rail also carries the status line) |
+| Recording in flight | accent "Recording" on the top-bar Record button; spinner + Cancel in its menu |
 | Help | hover a control or a section header for its explanation |
 
 ## 15. Non-functional requirements

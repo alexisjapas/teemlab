@@ -83,6 +83,27 @@ impl Brain {
         }
     }
 
+    /// Stable index of the brain **family** (parameter-free) in [`Brain::FAMILIES`],
+    /// for observation filters (the Follow "brains" picker) and any UI that groups
+    /// agents by controller. Same order as [`Brain::FAMILIES`].
+    pub fn family_index(&self) -> usize {
+        match self {
+            Brain::Wander(_) => 0,
+            Brain::Hunter(_) => 1,
+            Brain::Grazer(_) => 2,
+            Brain::Sessile(_) => 3,
+            Brain::Mlp(_) => 4,
+        }
+    }
+
+    /// Number of distinct brain families (the length of [`Brain::FAMILIES`]).
+    pub const FAMILY_COUNT: usize = 5;
+
+    /// The distinct brain families in stable order, indexed by [`Brain::family_index`]
+    /// — the canonical list a UI iterates to offer a per-family filter.
+    pub const FAMILIES: [&'static str; Self::FAMILY_COUNT] =
+        ["Wander", "Hunter", "Grazer", "Sessile", "MLP"];
+
     /// Size of the **decision system** for the metabolic cost (the energy economy,
     /// cf. [`crate::ecology::metabolize`]): the number of decision neurons of an
     /// MLP, `0` for the hand-written brains (Wander/Hunter/Sessile), which carry no

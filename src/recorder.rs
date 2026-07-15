@@ -1,15 +1,24 @@
-//! Video recording menu of the windowed build.
+//! Recording orchestration of the windowed build.
 //!
 //! A module of the windowed *binary* only (like [`crate::editor`], …). It does
-//! **not** do the video rendering itself: it **drives the headless `record`
-//! binary** (P3, item 14) as a subprocess. We write the current `SimConfig`
-//! (editor edits included) to a temporary file, then launch `record` on it → a
-//! **clean** *fresh re-render* (without the egui overlay), in line with §7. The
-//! UI only configures and launches; an `Update` system watches for the process
-//! to finish.
+//! **not** render anything itself: it **drives the headless `record` binary** (P3,
+//! item 14) as a subprocess. A recording is a **folder** under `outputs/` holding the
+//! simulation's parameters and its artefacts:
 //!
-//! Cardinal invariant: no sim logic here, just tool orchestration — like the
-//! editor, it is manual action outside `FixedUpdate`.
+//! ```text
+//! outputs/run-NN/
+//!   scenario.ron   the exact SimConfig the run re-renders from (editor edits included)
+//!   video.mp4      the rendered video (when the Video component is enabled)
+//!   …              sound / metrics later
+//! ```
+//!
+//! The recording is a **clean fresh re-render** (without this egui overlay), in line
+//! with §7. The entry point is the top-bar **Record menu**'s *Run record* button (cf.
+//! [`crate::panels::dock`]); this module only launches and monitors — an `Update`
+//! system watches the process, the status line carries the outcome.
+//!
+//! Cardinal invariant: no sim logic here, just tool orchestration — like the editor,
+//! it is manual action outside `FixedUpdate`.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -18,19 +27,19 @@ use std::process::{Child, Command};
 use teemlab::SimConfig;
 use teemlab::selection::SelectionRoll;
 
-use crate::fonts::{self, icons};
 use crate::status::UiStatus;
 
-/// State of the "Recording" panel + the running `record` process, if any.
+/// State of the recording (the components to capture + the running `record` process).
+/// The render settings (size, fps, duration, follow, HUD) are fixed sensible defaults
+/// for now — the menu exposes only *what to record*, not *how*.
 #[derive(Resource)]
 pub struct RecorderPanel {
-    out: String,
     fps: f64,
     seconds: f64,
     width: u32,
     height: u32,
-    /// **Automatic selection** mode for an agent during the video (to show its
-    /// rays to viewers). `Off` = video unchanged.
+    /// **Automatic selection** mode for an agent during the video (to show its rays to
+    /// viewers). `Off` = video unchanged.
     select: SelectionRoll,
     /// Interval (s) between two selection changes ("timer" modes).
     select_interval: f32,
@@ -39,62 +48,146 @@ pub struct RecorderPanel {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
+    /// **Video** component — render the run to `video.mp4`. On by default; the only
+    /// component wired for now (Sound / Metrics are shown off + disabled in the menu,
+    /// added here when they land).
+    pub video: bool,
     /// The `record` subprocess while it runs (otherwise `None`).
     child: Option<Child>,
-    /// Launch requested by the UI, handled at the next `Update`.
+    /// Launch requested by the menu, handled at the next `Update`.
     launch_requested: bool,
-    /// Cancel requested by the UI (kill the subprocess, discard the partial file).
+    /// Cancel requested by the menu (kill the subprocess, discard the partial folder).
     cancel_requested: bool,
-    /// The last **auto-suggested** output name: while `out` still equals it, a
-    /// completed take advances the suggestion to the next free name, so the default
-    /// flow never overwrites a previous render (a hand-typed name is left alone).
-    suggested: String,
+    /// The folder of the recording **in flight** — for the completion message and, on a
+    /// cancel, the partial-folder cleanup.
+    active_dir: Option<PathBuf>,
 }
 
 impl Default for RecorderPanel {
     fn default() -> Self {
-        // The default output is the first free `outputs/run-NN.mp4`, so the default
-        // flow never overwrites a previous take (cf. [`free_output_name`]).
-        let suggested = free_output_name();
         Self {
             fps: 30.0,
             seconds: 61.0,
-            // Portrait 9:16 by default: the visualizer is overlaid (square arena
-            // on top, stats/curves/inspector at the bottom). Uncheck "HUD" and
-            // choose 1080×1080 for the old square video of the arena alone.
+            // Portrait 9:16 by default: the visualizer is overlaid (square arena on top,
+            // stats/curves/inspector at the bottom).
             width: 1080,
             height: 1920,
-            // Eldest by default: we follow the survivor (calm, changes little) →
-            // the rays are visible in the video without tuning. "None" disables.
-            select: SelectionRoll::Eldest,
+            // Vanguard by default: we follow the evolutionary frontier (calm — it changes
+            // only at the target's death) → the rays are visible in the video without
+            // tuning.
+            select: SelectionRoll::Vanguard,
             select_interval: 4.0,
             // Visualizer overlaid by default (cf. `record --hud`).
             hud: true,
             hud_interval: 6.0,
+            video: true,
             child: None,
             launch_requested: false,
             cancel_requested: false,
-            out: suggested.clone(),
-            suggested,
+            active_dir: None,
         }
     }
 }
 
-/// The first free `outputs/run-NN.mp4` — the auto-suggested output name: readable,
-/// ordered, and **never a previous take** (the document-model care, applied to
-/// renders). Falls back to the bare historical name past 99 files.
-fn free_output_name() -> String {
-    for n in 1..=99u32 {
-        let candidate = format!("outputs/run-{n:02}.mp4");
-        if !std::path::Path::new(&candidate).exists() {
+impl RecorderPanel {
+    /// `true` while a `record` subprocess is running.
+    pub fn is_recording(&self) -> bool {
+        self.child.is_some()
+    }
+
+    /// Ask [`drive_recorder`] to start a recording at the next `Update` (ignored while
+    /// one is already running). The **sole** launch entry point (the menu's *Run record*).
+    pub fn request_launch(&mut self) {
+        self.launch_requested = true;
+    }
+
+    /// Ask [`drive_recorder`] to stop the running recording and discard its folder.
+    pub fn cancel(&mut self) {
+        self.cancel_requested = true;
+    }
+
+    /// The **video sub-options** (shown under the Video toggle when it is on): the
+    /// render settings that used to live in the Export window — duration, frame rate,
+    /// size, the followed agent, and the 9:16 HUD overlay. Editable in place.
+    pub fn video_options_ui(&mut self, ui: &mut egui::Ui) {
+        ui.indent("rec_video_opts", |ui| {
+            // Keep the whole block compact so the menu can stay narrow: a small combo and
+            // tight grid spacing.
+            ui.spacing_mut().combo_width = 96.0;
+            egui::Grid::new("rec_video_grid")
+                .num_columns(2)
+                .spacing([8.0, 5.0])
+                .show(ui, |ui| {
+                    ui.label("Length");
+                    ui.add(
+                        egui::DragValue::new(&mut self.seconds)
+                            .range(1.0..=120.0)
+                            .suffix(" s"),
+                    );
+                    ui.end_row();
+
+                    ui.label("FPS");
+                    ui.add(egui::DragValue::new(&mut self.fps).range(24.0..=60.0));
+                    ui.end_row();
+
+                    ui.label("Size");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::DragValue::new(&mut self.width).range(320..=3840));
+                        ui.label("×");
+                        ui.add(egui::DragValue::new(&mut self.height).range(240..=2160));
+                    });
+                    ui.end_row();
+
+                    ui.label("Follow");
+                    crate::inspector::follow_combo(ui, "rec_select", &mut self.select);
+                    ui.end_row();
+
+                    if self.select.rolls() {
+                        ui.label("Interval");
+                        ui.add(
+                            egui::DragValue::new(&mut self.select_interval)
+                                .range(0.5..=30.0)
+                                .suffix(" s"),
+                        )
+                        .on_hover_text("Interval between followed-agent changes");
+                        ui.end_row();
+                    }
+                });
+            crate::theme::toggle_row(ui, "HUD (9:16)", &mut self.hud).on_hover_text(
+                "Compose the video in 9:16: arena on top, native visualizer (stats / curves / \
+                 inspector) at the bottom. Off: the arena alone (choose 1080×1080).",
+            );
+            if self.hud {
+                ui.horizontal(|ui| {
+                    ui.label("Rotate");
+                    ui.add(
+                        egui::DragValue::new(&mut self.hud_interval)
+                            .range(1.0..=30.0)
+                            .suffix(" s"),
+                    )
+                    .on_hover_text(
+                        "Interval to rotate the visualizer's sections (curves ↔ inspector)",
+                    );
+                });
+            }
+        });
+    }
+}
+
+/// The first free `outputs/run-NN` folder — the recording's home: readable, ordered,
+/// and never a previous take. Falls back to the bare name past 999.
+fn free_run_dir() -> PathBuf {
+    for n in 1..=999u32 {
+        let candidate = PathBuf::from(format!("outputs/run-{n:02}"));
+        if !candidate.exists() {
             return candidate;
         }
     }
-    "outputs/run.mp4".into()
+    PathBuf::from("outputs/run")
 }
 
-/// Path of the `record` binary: next to the current executable (`cargo run` case
-/// → `target/debug/record`), otherwise we fall back to the `PATH`.
+/// Path of the `record` binary: next to the current executable (`cargo run` case →
+/// `target/debug/record`), otherwise we fall back to the `PATH`.
 fn record_binary() -> PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
@@ -111,130 +204,24 @@ fn record_binary() -> PathBuf {
     PathBuf::from("record")
 }
 
-/// The "Export video" section, shown in a **floating window** toggled from the top
-/// bar (cf. [`crate::panels::dock`]). A natural top-to-bottom layout — a labelled
-/// grid of settings then the Record button — now that it no longer has to align
-/// itself to the right of the top bar (the old `right_to_left` reverse-order hack is
-/// gone). Only reads/writes its state and sets `launch_requested`; the launch and the
-/// monitoring (and the status feedback) live in [`drive_recorder`].
-pub(crate) fn recorder_section(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
-    let recording = panel.child.is_some();
-
-    ui.label(
-        "Re-runs the current scenario fresh (clean headless render, without this \
-         interface) and encodes it via ffmpeg.",
-    );
-    ui.separator();
-
-    egui::Grid::new("rec_grid")
-        .num_columns(2)
-        .spacing([10.0, 6.0])
-        .show(ui, |ui| {
-            ui.label("Output file");
-            ui.add(egui::TextEdit::singleline(&mut panel.out).desired_width(200.0));
-            ui.end_row();
-
-            ui.label("Duration");
-            ui.add(
-                egui::DragValue::new(&mut panel.seconds)
-                    .range(1.0..=120.0)
-                    .suffix(" s"),
-            );
-            ui.end_row();
-
-            ui.label("Frame rate");
-            ui.add(
-                egui::DragValue::new(&mut panel.fps)
-                    .range(24.0..=60.0)
-                    .suffix(" fps"),
-            );
-            ui.end_row();
-
-            ui.label("Size (px)");
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut panel.width).range(320..=3840));
-                ui.label("×");
-                ui.add(egui::DragValue::new(&mut panel.height).range(240..=2160));
-            });
-            ui.end_row();
-
-            ui.label("Follow (video)");
-            ui.horizontal(|ui| {
-                crate::inspector::follow_combo(ui, "rec_select", &mut panel.select);
-                // Keeps an agent highlighted (ring + rays) in the video.
-                if panel.select.rolls() {
-                    ui.add(
-                        egui::DragValue::new(&mut panel.select_interval)
-                            .range(0.5..=30.0)
-                            .suffix(" s"),
-                    )
-                    .on_hover_text("Interval between followed-agent changes");
-                }
-            });
-            ui.end_row();
-        });
-
-    // Overlaid native visualizer: composes the video in 9:16.
-    ui.checkbox(&mut panel.hud, "HUD overlay (9:16 composition)")
-        .on_hover_text(
-            "Composes the video in 9:16: arena on top, native visualizer (stats / curves / \
-         inspector) at the bottom. Unchecked: video of the arena alone (then choose \
-         1080×1080).",
-        );
-    if panel.hud {
-        ui.horizontal(|ui| {
-            ui.label("Section rotation");
-            ui.add(
-                egui::DragValue::new(&mut panel.hud_interval)
-                    .range(1.0..=30.0)
-                    .suffix(" s"),
-            )
-            .on_hover_text("Interval to rotate the visualizer's sections (curves ↔ inspector)");
-        });
-    }
-
-    ui.separator();
-    if recording {
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.add_enabled(
-                false,
-                egui::Button::new(fonts::icon_label(icons::RECORD, "Recording…")),
-            );
-            if ui
-                .button(fonts::icon_label(icons::X, "Cancel"))
-                .on_hover_text("Stop the render and discard the partial file.")
-                .clicked()
-            {
-                panel.cancel_requested = true;
-            }
-        });
-    } else if ui
-        .button(fonts::icon_label(icons::RECORD, "Record"))
-        .on_hover_text("Launches the headless `record` binary as a subprocess.")
-        .clicked()
-    {
-        panel.launch_requested = true;
-    }
-}
-
-/// `Update`: watches for the `record` process to finish and, if the UI requested
-/// it, writes the current `SimConfig` to a temporary file then launches `record`
-/// on it. No sim logic — process orchestration.
+/// `Update`: watches for the `record` process to finish and, when the menu requested
+/// it, builds the recording folder (writes the current `SimConfig` as `scenario.ron`)
+/// then launches `record` on it, headless. No sim logic — process orchestration.
 pub fn drive_recorder(
     mut panel: ResMut<RecorderPanel>,
     mut status: ResMut<UiStatus>,
     config: Res<SimConfig>,
 ) {
-    // A cancel kills the subprocess and discards the partial file. (ffmpeg, fed by
-    // the dying `record`'s pipe, exits on its own once the pipe closes; unlinking
-    // the open file is safe — the data follows the inode and vanishes on close.)
+    // A cancel kills the subprocess and discards the partial folder. (ffmpeg, fed by the
+    // dying `record`'s pipe, exits on its own once the pipe closes.)
     if panel.cancel_requested {
         panel.cancel_requested = false;
         if let Some(mut child) = panel.child.take() {
             let _ = child.kill();
             let _ = child.wait(); // reap, no zombie
-            let _ = std::fs::remove_file(&panel.out); // best-effort cleanup
+            if let Some(dir) = panel.active_dir.take() {
+                let _ = std::fs::remove_dir_all(&dir); // best-effort cleanup
+            }
             status.set("Recording cancelled.");
         }
         return;
@@ -245,14 +232,11 @@ pub fn drive_recorder(
         match child.try_wait() {
             Ok(Some(exit)) => {
                 panel.child = None;
+                let dir = panel.active_dir.take();
                 if exit.success() {
-                    status.ok(format!("Video written → {}", panel.out));
-                    // The auto-suggested name was used → advance to the next free
-                    // one, so the next take never overwrites this one (a hand-typed
-                    // name is left alone).
-                    if panel.out == panel.suggested {
-                        panel.suggested = free_output_name();
-                        panel.out = panel.suggested.clone();
+                    match dir {
+                        Some(d) => status.ok(format!("Recording written → {}", d.display())),
+                        None => status.ok("Recording written."),
                     }
                 } else {
                     status.error(format!("record failed ({exit}). See the console."));
@@ -261,41 +245,50 @@ pub fn drive_recorder(
             Ok(None) => {} // still running
             Err(e) => {
                 panel.child = None;
+                panel.active_dir = None;
                 status.error(format!("Cannot monitor the process: {e}"));
             }
         }
     }
 
-    // Launch requested and nothing running: we write the current scenario then
-    // launch `record`. We allow only one recording at a time.
+    // Launch requested and nothing running: build the folder then launch `record`. Only
+    // one recording at a time.
     if !panel.launch_requested || panel.child.is_some() {
         return;
     }
     panel.launch_requested = false;
 
-    // The current scenario (editor edits included), captured in a temporary RON
-    // so that `record` re-renders exactly what is seen configured.
-    let scenario = std::env::temp_dir().join("teemlab_record_scenario.ron");
+    // The recording folder + the current scenario (editor edits included) frozen into it
+    // as `scenario.ron`, so the recording is self-describing and `record` re-renders
+    // exactly what is configured.
+    let dir = free_run_dir();
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        status.error(format!("Cannot create the recording folder: {e}"));
+        return;
+    }
+    let scenario = dir.join("scenario.ron");
     if let Err(e) = config.save_ron_file(&scenario) {
-        status.error(format!("Failed to write the temporary scenario: {e}"));
+        status.error(format!("Failed to write the scenario parameters: {e}"));
         return;
     }
 
-    let (out, fps, seconds, width, height) = (
-        panel.out.clone(),
-        panel.fps,
-        panel.seconds,
-        panel.width,
-        panel.height,
-    );
-    // Automatic selection + HUD passed as arguments (render settings, not the
-    // scenario) → `record` drives them without touching the temporary RON.
+    // Video is the only wired component for now. With it off, the folder is created with
+    // just the parameters (a placeholder for the sound/metrics-only recordings to come).
+    if !panel.video {
+        status.ok(format!("Recording folder created → {}", dir.display()));
+        return;
+    }
+
+    let video = dir.join("video.mp4");
+    let (fps, seconds, width, height) = (panel.fps, panel.seconds, panel.width, panel.height);
+    // Automatic selection + HUD passed as arguments (render settings, not the scenario)
+    // → `record` drives them without touching the saved RON.
     let (select, select_interval) = (panel.select.cli(), panel.select_interval.to_string());
     let hud_interval = panel.hud_interval.to_string();
     let mut cmd = Command::new(record_binary());
     cmd.arg(&scenario).args([
         "--out",
-        &out,
+        &video.to_string_lossy(),
         "--fps",
         &fps.to_string(),
         "--seconds",
@@ -311,16 +304,18 @@ pub fn drive_recorder(
         "--hud-interval",
         &hud_interval,
     ]);
-    // HUD enabled by default on the `record` side: we pass `--no-hud` only if it is unchecked.
+    // HUD enabled by default on the `record` side: pass `--no-hud` only if it is off.
     if !panel.hud {
         cmd.arg("--no-hud");
     }
     match cmd.spawn() {
         Ok(child) => {
             panel.child = Some(child);
-            status.set(format!("Recording in progress → {out}"));
+            status.set(format!("Recording in progress → {}", dir.display()));
+            panel.active_dir = Some(dir);
         }
         Err(e) => {
+            let _ = std::fs::remove_dir_all(&dir);
             status.error(format!(
                 "Cannot launch ({e}). Are `record` and `ffmpeg` present?"
             ));
