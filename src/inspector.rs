@@ -20,6 +20,7 @@ use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
 use teemlab::nutrients::Nutrients;
 use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
+use teemlab::visuals::BlurCamera;
 
 use crate::editor::{Palette, card, draw_mlp_graph};
 use crate::fonts::{self, icons};
@@ -31,7 +32,7 @@ use crate::fonts::{self, icons};
 /// the centered sim's offset (cf. `main::set_sim_camera`), so the window cursor
 /// remains the correct input.
 fn pointer_world(
-    cameras: &Query<(&Camera, &GlobalTransform)>,
+    cameras: &Query<(&Camera, &GlobalTransform), Without<BlurCamera>>,
     windows: &Query<&Window>,
 ) -> Option<(Vec2, f32)> {
     let (camera, cam_tf) = cameras.single().ok()?;
@@ -75,7 +76,7 @@ pub fn pick_agent(
     mut selection: ResMut<Selection>,
     mut auto: ResMut<AutoSelect>,
     palette: Res<Palette>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
+    cameras: Query<(&Camera, &GlobalTransform), Without<BlurCamera>>,
     windows: Query<&Window>,
     agents: Query<(Entity, &Transform, &Radius), With<Agent>>,
 ) -> Result {
@@ -125,7 +126,7 @@ pub fn delete_under_cursor(
     palette: Res<Palette>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
-    cameras: Query<(&Camera, &GlobalTransform)>,
+    cameras: Query<(&Camera, &GlobalTransform), Without<BlurCamera>>,
     windows: Query<&Window>,
     bodies: Query<(Entity, &Transform, &Radius)>,
 ) -> Result {

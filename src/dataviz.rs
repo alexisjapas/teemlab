@@ -135,7 +135,12 @@ fn manage_viz_cameras(
     existing: Query<Entity, Or<(With<VizCamera>, With<LetterboxCamera>)>>,
     sim: Query<
         Option<&RenderTarget>,
-        (With<Camera2d>, Without<VizCamera>, Without<LetterboxCamera>),
+        (
+            With<Camera2d>,
+            Without<VizCamera>,
+            Without<LetterboxCamera>,
+            Without<crate::visuals::BlurCamera>,
+        ),
     >,
 ) {
     let present = !existing.is_empty();
@@ -219,7 +224,12 @@ fn compose_viewports(
     config: Res<SimConfig>,
     mut sim: Query<
         (&mut Camera, &mut Projection, &mut Transform),
-        (With<Camera2d>, Without<VizCamera>, Without<LetterboxCamera>),
+        (
+            With<Camera2d>,
+            Without<VizCamera>,
+            Without<LetterboxCamera>,
+            Without<crate::visuals::BlurCamera>,
+        ),
     >,
     mut viz_cam: Query<&mut Camera, (With<VizCamera>, Without<LetterboxCamera>)>,
     mut letterbox: Query<&mut Camera, With<LetterboxCamera>>,

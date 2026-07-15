@@ -120,6 +120,8 @@ pub struct ObsParams<'w, 's> {
     pub auto_select: ResMut<'w, AutoSelect>,
     pub view: ResMut<'w, crate::ViewControl>,
     pub bodies: Query<'w, 's, &'static Transform, With<Agent>>,
+    /// Blurred world snapshot behind the floating HUD chips (cf. `crate::blur`).
+    pub blur: Res<'w, crate::blur::HudBlur>,
 }
 
 /// The central region left free by the docked panels (egui points), computed by
@@ -646,14 +648,46 @@ fn record_menu(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     }
 }
 
-/// A translucent dark **overlay frame** for the arena's floating controls (the comp's
-/// blurred pills — egui has no backdrop-blur, so a dark wash + hairline approximates it).
+/// Corner radius shared by the floating pills and their frosted backdrop.
+const OVERLAY_RADIUS: u8 = 10;
+
+/// A translucent dark **overlay frame** for the arena's floating controls (the
+/// comp's blurred pills). The *blur* itself is painted separately underneath
+/// ([`glass_rect`] — egui cannot sample its backdrop, so `crate::blur` re-renders
+/// the world into a downscaled texture); this frame is the dark wash + hairline
+/// on top of it.
 fn overlay_frame() -> egui::Frame {
     egui::Frame::default()
-        .fill(egui::Color32::from_black_alpha(180))
+        .fill(egui::Color32::from_black_alpha(135))
         .stroke(egui::Stroke::new(1.0, crate::theme::LINE))
-        .corner_radius(egui::CornerRadius::same(10))
+        .corner_radius(egui::CornerRadius::same(OVERLAY_RADIUS))
         .inner_margin(egui::Margin::symmetric(9, 6))
+}
+
+/// Paints the **frosted-glass backdrop** under a chip: the sub-rect of the
+/// blurred world snapshot (`crate::blur`) matching `rect`, rounded like the chip.
+/// No-op until the snapshot exists (first frame / presentation mode).
+fn glass_rect(painter: &egui::Painter, rect: egui::Rect, radius: u8, blur: &crate::blur::HudBlur) {
+    let Some(texture) = blur.texture else {
+        return;
+    };
+    painter.add(
+        egui::epaint::RectShape::filled(
+            rect,
+            egui::CornerRadius::same(radius),
+            egui::Color32::WHITE,
+        )
+        .with_texture(texture, blur.uv(rect)),
+    );
+}
+
+/// [`glass_rect`] for a floating `Area`, whose rect is only known **after**
+/// layout: paints under *last frame's* rect (egui temp memory). These pills are
+/// pinned to the arena corners, so the one-frame lag is invisible.
+fn glass_under_area(ui: &egui::Ui, id: egui::Id, blur: &crate::blur::HudBlur) {
+    if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
+        glass_rect(ui.painter(), rect, OVERLAY_RADIUS, blur);
+    }
 }
 
 /// A framing-mode button (arena controls): **accent-filled** while its mode is `active`,
@@ -696,16 +730,19 @@ fn arena_controls(
     auto: &mut AutoSelect,
     view: &mut crate::ViewControl,
     selected_pos: Option<Vec2>,
+    blur: &crate::blur::HudBlur,
 ) {
     if rect.width() < 60.0 || rect.height() < 60.0 {
         return;
     }
     // Follow — bottom-left.
-    egui::Area::new(egui::Id::new("arena_follow"))
+    let follow_glass = egui::Id::new("arena_follow_glass");
+    let follow = egui::Area::new(egui::Id::new("arena_follow"))
         .order(egui::Order::Foreground)
         .fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 12.0))
         .pivot(egui::Align2::LEFT_BOTTOM)
         .show(ctx, |ui| {
+            glass_under_area(ui, follow_glass, blur);
             overlay_frame().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Follow").on_hover_text(
@@ -744,12 +781,15 @@ fn arena_controls(
                 });
             });
         });
+    ctx.data_mut(|d| d.insert_temp(follow_glass, follow.response.rect));
     // Zoom / fit — bottom-right.
-    egui::Area::new(egui::Id::new("arena_view"))
+    let view_glass = egui::Id::new("arena_view_glass");
+    let zoom_fit = egui::Area::new(egui::Id::new("arena_view"))
         .order(egui::Order::Foreground)
         .fixed_pos(egui::pos2(rect.right() - 12.0, rect.bottom() - 12.0))
         .pivot(egui::Align2::RIGHT_BOTTOM)
         .show(ctx, |ui| {
+            glass_under_area(ui, view_glass, blur);
             overlay_frame().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     if ui.button("+").on_hover_text("Zoom in").clicked() {
@@ -793,6 +833,7 @@ fn arena_controls(
                 });
             });
         });
+    ctx.data_mut(|d| d.insert_temp(view_glass, zoom_fit.response.rect));
 }
 
 /// Builds the whole windowed layout in one pass: one background-layer root `Ui`, the
@@ -1956,6 +1997,7 @@ pub fn dock(
             vtime.is_paused(),
             stats_agents.is_empty(),
             !config.archetypes.is_empty(),
+            &obs.blur,
         );
         // World position of the selected agent (if any), for the Fit menu's
         // "Center on selection". Computed before the `&mut` borrows below (owned `Vec2`).
@@ -1970,6 +2012,7 @@ pub fn dock(
             &mut obs.auto_select,
             &mut obs.view,
             selected_pos,
+            &obs.blur,
         );
         // Follow tracking: while locked to Follow, keep the view centred on the selected
         // entity each frame; losing the target drops back to Free (de-accents the button).
@@ -1996,6 +2039,7 @@ fn overlay_label(t: f32, speed: f32) -> String {
 /// Paints the sim-area overlay: the [`overlay_label`] read-out, an accent **paused
 /// chip** (which doubles as a "Space to run" affordance), and — on an empty arena — a
 /// discreet hint on how to begin.
+#[allow(clippy::too_many_arguments)]
 fn central_overlay(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -2004,9 +2048,10 @@ fn central_overlay(
     paused: bool,
     agents_empty: bool,
     has_archetypes: bool,
+    blur: &crate::blur::HudBlur,
 ) {
     let cx = rect.center().x;
-    // Run-time read-out in a translucent pill (the comp's blurred chip).
+    // Run-time read-out in a frosted pill (blurred world + translucent wash).
     let galley = painter.layout_no_wrap(
         overlay_label(run_time, speed),
         egui::FontId::monospace(11.0),
@@ -2016,7 +2061,8 @@ fn central_overlay(
         egui::pos2(cx, rect.top() + 6.0 + galley.size().y * 0.5),
         galley.size() + egui::vec2(16.0, 6.0),
     );
-    painter.rect_filled(pill, 8.0, egui::Color32::from_black_alpha(150));
+    glass_rect(painter, pill, 8, blur);
+    painter.rect_filled(pill, 8.0, egui::Color32::from_black_alpha(110));
     painter.galley(
         egui::pos2(cx - galley.size().x * 0.5, rect.top() + 6.0),
         galley,
@@ -2031,6 +2077,7 @@ fn central_overlay(
             egui::pos2(cx, top + galley.size().y * 0.5),
             galley.size() + egui::vec2(20.0, 8.0),
         );
+        glass_rect(painter, chip, 6, blur);
         painter.rect_filled(chip, 6.0, crate::theme::ACCENT.gamma_multiply(0.15));
         painter.rect_stroke(
             chip,

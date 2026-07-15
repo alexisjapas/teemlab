@@ -119,6 +119,13 @@ pub fn nutrient_color(index: usize) -> Srgba {
 #[derive(Component)]
 pub struct PlayAreaBg;
 
+/// Marker of the windowed build's offscreen **frosted-glass camera** (the HUD
+/// blur, `main.rs`/`blur.rs`): a second camera re-rendering the world into a
+/// small texture. Declared in the lib so shared camera queries (`dataviz`) can
+/// exclude it; nothing else in the lib ever spawns or reads it.
+#[derive(Component)]
+pub struct BlurCamera;
+
 /// Opaque `Color` from an sRGB triplet `[r, g, b]` of the scenario (background settings).
 pub fn srgb3([r, g, b]: [f32; 3]) -> Color {
     Color::srgb(r, g, b)

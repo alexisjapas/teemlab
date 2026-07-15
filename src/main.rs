@@ -7,6 +7,7 @@
 // Cf. `lib.rs`: Bevy queries trigger `type_complexity` by their very nature.
 #![allow(clippy::type_complexity)]
 
+mod blur;
 mod controls;
 mod dashboard;
 mod editor;
@@ -31,7 +32,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
-use teemlab::visuals::VisualsPlugin;
+use teemlab::visuals::{BlurCamera, VisualsPlugin};
 use teemlab::{SimConfig, SimPlugin};
 
 fn main() {
@@ -103,6 +104,8 @@ fn main() {
         // User pan/zoom of the sim view, layered on top of the fit-the-arena framing
         // (cf. `camera_navigation` / `set_sim_camera`). Default = the framed arena.
         .init_resource::<ViewControl>()
+        // Blurred world snapshot behind the HUD chips (cf. `blur`).
+        .init_resource::<blur::HudBlur>()
         // Single status line shown in the bottom bar (scenario / species / capture /
         // recording feedback), written from across the UI (cf. `status`).
         .init_resource::<status::UiStatus>()
@@ -161,6 +164,9 @@ fn main() {
                 keyboard_shortcuts,
                 camera_navigation,
                 set_sim_camera,
+                // After the framing: mirrors this frame's sim camera into the
+                // HUD's frosted-glass snapshot (cf. `blur`).
+                blur::sync_blur_camera,
             )
                 .chain(),
         )
@@ -425,7 +431,7 @@ fn set_sim_camera(
     config: Res<SimConfig>,
     view: Res<ViewControl>,
     windows: Query<&Window>,
-    mut cameras: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    mut cameras: Query<(&mut Transform, &mut Projection), (With<Camera2d>, Without<BlurCamera>)>,
 ) -> Result {
     let rect = central.0;
     let (Ok(window), Ok((mut transform, mut projection))) =

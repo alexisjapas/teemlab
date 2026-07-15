@@ -22,6 +22,7 @@ use teemlab::config::{
 };
 use teemlab::genotype::{GeneCategory, Genotype, TRAITS};
 use teemlab::spawn::spawn_agent;
+use teemlab::visuals::BlurCamera;
 use teemlab::visuals::Layers;
 
 use crate::files::ron_files;
@@ -246,7 +247,7 @@ pub fn resolve_drag(
     mut palette: ResMut<Palette>,
     mut commands: Commands,
     config: Res<SimConfig>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
+    cameras: Query<(&Camera, &GlobalTransform), Without<BlurCamera>>,
     windows: Query<&Window>,
 ) -> Result {
     let Some(i) = palette.dragging else {
