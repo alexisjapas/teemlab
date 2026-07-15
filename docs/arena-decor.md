@@ -93,12 +93,13 @@ prototype); the texture is `Rgba8UnormSrgb`, sampler **nearest**.
    `sdf ∈ (−5, 0]`; sunlit lip `rgba(255,247,218, 0.18)` for `sdf ∈ (−13, −5]`.
 4. **Interior** (`sdf > 0`), in order: (a) 1-texel separable gaussian blur of
    the sand (sampling the unblurred copy) — "sand seen through water", baked
-   once; (b) **2-step depth tint**: `t = min(sdf/(0.40·M), 1)`,
-   `c = 1 − (1 − t)^1.8`, `a = floor(2c)/2 · 0.748`, multiply toward water
-   `rgb(66,178,192)` — two shore ledges then a wide uniform deep plateau;
-   (c) submerged wall shadow for `sdf < 22`: `t = (22 − sdf)/22`,
-   `dir = (y > 0 ? 0.5 : 0) + (x < 0 ? 0.2 : 0)` (stronger up-left = overhang on
-   the lit side), over-blend `rgb(6,12,12)` at `t²·(0.4 + 0.5·dir)`.
+   once; (b) **2-step depth tint, water wall-to-wall**:
+   `t = min(sdf/(0.40·M), 1)`, `c = 1 − (1 − t)^1.8`,
+   `a = min(floor(2c) + 1, 2)/2 · 0.748`, multiply toward water
+   `rgb(66,178,192)` — a *tinted* shallow ledge from the very first texel, then
+   the wide uniform deep plateau. (The spec's untinted first step and its
+   submerged wall shadow are deliberately NOT ported — user feedback: the pool
+   must read as water up to the bank, with no inward shadow.)
 5. **Waterline** (last): interior texels with an exterior 4-neighbor get a 1-texel
    liner per side — white `0.22`/`0.16` toward up/left, black `0.34`/`0.28`
    toward down/right.

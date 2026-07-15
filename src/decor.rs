@@ -57,8 +57,6 @@ const PEBBLE_LIGHT: [f32; 3] = [214.0, 204.0, 182.0];
 const CREST: [f32; 3] = [28.0, 18.0, 8.0];
 /// Sunlit lip just outside the crest (`sdf ∈ (−13, −5]`).
 const LIP: [f32; 3] = [255.0, 247.0, 218.0];
-/// Submerged wall shadow, strongest up-left (overhang on the lit side).
-const WALL_SHADOW: [f32; 3] = [6.0, 12.0, 12.0];
 
 /// The spec's LCG (Numerical Recipes), reimplemented verbatim so the *integer*
 /// stream is bit-exact on every platform. Deliberately **not**
@@ -245,11 +243,12 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
         }
     }
 
-    // -- P4.2 depth steps + P4.3 submerged wall shadow ------------------------
-    // Two water ledges hugging the shore, then a wide uniform deep plateau.
+    // -- P4.2 depth steps -------------------------------------------------------
+    // Water from the very first texel: a tinted shallow ledge hugging the shore,
+    // then the wide uniform deep plateau — the pool reads as water wall-to-wall
+    // (no untinted "beach" ring, no submerged wall shadow: user feedback).
     let plateau = 0.40 * m;
     for j in 0..n {
-        let ty = (j as f32 + 0.5) * TEXEL_WU;
         for i in 0..n {
             let idx = j * n + i;
             let s = sdf[idx];
@@ -258,21 +257,9 @@ pub fn bake(seed: u64, arena_half_extent: f32) -> DecorBake {
             }
             let t = (s / plateau).min(1.0);
             let ease = 1.0 - (1.0 - t).powf(1.8);
-            let a = (ease * 2.0).floor() / 2.0 * 0.748;
+            let a = ((ease * 2.0).floor() + 1.0).min(2.0) / 2.0 * 0.748;
             for k in 0..3 {
                 base[idx][k] *= 1.0 - a + a * WATER[k] / 255.0;
-            }
-            let reach = 22.0 * scale;
-            if s < reach {
-                let tx = (i as f32 + 0.5) * TEXEL_WU;
-                let t = (reach - s) / reach;
-                let dir = (if ty < side / 2.0 { 0.5 } else { 0.0 })
-                    + (if tx < side / 2.0 { 0.2 } else { 0.0 });
-                blend_over(
-                    &mut base[idx],
-                    WALL_SHADOW,
-                    (t * t * (0.4 + 0.5 * dir)).min(1.0),
-                );
             }
         }
     }
