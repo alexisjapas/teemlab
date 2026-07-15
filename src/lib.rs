@@ -18,6 +18,7 @@ pub mod breeding;
 pub mod components;
 pub mod config;
 pub mod dataviz;
+pub mod decor;
 pub mod ecology;
 pub mod genotype;
 pub mod interaction;

@@ -50,8 +50,9 @@ structure stay independent, draws in **fixed order**:
 
 - `rng_struct = Lcg(visual_seed)`: 12 basin-edge phases, then 2 film light-spot
   centers (x, y each).
-- `rng_tex = Lcg(visual_seed ^ 0x9E37_79B9)`: 2 draws per texel row-major
-  (ramp jitter, grain roll), then 22 pebbles (x, y, size).
+- `rng_tex = Lcg(visual_seed ^ 0x9E37_79B9)`: 1 draw per texel row-major (the
+  same sample drives ramp jitter and grain, as in the spec's prototype), then
+  22 pebbles (x, y, size — 3 draws each).
 
 ## 3. Geometry
 
