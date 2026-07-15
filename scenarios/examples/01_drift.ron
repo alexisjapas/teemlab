@@ -1,0 +1,37 @@
+// 01 · Drift — the bare agent loop, and the price of being alive.
+//
+// The simplest living scene: a handful of WANDERERS and no food. Each runs the
+// invariant loop (perceive → decide → act, SIM Law 2) and pays the allometric
+// COST LAW every second — maintenance (∝ body size) + locomotion (∝ size · speed).
+// With nothing to eat, a reserve can only fall: the population drifts, thins, and
+// winks out. Reproduction is off (`reproduction_threshold: 0`), so this is
+// mortality in isolation — the metabolic floor every later scenario must beat by
+// finding energy (sunlight, then prey).
+//
+// Watch: the energy bars drain; the arena falls quiet within ~30 s. A tight arena,
+// because there is nothing to spread out for.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 220.0,
+    archetypes: [
+        (
+            name: "Wanderer",
+            color: (0.55, 0.75, 1.0),
+            count: 40,
+            radius: 8.0,
+            reserve_max: 100.0,
+            genotype: (
+                max_speed: 120.0,
+                agility: 0.12,
+                vision_range: 90.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 0.0, // no reproduction — pure mortality
+                mutation_rate: 0.0,
+                vision_rays: 5.0,
+            ),
+            brain: Wander(turn_rate: 0.25),
+            mutable: (),
+        ),
+    ],
+    seed: 1,
+)
