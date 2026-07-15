@@ -31,7 +31,7 @@ fn main() {
     let scenario = args
         .get(1)
         .cloned()
-        .unwrap_or_else(|| "scenarios/examples/08_mlp_train.ron".into());
+        .unwrap_or_else(|| "scenarios/examples/11_breeding.ron".into());
     let ticks: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(12000);
     let seed: Option<u64> = args.get(3).and_then(|s| s.parse().ok());
 

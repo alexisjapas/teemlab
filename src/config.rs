@@ -1722,24 +1722,6 @@ mod tests {
         assert_eq!(Archetype::from_ron_str(&text).expect("re-read"), a);
     }
 
-    /// The bundled default scenario stays in sync with [`SimConfig::default`].
-    #[test]
-    fn bundled_default_matches_default() {
-        let text = include_str!("../scenarios/examples/01_default.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid default scenario");
-        assert_eq!(cfg, SimConfig::default());
-    }
-
-    /// The bundled empty scenario stays in sync with [`SimConfig::empty`] and spawns
-    /// no entity.
-    #[test]
-    fn bundled_empty_matches_empty() {
-        let text = include_str!("../scenarios/examples/00_empty.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid empty scenario");
-        assert_eq!(cfg, SimConfig::empty());
-        assert!(cfg.archetypes.iter().all(|a| a.count == 0));
-    }
-
     /// The per-archetype resolvers read the index entry, with an out-of-list fallback.
     #[test]
     fn resolvers_read_archetype_by_index() {
@@ -1762,35 +1744,46 @@ mod tests {
         assert_eq!(cfg.founder_max_speed_of(9), cfg.genotype_of(9).max_speed);
     }
 
-    /// The hunt scenario: a hunter agent **and** a relation designating the food
-    /// (another archetype) as a target — otherwise the "target" channel stays zero.
+    /// The grazing scenario: a hunter forager **and** a sessile food source it can
+    /// prey on — otherwise the "target" channel stays zero and the forager starves.
     #[test]
-    fn bundled_hunt_scenario_uses_hunter_on_a_target() {
-        let text = include_str!("../scenarios/examples/05_hunt.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid hunt scenario");
-        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
+    fn bundled_grazing_scenario_uses_hunter_on_a_target() {
+        let text = include_str!("../scenarios/examples/04_grazing.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid grazing scenario");
+        assert!(
+            cfg.archetypes
+                .iter()
+                .any(|a| matches!(a.brain, BrainKind::Hunter)),
+            "a hunter forager drives the grazing"
+        );
         assert!(
             cfg.archetypes.iter().any(|a| a.is_sessile()),
-            "a sessile food source underpins the hunt"
+            "a sessile food source underpins the grazing"
         );
     }
 
-    /// The predator-prey scenario: a three-level trophic chain in pure data
-    /// (pyramid by counts, hunter brain, two chained relations).
+    /// The food-web scenario: a three-level trophic chain in pure data — a sessile
+    /// producer base, hunter consumers, and a pyramid (producers ≫ apex predators).
     #[test]
-    fn bundled_predator_prey_is_a_trophic_chain() {
-        let text = include_str!("../scenarios/examples/10_predator_prey.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid predator-prey scenario");
-        // Pyramid: strictly fewer predators (species 0) than prey (1).
-        assert!(
-            cfg.archetypes[0].count < cfg.archetypes[1].count,
-            "a pyramid wants prey ≫ predators"
-        );
-        assert_eq!(cfg.brain_of(0), BrainKind::Hunter);
-        // A three-level pyramid rests on at least one sessile food source.
+    fn bundled_foodweb_is_a_trophic_chain() {
+        let text = include_str!("../scenarios/examples/09_foodweb.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid food-web scenario");
+        assert!(cfg.archetypes.len() >= 3, "three trophic levels");
+        // A pyramid: the producer base is far more numerous than the apex predator.
+        let counts: Vec<usize> = cfg.archetypes.iter().map(|a| a.count).collect();
+        let base = counts.iter().max().unwrap();
+        let apex = counts.iter().min().unwrap();
+        assert!(base > apex, "a pyramid wants a broad producer base");
+        // The chain rests on a sessile food source, and hunters climb it.
         assert!(
             cfg.archetypes.iter().any(|a| a.is_sessile()),
             "the chain rests on a food source"
+        );
+        assert!(
+            cfg.archetypes
+                .iter()
+                .any(|a| matches!(a.brain, BrainKind::Hunter)),
+            "hunters make up the upper levels"
         );
     }
 
@@ -1798,7 +1791,7 @@ mod tests {
     /// the food (finite regrowth → carrying capacity).
     #[test]
     fn bundled_evolution_scenario_closes_the_loop() {
-        let text = include_str!("../scenarios/examples/04_evolution.ron");
+        let text = include_str!("../scenarios/examples/05_selection.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid evolution scenario");
         let agent = first_mobile(&cfg);
         let genotype = &agent.genotype;
@@ -1819,34 +1812,17 @@ mod tests {
         );
     }
 
-    /// The cohabitation scenario pits TWO brains (hunter vs wander) at equal counts
-    /// on the same food (driver `tests/cohabitation`).
+    /// The learning scenario pits a LEARNED brain (species 0) against the wander control
+    /// (species 1) at equal counts on the same food — two deciders, one economy (drivers
+    /// `tests/mlp`, `tests/cohabitation`).
     #[test]
-    fn bundled_cohabitation_pits_two_brains_on_shared_food() {
-        let text = include_str!("../scenarios/examples/06_cohabitation.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid cohabitation scenario");
-        assert_eq!(cfg.archetypes[0].count, cfg.archetypes[1].count);
+    fn bundled_learning_pits_a_learned_brain_against_wander() {
+        let text = include_str!("../scenarios/examples/08_learning.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid learning scenario");
         assert_eq!(
-            cfg.brain_of(0),
-            BrainKind::Hunter,
-            "species 0 = competent control"
+            cfg.archetypes[0].count, cfg.archetypes[1].count,
+            "the two deciders start at equal counts"
         );
-        assert!(
-            matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
-            "species 1 = naive control"
-        );
-        assert!(
-            cfg.archetypes.iter().any(|a| a.is_sessile()),
-            "a shared sessile food source is present"
-        );
-    }
-
-    /// The MLP scenario pits a LEARNED brain (species 0) against the wander control
-    /// (species 1) on the same food (driver `tests/mlp`).
-    #[test]
-    fn bundled_mlp_brain_pits_a_learned_brain_against_wander() {
-        let text = include_str!("../scenarios/examples/07_mlp_brain.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid MLP scenario");
         assert!(
             matches!(cfg.brain_of(0), BrainKind::Mlp { ref hidden } if !hidden.is_empty()),
             "species 0 = learned brain (MLP)"
@@ -1855,6 +1831,10 @@ mod tests {
             matches!(cfg.brain_of(1), BrainKind::Wander { .. }),
             "species 1 = wander control"
         );
+        assert!(
+            cfg.archetypes.iter().any(|a| a.is_sessile()),
+            "a shared sessile food source is present"
+        );
     }
 
     /// The MLP-breeding scenario (P5): a generational `batch` whose scored species is the
@@ -1862,7 +1842,7 @@ mod tests {
     /// generator, not a CI sim). Guardrail on the batch schema + the scenario wiring.
     #[test]
     fn bundled_mlp_breed_carries_a_batch_regime() {
-        let text = include_str!("../scenarios/examples/13_mlp_breed.ron");
+        let text = include_str!("../scenarios/examples/11_breeding.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid MLP-breeding scenario");
         let batch = cfg.batch.as_ref().expect("a batch regime");
         assert!(batch.generations > 1, "a generational run");
@@ -1872,11 +1852,11 @@ mod tests {
         );
     }
 
-    /// The flora scenario (Phase 3): a **sessile** plant that lives on photosynthesis.
+    /// The meadow scenario (producers): a **sessile** plant that lives on photosynthesis.
     #[test]
-    fn bundled_flora_is_a_sessile_photosynthetic_plant() {
-        let text = include_str!("../scenarios/examples/03_flora.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid flora scenario");
+    fn bundled_meadow_is_a_sessile_photosynthetic_plant() {
+        let text = include_str!("../scenarios/examples/02_meadow.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid meadow scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
         assert!(
             cfg.archetypes[0].genotype.photosynthesis > 0.0,

@@ -446,7 +446,7 @@ pub(crate) fn selector_section(
 }
 
 /// Display name of a RON path: its file stem (e.g. `species/hunter.ron` → `hunter`,
-/// `scenarios/examples/10_predator_prey.ron` → `10_predator_prey`).
+/// `scenarios/examples/09_foodweb.ron` → `09_foodweb`).
 fn display_name(path: &str) -> &str {
     std::path::Path::new(path)
         .file_stem()
@@ -2273,8 +2273,8 @@ mod tests {
     fn display_name_is_the_file_stem() {
         assert_eq!(display_name("species/examples/hunter.ron"), "hunter");
         assert_eq!(
-            display_name("scenarios/examples/10_predator_prey.ron"),
-            "10_predator_prey"
+            display_name("scenarios/examples/09_foodweb.ron"),
+            "09_foodweb"
         );
         assert_eq!(display_name("noext"), "noext");
     }

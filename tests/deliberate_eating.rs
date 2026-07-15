@@ -235,7 +235,7 @@ fn holding_intent_costs_energy() {
 #[test]
 #[ignore = "behavioural: relation-driven eating removed — needs emergent re-tuning (emergent-trophics)"]
 fn showcase_population_persists() {
-    const SCENARIO: &str = include_str!("../scenarios/examples/16_deliberate_eating.ron");
+    const SCENARIO: &str = include_str!("../scenarios/examples/06_restraint.ron");
     const SEEDS: [u64; 3] = [0x00C0_FFEE, 0x1234, 0xBEEF];
     const SECONDS: usize = 60;
 

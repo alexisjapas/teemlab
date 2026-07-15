@@ -1,5 +1,5 @@
 //! Reef scenario driver — the two physical/spatial levers (solid **rocks** + spring-anchored
-//! **kelp**) composed into a living ecosystem (`scenarios/examples/20_reef.ron`). We assert
+//! **kelp**) composed into a living ecosystem (`scenarios/examples/10_reef.ron`). We assert
 //! the reef is healthy over its coexistence window **and** that **turnover** happens: an
 //! uprooted or grazed kelp deposits **detritus** (the `emit_at_death` corpse) into its field
 //! — the payoff of the anchoring mortality lever, made observable. The anchoring/rock
@@ -22,7 +22,7 @@ mod common;
 #[ignore = "behavioural: awaits scenario re-tuning after the emergent-trophics refactor"]
 fn reef_uproots_kelp() {
     let mut config =
-        SimConfig::from_ron_file("scenarios/examples/20_reef.ron").expect("reef loads");
+        SimConfig::from_ron_file("scenarios/examples/10_reef.ron").expect("reef loads");
     config
         .archetypes
         .get_mut(0)
@@ -52,7 +52,7 @@ fn reef_uproots_kelp() {
 #[test]
 #[ignore = "behavioural: awaits scenario re-tuning after the emergent-trophics refactor"]
 fn reef_persists_and_turns_over() {
-    let config = SimConfig::from_ron_file("scenarios/examples/20_reef.ron").expect("reef loads");
+    let config = SimConfig::from_ron_file("scenarios/examples/10_reef.ron").expect("reef loads");
     let mut app = common::stepping_app(&config);
 
     // Peak detritus reached at any point over the coexistence window — proof that kelp died

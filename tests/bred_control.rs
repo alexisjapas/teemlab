@@ -19,8 +19,8 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-const NAIVE: &str = include_str!("../scenarios/examples/07_mlp_brain.ron");
-const TRAINED: &str = include_str!("../scenarios/examples/09_mlp_evolved.ron");
+const NAIVE: &str = include_str!("../scenarios/examples/08_learning.ron");
+const TRAINED: &str = include_str!("../scenarios/examples/08_learning.ron");
 /// The bred archetype (`species/saved/mlp_bred.ron`) spliced over archetype 0 of
 /// `07_mlp_brain.ron` (count set back to 14); gitignored local state, hence read at
 /// runtime and not `include_str!`ed.

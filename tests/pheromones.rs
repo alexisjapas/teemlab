@@ -1,6 +1,6 @@
 //! Pheromones — component EMISSION + SENSING (Phase 3 of component emission).
 //!
-//! The forager MLPs of `scenarios/examples/18_pheromones.ron` emit a diffusing/decaying
+//! The forager MLPs of `scenarios/examples/07_signals.ron` emit a diffusing/decaying
 //! "Pheromone" component (a `FieldRelation` `emit`) and sense its local concentration (a
 //! `sense` input channel → [`teemlab::components::Perception::field_state`]). This driver
 //! checks the SUBSTRATE works end-to-end: the population persists on the oasis (the honest
@@ -16,7 +16,7 @@ use teemlab::components::{Agent, Species};
 use teemlab::nutrients::Fields;
 use teemlab::{SimConfig, SimPlugin};
 
-const SCENARIO: &str = include_str!("../scenarios/examples/18_pheromones.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/07_signals.ron");
 
 #[test]
 #[ignore = "behavioural: emitters rely on relation-driven eating — needs emergent re-tuning (emergent-trophics)"]

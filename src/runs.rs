@@ -109,7 +109,7 @@ pub(crate) const EXAMPLES_DIR: &str = "scenarios/examples";
 /// Save target. The two categories live in sibling directories under `scenarios/`.
 pub(crate) const SAVED_DIR: &str = "scenarios/saved";
 
-/// Menu label for a scenario path: its file stem (`scenarios/examples/05_hunt.ron` → `05_hunt`).
+/// Menu label for a scenario path: its file stem (`scenarios/examples/04_grazing.ron` → `04_grazing`).
 fn scenario_label(path: &str) -> &str {
     std::path::Path::new(path)
         .file_stem()

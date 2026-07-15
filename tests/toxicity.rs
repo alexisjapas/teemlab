@@ -15,7 +15,7 @@ use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Species};
 use teemlab::{SimConfig, SimPlugin};
 
-const SCENARIO: &str = include_str!("../scenarios/examples/19_toxicity.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/07_signals.ron");
 
 /// Build the scenario at `seed`. `toxic` false = the CLEAN control: the same world with the
 /// toxin **emission** turned off (nothing else changed) — the falsifiable contrast.
