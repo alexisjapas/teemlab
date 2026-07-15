@@ -1547,6 +1547,11 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
         egui::CollapsingHeader::new("Appearance")
             .default_open(true)
             .show(ui, |ui| {
+                ui.checkbox(&mut config.decor.enabled, "pixel-art decor (sand & basin)")
+                    .on_hover_text(
+                        "Procedural backdrop baked from the seed — purely visual, the \
+                         sim never reads it. Off → the flat background colors below.",
+                    );
                 ui.horizontal(|ui| {
                     color_button(ui, &mut config.play_area_color);
                     ui.label("inner background (play area)");
