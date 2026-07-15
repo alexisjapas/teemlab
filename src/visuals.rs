@@ -9,7 +9,7 @@
 //! re-render* of a run).
 
 use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
-use crate::config::SimConfig;
+use crate::config::{SimConfig, Source};
 use crate::nutrients::{Field, Fields};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
@@ -55,6 +55,9 @@ impl Plugin for VisualsPlugin {
                     sync_layer_flags,
                     render_nutrient_layers,
                     apply_agent_layer,
+                    crate::decor::render_decor,
+                    crate::decor::style_entity_decor,
+                    render_source_decor,
                 ),
             );
     }
@@ -129,8 +132,17 @@ fn entity_color(config: &SimConfig, species: Species) -> Srgba {
     Srgba::new(r, g, b, 1.0)
 }
 
+/// Dark rim behind a body (decor entity style): the pixel-art "liseré".
+pub const DECOR_OUTLINE_COLOR: Color = Color::srgba(4.0 / 255.0, 26.0 / 255.0, 26.0 / 255.0, 0.5);
+/// Extra radius of the rim beyond the body, in world units.
+pub const DECOR_OUTLINE_GROW: f32 = 0.8;
+/// White glint offset up-left on a body (decor entity style): the "reflet".
+pub const DECOR_HIGHLIGHT_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.4);
+
 /// Rendering only: give a visible mesh to freshly spawned agents, tinted by their
-/// archetype's color. Runs in `Update` because it manipulates render assets.
+/// archetype's color — plus the decor's outline/highlight discs as **children**
+/// (they ride the sim transform, despawn with the agent, and are invisible to
+/// [`shade_by_reserve`], which only dims the parent's own material).
 fn attach_visuals(
     mut commands: Commands,
     config: Res<SimConfig>,
@@ -139,10 +151,33 @@ fn attach_visuals(
     new_agents: Query<(Entity, &Radius, &Species), (Added<Agent>, Without<Mesh2d>)>,
 ) {
     for (entity, radius, species) in &new_agents {
-        commands.entity(entity).insert((
-            Mesh2d(meshes.add(Circle::new(radius.0))),
-            MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
-        ));
+        let decor_visibility = if config.decor.enabled {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        commands
+            .entity(entity)
+            .insert((
+                Mesh2d(meshes.add(Circle::new(radius.0))),
+                MeshMaterial2d(materials.add(Color::from(entity_color(&config, *species)))),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    crate::decor::DecorOutline,
+                    Mesh2d(meshes.add(Circle::new(radius.0 + DECOR_OUTLINE_GROW))),
+                    MeshMaterial2d(materials.add(DECOR_OUTLINE_COLOR)),
+                    Transform::from_xyz(0.0, 0.0, -0.1),
+                    decor_visibility,
+                ));
+                parent.spawn((
+                    crate::decor::DecorHighlight,
+                    Mesh2d(meshes.add(Circle::new(0.4 * radius.0))),
+                    MeshMaterial2d(materials.add(DECOR_HIGHLIGHT_COLOR)),
+                    Transform::from_xyz(-0.35 * radius.0, 0.35 * radius.0, 0.1),
+                    decor_visibility,
+                ));
+            });
     }
 }
 
@@ -201,8 +236,13 @@ fn draw_heading(
     }
 }
 
-/// Rendering only: draw the arena outline with gizmos.
+/// Rendering only: draw the arena outline with gizmos. Skipped when the decor is
+/// on: the basin's bank already marks the walls, and a gray box floating over
+/// the water reads as debug clutter.
 fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
+    if config.decor.enabled {
+        return;
+    }
     let h = config.arena_half_extent;
     let color = Color::srgb(0.40, 0.40, 0.46);
     gizmos.linestrip_2d(
@@ -226,8 +266,15 @@ fn draw_arena(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
 /// [`render_source_bodies`] (a disc mesh) so it reads as a tangible body — this ring then
 /// crisps its edge; an intangible emitter (a vent) is left as the bare outline (its reach
 /// shows through its field's heatmap layer).
+/// With the decor on, a **solid** source keeps only its filled disc (plus the
+/// decor outline/highlight — [`render_source_bodies`]): its gizmo ring would
+/// float above the water film (gizmos always render on top). The intangible
+/// emitters keep the ring — it is their only trace.
 fn draw_sources(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
     for source in &config.sources {
+        if config.decor.enabled && source.solid {
+            continue;
+        }
         let pos = Vec2::from(source.pos);
         gizmos.circle_2d(pos, source.radius, srgb3(source.color));
     }
@@ -293,6 +340,83 @@ fn render_source_bodies(
                     .with_scale(Vec3::splat(src.radius)),
             ));
         }
+    }
+}
+
+/// A rock's decor part (outline or highlight disc), keyed like [`SourceBody`]
+/// to the source it dresses. A **sibling** of the disc, not a child: the disc's
+/// scale is the radius on *all* axes, so a child's z-offset would be multiplied
+/// by it and land among the heatmaps.
+#[derive(Component)]
+struct SourceDecor {
+    /// Index into `config.sources` this part dresses.
+    source: usize,
+    /// `false` = the dark outline behind the disc, `true` = the up-left glint.
+    highlight: bool,
+}
+
+/// Rendering only: the decor outline + highlight of each **solid** source,
+/// reconciled against the config every frame exactly like
+/// [`render_source_bodies`]. Hidden while the decor is off (the agents' twin
+/// toggle is `decor::style_entity_decor`).
+fn render_source_decor(
+    mut commands: Commands,
+    config: Res<SimConfig>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut parts: Query<(&SourceDecor, &mut Transform, &mut Visibility)>,
+) {
+    let mut covered = vec![[false; 2]; config.sources.len()];
+    for (part, mut tf, mut vis) in &mut parts {
+        match config.sources.get(part.source) {
+            Some(src) if src.solid && config.decor.enabled => {
+                covered[part.source][part.highlight as usize] = true;
+                *vis = Visibility::Visible;
+                place_source_decor(&mut tf, src, part.highlight);
+            }
+            _ => *vis = Visibility::Hidden,
+        }
+    }
+    if !config.decor.enabled {
+        return;
+    }
+    for (index, src) in config.sources.iter().enumerate() {
+        if !src.solid {
+            continue;
+        }
+        for highlight in [false, true] {
+            if covered[index][highlight as usize] {
+                continue;
+            }
+            let mut tf = Transform::default();
+            place_source_decor(&mut tf, src, highlight);
+            commands.spawn((
+                SourceDecor {
+                    source: index,
+                    highlight,
+                },
+                Mesh2d(meshes.add(Circle::new(1.0))),
+                MeshMaterial2d(materials.add(if highlight {
+                    DECOR_HIGHLIGHT_COLOR
+                } else {
+                    DECOR_OUTLINE_COLOR
+                })),
+                tf,
+            ));
+        }
+    }
+}
+
+/// Place one rock-decor part from its source: the outline slightly larger,
+/// behind the disc (z −4.2 < −4); the glint up-left, in front (z −3.8 > −4).
+fn place_source_decor(tf: &mut Transform, src: &Source, highlight: bool) {
+    let pos = Vec2::from(src.pos);
+    if highlight {
+        tf.translation = (pos + Vec2::new(-0.35, 0.35) * src.radius).extend(-3.8);
+        tf.scale = Vec3::splat(0.4 * src.radius);
+    } else {
+        tf.translation = pos.extend(-4.2);
+        tf.scale = Vec3::splat(src.radius + DECOR_OUTLINE_GROW);
     }
 }
 

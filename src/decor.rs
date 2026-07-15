@@ -623,8 +623,8 @@ mod tests {
                 ];
                 if blend_film {
                     let a = baked.film[o + 3] as f32 / 255.0;
-                    for k in 0..3 {
-                        px[k] = baked.film[o + k] as f32 * a + px[k] * (1.0 - a);
+                    for (k, c) in px.iter_mut().enumerate() {
+                        *c = baked.film[o + k] as f32 * a + *c * (1.0 - a);
                     }
                 }
                 ppm.extend(px.map(|c| c as u8));
