@@ -54,8 +54,13 @@ pub struct History {
     interval: f32,
     /// Maximum number of samples kept (sliding window).
     max_samples: usize,
-    /// Next sampling instant (simulated time).
+    /// Next sampling instant, in **run time** (see [`Self::epoch`]).
     next_at: f32,
+    /// Virtual-clock reading at the last world (re)build — the origin of *run time*.
+    /// Sample times and the HUD read-out are `Time<Virtual>::elapsed_secs() - epoch`,
+    /// so both restart at `0` on a hot reset (item 11) while the global clock keeps
+    /// running. Advanced only by [`Self::restart`]; a graph "Clear" leaves it be.
+    epoch: f32,
     /// The samples, from oldest to newest.
     samples: VecDeque<Sample>,
 }
@@ -66,17 +71,35 @@ impl Default for History {
             interval: 0.5,
             max_samples: 1200, // 0.5 s × 1200 = 10 min of simulated time
             next_at: 0.0,
+            epoch: 0.0,
             samples: VecDeque::new(),
         }
     }
 }
 
 impl History {
-    /// Starts over: clears the samples and rearms the clock. Called by the HUD's
-    /// "Clear" button and by the hot reset (item 11).
+    /// Clears the samples and rearms the sampling clock, **keeping the run epoch** —
+    /// the HUD's "Clear" button: the graph empties but the run (and its timer) goes
+    /// on, so a resumed curve picks up at the current run time.
     pub fn clear(&mut self) {
         self.samples.clear();
         self.next_at = 0.0;
+    }
+
+    /// Restarts the run at `now` (the current `Time<Virtual>::elapsed_secs()`): clears
+    /// the samples and re-bases the run epoch, so sample times and the HUD read-out
+    /// both count from `0` again. The hot reset (item 11) calls this — a rebuilt world
+    /// is a fresh run — where "Clear" ([`Self::clear`]) deliberately does not.
+    pub fn restart(&mut self, now: f32) {
+        self.samples.clear();
+        self.next_at = 0.0;
+        self.epoch = now;
+    }
+
+    /// The virtual-clock reading at the last world (re)build; subtract it from
+    /// `Time<Virtual>::elapsed_secs()` to get *run time* (the HUD read-out).
+    pub fn epoch(&self) -> f32 {
+        self.epoch
     }
 
     /// Number of samples kept (for the "N samples" display).
@@ -139,7 +162,9 @@ pub fn sample_history(
     mut history: ResMut<History>,
     agents: Query<(&Species, &Genotype), With<Agent>>,
 ) {
-    let now = time.elapsed_secs();
+    // Run time: seconds since the last (re)build, so a hot reset restarts the axis at
+    // 0 (the global virtual clock is never rewound — cf. `History::epoch`).
+    let now = time.elapsed_secs() - history.epoch;
     if now < history.next_at {
         return;
     }
@@ -352,4 +377,27 @@ pub fn trait_color(i: usize) -> [f32; 3] {
         [0.78, 0.63, 0.43], // brown
     ];
     PALETTE[i % PALETTE.len()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The run epoch is the seam between the two "start over" gestures: the hot reset
+    // (a fresh run → timer back to 0) re-bases it, the graph "Clear" does not.
+    #[test]
+    fn restart_rebases_epoch_but_clear_keeps_it() {
+        let mut h = History::default();
+        assert_eq!(h.epoch(), 0.0, "a fresh history runs from t=0");
+
+        h.restart(120.0);
+        assert_eq!(h.epoch(), 120.0, "a reset re-bases the run epoch");
+
+        h.clear();
+        assert_eq!(
+            h.epoch(),
+            120.0,
+            "clearing the graph must not restart the run timer",
+        );
+    }
 }

@@ -1991,10 +1991,11 @@ pub fn dock(
         central_overlay(
             &painter,
             central.0,
-            // The **live** virtual-clock time, not the last metrics sample: the read-out
-            // then refreshes every frame down to its smallest shown digit (0.1 s) instead
-            // of stepping at the (coarser) sampling interval.
-            vtime.elapsed_secs(),
+            // The **live** run time (virtual clock minus the run epoch), not the last
+            // metrics sample: the read-out then refreshes every frame down to its
+            // smallest shown digit (0.1 s) instead of stepping at the (coarser) sampling
+            // interval — and, via the epoch, restarts at 0 on a hot reset (item 11).
+            vtime.elapsed_secs() - history.epoch(),
             sim_controls.speed,
             vtime.is_paused(),
             stats_agents.is_empty(),

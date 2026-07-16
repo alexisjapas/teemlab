@@ -336,6 +336,7 @@ pub fn apply_reset(
     mut sim_rng: ResMut<SimRng>,
     mut fields: ResMut<Fields>,
     mut history: ResMut<History>,
+    vtime: Res<Time<Virtual>>,
     mut fixed: ResMut<Time<Fixed>>,
     mut baseline: ResMut<WorldBaseline>,
     mut selection: ResMut<Selection>,
@@ -359,7 +360,10 @@ pub fn apply_reset(
     // accumulated concentrations and re-applies the resolution / diffusion / decay —
     // the "(reset)" counterpart of editing them in the World panel.
     *fields = Fields::from_config(&config);
-    history.clear();
+    // A rebuilt world is a fresh run: restart the run clock so the HUD timer and the
+    // curve axes count from 0 again (the global virtual clock keeps running — there is
+    // no rewind API — so `restart` re-bases the epoch instead).
+    history.restart(vtime.elapsed_secs());
     // The rebuilt world now matches the config (the Reset accent clears)…
     baseline.0 = config.clone();
     // …and the previous world's selection could only point at a despawned entity —
