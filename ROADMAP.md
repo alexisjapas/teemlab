@@ -23,13 +23,35 @@ table (**SIM Laws 8 & 11 amended**) — over an **allometric cost law** (costs d
 body size), per-component nutrient stores, a static **food-web validator**, and the
 flora/fauna gene-category dissolution; faction combat removed. Binding doc + full stage
 status: [`docs/emergent-trophics.md`](docs/emergent-trophics.md) (*Implementation
-status*). The example scenarios are **not re-tuned** — 14 behavioural test drivers are
-`#[ignore]`d pending that rework. **Phase B — the UI redesign
+status*). **Phase B — the UI redesign
 ([`docs/ui-redesign.md`](docs/ui-redesign.md), staged B1–B8 in its §11) — is COMPLETE**:
 the five-screen router (Observe · Library · Studio · Lab · Analyze) + a first-class
 **World** catalog artifact + the derived trophic graph surfaced three ways (Studio
 validator, Observe dynamic overlay, Lab fragility metric); one-camera discipline; sim
 byte-identical throughout (recorded deviations + follow-ups in that doc's §11).
+
+**Phase C — the example-set rework is COMPLETE** (2026-07-16). The pre-refactor
+`scenarios/examples/*` (most broken under emergent targeting — foragers with no `need`
+could not eat) are **replaced by a concise, progressive set of 11**, `01_drift` …
+`11_breeding`, demonstrating the current engine simple→complex with map size scaled to
+each: **bare loop + allometric mortality** (01) → **photosynthetic producers** (02) →
+**nutrient field / oases / recycling** (03) → **emergent predation + trophic transfer**
+(04) → **selection of a priced trait** (05) → **deliberate eating + the commons** (06) →
+**emission substrate: scent + toxin** (07) → **trained-MLP neuroevolution vs a wander
+control** (08) → **three emergent trophic levels + flight** (09) → **rocks + anchored
+kelp + turnover** (10) → **the generational run→score→breed regime** (11). Living-food
+worlds are Lotka-Volterra, so these are *examples to watch* over a coexistence window
+(§7), not steady states. The old set is **deleted and every test retargeted**, and the
+**parked behavioural drivers are re-tuned and un-ignored** — of the 14, all now run
+except `bred_control` (a deliberate local-file experiment driver) and two that were
+dropped as unreachable in-scene (the reef tear-off — the grazer eats at reach and never
+rams the pinned kelp — and the `act_cost` showcase, which no reworked scenario carries).
+Some claims were weakened to the post-refactor economy's honest reach (restraint: greed
+grazes *harder*, not "prudence persists / greed goes extinct"; MLP: viable *parity*, not
+"training beats random"; toxicity: density *suppression*, not extinction). `train` now
+generates `08_learning.ron` (remapping the field relations to its 3-species layout).
+`cargo test` green (165 pass, 0 fail, 2 ignored), `clippy --all-targets` clean.
+
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.
 
