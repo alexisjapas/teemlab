@@ -15,7 +15,7 @@ Design and implementation order: [`ROADMAP.md`](ROADMAP.md).
 - **Continuous evolutionary loop**: raycast vision (with metabolic cost), a single
   interaction primitive (predation/combat), energy economy (natural selection),
   reproduction + mutation of a parametric genotype. Scenario = data (RON, partial
-  override). `evolution.ron`: stable population, observable gene drift.
+  override). `04_selection`: stable population, observable gene drift under selection.
 - **Interface** (windowed binary, egui): HUD curves, pause/speed/step/reset
   controls, agent inspector, hot scenario reload, run snapshot.
 - **Video capture**: headless `record` render → `ffmpeg` (fresh re-render),
@@ -36,9 +36,10 @@ Design and implementation order: [`ROADMAP.md`](ROADMAP.md).
   perceptron **learned by neuroevolution**, reading the same *vision/target/threat*
   channels — so it can *learn* to flee —, with an activation graph in the inspector).
   Brain selector in the editor.
-- **Pilot scenarios**, all robust across multiple seeds via their drivers:
-  `predator_prey` (3-level trophic chain, per-species count, prey that flee),
-  `cohabitation` & `mlp_brain` (control vs learned → competitive exclusion).
+- **Pilot scenarios**, all robust across multiple seeds via their drivers (`tests/*`):
+  `predator_prey` (three trophic levels, per-species count, prey that flee — now
+  `07_foodweb`), `cohabitation` (competent vs naive control → competitive exclusion) &
+  `mlp` (learned vs wander → viable parity, on `06_learning`).
 
 **"Everything is an entity" (done).** The species (`Archetype`) is the **central**
 data of the scenario: body + brain + genes + count, and its index is its identity.
@@ -69,7 +70,12 @@ budget) — in the windowed build (a "Layers" panel) **and** in the video
 closes the loop: **eating carries the nutrient up the chain** (the interaction primitive
 transfers a biomass-proportional share on predation) and a **dying body recycles** its
 store back into the field — the nutrient now cycles source → field → plant → forager →
-death → field, conservatively.
+death → field, conservatively. **Since then**, a **metabolic** coupling
+(`CostLaw::metabolic_cost`, the current producer economy) makes photosynthesis itself
+CONSUME the nutrient (Liebig's law of the minimum), so it gates *survival* too: a crowd
+around a vent draws the field down and the excess starves — a clean, density-dependent
+**carrying capacity** with real turnover (`02_meadow`), replacing an earlier jostle-cost
+artefact.
 
 **P5 — generational regime: breeding, battle & co-evolution (done).** The second canonical
 regime of the *A/B seam* (§4) — batched reproduction × explicit fitness — as a
@@ -80,10 +86,11 @@ an explicit `Fitness` (`BestEvolved` / `Population` / **`Dominance`** — combat
 the top survivors and **re-seeds** them as the next cohort's founders. Two faces: a headless
 **`breed` bin** (a generator that captures the best genome into the catalog) and a **windowed
 dashboard** (Run/Stop + progress, a fitness-vs-generation curve, a leaderboard with the
-genome's MLP graph + Save to library). Carriers: `13_mlp_breed` (breed a forager MLP),
-`14_battle_breed` (breed one faction to dominate a rival) and **`15_red_queen`** (breed
-**both** factions at once — co-evolution, the Red Queen, with a *per-faction* curve +
-leaderboard). Cf. [`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
+genome's MLP graph + Save to library). Carrier: **`09_breeding`** (breed a forager MLP on
+the oasis, scored by `Population`). The **battle** (`Dominance`) and **co-evolution** (Red
+Queen, `scored_species: [0, 1]`) fitnesses stay in the engine, but the redesigned example
+set no longer ships a combat/faction carrier. Cf.
+[`docs/p5-breeding-plan.md`](docs/p5-breeding-plan.md).
 
 **Remaining.** P5 **polish** (a live match spectator, Pause/Step) and **weight crossover /
 NEAT** (item 21 — the last learned-evolution piece); the nutrient axis's **T3 refinements**
@@ -93,10 +100,13 @@ editor long-tail (library management, catalog metadata). Cf. [`ROADMAP.md`](ROAD
 
 **Near-term orientation.** The near-term goal is **rich, non-collapsing** ecosystems (with a
 downstream *science of collapse factors*). The **cognitive substrate** that makes behavioural
-*restraint* expressible — **proprioception** + **deliberate, costed eating** — is now **built**
-(cf. `16_deliberate_eating`); next come **demonstrating restraint is selected** under spatial
-viscosity and **component emission** (corpses, waste, toxicity, communication as one agent →
-environment mechanism). Synthesis:
+*restraint* expressible — **proprioception** + **deliberate, costed eating** — is **built**,
+and restraint itself is now **demonstrated** (`05_restraint` — greed grazes harder). The
+**component-emission** substrate (agent → environment: corpses/detritus, waste, toxicity,
+communication) is wired — the `affect` verb is covered by `tests/affect.rs` — but a *robust
+inter-species toxin* is **deferred**: the metabolic economy hardcodes one nutrient, so
+producers segregate and a mobile victim self-selects out of the toxic patches, leaving no
+stationary co-located victim to poison (see ROADMAP §0). Synthesis:
 [`docs/persistent-ecosystems.md`](docs/persistent-ecosystems.md).
 
 > **Cardinal invariant**: no simulation logic in `Update`. Agency lives in
@@ -139,38 +149,29 @@ src/
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
   bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
   bin/sweep.rs    Headless `sweep`: runs a scenario many times and scores each final world by biodiversity (a seed or parameter sweep) — the search for a coexistence band.
-  bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora, captures the best brain seen over the whole run (peak generation, before the living-food population fades), and writes the evolved variant + the 07_mlp_brain / 09_mlp_evolved showcase.
+  bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora, captures the best brain seen over the whole run (peak generation, before the living-food population fades), and writes the evolved variant + the 06_learning showcase (the trained MLP vs a wander control).
   bin/breed.rs    Headless `breed` (generator, P5): drives the generational Orchestrator on a scenario's `batch`, prints fitness per generation per faction, captures the best genome into the catalog (species/saved/).
 scenarios/        Two categories (Open ▸ Examples / Saved); only examples are committed.
   examples/       Curated, committed example scenarios:
-    # Numbered by DISCOVERY ORDER (simplest → most complex; the Open ▸ Examples menu
-    # sorts by name). Resources first (they underpin every forager scenario), then the
-    # evolutionary loop, brains, ecosystems, and the closed nutrient loop as the finale.
-    00_empty.ron        Blank canvas (count 0): author from scratch; == SimConfig::empty(); the windowed build's no-argument fallback.
-    01_default.ron      The starting template: one default species, kept == SimConfig::default().
-    02_nutrients.ron    The nutrient SUBSTRATE (T2): sun-fed plants whose REPRODUCTION is gated by a finite nutrient (Liebig) from sources + diffusion — the resource layer the foragers rely on.
-    03_flora.ron        Evolutionary sessile flora: photosynthesis + local seeding, self-limited by intraspecific competition (item 5).
-    04_evolution.ron    Natural selection: a WANDER grazer reproduces + mutates → gene drift, on the nutrient-bounded flora.
-    05_hunt.ron         The HUNTER brain (target channel): hunters forage the flora oases in a self-regulating ecosystem.
-    06_cohabitation.ron Control vs control: Hunter vs Wander on flora oases → the competent brain finds them and excludes the naive one.
-    # The MLP learning story, in three scenarios (07 & 09 are GENERATED by `cargo run --bin train`):
-    07_mlp_brain.ron    Naive learned brain: a from-random MLP vs Wander → the wanderer out-forages it (the baseline before training).
-    08_mlp_train.ron    Training ground: MLPs evolve ALONE on the flora oases; the `train` bin captures an evolved individual.
-    09_mlp_evolved.ron  Trained variant in action: the captured MLP vs Wander → it reaches parity (no longer out-foraged). Cf. tests/mlp.rs.
-    10_predator_prey.ron 3-level trophic chain (flora oases → prey → predators): count pyramid, shared Hunter brain, prey that flee (threat channel).
-    11_factions.ron     COMBAT: two factions wage war (transfer:false — destruction without transfer) while foraging a shared flora.
-    12_nutrient_web.ron T3 food web (the finale): the closed loop — source → flora → herbivore (trophic transfer) → death → recycle; watch it in the inspector + heatmap.
-    # The GENERATIONAL regime (P5) — GENERATORS, not continuous: each carries a `batch` block; run with the `breed` bin (or the windowed dashboard).
-    13_mlp_breed.ron    Breed a forager MLP: a cohort of headless matches per generation, scored by standing biomass (Population); the best is re-seeded into the next cohort.
-    14_battle_breed.ron Battle: breed ONE faction (Azure) to dominate a rival (Crimson) via mutual transfer:false combat, scored by Dominance.
-    15_red_queen.ron    Co-evolution (Red Queen): breed BOTH factions at once (scored_species: [0, 1]) — each scored against the other, so neither pulls permanently ahead.
-    # The COGNITIVE SUBSTRATE (continuous regime): deliberate, costed eating (SIM Law 8) + proprioception.
-    16_deliberate_eating.ron  Deliberate eating: the MLP DECIDES whether to eat (a 3rd output, gated in `interact`) and holding the intent COSTS energy (act_cost) → it gates its eating (watch `act` in the inspector graph) and persists on the oasis. Cf. tests/deliberate_eating.rs.
+    # A concise, PROGRESSIVE set (simplest → most complex; the Open ▸ Examples menu
+    # sorts by name), map size scaled to each: the loop, the producer economy, emergent
+    # trophic levels, structure, learning, and the generational breed regime.
+    01_drift.ron        Bare loop + allometric mortality: immobile discs drift and die by size — perceive → decide → act with nothing else.
+    02_meadow.ron       Producers on a scarce nutrient: sessile photosynthesisers whose photosynthesis CONSUMES a diffusing nutrient (Liebig, `metabolic_cost`) → a real carrying capacity with turnover, not a carpet. Cf. tests/flora.rs, tests/nutrients.rs.
+    03_grazing.ron      Emergent grazing: a Hunter eats the reeds because the engine COMPUTES it can (size dominance + digestibility, Law 8), carrying the nutrient up the chain; two levels coexist and oscillate.
+    04_selection.ron    Natural selection of a priced trait: WANDERERS never act on vision, so selection melts their (costed) eyes down generation by generation while the traits that pay hold.
+    05_restraint.ron    Restraint + the commons: a grazer's hunger threshold governs how hard it grazes a shared producer stock (greed grazes harder). Cf. tests/restraint.rs.
+    # GENERATED by `cargo run --bin train` — do not hand-edit; re-run to regenerate:
+    06_learning.ron     Learning: an evolved MLP forager (frozen `captured_brain`) vs a WANDER control on shared oases — neuroevolution reaching viable parity. Cf. tests/mlp.rs.
+    07_foodweb.ron      Three emergent trophic levels from one rule: flora → herbivore → carnivore, the whole web derived from size + digestibility; prey flee (threat channel). Cf. tests/predator_prey.rs.
+    08_reef.ron         Space & structure: solid rocks + spring-anchored kelp + grazing turnover — a bounded, living reef (rocks carve refugia; uprooted kelp deposits detritus). Cf. tests/reef.rs.
+    # The GENERATIONAL regime (P5) — a GENERATOR, not continuous: carries a `batch` block; run with the `breed` bin (or the windowed dashboard).
+    09_breeding.ron     Run → score → breed: a cohort of headless matches per generation, scored by standing biomass (Population); the best survivors re-seed the next cohort's founders.
   saved/          Your saved scenarios (editor Save / Save As land here); gitignored — not committed.
 species/
   examples/       Committed reusable species (library):
     hunter.ron      A generic hunter, importable into a scenario.
-    mlp_trained.ron An evolved MLP variant (frozen captured_brain), generated by the `train` bin from mlp_train.ron.
+    mlp_trained.ron An evolved MLP variant (frozen captured_brain), generated by the `train` bin.
 outputs/          Simulation outputs (videos, images…); contents ignored by git.
 ```
 
@@ -183,23 +184,23 @@ nix develop            # or: direnv allow  (then automatic)
 
 # Launch the windowed build — the dev shell's `play` command (see the box below):
 play                                           # debug, empty arena (the editor's canvas)
-play scenarios/examples/04_evolution.ron          # debug, explicit scenario
+play scenarios/examples/04_selection.ron          # debug, explicit scenario
 play --release                                 # release (teemlab AND record in release)
-play --release scenarios/examples/03_flora.ron    # profile + explicit scenario
+play --release scenarios/examples/02_meadow.ron   # profile + explicit scenario
 
 cargo run --bin headless                                   # headless, default scenario
-cargo run --bin headless scenarios/examples/01_default.ron    # explicit scenario (1st arg = RON)
+cargo run --bin headless scenarios/examples/01_drift.ron      # explicit scenario (1st arg = RON)
 
 # Record a run to video (headless render → ffmpeg); output in outputs/:
-cargo run --bin record -- scenarios/examples/04_evolution.ron --out outputs/run.mp4
+cargo run --bin record -- scenarios/examples/03_grazing.ron --out outputs/run.mp4
 #   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
 #   (defaults: 30 fps, 61 s, 1080×1080 — the arena is square)
-#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/examples/02_nutrients.ron)
+#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/examples/02_meadow.ron)
 
-# Generational regime (P5) + dev generators (headless; the breeding ones need a `batch`):
-cargo run --bin breed -- scenarios/examples/15_red_queen.ron [generations]   # run → score → breed; captures the best genome into species/saved/
-cargo run --bin train                                                        # regenerate the trained-MLP showcase (07/09 + the catalog variant)
-cargo run --bin sweep -- scenarios/examples/10_predator_prey.ron             # biodiversity sweep (seed / parameter) — search a coexistence band
+# Generational regime (P5) + dev generators (headless; the breeding one needs a `batch`):
+cargo run --bin breed -- scenarios/examples/09_breeding.ron [generations]    # run → score → breed; captures the best genome into species/saved/
+cargo run --bin train                                                        # regenerate the 06_learning showcase (+ the catalog variant)
+cargo run --bin sweep -- scenarios/examples/07_foodweb.ron                   # biodiversity sweep (seed / parameter) — search a coexistence band
 
 cargo test                            # unit tests + multi-seed drivers + snapshot/containment
 cargo fmt                             # formatting — default rustfmt is authoritative
