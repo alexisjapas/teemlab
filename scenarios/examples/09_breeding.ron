@@ -1,4 +1,4 @@
-// 10 · Breeding — the generational regime (run → score → breed).
+// 09 · Breeding — the generational regime (run → score → breed).
 //
 // Every scenario so far ran the CONTINUOUS regime: reproduction happens IN the sim,
 // fitness is implicit (whoever eats and breeds). This is the other canonical regime
@@ -14,9 +14,9 @@
 // genome to species/saved/), or open it in the app and drive the breeding DASHBOARD
 // (Run/Stop, the fitness-vs-generation curve, the cohort leaderboard):
 //
-//     cargo run --bin breed -- scenarios/examples/11_breeding.ron [generations]
+//     cargo run --bin breed -- scenarios/examples/09_breeding.ron [generations]
 //
-// The economy is 08's oasis (where an MLP can forage); `batch.scored_species` selects
+// The economy is 07's oasis (where an MLP can forage); `batch.scored_species` selects
 // the MLP. Neuroevolution on living food plateaus near parity (ROADMAP §7), so expect a
 // noisy fitness signal that holds near a plateau, not a runaway climb.
 (

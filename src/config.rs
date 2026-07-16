@@ -1780,7 +1780,7 @@ mod tests {
     /// producer base, hunter consumers, and a pyramid (producers ≫ apex predators).
     #[test]
     fn bundled_foodweb_is_a_trophic_chain() {
-        let text = include_str!("../scenarios/examples/08_foodweb.ron");
+        let text = include_str!("../scenarios/examples/07_foodweb.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid food-web scenario");
         assert!(cfg.archetypes.len() >= 3, "three trophic levels");
         // A pyramid: the producer base is far more numerous than the apex predator.
@@ -1831,7 +1831,7 @@ mod tests {
     /// `tests/mlp`, `tests/cohabitation`).
     #[test]
     fn bundled_learning_pits_a_learned_brain_against_wander() {
-        let text = include_str!("../scenarios/examples/07_learning.ron");
+        let text = include_str!("../scenarios/examples/06_learning.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid learning scenario");
         assert_eq!(
             cfg.archetypes[0].count, cfg.archetypes[1].count,
@@ -1856,7 +1856,7 @@ mod tests {
     /// generator, not a CI sim). Guardrail on the batch schema + the scenario wiring.
     #[test]
     fn bundled_mlp_breed_carries_a_batch_regime() {
-        let text = include_str!("../scenarios/examples/10_breeding.ron");
+        let text = include_str!("../scenarios/examples/09_breeding.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid MLP-breeding scenario");
         let batch = cfg.batch.as_ref().expect("a batch regime");
         assert!(batch.generations > 1, "a generational run");

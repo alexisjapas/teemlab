@@ -1,4 +1,4 @@
-// 08 · Food web — three trophic levels from one rule.
+// 07 · Food web — three trophic levels from one rule.
 //
 // 04 had two levels; here there are THREE, and the engine derives the whole web from
 // body size + diet with no authored table (SIM Law 8). FLORA (r 6) hold the nutrient;

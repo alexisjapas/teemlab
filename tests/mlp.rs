@@ -5,7 +5,7 @@
 //! (the high-variance wall of item 18b: the original domination needed a long, stable
 //! selection window — immortal food + many generations). So instead of forcing a
 //! single "MLP dominates wander" scenario, we tell the story honestly, deriving both ends
-//! from the ONE showcase (`07_learning.ron`, the trained MLP vs a wander control):
+//! from the ONE showcase (`06_learning.ron`, the trained MLP vs a wander control):
 //!
 //!   - the **naive** end — the same world with species 0's `captured_brain` stripped, so
 //!     it is a from-RANDOM MLP: the wanderer **out-forages** it;
@@ -30,7 +30,7 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-const SCENARIO: &str = include_str!("../scenarios/examples/07_learning.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/06_learning.ron");
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 const SECONDS: usize = 45;
 

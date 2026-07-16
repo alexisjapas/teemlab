@@ -32,25 +32,42 @@ byte-identical throughout (recorded deviations + follow-ups in that doc's §11).
 
 **Phase C — the example-set rework is COMPLETE** (2026-07-16). The pre-refactor
 `scenarios/examples/*` (most broken under emergent targeting — foragers with no `need`
-could not eat) are **replaced by a concise, progressive set of 11**, `01_drift` …
-`11_breeding`, demonstrating the current engine simple→complex with map size scaled to
-each: **bare loop + allometric mortality** (01) → **photosynthetic producers** (02) →
-**nutrient field / oases / recycling** (03) → **emergent predation + trophic transfer**
-(04) → **selection of a priced trait** (05) → **deliberate eating + the commons** (06) →
-**emission substrate: scent + toxin** (07) → **trained-MLP neuroevolution vs a wander
-control** (08) → **three emergent trophic levels + flight** (09) → **rocks + anchored
-kelp + turnover** (10) → **the generational run→score→breed regime** (11). Living-food
-worlds are Lotka-Volterra, so these are *examples to watch* over a coexistence window
-(§7), not steady states. The old set is **deleted and every test retargeted**, and the
-**parked behavioural drivers are re-tuned and un-ignored** — of the 14, all now run
-except `bred_control` (a deliberate local-file experiment driver) and two that were
-dropped as unreachable in-scene (the reef tear-off — the grazer eats at reach and never
-rams the pinned kelp — and the `act_cost` showcase, which no reworked scenario carries).
-Some claims were weakened to the post-refactor economy's honest reach (restraint: greed
-grazes *harder*, not "prudence persists / greed goes extinct"; MLP: viable *parity*, not
-"training beats random"; toxicity: density *suppression*, not extinction). `train` now
-generates `08_learning.ron` (remapping the field relations to its 3-species layout).
-`cargo test` green (165 pass, 0 fail, 2 ignored), `clippy --all-targets` clean.
+could not eat) are **replaced by a concise, progressive set of 9**, `01_drift` …
+`09_breeding`, demonstrating the current engine simple→complex with map size scaled to
+each: **bare loop + allometric mortality** (01) → **photosynthetic producers on a scarce
+nutrient, with a real carrying capacity** (02) → **emergent grazing + trophic transfer**
+(03) → **selection of a priced trait** (04) → **restraint + the commons** (05) →
+**trained-MLP neuroevolution vs a wander control** (06) → **three emergent trophic levels
++ flight** (07) → **rocks + anchored kelp + turnover** (08) → **the generational
+run→score→breed regime** (09). Living-food worlds are Lotka-Volterra, so these are
+*examples to watch* over a coexistence window (§7), not steady states.
+
+The producer economy is now **nutrient-metabolism**: photosynthesis CONSUMES a diffusing
+nutrient (Liebig's law of the minimum, `CostLaw::metabolic_cost`), so a crowd around a
+vent draws the local field down and the excess starves — a clean, density-dependent
+carrying capacity with real turnover, replacing the earlier jostle-cost artefact. It is a
+world constant (uniform; inert for fauna and pre-metabolism scenes) and byte-safe
+(`tests/mlp` unchanged).
+
+**Deferred — the emission-substrate "signals" scenario (scent + toxin).** The pheromone
+was dropped (no hand-written brain reads it), and the toxin could not be made a *robust
+inter-species* weapon: `metabolize` draws the one **hardcoded** nutrient (`take(0)`), so
+two producers compete for it and spatially **segregate** (no stationary, co-located
+victim), while a **mobile** victim self-selects out of the toxic patches at no population
+cost — the effect stays below the run-to-run noise floor (Law 10). Verified across
+allelopathy (equal and unequal producers) and chemical-defense (grazer) layouts; all
+inert. So `06_signals` is **removed and the goal parked**; the `affect` verb itself stays
+covered by `tests/affect.rs` (toxin drains / boon feeds / neutral leaves a co-located
+reserve, deterministically). A robust revisit likely wants a **per-species metabolic
+nutrient** (resource partitioning → stable, intermixed producers a toxin can bite).
+
+The old set is **deleted and every test retargeted**; the parked behavioural drivers are
+re-tuned and un-ignored — all run except `bred_control` (a deliberate local-file
+experiment driver). Claims were weakened to the post-refactor economy's honest reach
+(restraint: greed grazes *harder*, not "prudence persists"; MLP: viable *parity*, not
+"training beats random"). `train` generates `06_learning.ron` (remapping the field
+relations to its 3-species layout). `cargo test` green (163 pass, 0 fail, 3 ignored),
+`clippy --all-targets` clean.
 
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.
