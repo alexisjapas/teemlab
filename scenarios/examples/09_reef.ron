@@ -1,4 +1,4 @@
-// 10 · Reef — space and structure: rocks, rooted kelp, and turnover.
+// 09 · Reef — space and structure: rocks, rooted kelp, and turnover.
 //
 // The physical/spatial levers, composed into one scene. Two features beyond the
 // trophic economy of 04:
@@ -79,6 +79,9 @@
             mutable: (mutation_rate: false),
         ),
     ],
+    // Metabolic cost bounds the kelp (Liebig): its photosynthesis draws down the nutrient,
+    // so the reef holds a dense-but-bounded stand around the vents rather than carpeting.
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
     predation: (size_margin: 0.1, range: 20.0, rate: 16.0),
     field_resolution: 256,
     components: [
@@ -102,7 +105,7 @@
     ],
     field_relations: [
         // Kelp: absorbs & holds the nutrient, seeds on it, deposits detritus at death.
-        (species: 0, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
         (species: 0, component: 1, emit_at_death: 5.0),
         // Grazer: needs the nutrient (kelp digestible), harvests by eating, breeds on it;
         // a grazer corpse also returns some detritus.

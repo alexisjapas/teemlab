@@ -1,4 +1,4 @@
-// 04 · Grazing — emergent predation, and the nutrient carried up the chain.
+// 03 · Grazing — emergent predation, and the nutrient carried up the chain.
 //
 // The first mobile forager, and the first EATING. There is no authored "who eats
 // whom" table (SIM Law 8): the HERBIVORE eats the reeds because the engine COMPUTES
@@ -64,7 +64,7 @@
                 agility: 0.12,
                 vision_range: 110.0,
                 vision_fov_deg: 130.0,
-                reproduction_threshold: 130.0,
+                reproduction_threshold: 100.0,
                 offspring_energy: 45.0,
                 mutation_rate: 0.06,
                 vision_rays: 7.0,
@@ -77,7 +77,8 @@
     ],
     // A gentler bite than the default 40/s: the herbivore mouths a reed over ~2 s
     // instead of vaporising it, so grazing pressure stays below the reeds' regrowth.
-    predation: (size_margin: 0.1, range: 20.0, rate: 16.0),
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 4.0, rate: 16.0),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
@@ -90,7 +91,7 @@
     ],
     field_relations: [
         // Reed: absorbs & holds the nutrient, spends it to seed, recycles at death.
-        (species: 0, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
         // Herbivore: NEEDS the nutrient (makes reeds digestible), holds it, no
         // absorption (store rises only by eating), breeds on it, recycles at death.
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),

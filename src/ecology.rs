@@ -61,12 +61,24 @@ pub fn metabolize(
             &Brain,
             &Maneuver,
             &Action,
+            &mut Nutrients,
         ),
         With<Agent>,
     >,
 ) {
     let dt = time.delta_secs();
-    for (mut reserve, genotype, species, vision, velocity, brain, maneuver, action) in &mut agents {
+    for (
+        mut reserve,
+        genotype,
+        species,
+        vision,
+        velocity,
+        brain,
+        maneuver,
+        action,
+        mut nutrients,
+    ) in &mut agents
+    {
         // Size-derived costs (allometric `CostLaw`, `docs/emergent-trophics.md` §5):
         // maintenance, locomotion and manoeuvring all scale with body **size** — the
         // former per-species base_metabolism / move_cost / agility_cost genes are gone.
@@ -76,9 +88,17 @@ pub fn metabolize(
         let size = config.agent_radius_of(species.0).powf(law.size_exponent);
         // *Reference* speed: the archetype's **founding** max speed (not the agent's,
         // possibly mutated one) — so a faster mutant actually pays more (speed → cost,
-        // §2), measured against a per-species reference.
-        let reference_speed = config.founder_max_speed_of(species.0).max(1e-3);
-        let speed_ratio = velocity.0.length() / reference_speed;
+        // §2), measured against a per-species reference. An **immobile** body (a sessile
+        // plant, founding max speed ≈ 0) pays NO locomotion: it does not move under its
+        // own power, and normalising a *jostle* velocity (a collision push) by ≈ 0 would
+        // blow the cost up — an artefact that used to kill crowded plants. A real mover
+        // (founding speed well above 0) pays the speed-fraction cost as before.
+        let founder_speed = config.founder_max_speed_of(species.0);
+        let locomotion = if founder_speed > 1.0 {
+            law.locomotion * size * (velocity.0.length() / founder_speed)
+        } else {
+            0.0
+        };
         // Act cost: energy/s while the agent **holds its eat/attack intent**
         // (`Action::act > 0`, deliberate eating — SIM Law 8), an *effort* charged food
         // in range or not, so indiscriminate eating is wasteful and restraint pays.
@@ -88,13 +108,26 @@ pub fn metabolize(
         // measures — and the act effort. A hand-written brain counts zero neurons; an
         // immobile / idle body pays no locomotion or manoeuvre.
         let drain = law.maintenance * size
-            + law.locomotion * size * speed_ratio
+            + locomotion
             + law.maneuver * size * maneuver.0
             + vision.metabolic_cost()
             + genotype.brain_cost * brain.neuron_count() as f32
             + genotype.act_cost * act_effort;
-        // Net balance = passive gain (photosynthesis) − expenses, bounded to [0, max].
-        let net = genotype.photosynthesis - drain;
+        // Nutrient-limited photosynthesis (Liebig's law of the minimum, `CostLaw::metabolic_cost`):
+        // turning light into energy **consumes** the nutrient (component 0) the plant has
+        // absorbed. A plant that cannot cover the draw from its store — because a crowd around
+        // a source has drawn the field down — has its photosynthesis **throttled** toward zero
+        // and starves: a clean, density-dependent producer turnover. Uniform (Law 11): inert
+        // where photosynthesis is 0 (fauna) and where `metabolic_cost` is 0 (byte-identical).
+        let gain = if genotype.photosynthesis > 0.0 && law.metabolic_cost > 0.0 {
+            let demand = genotype.photosynthesis * law.metabolic_cost * dt;
+            let met = nutrients.take(0, demand);
+            genotype.photosynthesis * (met / demand).min(1.0)
+        } else {
+            genotype.photosynthesis
+        };
+        // Net balance = (throttled) photosynthetic gain − expenses, bounded to [0, max].
+        let net = gain - drain;
         reserve.current = (reserve.current + net * dt).clamp(0.0, reserve.max);
     }
 }

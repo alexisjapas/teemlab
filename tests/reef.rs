@@ -1,5 +1,5 @@
 //! Reef scenario driver — the two physical/spatial levers (solid **rocks** + spring-anchored
-//! **kelp**) composed into a living ecosystem (`scenarios/examples/10_reef.ron`). We assert
+//! **kelp**) composed into a living ecosystem (`scenarios/examples/09_reef.ron`). We assert
 //! the reef is healthy over its coexistence window **and** that **turnover** happens: a
 //! grazed kelp deposits **detritus** (the `emit_at_death` corpse) into its field — the
 //! payoff of the mortality lever, made observable. The anchoring/rock *mechanics*
@@ -21,7 +21,7 @@ mod common;
 
 #[test]
 fn reef_persists_and_turns_over() {
-    let config = SimConfig::from_ron_file("scenarios/examples/10_reef.ron").expect("reef loads");
+    let config = SimConfig::from_ron_file("scenarios/examples/09_reef.ron").expect("reef loads");
     let mut app = common::stepping_app(&config);
 
     // Peak detritus reached at any point over the coexistence window — proof that kelp died
@@ -51,10 +51,11 @@ fn reef_persists_and_turns_over() {
     }
 
     // Kelp thrives but is **bounded** — the anchoring + grazing turnover holds it below the
-    // founding 90 without wiping it out (a living reef: not a carpet, not a graveyard).
+    // its nutrient-metabolism carrying capacity without wiping it out or carpeting the arena
+    // (a living reef: not a graveyard, not a carpet).
     assert!(
-        (25..=90).contains(&kelp),
-        "kelp population {kelp} outside the healthy reef window [25, 90]"
+        (40..=450).contains(&kelp),
+        "kelp population {kelp} outside the healthy reef window [40, 450]"
     );
     // The grazer coexists (the reef keeps its second trophic level).
     assert!(

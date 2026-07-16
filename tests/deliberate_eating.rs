@@ -248,7 +248,7 @@ fn holding_intent_costs_energy() {
     );
 }
 
-// (The playable `act_cost > 0` showcase is not among the reworked scenarios — 06_restraint
+// (The playable `act_cost > 0` showcase is not among the reworked scenarios — 05_restraint
 // demonstrates restraint through the `Grazer` hunger gate rather than a priced act — so the
 // scenario-level persistence test is dropped; the two act_cost halves below prove the
 // mechanism in isolation, which is what this driver is for.)

@@ -19,10 +19,10 @@ use teemlab::components::{Agent, Species};
 
 mod common;
 
-const NAIVE: &str = include_str!("../scenarios/examples/08_learning.ron");
-const TRAINED: &str = include_str!("../scenarios/examples/08_learning.ron");
+const NAIVE: &str = include_str!("../scenarios/examples/07_learning.ron");
+const TRAINED: &str = include_str!("../scenarios/examples/07_learning.ron");
 /// The bred archetype (`species/saved/mlp_bred.ron`) spliced over archetype 0 of
-/// `08_learning.ron` (count set back to 14); gitignored local state, hence read at
+/// `07_learning.ron` (count set back to 14); gitignored local state, hence read at
 /// runtime and not `include_str!`ed.
 const BRED_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -82,7 +82,7 @@ fn ratio(subject: f32, wander: f32) -> f32 {
 fn bred_vs_naive_against_the_wander_control() {
     let bred = std::fs::read_to_string(BRED_PATH).expect(
         "scenarios/saved/mlp_bred_control.ron missing — rebuild it by splicing the \
-             species/saved/mlp_bred.ron archetype over archetype 0 of 08_learning.ron \
+             species/saved/mlp_bred.ron archetype over archetype 0 of 07_learning.ron \
              (count 14); cf. docs/p5-breeding-plan.md \"RESUME HERE\"",
     );
 

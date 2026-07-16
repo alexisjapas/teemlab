@@ -186,7 +186,7 @@ impl Library {
     }
 }
 
-/// File stem of a path string (`scenarios/examples/10_reef.ron` → `10_reef`).
+/// File stem of a path string (`scenarios/examples/09_reef.ron` → `09_reef`).
 fn stem(path: &str) -> String {
     std::path::Path::new(path)
         .file_stem()

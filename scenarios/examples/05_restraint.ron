@@ -1,4 +1,4 @@
-// 06 · Restraint — deliberate eating, and the tragedy of the commons.
+// 05 · Restraint — deliberate eating, and the tragedy of the commons.
 //
 // 04's Hunter eats reflexively. Here the forager can CHOOSE when to eat: the `Grazer`
 // brain forages exactly like a Hunter but gates its bite on its OWN hunger — it reads
@@ -97,7 +97,7 @@
             ),
         ),
     ],
-    cost_law: (size_exponent: 2.0, maintenance: 0.02, locomotion: 0.012, maneuver: 0.0002),
+    cost_law: (size_exponent: 2.0, maintenance: 0.02, locomotion: 0.012, maneuver: 0.0002, metabolic_cost: 0.25),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
@@ -114,7 +114,7 @@
         (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         // Flora: absorbs & holds the nutrient, seeds on it (oases), recycles at death.
-        (species: 2, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 5.0),
+        (species: 2, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
     ],
     seed: 17,
 )

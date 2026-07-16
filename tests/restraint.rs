@@ -5,7 +5,7 @@
 //! its own hunger (proprioception, `self_state` energy): a PRUDENT grazer (low threshold)
 //! leaves food uneaten when sated; a GREEDY one (threshold 1.0) eats whatever is in
 //! range. Same body, same economy — only the appetite gate differs. On
-//! `scenarios/examples/06_restraint.ron`, two robust results:
+//! `scenarios/examples/05_restraint.ron`, two robust results:
 //!
 //! (A) RESTRAINT GRAZES GENTLER ([`restraint_grazes_gentler_than_greed`]): over the same
 //!     window a PRUDENT monoculture leaves MORE flora standing than a GREEDY one (its lower
@@ -29,7 +29,7 @@ use bevy::time::TimeUpdateStrategy;
 use teemlab::components::{Agent, Species};
 use teemlab::{SimConfig, SimPlugin};
 
-const SCENARIO: &str = include_str!("../scenarios/examples/06_restraint.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/05_restraint.ron");
 
 /// Several seeds guard against a fluke — the solver reproduces the order of magnitude,
 /// not the exact run (Law 10), as in `predator_prey`/`cohabitation`.

@@ -1,4 +1,4 @@
-// 05 · Selection — a trait is kept only where it pays.
+// 04 · Selection — a trait is kept only where it pays.
 //
 // Natural selection made legible (SIM Law 7 — every characteristic is priced). The
 // foragers here are WANDERERS: they drift at random and eat whatever they blunder
@@ -76,23 +76,23 @@
     // A gentler world than the default cost law: a lower metabolic floor lets a
     // clumsy random forager survive between meals, so the population persists across
     // seeds and selection has generations to work with (the cost is scenario data).
-    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002),
-    predation: (size_margin: 0.1, range: 20.0, rate: 20.0),
+    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002, metabolic_cost: 0.4),
+    predation: (size_margin: 0.1, range: 8.0, rate: 20.0),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
     ],
     sources: [
-        (pos: (-220.0, 220.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (220.0, 220.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-220.0, -220.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (220.0, -220.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, 220.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, 220.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, -220.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, -220.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 12.0),
     ],
     field_relations: [
         // Wanderer: needs the nutrient (flora is digestible), holds it, breeds on it.
-        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
+        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 12.0, need: 1.0),
         // Flora: absorbs & holds the nutrient, seeds on it, recycles at death.
-        (species: 1, component: 0, absorb: 1.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        (species: 1, component: 0, absorb: 2.0, capacity: 10.0, emit_at_death: 5.0),
     ],
     seed: 1,
 )

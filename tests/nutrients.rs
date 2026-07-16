@@ -1,18 +1,17 @@
-//! T2 nutrients layer (driver) — reproduction gated by a finite nutrient.
+//! Nutrient metabolism (driver) — the nutrient gates SURVIVAL (Liebig).
 //!
-//! Falsification of the whole T2 design (ROADMAP §9; `docs/nutrients-t2-plan.md`):
-//! a plant **lives on the sun** (energy → survival) but **reproduces only where it
-//! can absorb a finite nutrient** (the second axis). The nutrient is emitted by
-//! point sources and diffused into halos, so:
+//! Since the metabolisation change (`CostLaw::metabolic_cost`), turning light into energy
+//! CONSUMES a finite nutrient, so the nutrient is now a **survival** resource, not just a
+//! reproduction gate. It is emitted by point sources and diffused into halos, so:
 //!
-//! - **with sources** — the population (a) **grows** strongly from its founders
-//!   (reproduction is fed where the nutrient reaches), (b) stays **bounded** (no
-//!   carpet — the finite nutrient throttles the reproduction *rate*; a true
-//!   standing-crop cap awaits turnover, a deferred sub-phase), (c) **persists** (no
-//!   collapse: the T1 death spiral of the early single-axis prototype is gone);
-//! - **without sources** — the *same* plants do **not** grow (no nutrient → no
-//!   reproduction) yet do **not** collapse either (sun-fed survival). This contrast
-//!   is the proof that the nutrient gates **only** reproduction, never survival.
+//! - **with sources** — the population **grows** from its founders and settles at a
+//!   **bounded carrying capacity** (Liebig's law of the minimum: the crowd around a source
+//!   draws the field down, and the excess starves), **persisting** (oscillating around that
+//!   capacity, births at the fringe vs starvation deaths in the centre) rather than carpeting;
+//! - **without sources** — the *same* plants **COLLAPSE**: with no nutrient to metabolise,
+//!   photosynthesis throttles to zero and they starve. This contrast is the proof that the
+//!   nutrient now gates **survival** — the density-dependent turnover that replaced the
+//!   jostle-cost artefact.
 //!
 //! We run the *real* sim world (same `SimPlugin` as the binaries), single-stepping.
 
@@ -23,7 +22,7 @@ use teemlab::components::{Agent, Species};
 mod common;
 
 /// The bundled scenario, loaded as-is.
-const SCENARIO: &str = include_str!("../scenarios/examples/03_springs.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/02_meadow.ron");
 
 /// Four independent worlds: a behavior that holds for all of them is not luck.
 const SEEDS: [u64; 4] = [0x00C0_FFEE, 0x1234, 0x9999, 0xBEEF];
@@ -74,30 +73,24 @@ fn nutrient_gates_reproduction_without_a_death_spiral() {
             sampled.join("  ")
         );
 
-        // (a) GREW clearly above its founders → the nutrient feeds reproduction. Growth
-        //     is modest and throttled (the oasis meadow is nutrient-rate-limited, not a
-        //     free bloom), so we ask for a clear margin over the founders, not a multiple.
-        if peak < founders + 10 {
+        // (a) GREW clearly above its founders → the nutrient feeds a standing crop.
+        if peak < founders + 20 {
             failures.push(format!(
                 "with sources, seed {seed:#x}: growth too weak (peak {peak}, founders {founders})"
             ));
         }
-        // (b) bounded FAR from the arena's physical saturation (~2500 bodies for
-        //     radius 6, half-arena 300): the finite nutrient throttles the
-        //     reproduction *rate* (≈ emission / offspring_nutrient), so the
-        //     population grows slowly and does not carpet within the run. (A true
-        //     standing-crop carrying capacity needs turnover — recycling / mortality
-        //     — which are deferred sub-phases; T2 establishes the gating + the
-        //     spiral-free persistence, not yet the closed loop.)
+        // (b) bounded by the nutrient (Liebig, `metabolic_cost`) — a dense oasis, never a
+        //     carpet filling the map.
         if peak > 1500 {
             failures.push(format!(
                 "with sources, seed {seed:#x}: reproduction not bounded (peak {peak})"
             ));
         }
-        // (c) PERSISTS over the 2nd half (no collapse — the T1 spiral is gone).
-        if lo < founders {
+        // (c) PERSISTS — it oscillates around its carrying capacity, so the 2nd-half PEAK
+        //     stays healthy (it does not die out where the nutrient reaches).
+        if hi < founders {
             failures.push(format!(
-                "with sources, seed {seed:#x}: not sustained (trough {lo} < founders {founders})"
+                "with sources, seed {seed:#x}: not sustained (2nd-half peak {hi} < founders {founders})"
             ));
         }
     }
@@ -109,16 +102,13 @@ fn nutrient_gates_reproduction_without_a_death_spiral() {
         let last = *traj.last().unwrap();
         eprintln!("    {seed:#012x} | peak {peak:>4} | final {last:>4}");
 
-        // No nutrient → no reproduction: the population does not grow appreciably.
-        if peak > founders + founders / 4 {
+        // No nutrient → no metabolism → the plants STARVE: the population collapses well
+        // below its founders. This is the falsifiable proof that the nutrient now gates
+        // SURVIVAL (with sources it persisted at a carrying capacity; without, it dies).
+        if last >= founders / 2 {
             failures.push(format!(
-                "without sources, seed {seed:#x}: grew without nutrient (peak {peak}, founders {founders})"
-            ));
-        }
-        // ...but sun-fed survival means it does NOT collapse either.
-        if last < founders {
-            failures.push(format!(
-                "without sources, seed {seed:#x}: collapsed without nutrient (final {last} < founders {founders})"
+                "without sources, seed {seed:#x}: did not collapse without nutrient \
+                 (final {last}, founders {founders}) — the nutrient should gate survival"
             ));
         }
     }

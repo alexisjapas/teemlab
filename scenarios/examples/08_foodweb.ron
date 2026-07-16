@@ -1,4 +1,4 @@
-// 09 · Food web — three trophic levels from one rule.
+// 08 · Food web — three trophic levels from one rule.
 //
 // 04 had two levels; here there are THREE, and the engine derives the whole web from
 // body size + diet with no authored table (SIM Law 8). FLORA (r 6) hold the nutrient;
@@ -18,12 +18,12 @@
 // bolt when a carnivore approaches.
 (
     tick_hz: 64.0,
-    arena_half_extent: 520.0,
+    arena_half_extent: 420.0,
     archetypes: [
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
-            count: 160,
+            count: 100,
             radius: 6.0,
             reserve_max: 50.0,
             genotype: (
@@ -33,7 +33,7 @@
                 reproduction_threshold: 20.0,
                 offspring_energy: 12.0,
                 mutation_rate: 0.0,
-                photosynthesis: 6.5,
+                photosynthesis: 6.0,
                 seed_dispersal: 24.0,
             ),
             brain: Sessile,
@@ -63,7 +63,7 @@
                 agility: 0.12,
                 vision_range: 120.0,
                 vision_fov_deg: 130.0,
-                reproduction_threshold: 120.0,
+                reproduction_threshold: 100.0,
                 offspring_energy: 42.0,
                 mutation_rate: 0.06,
                 vision_rays: 7.0,
@@ -82,7 +82,7 @@
                 agility: 0.12,
                 vision_range: 150.0,
                 vision_fov_deg: 130.0,
-                reproduction_threshold: 165.0,
+                reproduction_threshold: 150.0,
                 offspring_energy: 60.0,
                 mutation_rate: 0.06,
                 vision_rays: 7.0,
@@ -91,20 +91,23 @@
             mutable: (mutation_rate: false),
         ),
     ],
-    predation: (size_margin: 0.1, range: 20.0, rate: 12.0),
+    // Metabolic cost > 0: the flora's photosynthesis draws down the nutrient (Liebig), so
+    // the producer base is bounded (a dense oasis, not a carpet) rather than filling the map.
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 5.0, rate: 16.0),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
     ],
     sources: [
-        (pos: (-220.0, 220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (220.0, 220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-220.0, -220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (220.0, -220.0), component: 0, rate: 32.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, 220.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, 220.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, -220.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, -220.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
     ],
     field_relations: [
         // Flora: absorbs & holds the nutrient, seeds on it (oases), recycles at death.
-        (species: 0, component: 0, absorb: 2.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 5.0),
+        (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
         // Herbivore: needs the nutrient (flora digestible), harvests by eating, breeds on it.
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 16.0, need: 1.0),
         // Carnivore: needs the nutrient too — the herbivore (and flora) holds it, so both

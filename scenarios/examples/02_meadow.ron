@@ -1,34 +1,40 @@
-// 02 · Meadow — producers that live on light.
+// 02 · Meadow — producers, a scarce nutrient, and a real carrying capacity.
 //
-// The base of every food web: a SESSILE plant (SIM Law 11 — just an agent with a
-// `Sessile` brain and a `photosynthesis` gene, no special "flora" type). It cannot
-// move or hunt; it gains energy passively from the sun, and once its reserve crosses
-// the reproduction threshold it SEEDS a copy a short distance away (`seed_dispersal`).
-// From a dozen founders a meadow spreads and then packs to a spatial carrying
-// capacity — bounded here by SPACE alone (there is no scarce nutrient yet; that is
-// 03). Energy in > energy out, so unlike 01 the population grows instead of dying.
+// The base of every food web, and the first complete resource economy. A SESSILE plant
+// (SIM Law 11 — just an agent with a `Sessile` brain and a `photosynthesis` gene, no
+// special "flora" type) lives on the sun and seeds a copy nearby once its reserve crosses
+// the reproduction threshold. But turning light into energy is not free: it CONSUMES a
+// NUTRIENT (Liebig's law of the minimum — `cost_law.metabolic_cost`). A few vents
+// (`sources`) leak that nutrient into a diffusing FIELD (toggle View ▸ Layers → Nutrient
+// heatmap); a plant ABSORBS it into a small store and draws it down to photosynthesise.
 //
-// Watch: green spreads outward from the founders and fills the arena. A medium arena
-// so the colonisation is legible.
+// So the meadow is bounded by the NUTRIENT, not by space: plants cluster into OASES around
+// the vents and grow until the crowd draws the local field down faster than the vents
+// refill it. The excess then cannot cover its photosynthetic draw, starves, and dies —
+// recycling its store back to the field (`emit_at_death`) for the survivors. A clean,
+// density-dependent CARRYING CAPACITY set by the source rate, with real turnover.
+//
+// Watch: green blooms around each vent, then holds at a steady standing crop as births at
+// the fringe balance starvation deaths in the crowded centre.
 (
     tick_hz: 64.0,
-    arena_half_extent: 260.0,
+    arena_half_extent: 340.0,
     archetypes: [
         (
             name: "Weed",
             color: (0.35, 0.8, 0.42),
-            count: 12,
-            radius: 8.0,
-            reserve_max: 45.0,
+            count: 24,
+            radius: 6.0,
+            reserve_max: 50.0,
             genotype: (
                 max_speed: 0.0,
                 vision_range: 30.0,
                 vision_rays: 1.0,
-                reproduction_threshold: 30.0,
-                offspring_energy: 20.0,
+                reproduction_threshold: 25.0,
+                offspring_energy: 15.0,
                 mutation_rate: 0.0,
-                photosynthesis: 3.5,
-                seed_dispersal: 30.0,
+                photosynthesis: 7.0,
+                seed_dispersal: 22.0,
             ),
             brain: Sessile,
             mutable: (
@@ -46,6 +52,25 @@
                 act_cost: false,
             ),
         ),
+    ],
+    // Metabolic cost > 0: photosynthesis now draws down the nutrient (component 0). This is
+    // the world constant that makes the nutrient a survival resource (Liebig), so the meadow
+    // is nutrient-bounded with real turnover rather than carpeting the arena.
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-150.0, 120.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, 100.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (0.0, -160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        // Absorb the nutrient into a store, draw it down to photosynthesise (metabolic_cost),
+        // and recycle what remains at death. Reproduction is energy-gated (no nutrient cost):
+        // the nutrient limits SURVIVAL (photosynthesis), the energy threshold limits breeding.
+        (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
     ],
     seed: 7,
 )

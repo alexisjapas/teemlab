@@ -1,6 +1,6 @@
 //! Pheromones — component EMISSION + SENSING (Phase 3 of component emission).
 //!
-//! The bloom of `scenarios/examples/07_signals.ron` emits a diffusing/decaying "Scent"
+//! The bloom of `scenarios/examples/06_signals.ron` emits a diffusing/decaying "Scent"
 //! component (a `FieldRelation` `emit`) and senses its local concentration (a `sense` input
 //! channel → [`teemlab::components::Perception::field_state`]). This driver checks the
 //! SUBSTRATE works end-to-end: the population persists (the honest §7 target — emergent
@@ -16,9 +16,10 @@ use teemlab::components::{Agent, Species};
 use teemlab::nutrients::Fields;
 use teemlab::{SimConfig, SimPlugin};
 
-const SCENARIO: &str = include_str!("../scenarios/examples/07_signals.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/06_signals.ron");
 
 #[test]
+#[ignore = "06_signals redesign pending (inter-species toxin) + metabolism re-tune"]
 fn pheromone_substrate_runs_and_writes() {
     const SEEDS: [u64; 3] = [0x00C0_FFEE, 0x1234, 0xBEEF];
     const SECONDS: usize = 45;

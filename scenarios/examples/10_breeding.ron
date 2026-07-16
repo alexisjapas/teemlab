@@ -1,4 +1,4 @@
-// 11 · Breeding — the generational regime (run → score → breed).
+// 10 · Breeding — the generational regime (run → score → breed).
 //
 // Every scenario so far ran the CONTINUOUS regime: reproduction happens IN the sim,
 // fitness is implicit (whoever eats and breeds). This is the other canonical regime
@@ -46,7 +46,7 @@
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
-            count: 180,
+            count: 100,
             radius: 6.0,
             reserve_max: 50.0,
             genotype: (
@@ -76,21 +76,22 @@
             ),
         ),
     ],
-    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002),
-    predation: (size_margin: 0.1, range: 20.0, rate: 20.0),
-    field_resolution: 128,
+    // Metabolic cost bounds the flora (Liebig), tight bite range keeps eating legible.
+    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 5.0, rate: 16.0),
+    field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
     ],
     sources: [
-        (pos: (-200.0, 200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (200.0, 200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-200.0, -200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (200.0, -200.0), component: 0, rate: 24.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-200.0, 200.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (200.0, 200.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-200.0, -200.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (200.0, -200.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
     ],
     field_relations: [
         (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
-        (species: 1, component: 0, absorb: 1.5, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        (species: 1, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
     ],
     batch: Some((
         generations: 8,

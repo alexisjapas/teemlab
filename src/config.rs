@@ -157,32 +157,46 @@ pub struct CostLaw {
     /// **Manoeuvre** `k_a`: drain `= k_a · size · |Δv|` (the former `agility_cost`) —
     /// the transient cost of turning / accelerating a body of that size.
     pub maneuver: f32,
+    /// **Metabolic cost** `k_n`: the nutrient (component `0`) consumed per unit of
+    /// **photosynthetic energy** — the first `nutrient → energy` transformation (a step of
+    /// the deferred metabolisation, `docs/emergent-trophics.md` §9). Producing energy from
+    /// light **draws down** the plant's absorbed nutrient store; a plant that cannot cover
+    /// the draw (its store empty because a crowd has depleted the field around a source) has
+    /// its photosynthesis **throttled** toward zero and starves — Liebig's law of the
+    /// minimum, and a clean density-dependent turnover replacing the jostle-cost artefact.
+    /// **Uniform** (SIM Law 11): inert where `photosynthesis == 0` (fauna) and where this is
+    /// `0` (default → pre-metabolism scenarios byte-identical). Fauna's own nutrient
+    /// coupling (a per-bite `energy ↔ nutrient` cost) is a later lever.
+    pub metabolic_cost: f32,
 }
 
 impl Default for CostLaw {
     /// Sane defaults: at a reference body (radius 10, `size = 100`) they reproduce the
     /// former default costs — maintenance `4`, locomotion `2` at full speed, manoeuvre
     /// `0.02 · |Δv|`. Scenario viability under the new law is re-tuned in the scenario
-    /// rework; these keep the mechanism demonstrably alive.
+    /// rework; these keep the mechanism demonstrably alive. `metabolic_cost` defaults `0`
+    /// (photosynthesis unthrottled) → pre-metabolism scenarios byte-identical.
     fn default() -> Self {
         Self {
             size_exponent: 2.0,
             maintenance: 0.04,
             locomotion: 0.02,
             maneuver: 0.0002,
+            metabolic_cost: 0.0,
         }
     }
 }
 
 impl CostLaw {
-    /// All coefficients zero — a **cost-free** world: no maintenance, locomotion or
-    /// manoeuvre drain. For deterministic tests and a deliberately inert scenario.
+    /// All coefficients zero — a **cost-free** world: no maintenance, locomotion, manoeuvre
+    /// or metabolic drain. For deterministic tests and a deliberately inert scenario.
     pub fn inert() -> Self {
         Self {
             size_exponent: 2.0,
             maintenance: 0.0,
             locomotion: 0.0,
             maneuver: 0.0,
+            metabolic_cost: 0.0,
         }
     }
 }
@@ -1748,7 +1762,7 @@ mod tests {
     /// prey on — otherwise the "target" channel stays zero and the forager starves.
     #[test]
     fn bundled_grazing_scenario_uses_hunter_on_a_target() {
-        let text = include_str!("../scenarios/examples/04_grazing.ron");
+        let text = include_str!("../scenarios/examples/03_grazing.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid grazing scenario");
         assert!(
             cfg.archetypes
@@ -1766,7 +1780,7 @@ mod tests {
     /// producer base, hunter consumers, and a pyramid (producers ≫ apex predators).
     #[test]
     fn bundled_foodweb_is_a_trophic_chain() {
-        let text = include_str!("../scenarios/examples/09_foodweb.ron");
+        let text = include_str!("../scenarios/examples/08_foodweb.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid food-web scenario");
         assert!(cfg.archetypes.len() >= 3, "three trophic levels");
         // A pyramid: the producer base is far more numerous than the apex predator.
@@ -1791,7 +1805,7 @@ mod tests {
     /// the food (finite regrowth → carrying capacity).
     #[test]
     fn bundled_evolution_scenario_closes_the_loop() {
-        let text = include_str!("../scenarios/examples/05_selection.ron");
+        let text = include_str!("../scenarios/examples/04_selection.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid evolution scenario");
         let agent = first_mobile(&cfg);
         let genotype = &agent.genotype;
@@ -1817,7 +1831,7 @@ mod tests {
     /// `tests/mlp`, `tests/cohabitation`).
     #[test]
     fn bundled_learning_pits_a_learned_brain_against_wander() {
-        let text = include_str!("../scenarios/examples/08_learning.ron");
+        let text = include_str!("../scenarios/examples/07_learning.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid learning scenario");
         assert_eq!(
             cfg.archetypes[0].count, cfg.archetypes[1].count,
@@ -1842,7 +1856,7 @@ mod tests {
     /// generator, not a CI sim). Guardrail on the batch schema + the scenario wiring.
     #[test]
     fn bundled_mlp_breed_carries_a_batch_regime() {
-        let text = include_str!("../scenarios/examples/11_breeding.ron");
+        let text = include_str!("../scenarios/examples/10_breeding.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid MLP-breeding scenario");
         let batch = cfg.batch.as_ref().expect("a batch regime");
         assert!(batch.generations > 1, "a generational run");
