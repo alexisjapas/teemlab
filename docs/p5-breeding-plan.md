@@ -386,6 +386,33 @@ variant = `mlp_evolved` reaching (then beating) parity.
   parity framing holds.** The fitness stays as a valid, selectable primitive (a relative-fitness
   research tool); step (3) — a longer, more stable selection window — remains the real lever for
   pushing past parity.
+- **Refuge breeding ground — testing the *stable window* hypothesis, with a positive control
+  (done 2026-07-17).** Step (3)'s "stable window" was built as scenario data, not an engine
+  change: a **size-selective refugium** (a nutrient vent ringed by solid rocks with gaps a tiny
+  Kelp passes but a forager cannot — via the new `Archetype.spawn_zone`, commit 06c4916), a
+  protected seed bank that keeps a standing crop from ever being grazed to extinction. The
+  experiment bred an MLP against a **Wander control** sharing the same food and read `dominance`
+  (own − rivals = MLP − Wander). **The decisive addition was a positive control:** a hand-written
+  **Hunter** forager on the *open* version of this economy **crushes the Wander** (`dominance
+  ≈ +33`). So a large foraging-skill gradient genuinely exists — the food regime is fine. **Yet
+  the bred MLP never climbs it, in any of three regimes** (all `survival 100 %`, i.e. already
+  stable): the *enclosed* refugium (food locked in the core, foragers eat only escapees) →
+  `dominance` flat `~+2–4` over 15 gens; *open* food → `dominance ~−15…−20` (the bred MLP is
+  actually **out-foraged by the random Wander** on abundant food); a *protected-core + open halo*
+  refuge → flat `~0–4`. **Diagnosis:** the bottleneck is **MLP neuroevolution**, not the food, the
+  metric, or *stability* — every run was already stable and the MLP still never approached the
+  Hunter's dominance. A guaranteed-stable window does not help because stability was not the
+  limiting factor. **Two corollaries.** (a) A *fully-enclosed* refugium is a scenario trap: it
+  starves the foragers (food unreachable) so even a Hunter ties the Wander — a refuge feeding a
+  grazed halo (open kelp + protected core) is the workable form. (b) **Neither `Population` nor
+  `Advantage` selects for beating an *external* rival** (both reward the MLP's own count/share,
+  which coexists with a thriving Wander when food is abundant); breeding a rival-beater wants a
+  **rival-relative fitness** (the retired `Dominance`) or a **co-evolutionary** setup (item 19).
+  **The real levers for past-parity therefore target the *learning*, not the food:** longer
+  `match_ticks` (more in-match neuroevolution generations per match — the refuge enables this
+  without extinction), a rival-relative fitness, or co-evolution. The `spawn_zone` tool + refugium
+  stand as reusable primitives; the *stable-window* hypothesis for the parity ceiling is
+  **falsified** by the Hunter control.
 
 ---
 
