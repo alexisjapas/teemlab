@@ -100,6 +100,7 @@ fn world_with_one_body(config: &SimConfig, stored: f32) -> App {
                 0,
                 1.0, // a sliver of energy → starves within a tick or two
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");

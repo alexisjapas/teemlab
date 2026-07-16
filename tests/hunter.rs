@@ -124,6 +124,7 @@ fn hunter_sees_and_chases_its_target() {
                 0,
                 config.reserve_max_of(0),
                 0, // founder: generation 0.
+                0, // lineage: inert here (no breeding scoring)
             );
             // The sessile bait, placed via the same `spawn_agent` (pass-through body).
             spawn_agent(
@@ -136,6 +137,7 @@ fn hunter_sees_and_chases_its_target() {
                 1,
                 config.reserve_max_of(1),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");

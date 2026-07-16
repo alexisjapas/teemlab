@@ -97,6 +97,7 @@ fn carrion_after(mortal: bool, energy: f32, ticks: usize) -> f32 {
                 0,
                 energy,
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");

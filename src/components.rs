@@ -73,6 +73,16 @@ pub struct Generation(pub u32);
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Age(pub f32);
 
+/// **Lineage tag**: the index of the *founder* an agent descends from (a founder is
+/// its own lineage; a child inherits its parent's). A pure **observation** label —
+/// **no sim system reads it** (kept byte-identical: [[mlp-test-chaos-sensitive]]),
+/// set at spawn and inherited at reproduction. The generational regime uses it to
+/// score a genome by the **share** its lineage takes of a capped population
+/// ([`crate::config::Fitness::Advantage`]) — a within-species relative fitness that
+/// keeps a selection gradient at carrying capacity, where absolute biomass plateaus.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Lineage(pub u16);
+
 /// Locomotion magnitudes — what the genes will vary (v1: fixed).
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Locomotion {

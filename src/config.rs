@@ -830,6 +830,18 @@ pub enum Fitness {
     /// peak) — how far the in-match neuroevolution got. NB *perverse* on a free reproducer
     /// (rewards reproduce-to-collapse) — prefer `Population`; kept for skill-gated foraging.
     BestEvolved,
+    /// **Lineage advantage** — the time-averaged **share** of the population held by the
+    /// species' most successful *founder lineage* ([`crate::components::Lineage`]), relative
+    /// to the mean lineage's share (`w/w̄`, population-genetics relative fitness). Where
+    /// `Population` plateaus at the carrying capacity — the total is capped, so a better
+    /// forager only depletes the commons and its *absolute* biomass cannot climb — the
+    /// **composition** is still free: a fitter variant takes a larger slice of the capped
+    /// cake. That slice keeps a selection gradient with a **moving baseline** (it rises as
+    /// the whole species improves), so a champion can be bred *past parity* on living food,
+    /// no immortal food needed. The captured genome is the **winning lineage's**, not the
+    /// deepest's. `1.0` when every lineage ties; grows toward the lineage count as one
+    /// dominates.
+    Advantage,
 }
 
 impl Default for BatchConfig {

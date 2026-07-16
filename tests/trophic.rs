@@ -120,6 +120,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 0,
                 config.reserve_max_of(0),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
             // Plant within reach (gap 4 < the relation's reach).
             spawn_agent(
@@ -132,6 +133,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 1,
                 config.reserve_max_of(1),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");

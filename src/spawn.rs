@@ -3,7 +3,8 @@
 
 use crate::brain::{Brain, MlpBrain};
 use crate::components::{
-    Action, Age, Agent, Anchor, Generation, Maneuver, Perception, Radius, Reserve, Species, Wall,
+    Action, Age, Agent, Anchor, Generation, Lineage, Maneuver, Perception, Radius, Reserve,
+    Species, Wall,
 };
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
@@ -105,6 +106,10 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
             .get(&species)
             .filter(|pool| !pool.is_empty())
             .map(|pool| pool[k % pool.len()].clone());
+        // A founder **is** its own lineage: the k-th founder of a species founds
+        // lineage `k`. Its descendants inherit the tag at reproduction, so the
+        // scorer can read each founder-variant's share of the population.
+        let lineage = k as u16;
         match pooled.or_else(|| config.captured_brain_of(species).cloned()) {
             Some(brain) => spawn_agent_with_brain(
                 commands,
@@ -117,6 +122,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 0.0, // founder: born with no nutrient (T2).
                 0,   // founder: generation 0.
                 0.0, // ...born at age 0.
+                lineage,
             ),
             None => spawn_agent(
                 commands,
@@ -128,6 +134,7 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 brain_seed,
                 config.reserve_max_of(species),
                 0, // founder: generation 0.
+                lineage,
             ),
         }
     }
@@ -148,6 +155,7 @@ pub fn spawn_agent(
     brain_seed: u64,
     energy: f32,
     generation: u32,
+    lineage: u16,
 ) {
     // The scenario chooses the *type* of brain **per species** (item 18a); we
     // compile it here into a fresh brain (§1, the author of the decision). The
@@ -165,7 +173,7 @@ pub fn spawn_agent(
     // A freshly compiled agent is born at age 0, and (as a founder) with no
     // nutrient — only reproduction endows a child with `offspring_nutrient` (T2).
     spawn_agent_with_brain(
-        commands, config, genotype, species, pos, brain, energy, 0.0, generation, 0.0,
+        commands, config, genotype, species, pos, brain, energy, 0.0, generation, 0.0, lineage,
     );
 }
 
@@ -186,6 +194,7 @@ pub fn spawn_agent_with_brain(
     nutrients: f32,
     generation: u32,
     age: f32,
+    lineage: u16,
 ) {
     let r = config.agent_radius_of(species.0);
     // The shape (number of rays) now comes from the visual-precision gene.
@@ -206,6 +215,10 @@ pub fn spawn_agent_with_brain(
         (
             Generation(generation),
             Age(age),
+            // Lineage tag (founder index, inherited at reproduction) — a pure
+            // observation label read only by the generational scorer, never by the
+            // sim → byte-identical (cf. [`Lineage`]).
+            Lineage(lineage),
             // Per-component store sized to the scenario's components; the `nutrients`
             // param seeds the nutrient (component 0). Founders and children are born
             // empty (`nutrients == 0`) → byte-identical.

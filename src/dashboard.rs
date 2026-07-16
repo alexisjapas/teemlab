@@ -642,7 +642,7 @@ fn cohort_section(
         ui.strong("Match metrics");
         egui::Grid::new(("breed_metrics", gen_idx, faction))
             .striped(true)
-            .num_columns(7)
+            .num_columns(8)
             .spacing([7.0, 3.0])
             .show(ui, |ui| {
                 ui.weak("match")
@@ -676,6 +676,14 @@ fn cohort_section(
                 );
                 metric_header(
                     ui,
+                    "adv",
+                    "Lineage advantage — the dominant founder lineage's share of the \
+                     population ÷ the mean lineage's (w/w̄); 1 at a tie, higher as one \
+                     lineage dominates (fitness: Advantage).",
+                    driving == Some(Fitness::Advantage),
+                );
+                metric_header(
+                    ui,
                     "dom",
                     "Terminal dominance — own minus living rivals at the last sample \
                      (a diagnostic; no longer a selectable fitness).",
@@ -695,6 +703,7 @@ fn cohort_section(
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.peak_population)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}%", mm.survival * 100.0)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.best_evolved)));
+                    fonts::value(ui, |ui| ui.label(format!("{:.2}", mm.advantage)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.dominance)));
                     fonts::value(ui, |ui| ui.label(format!("{:.0}", mm.mean_reserve)));
                     ui.end_row();

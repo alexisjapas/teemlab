@@ -366,6 +366,26 @@ variant = `mlp_evolved` reaching (then beating) parity.
   same §7 parity ceiling, so steps (1)-(2) are about making the fitness signal *legible*, and
   step (3) (a longer selection window) is the lever for pushing *past* parity, not for fixing
   the loop.
+- **`Fitness::Advantage` — lineage-relative fitness, to escape the `Population` plateau
+  (done 2026-07-17).** The plateau above is the metric's ceiling: at carrying capacity the
+  *total* biomass is capped, so a better forager only depletes the commons (boom→bust) and its
+  absolute count cannot climb — `Population` even *anti-selects* competence. The composition,
+  though, is still free. A new `Lineage(u16)` tag (the founder an agent descends from — set at
+  spawn, inherited at reproduction, **read by no sim system** so `tests/mlp.rs` stays byte-
+  identical) lets the scorer split the population **by founder lineage**; `Advantage` scores a
+  match by the dominant lineage's time-integrated **share** relative to the mean lineage's
+  (`w/w̄`, population-genetics relative fitness), and captures the **winning** lineage's genome,
+  not the deepest. **Experiment (06_learning, 12 gens, Advantage vs Population control):**
+  `Population` flatlines at exactly the founder count (best `6.00`, a single surviving lineage);
+  `Advantage` keeps a **non-flat** signal (~2–3.4) — it *does* escape the plateau's flatline —
+  but it is **noisy and does not climb monotonically**. The head-to-head `dominance` (MLP −
+  wander) is higher on average under `Advantage` (~2.9 vs ~0.6) yet with a huge variance
+  (−11…+13), dominated by within-match founder effect / drift rather than skill. **Verdict:
+  `Advantage` maintains a selection gradient where `Population` goes flat, but on living food it
+  does *not* breed a champion **decisively past parity** vs the wander control — the honest §7
+  parity framing holds.** The fitness stays as a valid, selectable primitive (a relative-fitness
+  research tool); step (3) — a longer, more stable selection window — remains the real lever for
+  pushing past parity.
 
 ---
 

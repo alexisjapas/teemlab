@@ -130,6 +130,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
                 0,
                 config.reserve_max_of(0),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
             spawn_agent(
                 &mut commands,
@@ -141,6 +142,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
                 1,
                 config.reserve_max_of(1),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");
@@ -209,6 +211,7 @@ fn reserve_after_holding(act_cost: f32, gate_off: bool, ticks: usize) -> (f32, f
                 0,
                 config.reserve_max_of(0),
                 0,
+                0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");

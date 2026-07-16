@@ -19,7 +19,9 @@
 //! target to the actor. The engine has only one verb.
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Action, Age, Agent, Generation, Maneuver, Reserve, Species, Vision};
+use crate::components::{
+    Action, Age, Agent, Generation, Lineage, Maneuver, Reserve, Species, Vision,
+};
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
 use crate::nutrients::{Fields, Nutrients};
@@ -248,12 +250,13 @@ pub fn reproduce(
             &Species,
             &Brain,
             &Generation,
+            &Lineage,
             &mut Nutrients,
         ),
         With<Agent>,
     >,
 ) {
-    for (transform, mut reserve, genotype, species, brain, generation, mut nutrients) in
+    for (transform, mut reserve, genotype, species, brain, generation, lineage, mut nutrients) in
         &mut parents
     {
         // Threshold and cost are **genes** (per-entity, evolvable): a zero
@@ -334,7 +337,8 @@ pub fn reproduce(
             genotype.offspring_energy,
             0.0, // born with an **empty** nutrient store (T2): must absorb its own.
             generation.0 + 1,
-            0.0, // a newborn is born at age 0.
+            0.0,       // a newborn is born at age 0.
+            lineage.0, // inherits the parent's founder lineage (the scored tag).
         );
     }
 }

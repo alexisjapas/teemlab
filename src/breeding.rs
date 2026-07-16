@@ -13,13 +13,14 @@
 //! boundary** — score the cohort, pick the survivors, re-seed them as founders (via
 //! [`crate::config::Archetype::capture`]).
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 
 use crate::brain::{Brain, MlpBrain};
-use crate::components::{Agent, Generation, Reserve, Species};
+use crate::components::{Agent, Generation, Lineage, Reserve, Species};
 use crate::config::{BatchConfig, Fitness};
 use crate::genotype::Genotype;
 use crate::rng::Rng;
@@ -82,6 +83,12 @@ pub struct MatchMetrics {
     /// in-match neuroevolution got, caught at its peak (before any collapse). NB: *perverse* on
     /// a free reproducer (rewards reproduce-to-collapse) — prefer `Population`.
     pub best_evolved: f64,
+    /// LINEAGE ADVANTAGE — the dominant founder lineage's time-averaged share of the
+    /// population relative to the mean lineage's (`w/w̄`, [`Fitness::Advantage`]). Set by
+    /// [`run_match`] from the per-lineage tracker, not [`Self::from_samples`] (whose
+    /// [`MatchSample`]s carry no lineage split). `0` when the species never lived, `1` when
+    /// every lineage ties, up toward the lineage count as one dominates.
+    pub advantage: f64,
     /// TERMINAL dominance **diagnostic** — own − living non-sessile rivals at the last
     /// sample. No longer a selectable `Fitness`: non-nutritional combat was removed with
     /// the relation table (kept as a diagnostic; `docs/emergent-trophics.md` §9).
@@ -118,6 +125,9 @@ impl MatchMetrics {
             best_evolved: best_gen,
             dominance: last.population as f64 - last.rivals as f64,
             mean_reserve: if ralive > 0.0 { rsum / ralive } else { 0.0 },
+            // Lineage advantage needs the per-lineage split, not the aggregated samples —
+            // `run_match` fills it from the [`LineageAgg`] tracker (0 until then).
+            advantage: 0.0,
         }
     }
 
@@ -130,7 +140,64 @@ impl MatchMetrics {
             Fitness::Peak => self.peak_population,
             Fitness::Survival => self.survival,
             Fitness::BestEvolved => self.best_evolved,
+            Fitness::Advantage => self.advantage,
         }
+    }
+}
+
+/// Per **founder lineage** accumulator over a match's trajectory (one map entry per
+/// lineage of a scored species), the raw material for [`Fitness::Advantage`] and its
+/// genome capture. `cum_pop` is the lineage's living count **summed over the samples**
+/// — its time-integral of population, so the *dominant* lineage is the one that held
+/// the most biomass over the whole match (time-robust, like every other metric here).
+/// `best` is that lineage's representative genome (deepest generation, tie-broken by
+/// reserve — the `train` rule), the one selection carries forward when the lineage wins.
+#[derive(Clone)]
+struct LineageAgg {
+    /// Σ over samples of this lineage's living count (its time-integral of population).
+    cum_pop: u64,
+    /// Best `(generation, reserve)` seen — the representative-selection key.
+    key: (u32, f32),
+    /// The representative genome at that key (carried forward if the lineage wins).
+    best: Individual,
+}
+
+/// The lineage-advantage scalar of one scored species: the dominant lineage's share of
+/// the (time-integrated) population **relative to the mean lineage's** — `w/w̄`. `1.0`
+/// when every lineage ties, growing toward the live-lineage count as one dominates; `0`
+/// when the species never lived. This is the value that keeps a selection gradient at
+/// the carrying capacity (cf. [`Fitness::Advantage`]).
+fn lineage_advantage(lineages: &HashMap<u16, LineageAgg>) -> f64 {
+    let total: u64 = lineages.values().map(|l| l.cum_pop).sum();
+    let live = lineages.values().filter(|l| l.cum_pop > 0).count();
+    let top = lineages.values().map(|l| l.cum_pop).max().unwrap_or(0);
+    if total == 0 || live == 0 {
+        0.0
+    } else {
+        // top / (total / live) = top's share ÷ the mean lineage's share.
+        top as f64 * live as f64 / total as f64
+    }
+}
+
+/// The genome selection carries forward from a match for the given `fitness`: for
+/// [`Fitness::Advantage`] the **winning lineage's** representative (the one with the most
+/// time-integrated population); for every other fitness the match's **deepest-lineage**
+/// best (highest generation, tie-broken by reserve — the historical rule). `None` when
+/// the species never lived.
+fn captured_best(lineages: &HashMap<u16, LineageAgg>, fitness: Fitness) -> Option<Individual> {
+    match fitness {
+        Fitness::Advantage => lineages
+            .values()
+            .max_by_key(|l| l.cum_pop)
+            .map(|l| l.best.clone()),
+        _ => lineages
+            .values()
+            .max_by(|a, b| {
+                a.key
+                    .partial_cmp(&b.key)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|l| l.best.clone()),
     }
 }
 
@@ -495,23 +562,38 @@ fn run_match(config: &SimConfig, ticks: u64, scored: &[u16]) -> MatchOutcome {
     app.finish();
     app.cleanup();
     let mut samples: Vec<Vec<MatchSample>> = vec![Vec::new(); scored.len()];
-    let mut best: Vec<Option<(u32, f32, Individual)>> = vec![None; scored.len()];
+    // Per-scored-species lineage tracker — feeds `Advantage` and its winning-genome capture.
+    let mut lineages: Vec<HashMap<u16, LineageAgg>> = vec![HashMap::new(); scored.len()];
     let every = (ticks / SAMPLES_PER_MATCH).max(1);
     for tick in 0..ticks {
         app.update();
         if tick % every == 0 {
-            sample_match(app.world_mut(), scored, &mut samples, &mut best);
+            sample_match(app.world_mut(), scored, &mut samples, &mut lineages);
         }
     }
     // A terminal sample, so `Dominance` (which reads the last sample) sees the final state.
-    sample_match(app.world_mut(), scored, &mut samples, &mut best);
-    MatchOutcome {
-        metrics: samples
-            .iter()
-            .map(|s| MatchMetrics::from_samples(s))
-            .collect(),
-        best: best.into_iter().map(|b| b.map(|(_, _, i)| i)).collect(),
-    }
+    sample_match(app.world_mut(), scored, &mut samples, &mut lineages);
+    // The selected fitness decides which genome a match hands forward — the winning
+    // lineage's for `Advantage`, the deepest's otherwise (cf. `captured_best`).
+    let fitness = config
+        .batch
+        .as_ref()
+        .map(|b| b.fitness)
+        .unwrap_or(Fitness::Population);
+    let metrics: Vec<MatchMetrics> = samples
+        .iter()
+        .zip(&lineages)
+        .map(|(s, ls)| {
+            let mut m = MatchMetrics::from_samples(s);
+            m.advantage = lineage_advantage(ls);
+            m
+        })
+        .collect();
+    let best: Vec<Option<Individual>> = lineages
+        .iter()
+        .map(|ls| captured_best(ls, fitness))
+        .collect();
+    MatchOutcome { metrics, best }
 }
 
 /// One trajectory sample: a single query pass that appends a [`MatchSample`] per scored
@@ -521,14 +603,14 @@ fn sample_match(
     world: &mut World,
     scored: &[u16],
     samples: &mut [Vec<MatchSample>],
-    best: &mut [Option<(u32, f32, Individual)>],
+    lineages: &mut [HashMap<u16, LineageAgg>],
 ) {
     let mut non_sessile = 0usize;
     // (population, best_gen, reserve_sum) accumulator per scored species.
     let mut acc: Vec<(usize, u32, f64)> = vec![(0, 0, 0.0); scored.len()];
-    let mut query =
-        world.query_filtered::<(&Species, &Generation, &Reserve, &Genotype, &Brain), With<Agent>>();
-    for (species, generation, reserve, genotype, brain) in query.iter(world) {
+    let mut query = world
+        .query_filtered::<(&Species, &Generation, &Reserve, &Genotype, &Brain, &Lineage), With<Agent>>();
+    for (species, generation, reserve, genotype, brain, lineage) in query.iter(world) {
         if !matches!(brain, Brain::Sessile(_)) {
             non_sessile += 1;
         }
@@ -537,19 +619,35 @@ fn sample_match(
             *count += 1;
             *best_gen = (*best_gen).max(generation.0);
             *reserve_sum += reserve.current as f64;
+            // Per-lineage: this lineage gains one living sample (cum_pop), keeping the
+            // deepest-gen / reserve individual as its representative genome. The clone is
+            // paid only on a **new lineage** or an **improvement** (never per-agent-sample).
             let key = (generation.0, reserve.current);
-            if best[i].as_ref().is_none_or(|(g, r, _)| (*g, *r) < key) {
-                best[i] = Some((
-                    generation.0,
-                    reserve.current,
-                    Individual {
-                        species: species.0,
-                        generation: generation.0,
-                        reserve: reserve.current,
-                        genotype: *genotype,
-                        brain: brain.clone(),
-                    },
-                ));
+            let mk = || Individual {
+                species: species.0,
+                generation: generation.0,
+                reserve: reserve.current,
+                genotype: *genotype,
+                brain: brain.clone(),
+            };
+            match lineages[i].get_mut(&lineage.0) {
+                Some(agg) => {
+                    agg.cum_pop += 1;
+                    if agg.key < key {
+                        agg.key = key;
+                        agg.best = mk();
+                    }
+                }
+                None => {
+                    lineages[i].insert(
+                        lineage.0,
+                        LineageAgg {
+                            cum_pop: 1,
+                            key,
+                            best: mk(),
+                        },
+                    );
+                }
             }
         }
     }
@@ -642,11 +740,59 @@ mod tests {
             best_evolved: 3.0,
             dominance: -4.0,
             mean_reserve: 9.0,
+            advantage: 1.5,
         };
         assert_eq!(m.of(Fitness::Population), 1.0);
         assert_eq!(m.of(Fitness::Peak), 2.0);
         assert_eq!(m.of(Fitness::Survival), 0.5);
         assert_eq!(m.of(Fitness::BestEvolved), 3.0);
+        assert_eq!(m.of(Fitness::Advantage), 1.5);
+    }
+
+    /// [`lineage_advantage`] is the dominant lineage's share ÷ the mean lineage's share
+    /// (`w/w̄`): `1` when lineages tie, growing toward the live-lineage count as one takes
+    /// over, `0` on a never-lived species. And [`captured_best`] hands forward the winning
+    /// lineage's genome under `Advantage` (not the deepest one's).
+    #[test]
+    fn lineage_advantage_and_capture() {
+        use crate::brain::{Brain, WanderBrain};
+        let ind = |lin: u16, g: u32| Individual {
+            species: 0,
+            generation: g,
+            reserve: 1.0,
+            genotype: Genotype::default(),
+            // A distinct heading tags the brain so captures are told apart.
+            brain: Brain::Wander(WanderBrain::new(lin as u64, g as f32, 0.1)),
+        };
+        let agg = |cum: u64, g: u32, lin: u16| LineageAgg {
+            cum_pop: cum,
+            key: (g, 1.0),
+            best: ind(lin, g),
+        };
+        // Empty / never-lived → 0.
+        assert_eq!(lineage_advantage(&HashMap::new()), 0.0);
+
+        // Two lineages, one owning 3× the other's time-integral: mean share = 4/2 = 2 samples,
+        // top = 3 → advantage 1.5. The winner (lineage 0, cum 3) is captured under Advantage
+        // even though lineage 1 reached a deeper generation.
+        let mut ls = HashMap::new();
+        ls.insert(0u16, agg(3, 2, 0)); // dominant by population, shallower gen
+        ls.insert(1u16, agg(1, 9, 1)); // deepest gen, but a minority
+        assert_eq!(lineage_advantage(&ls), 3.0 * 2.0 / 4.0);
+        assert_eq!(
+            captured_best(&ls, Fitness::Advantage).unwrap().generation,
+            2
+        );
+        assert_eq!(
+            captured_best(&ls, Fitness::Population).unwrap().generation,
+            9
+        );
+
+        // A perfect tie → advantage 1 (no lineage stands out).
+        let mut tie = HashMap::new();
+        tie.insert(0u16, agg(5, 1, 0));
+        tie.insert(1u16, agg(5, 1, 1));
+        assert_eq!(lineage_advantage(&tie), 1.0);
     }
 
     /// [`seed_founders`] (the replay mechanism) fills a `count`-sized founder pool led by the

@@ -1989,7 +1989,7 @@ fn batch_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// sync with the enum (a new variant must be handled here).
 fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
     // (variant, label, tooltip) — the single source the closure and the selected text share.
-    const OPTIONS: [(Fitness, &str, &str); 4] = [
+    const OPTIONS: [(Fitness, &str, &str); 5] = [
         (
             Fitness::Population,
             "population (sustained)",
@@ -2010,6 +2010,14 @@ fn fitness_combo(ui: &mut egui::Ui, value: &mut Fitness) {
             "best evolved (lineage)",
             "Deepest lineage reached — neuroevolution depth. Perverse on a free reproducer \
              (prefer population); for skill-gated foraging.",
+        ),
+        (
+            Fitness::Advantage,
+            "lineage advantage (w/w̄)",
+            "The dominant founder lineage's share of the population, relative to the mean \
+             lineage's — a within-species relative fitness. Keeps a selection gradient at the \
+             carrying capacity, where population plateaus; breeds a champion past parity on \
+             living food. Captures the winning lineage's genome.",
         ),
     ];
     let text = OPTIONS
@@ -2157,6 +2165,8 @@ fn place(
         seed,
         config.reserve_max_of(species),
         0, // placed by hand: generation 0 (founder).
+        0, // lineage 0: inert in the live world (only the breeding scorer reads it,
+           // and the orchestrator re-populates isolated worlds, never these).
     );
 }
 
