@@ -27,10 +27,19 @@
 //!
 //! Usage: `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
 //! [--width W] [--height H] [--select MODE] [--select-interval S] [--no-hud]
-//! [--hud-interval S] [--nutrients]`.
+//! [--hud-interval S] [--nutrients] [--stop-when BRAINS] [--stop-after S]`.
 //!
 //! `--nutrients` overlays the nutrient **heatmap** layer in the arena (the
 //! background "calque"); off by default, so existing videos are unchanged.
+//!
+//! `--stop-when BRAINS` ends the film early — once every living agent of the named
+//! **brain families** is gone — instead of always filming the full `--seconds`, so a
+//! run that dies out early is not padded with an empty arena. `BRAINS` is a
+//! comma-separated list of family names (`wander,hunter,grazer,sessile,mlp`,
+//! case-insensitive), a leading `!` inverting it: `--stop-when mlp` waits for the
+//! last MLP to die, `--stop-when !sessile` for all non-sessile life to die.
+//! `--stop-after S` keeps filming `S` more seconds after that extinction (default
+//! `3`); `--seconds` stays the hard upper bound.
 //!
 //! `--hud` (default) overlays the native visualizer (stats / curves / inspector)
 //! in a **9:16** composition — square arena on top, visualizer at the bottom —
@@ -59,6 +68,8 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
+use teemlab::brain::Brain;
+use teemlab::components::Agent;
 use teemlab::dataviz::DataVizPlugin;
 use teemlab::metrics::MetricsPlugin;
 use teemlab::selection::{AutoSelectPlugin, SelectionRenderPlugin, SelectionRoll};
@@ -86,6 +97,49 @@ struct Settings {
     /// Overlay the nutrient **heatmap** layer(s) in the arena (the background
     /// "calque", cf. [`Layers`]). Off by default → videos unchanged.
     nutrients: bool,
+    /// Auto-stop: which brain **families** to watch for extinction (`true` at the
+    /// family's index). `None` = no auto-stop (film the full `seconds`). When every
+    /// living agent of a watched family is gone, the recording ends after
+    /// [`Settings::stop_after`] more seconds — so we don't film an empty arena.
+    stop_when: Option<[bool; Brain::FAMILY_COUNT]>,
+    /// Seconds to keep filming after the watched families go extinct (`--stop-after`).
+    stop_after: f64,
+}
+
+/// Parses a `--stop-when` spec into a per-family "watch this for extinction" mask.
+/// A comma-separated list of brain family names (case-insensitive, cf.
+/// [`Brain::FAMILIES`]); a leading `!` (or `not:`) **inverts** it — watch every
+/// family *except* those named. Examples: `mlp` (the last MLP), `!sessile` (all
+/// non-sessile life), `hunter,mlp`.
+fn parse_brain_filter(spec: &str) -> Result<[bool; Brain::FAMILY_COUNT], String> {
+    let (invert, list) = match spec.strip_prefix('!').or_else(|| spec.strip_prefix("not:")) {
+        Some(rest) => (true, rest),
+        None => (false, spec),
+    };
+    let mut chosen = [false; Brain::FAMILY_COUNT];
+    for name in list.split(',') {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let idx = Brain::FAMILIES
+            .iter()
+            .position(|f| f.eq_ignore_ascii_case(name))
+            .ok_or_else(|| {
+                let all: Vec<String> = Brain::FAMILIES.iter().map(|f| f.to_lowercase()).collect();
+                format!("unknown brain \"{name}\" ({})", all.join("|"))
+            })?;
+        chosen[idx] = true;
+    }
+    if !chosen.iter().any(|&c| c) {
+        return Err("no brain named".into());
+    }
+    if invert {
+        for c in &mut chosen {
+            *c = !*c;
+        }
+    }
+    Ok(chosen)
 }
 
 impl Settings {
@@ -107,6 +161,9 @@ impl Settings {
             hud_interval: 6.0,
             // Nutrient heatmap off by default → existing videos unchanged.
             nutrients: false,
+            // Auto-stop off by default (film the full `seconds`); `--stop-when` arms it.
+            stop_when: None,
+            stop_after: 3.0,
         };
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
@@ -156,6 +213,19 @@ impl Settings {
                         .parse()
                         .expect("--select-interval: number (seconds) expected");
                 }
+                // Auto-stop: end the film once a brain-filtered subset goes extinct.
+                "--stop-when" => {
+                    let v = next();
+                    s.stop_when = Some(parse_brain_filter(&v).unwrap_or_else(|err| {
+                        eprintln!("record: --stop-when: {err}");
+                        std::process::exit(2);
+                    }));
+                }
+                "--stop-after" => {
+                    s.stop_after = next()
+                        .parse()
+                        .expect("--stop-after: number (seconds) expected");
+                }
                 other if other.starts_with('-') => {
                     eprintln!("record: unknown option \"{other}\"");
                     std::process::exit(2);
@@ -196,6 +266,21 @@ struct RecordProgress {
 /// `World` closes the channel and cleanly terminates the thread (and thus `ffmpeg`).
 #[derive(Resource)]
 struct FrameSink(Sender<Vec<u8>>);
+
+/// Auto-stop state (`--stop-when`): watch a brain-filtered subset and cut the film
+/// once it goes extinct. Only present when armed.
+#[derive(Resource)]
+struct AutoStop {
+    /// Which brain families to watch (`true` at the family's index, cf. [`Brain::family_index`]).
+    watched: [bool; Brain::FAMILY_COUNT],
+    /// Frames to keep filming after extinction (`stop_after × fps`).
+    grace: u32,
+    /// The watched subset has been alive at least once — so a scenario that never
+    /// spawns a watched family does not trigger an instant stop.
+    seen_alive: bool,
+    /// Latched once extinction has capped the plan, so we cap exactly once.
+    fired: bool,
+}
 
 /// Path of the `ffmpeg` encoder. Resolution order: the `TEEMLAB_FFMPEG` env var
 /// (explicit override), then a copy sitting *next to* the current executable (so a
@@ -357,8 +442,21 @@ fn main() -> AppExit {
             });
     }
 
+    // Auto-stop (`--stop-when`): cap the film once the watched families go extinct,
+    // `stop_after` seconds later. `--seconds` stays the hard upper bound.
+    if let Some(watched) = settings.stop_when {
+        let grace = (settings.stop_after * settings.fps).round().max(0.0) as u32;
+        app.insert_resource(AutoStop {
+            watched,
+            grace,
+            seen_alive: false,
+            fired: false,
+        })
+        .add_systems(Update, auto_stop.before(capture_frame));
+    }
+
     eprintln!(
-        "record: {} frames at {} fps ({:.1}s), {}×{}{}{} → {}",
+        "record: {} frames at {} fps ({:.1}s), {}×{}{}{}{} → {}",
         frames,
         settings.fps,
         settings.seconds,
@@ -369,6 +467,20 @@ fn main() -> AppExit {
             " +nutrients"
         } else {
             ""
+        },
+        match settings.stop_when {
+            Some(w) => format!(
+                " +stop({} @ +{:.1}s)",
+                Brain::FAMILIES
+                    .iter()
+                    .zip(w)
+                    .filter(|(_, on)| *on)
+                    .map(|(n, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                settings.stop_after,
+            ),
+            None => String::new(),
         },
         settings.out
     );
@@ -410,8 +522,9 @@ fn setup_recorder(
         TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING;
     let handle = images.add(image);
 
-    // Framing: the arena (± half_extent) always fits, with a margin.
-    let span = config.arena_half_extent * 2.0 * 1.1;
+    // Framing: the arena (± half_extent) always fits, with the shared breathing
+    // margin (identical to the windowed Observe view and the 9:16 HUD composition).
+    let span = config.arena_half_extent * 2.0 * teemlab::visuals::ARENA_VIEW_MARGIN;
     commands.spawn((
         Camera2d,
         Camera {
@@ -471,6 +584,41 @@ fn capture_frame(
     );
 }
 
+/// `Update` (before [`capture_frame`]): watches the brain-filtered subset and, once
+/// it is extinct, **caps the plan** at the current frame plus the grace window — the
+/// existing capture loop then films the last `grace` frames and exits on its own, so
+/// we never film an empty arena. Idempotent (latched via [`AutoStop::fired`]); a
+/// scenario that never spawns a watched family never fires (guarded by `seen_alive`).
+fn auto_stop(
+    mut stop: ResMut<AutoStop>,
+    mut plan: ResMut<RecordPlan>,
+    progress: Res<RecordProgress>,
+    brains: Query<&Brain, With<Agent>>,
+) {
+    if stop.fired {
+        return;
+    }
+    let alive = brains
+        .iter()
+        .filter(|b| stop.watched[b.family_index()])
+        .count();
+    if alive > 0 {
+        stop.seen_alive = true;
+        return;
+    }
+    if !stop.seen_alive {
+        return;
+    }
+    // Extinction of the watched subset: film `grace` more frames from here, then stop.
+    let target = progress.spawned.saturating_add(stop.grace);
+    plan.frames = plan.frames.min(target);
+    stop.fired = true;
+    eprintln!(
+        "record: watched brains extinct at frame {}; stopping after {} more frame(s).",
+        progress.spawned, stop.grace,
+    );
+}
+
 /// Writer thread: drains the raw frames and pushes them to ffmpeg's stdin. Stops
 /// when all senders are dropped (end of run), then closes stdin (via `drop`) so
 /// ffmpeg finalizes the file.
@@ -483,4 +631,46 @@ fn feed_ffmpeg(mut stdin: std::process::ChildStdin, rx: Receiver<Vec<u8>>) {
     }
     let _ = stdin.flush();
     // `stdin` is dropped here → EOF on ffmpeg's side → finalization.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Index of a brain family by name, for readable expectations below.
+    fn fam(name: &str) -> usize {
+        Brain::FAMILIES
+            .iter()
+            .position(|f| f.eq_ignore_ascii_case(name))
+            .unwrap()
+    }
+
+    #[test]
+    fn stop_when_names_a_single_family() {
+        let mask = parse_brain_filter("mlp").unwrap();
+        assert!(mask[fam("MLP")]);
+        assert_eq!(mask.iter().filter(|&&b| b).count(), 1);
+    }
+
+    #[test]
+    fn stop_when_is_case_insensitive_and_lists() {
+        let mask = parse_brain_filter("Hunter,mlp").unwrap();
+        assert!(mask[fam("Hunter")] && mask[fam("MLP")]);
+        assert_eq!(mask.iter().filter(|&&b| b).count(), 2);
+    }
+
+    #[test]
+    fn stop_when_bang_inverts() {
+        // "all non-sessile life" — every family except Sessile.
+        let mask = parse_brain_filter("!sessile").unwrap();
+        assert!(!mask[fam("Sessile")]);
+        assert_eq!(mask.iter().filter(|&&b| b).count(), Brain::FAMILY_COUNT - 1);
+    }
+
+    #[test]
+    fn stop_when_rejects_unknown_or_empty() {
+        assert!(parse_brain_filter("wanderer").is_err());
+        assert!(parse_brain_filter("").is_err());
+        assert!(parse_brain_filter("!").is_err());
+    }
 }
