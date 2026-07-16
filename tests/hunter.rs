@@ -12,19 +12,19 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
-use teemlab::config::{Archetype, CostLaw, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability, Predation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
 mod common;
 
 #[test]
-#[ignore = "behavioural: relation-driven targeting removed — needs emergent re-tuning (emergent-trophics)"]
 fn hunter_sees_and_chases_its_target() {
-    // Bare world: no auto population (we place everything by hand), no metabolism
-    // (the hunter does not die during the test), a ZERO-rate relation — the food
-    // stays a stable bait: targeted (hence "target"), never consumed. It is `brain:
-    // Hunter` that we put to the test.
+    // Bare world: no auto population (we place everything by hand), no metabolism (the
+    // hunter does not die during the test). Emergent targeting: the food is a "target"
+    // because the hunter DOMINATES it in size (8 vs 6) AND `need`s the component it
+    // `holds` — and a ZERO bite rate keeps it a stable bait: targeted, never consumed. It
+    // is `brain: Hunter` that we put to the test.
     let config = SimConfig {
         arena_half_extent: 400.0,
         archetypes: vec![
@@ -76,6 +76,32 @@ fn hunter_sees_and_chases_its_target() {
                 anchor: None,
             },
         ],
+        // The food (species 1) holds a "Food" component the hunter (species 0) needs, so
+        // it is digestible → a target; a zero bite rate makes it an inert bait.
+        components: vec![ComponentConfig {
+            name: "Food".into(),
+            diffusion: 0.0,
+            decay: 0.0,
+        }],
+        field_relations: vec![
+            FieldRelation {
+                species: 0,
+                component: 0,
+                need: 1.0,
+                ..default()
+            },
+            FieldRelation {
+                species: 1,
+                component: 0,
+                capacity: 50.0,
+                ..default()
+            },
+        ],
+        predation: Predation {
+            size_margin: 0.1,
+            range: 20.0,
+            rate: 0.0, // a stable bait: targeted but never consumed
+        },
         cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };

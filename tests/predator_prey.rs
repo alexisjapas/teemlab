@@ -36,7 +36,7 @@ const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];
 // window, where all three levels are sustained.
 const SECONDS: usize = 40;
 
-/// Trajectory of a run: counts (predators = species 0, prey = species 1) sampled
+/// Trajectory of a run: counts (predators = carnivore sp2, prey = herbivore sp1) sampled
 /// each sim second, + the final mean vision per species.
 struct Run {
     traj: Vec<(usize, usize)>,
@@ -65,9 +65,9 @@ fn run_seed(seed: u64) -> Run {
         let (mut pred, mut prey) = (0, 0);
         for s in q.iter(world) {
             match s.0 {
-                0 => pred += 1,
-                1 => prey += 1,
-                _ => {}
+                2 => pred += 1, // carnivore (apex)
+                1 => prey += 1, // herbivore
+                _ => {}         // 0 = flora (the producer base)
             }
         }
         traj.push((pred, prey));
@@ -79,7 +79,7 @@ fn run_seed(seed: u64) -> Run {
     let (mut prey_sum, mut prey_n) = (0.0f32, 0usize);
     for (s, g) in q.iter(world) {
         match s.0 {
-            0 => {
+            2 => {
                 pred_sum += g.vision_range;
                 pred_n += 1;
             }
@@ -100,11 +100,10 @@ fn run_seed(seed: u64) -> Run {
 }
 
 #[test]
-#[ignore = "behavioural: awaits scenario re-tuning after the emergent-trophics refactor"]
 fn predator_prey_coexists_in_a_band_across_seeds() {
     let founder_vision = SimConfig::from_ron_str(SCENARIO)
         .unwrap()
-        .genotype_of(0)
+        .genotype_of(2)
         .vision_range;
 
     let mut failures = Vec::new();

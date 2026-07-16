@@ -1,56 +1,25 @@
 //! Reef scenario driver — the two physical/spatial levers (solid **rocks** + spring-anchored
 //! **kelp**) composed into a living ecosystem (`scenarios/examples/10_reef.ron`). We assert
-//! the reef is healthy over its coexistence window **and** that **turnover** happens: an
-//! uprooted or grazed kelp deposits **detritus** (the `emit_at_death` corpse) into its field
-//! — the payoff of the anchoring mortality lever, made observable. The anchoring/rock
-//! *mechanics* themselves are proven in `movement` (unit) + `tests/anchor.rs` /
-//! `tests/obstacle.rs`; here we prove they compose into a bounded, living scene.
+//! the reef is healthy over its coexistence window **and** that **turnover** happens: a
+//! grazed kelp deposits **detritus** (the `emit_at_death` corpse) into its field — the
+//! payoff of the mortality lever, made observable. The anchoring/rock *mechanics*
+//! themselves are proven in `movement` (unit — the three tear-off branches) + `tests/anchor.rs`
+//! / `tests/obstacle.rs`; here we prove they compose into a bounded, living scene.
+//!
+//! Note — under emergent targeting the grazer eats at a *reach* (it never rams the kelp)
+//! and an anchored body is effectively pinned by its spring, so the tear-off does not fire
+//! from ordinary grazing/crowding here (it did in the pre-refactor reef only because the
+//! same-size grazer *couldn't* eat and shoved endlessly). Turnover is therefore
+//! grazing-driven; the tear-off branches stay covered by the `movement` unit tests.
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
-use teemlab::components::{Agent, Anchor, Species};
+use teemlab::components::{Agent, Species};
 use teemlab::nutrients::Fields;
 
 mod common;
 
-/// Flip `die_on_detach` off so an uprooted kelp **survives, freed** (drops its `Anchor`)
-/// instead of dying — which lets us **count** uprooting events directly: a Species-0 body
-/// that has lost its `Anchor` was torn from the substrate. (With the shipped
-/// `die_on_detach: true`, those same tears are deaths → detritus.) This proves the reef
-/// actually exercises the anchor tear-off, not merely ordinary grazing mortality.
 #[test]
-#[ignore = "behavioural: awaits scenario re-tuning after the emergent-trophics refactor"]
-fn reef_uproots_kelp() {
-    let mut config =
-        SimConfig::from_ron_file("scenarios/examples/10_reef.ron").expect("reef loads");
-    config
-        .archetypes
-        .get_mut(0)
-        .and_then(|a| a.anchor.as_mut())
-        .expect("kelp is anchored")
-        .die_on_detach = false;
-
-    let mut app = common::stepping_app(&config);
-    let mut peak_uprooted = 0usize;
-    for _ in 0..1800 {
-        app.update();
-        let world = app.world_mut();
-        let mut q = world.query_filtered::<(&Species, Option<&Anchor>), With<Agent>>();
-        let freed = q
-            .iter(world)
-            .filter(|(s, anchor)| s.0 == 0 && anchor.is_none())
-            .count();
-        peak_uprooted = peak_uprooted.max(freed);
-    }
-    println!("reef: peak uprooted-and-freed kelp = {peak_uprooted}");
-    assert!(
-        peak_uprooted >= 3,
-        "kelp is never uprooted (peak {peak_uprooted}) — the reef does not exercise the tear-off"
-    );
-}
-
-#[test]
-#[ignore = "behavioural: awaits scenario re-tuning after the emergent-trophics refactor"]
 fn reef_persists_and_turns_over() {
     let config = SimConfig::from_ron_file("scenarios/examples/10_reef.ron").expect("reef loads");
     let mut app = common::stepping_app(&config);

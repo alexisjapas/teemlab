@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Action, Agent, Reserve, Species};
-use teemlab::config::{Archetype, CostLaw, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
@@ -75,17 +75,39 @@ fn force_no_intent(mut q: Query<&mut Action, With<Agent>>) {
 /// **plant's** remaining reserve. With `gate_off`, the actor's intent is forced to 0
 /// each tick (it should eat nothing); otherwise its reflex `1.0` stands (it eats).
 fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
-    let config = SimConfig {
+    // Forager (0) eats the plant (1): under emergent targeting that needs both a size
+    // DOMINANCE (bigger forager) and DIGESTIBILITY (the forager `need`s a "Food" component
+    // the plant `holds`). The bite then transfers the plant's reserve, in the default
+    // contact range so they interact from the first tick without movement.
+    let mut config = SimConfig {
         arena_half_extent: 400.0,
         archetypes: vec![
             sessile("Forager", 0, inert_genotype(0.0)),
             sessile("Plant", 1, inert_genotype(0.0)),
         ],
-        // Forager (0) eats the plant (1): predation (transfer) at a steady rate, in a
-        // generous contact range so they interact from the first tick without movement.
+        components: vec![ComponentConfig {
+            name: "Food".into(),
+            diffusion: 0.0,
+            decay: 0.0,
+        }],
+        field_relations: vec![
+            FieldRelation {
+                species: 0,
+                component: 0,
+                need: 1.0,
+                ..default()
+            },
+            FieldRelation {
+                species: 1,
+                component: 0,
+                capacity: 1000.0,
+                ..default()
+            },
+        ],
         cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
+    config.archetypes[0].radius = 12.0; // dominates the plant (radius 8) past the size margin
 
     let mut app = common::stepping_app(&config);
     if gate_off {
@@ -139,7 +161,6 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
 /// (reflex `1.0`) the plant is grazed; with the intent forced off the plant is
 /// **untouched** — the falsifiable proof that `interact` is gated on `Action::act`.
 #[test]
-#[ignore = "behavioural: relation-driven eating removed — needs emergent re-tuning (emergent-trophics)"]
 fn intent_gates_eating() {
     let start = 1000.0;
     let grazed = plant_reserve_after_grazing(false, 20);
@@ -227,52 +248,7 @@ fn holding_intent_costs_energy() {
     );
 }
 
-/// The **showcase** (`16_deliberate_eating.ron`) is a playable, non-collapsing example:
-/// with eating priced (`act_cost > 0`) the MLP population evolves to *gate* its eating
-/// (the `act` output) and **persists** on the oasis flora across seeds over the
-/// observation window. The honest §7 target — persistence/coexistence over the window,
-/// not domination (on living food the long-horizon outcome is Lotka–Volterra).
-#[test]
-#[ignore = "behavioural: relation-driven eating removed — needs emergent re-tuning (emergent-trophics)"]
-fn showcase_population_persists() {
-    const SCENARIO: &str = include_str!("../scenarios/examples/06_restraint.ron");
-    const SEEDS: [u64; 3] = [0x00C0_FFEE, 0x1234, 0xBEEF];
-    const SECONDS: usize = 60;
-
-    for seed in SEEDS {
-        let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid showcase scenario");
-        config.seed = seed;
-        let tick_hz = config.tick_hz as usize;
-        // The scenario is vacuous if eating is free — the whole point is a priced act.
-        assert!(
-            config.archetypes[0].genotype.act_cost > 0.0,
-            "the showcase must price eating (act_cost > 0)"
-        );
-
-        let mut app = common::stepping_app(&config);
-        for _ in 0..SECONDS {
-            for _ in 0..tick_hz {
-                app.update();
-            }
-        }
-
-        let world = app.world_mut();
-        let mut q = world.query_filtered::<&Species, With<Agent>>();
-        let (mut mlp, mut flora) = (0usize, 0usize);
-        for s in q.iter(world) {
-            match s.0 {
-                0 => mlp += 1,
-                1 => flora += 1,
-                _ => {}
-            }
-        }
-        assert!(
-            mlp > 0,
-            "seed {seed:#x}: the deliberate-eater population collapsed (extinct at {SECONDS}s)"
-        );
-        assert!(
-            flora > 0,
-            "seed {seed:#x}: the flora collapsed at {SECONDS}s"
-        );
-    }
-}
+// (The playable `act_cost > 0` showcase is not among the reworked scenarios — 06_restraint
+// demonstrates restraint through the `Grazer` hunger gate rather than a priced act — so the
+// scenario-level persistence test is dropped; the two act_cost halves below prove the
+// mechanism in isolation, which is what this driver is for.)

@@ -10,26 +10,28 @@
 //   • PRUDENT (0.6) stops at two-thirds full — its time-averaged draw ≈ its metabolic
 //     need, so it leaves the flora alive.
 //
-// A prudent MONOCULTURE is a stability lever — it persists where a greedy one would
-// overshoot and collapse. But MIXED, as here, greed is individually superior (eats
-// more → harvests more nutrient → more offspring), so it OUT-COMPETES prudence and
-// then boom-busts the flora it dominates: the tragedy of the commons. Restraint
-// stabilises but is not individually selected (making it *evolve* needs strong spatial
-// viscosity — ROADMAP §9, deferred).
+// The driver (tests/restraint.rs) pins two results. (A) A prudent MONOCULTURE is a
+// stability lever — it persists and its flora thrives, where a greedy monoculture
+// overshoots and collapses to extinction. (B) But MIXED, as shipped here, greed is
+// individually superior (eats more → more nutrient → more offspring), so it OUT-COMPETES
+// prudence and then boom-busts the flora it dominates: the tragedy of the commons.
+// Restraint stabilises but is not individually selected (making it *evolve* needs strong
+// spatial viscosity — ROADMAP §9, deferred). Slow foragers, so grazing pressure sits near
+// the flora's regrowth and the contrast is legible.
 //
 // Watch: crimson (greedy) overtakes teal (prudent), then overshoots its own oasis.
 (
     tick_hz: 64.0,
-    arena_half_extent: 500.0,
+    arena_half_extent: 540.0,
     archetypes: [
         (
             name: "Greedy",
             color: (0.9, 0.32, 0.36),
-            count: 10,
+            count: 16,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
-                max_speed: 75.0,
+                max_speed: 50.0,
                 agility: 0.12,
                 vision_range: 140.0,
                 vision_fov_deg: 130.0,
@@ -45,11 +47,11 @@
         (
             name: "Prudent",
             color: (0.3, 0.8, 0.75),
-            count: 10,
+            count: 16,
             radius: 8.0,
             reserve_max: 120.0,
             genotype: (
-                max_speed: 75.0,
+                max_speed: 50.0,
                 agility: 0.12,
                 vision_range: 140.0,
                 vision_fov_deg: 130.0,
@@ -65,17 +67,17 @@
         (
             name: "Flora",
             color: (0.4, 0.85, 0.4),
-            count: 220,
+            count: 240,
             radius: 6.0,
             reserve_max: 80.0,
             genotype: (
                 max_speed: 0.0,
                 vision_range: 30.0,
                 vision_rays: 1.0,
-                reproduction_threshold: 55.0,
-                offspring_energy: 28.0,
+                reproduction_threshold: 60.0,
+                offspring_energy: 30.0,
                 mutation_rate: 0.0,
-                photosynthesis: 6.0,
+                photosynthesis: 6.5,
                 seed_dispersal: 25.0,
             ),
             brain: Sessile,
@@ -95,17 +97,16 @@
             ),
         ),
     ],
-    cost_law: (size_exponent: 2.0, maintenance: 0.022, locomotion: 0.015, maneuver: 0.0002),
-    predation: (size_margin: 0.1, range: 20.0, rate: 16.0),
+    cost_law: (size_exponent: 2.0, maintenance: 0.02, locomotion: 0.012, maneuver: 0.0002),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
     ],
     sources: [
-        (pos: (-240.0, 240.0), component: 0, rate: 26.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (240.0, 240.0), component: 0, rate: 26.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-240.0, -240.0), component: 0, rate: 26.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (240.0, -240.0), component: 0, rate: 26.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-240.0, 240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (240.0, 240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-240.0, -240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (240.0, -240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
     ],
     field_relations: [
         // Both grazers: need the nutrient (flora digestible), harvest it only by eating
@@ -113,7 +114,7 @@
         (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         // Flora: absorbs & holds the nutrient, seeds on it (oases), recycles at death.
-        (species: 2, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 6.0),
+        (species: 2, component: 0, absorb: 2.0, capacity: 8.0, emit_at_death: 5.0, repro_cost: 5.0),
     ],
     seed: 17,
 )

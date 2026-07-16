@@ -14,20 +14,21 @@ use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Perception, Species};
-use teemlab::config::{Archetype, CostLaw, Mutability};
+use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability, Predation};
 use teemlab::genotype::Genotype;
 use teemlab::spawn::spawn_agent;
 
 mod common;
 
 #[test]
-#[ignore = "behavioural: relation-driven targeting removed — needs emergent re-tuning (emergent-trophics)"]
 fn prey_sees_and_flees_its_predator() {
-    // Bare world: no auto population (we place everything by hand), no metabolism
-    // (the prey does not die during the test), a predator→prey relation with a ZERO
-    // rate and short range — the predator is a **stable scarecrow**: perceived as a
-    // threat, but it never eats. It is also IMMOBILE (max_speed 0): a fixed threat
-    // point, just as the food is a fixed bait in `tests/hunter.rs`.
+    // Bare world: no auto population (we place everything by hand), no metabolism (the
+    // prey does not die during the test). Emergent targeting drives the threat: the
+    // predator DOMINATES the prey in size (12 vs 8) AND `need`s the component the prey
+    // `holds`, so it *can eat* the prey — which is exactly what lights the prey's THREAT
+    // channel (the inverse of the target rule). A ZERO bite rate makes it a **stable
+    // scarecrow**: threatening, never eating. It is also IMMOBILE (max_speed 0): a fixed
+    // threat point, just as the food is a fixed bait in `tests/hunter.rs`.
     let config = SimConfig {
         arena_half_extent: 400.0,
         archetypes: vec![
@@ -57,12 +58,13 @@ fn prey_sees_and_flees_its_predator() {
                 captured_from: None,
                 anchor: None,
             },
-            // Species 1: the predator, immobile (max_speed 0) — the scarecrow.
+            // Species 1: the predator, immobile (max_speed 0) — the scarecrow. Bigger than
+            // the prey so it dominates it (the size half of `can_eat`).
             Archetype {
                 name: "Predator".into(),
                 color: Archetype::default_color(1),
                 count: 0,
-                radius: 8.0,
+                radius: 12.0,
                 reserve_max: 100.0,
                 genotype: Genotype {
                     max_speed: 0.0,
@@ -80,9 +82,33 @@ fn prey_sees_and_flees_its_predator() {
                 anchor: None,
             },
         ],
-        // The predator (species 1) can act ON the prey (species 0): the prey
-        // therefore perceives it as a THREAT (the *inverse* relation of the "target"
-        // channel). Zero rate → it only threatens.
+        // The prey (species 0) holds a "Flesh" component the predator (species 1) needs,
+        // so the predator CAN eat the prey → the prey perceives it as a THREAT (the
+        // *inverse* of the target rule). A zero bite rate → it only threatens.
+        components: vec![ComponentConfig {
+            name: "Flesh".into(),
+            diffusion: 0.0,
+            decay: 0.0,
+        }],
+        field_relations: vec![
+            FieldRelation {
+                species: 0,
+                component: 0,
+                capacity: 50.0,
+                ..default()
+            },
+            FieldRelation {
+                species: 1,
+                component: 0,
+                need: 1.0,
+                ..default()
+            },
+        ],
+        predation: Predation {
+            size_margin: 0.1,
+            range: 20.0,
+            rate: 0.0, // a stable scarecrow: threatening, never eating
+        },
         cost_law: CostLaw::inert(),
         ..SimConfig::default()
     };
