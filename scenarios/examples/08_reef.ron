@@ -1,32 +1,39 @@
-// 08 · Reef — space and structure: rocks, rooted kelp, and turnover.
+// 08 · Reef — space and structure: size-selective refugia.
 //
-// The physical/spatial levers, composed into one scene. Two features beyond the
-// trophic economy of 04:
-//   • ROCKS are SOLID sources (a static collider that emits nothing): they block bodies
-//     and occlude vision, carving a sheltered, winding reef — spatial refugia. A pure
-//     rock has `rate: 0` and `solid: true`.
-//   • KELP is a sessile plant ANCHORED to the substrate by a spring (`anchor`): it roots
-//     where it seeds, is jostled and springs back, but pulled past its breaking TENSION
-//     (`stiffness · displacement`) it is UPROOTED and dies (`die_on_detach`), leaving
-//     DETRITUS (a second component). Two things uproot it — a grazer ramming it to feed,
-//     and its own crowding — so uprooting is a portable, physical TURNOVER: the mortality
-//     lever a standing-crop carrying capacity needs (cf. 03).
+// The physical/spatial levers composed into a REAL reef, where the rocks sort bodies BY
+// SIZE. A solid source is a static circle collider (`Collider::circle(radius)`), so a
+// disc of radius r threads a gap of width G (rock-surface to rock-surface) only when
+// G ≥ 2·r. Ring six rocks around each of FOUR vents, leaving ~18 px gaps, and you get four
+// **refuge gardens**:
+//   • KELP (r 4, tiny anchored plants) grows on the sheltered vent inside each ring.
+//   • the HERBIVORE (r 6, needs a 12 px gap) SLIPS THROUGH the gaps to graze it — and,
+//     being a Hunter, flees a threat, sometimes ducking into a ring to escape.
+//   • the OMNIVORE (r 12, needs a 24 px gap) is WALLED OUT — it eats kelp AND herbivores,
+//     but the 18 px gaps block its body, so the ring interiors are refuges it cannot enter.
+//     No behaviour rule draws the line; the geometry does (emergent, Law 8-ish for space):
+//     the SAME rock is a wall to one body and a doorway to a smaller one.
 //
-// The trophic economy is 04's, inside the shelter: kelp on the sun + nutrient vents, a
-// light grazer that dominates and eats it (emergent targeting), breeding on the nutrient
-// it harvests. Watch (View ▸ Layers): kelp clusters into oases around the vents inside
-// the rocks; grazers weave through the gaps (rocks occlude and block them); a Detritus
-// patch blooms and fades where kelp is torn loose. A lively example to watch, not a
-// steady state (ROADMAP §7).
+// So the reef partitions the world by size: kelp and herbivores persist in the sheltered
+// gardens the omnivore can only besiege from outside; a single OPEN vent in mid-water is the
+// contested commons it is left with. The refuge is so effective that the excluded omnivore
+// STARVES OUT — a size-structured reef that cannot support its would-be top predator (an
+// example to watch early, ROADMAP §7). KELP is also ANCHORED (a spring): jostled it springs
+// back, but a grazer's shove or a packed clump tears it loose past its tension → it uproots,
+// dies, and drops DETRITUS (turnover, the mortality lever a standing crop needs; cf. 03).
+//
+// Watch (View ▸ Layers): kelp greens the four ring interiors and the open vent; small
+// herbivores thread the gaps in and out; the big omnivore noses at the entrances but cannot
+// follow, patrolling the open water. A Detritus patch blooms where kelp is torn loose. A
+// lively example to watch, not a steady state (ROADMAP §7).
 (
     tick_hz: 64.0,
-    arena_half_extent: 460.0,
+    arena_half_extent: 380.0,
     archetypes: [
         (
             name: "Kelp",
             color: (0.30, 0.75, 0.50),
-            count: 140,
-            radius: 7.0,
+            count: 90,
+            radius: 4.0,
             reserve_max: 50.0,
             genotype: (
                 max_speed: 0.0,
@@ -36,7 +43,7 @@
                 offspring_energy: 13.0,
                 mutation_rate: 0.0,
                 photosynthesis: 6.5,
-                seed_dispersal: 20.0,
+                seed_dispersal: 16.0,
             ),
             brain: Sessile,
             mutable: (
@@ -53,25 +60,42 @@
                 brain_cost: false,
                 act_cost: false,
             ),
-            // A spring of stiffness 30 holds each kelp to its seed point; it snaps once the
-            // tension (stiffness · displacement) exceeds 700 — a ~23-unit pull (radius 7, so
-            // ~three body-widths). Jostling holds; a grazer's shove or a packed clump tears
-            // it loose → death → detritus (turnover).
+            // A spring roots each kelp to its seed point; jostling holds, but a grazer's
+            // shove or a packed clump tears it loose past its tension → death → detritus.
             anchor: Some((stiffness: 30.0, damping: 3.0, tear_force: 700.0, die_on_detach: true)),
         ),
         (
-            name: "Grazer",
-            color: (1.0, 0.55, 0.35),
-            count: 4,
-            radius: 8.0,
-            reserve_max: 120.0,
+            name: "Herbivore",
+            color: (1.0, 0.72, 0.30),
+            count: 12,
+            radius: 6.0,
+            reserve_max: 100.0,
             genotype: (
-                max_speed: 105.0,
-                agility: 0.12,
-                vision_range: 130.0,
+                max_speed: 115.0,
+                agility: 0.14,
+                vision_range: 120.0,
                 vision_fov_deg: 130.0,
-                reproduction_threshold: 120.0,
-                offspring_energy: 42.0,
+                reproduction_threshold: 90.0,
+                offspring_energy: 38.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Hunter,
+            mutable: (mutation_rate: false),
+        ),
+        (
+            name: "Omnivore",
+            color: (0.95, 0.42, 0.38),
+            count: 3,
+            radius: 12.0,
+            reserve_max: 220.0,
+            genotype: (
+                max_speed: 92.0,
+                agility: 0.10,
+                vision_range: 155.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 170.0,
+                offspring_energy: 75.0,
                 mutation_rate: 0.06,
                 vision_rays: 7.0,
             ),
@@ -82,35 +106,67 @@
     // Metabolic cost bounds the kelp (Liebig): its photosynthesis draws down the nutrient,
     // so the reef holds a dense-but-bounded stand around the vents rather than carpeting.
     cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
-    predation: (size_margin: 0.1, range: 20.0, rate: 16.0),
+    // A tight eating reach: the omnivore must be right on its prey, so it cannot reach past
+    // an 18 px gap to pick off a herbivore sheltering just inside the ring.
+    predation: (size_margin: 0.1, range: 6.0, rate: 16.0),
     field_resolution: 256,
     components: [
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
-        // Detritus lingers (low diffusion) and slowly fades (decay) — an uprooting leaves
-        // a visible, localized patch that decomposes over time.
+        // Detritus lingers (low diffusion) and slowly fades — an uprooting leaves a visible,
+        // localized patch that decomposes over time.
         (name: "Detritus", diffusion: 0.06, decay: 0.02),
     ],
     sources: [
-        // Rocks (solid, emitting nothing) carve the reef.
-        (pos: (-170.0, 130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 34.0, solid: true),
-        (pos: (140.0, 165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 30.0, solid: true),
-        (pos: (200.0, -60.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 28.0, solid: true),
-        (pos: (40.0, -190.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 32.0, solid: true),
-        (pos: (-180.0, -150.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 30.0, solid: true),
-        (pos: (-20.0, -10.0), component: 0, rate: 0.0, color: (0.40, 0.40, 0.46), radius: 22.0, solid: true),
-        // Nutrient vents (intangible) the kelp clusters around, tucked into the shelter.
-        (pos: (-110.0, -80.0), component: 0, rate: 28.0, color: (1.0, 0.55, 0.2), radius: 11.0),
-        (pos: (90.0, 40.0), component: 0, rate: 28.0, color: (1.0, 0.55, 0.2), radius: 11.0),
-        (pos: (-40.0, 150.0), component: 0, rate: 28.0, color: (1.0, 0.55, 0.2), radius: 11.0),
+        // Four refuge rings (6 rocks each, r 11, ~18 px gaps) around a rich sheltered vent.
+        // Ring A @ (-150, 130):
+        (pos: (-110.0, 130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-130.0, 165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-170.0, 165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-190.0, 130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-170.0, 95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-130.0, 95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        // Ring B @ (150, 130):
+        (pos: (190.0, 130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (170.0, 165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (130.0, 165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (110.0, 130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (130.0, 95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (170.0, 95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        // Ring C @ (-150, -130):
+        (pos: (-110.0, -130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-130.0, -95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-170.0, -95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-190.0, -130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-170.0, -165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (-130.0, -165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        // Ring D @ (150, -130):
+        (pos: (190.0, -130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (170.0, -95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (130.0, -95.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (110.0, -130.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (130.0, -165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        (pos: (170.0, -165.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 11.0, solid: true),
+        // Rich sheltered vents inside each ring — the larder, all behind size-gates the
+        // omnivore cannot pass, so the small herbivore is drawn in through the gaps to graze.
+        (pos: (-150.0, 130.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 9.0),
+        (pos: (150.0, 130.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 9.0),
+        (pos: (-150.0, -130.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 9.0),
+        (pos: (150.0, -130.0), component: 0, rate: 12.0, color: (1.0, 0.55, 0.2), radius: 9.0),
+        // An open vent (contested commons) in mid-water: exposed food where the omnivore
+        // hunts the herbivores it tempts out — the arena the walled-out predator is left with.
+        (pos: (0.0, 0.0), component: 0, rate: 9.0, color: (1.0, 0.55, 0.2), radius: 10.0),
     ],
     field_relations: [
         // Kelp: absorbs & holds the nutrient, seeds on it, deposits detritus at death.
         (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
         (species: 0, component: 1, emit_at_death: 5.0),
-        // Grazer: needs the nutrient (kelp digestible), harvests by eating, breeds on it;
-        // a grazer corpse also returns some detritus.
+        // Herbivore: needs the nutrient (kelp digestible), harvests by eating, breeds on it.
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 16.0, need: 1.0),
         (species: 1, component: 1, emit_at_death: 3.0),
+        // Omnivore: needs the nutrient too, so it eats BOTH kelp and herbivores (size + Law 8);
+        // it just cannot fit into the rings to reach the sheltered stand.
+        (species: 2, component: 0, capacity: 50.0, emit_at_death: 4.0, repro_cost: 30.0, need: 1.0),
+        (species: 2, component: 1, emit_at_death: 4.0),
     ],
     play_area_color: (0.05, 0.09, 0.12),
     off_game_color: (0.10, 0.14, 0.18),

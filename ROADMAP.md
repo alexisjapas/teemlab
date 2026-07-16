@@ -38,8 +38,8 @@ each: **bare loop + allometric mortality** (01) → **photosynthetic producers o
 nutrient, with a real carrying capacity** (02) → **emergent grazing + trophic transfer**
 (03) → **selection of a priced trait** (04) → **restraint + the commons** (05) →
 **trained-MLP neuroevolution vs a wander control** (06) → **three emergent trophic levels
-+ flight** (07) → **rocks + anchored kelp + turnover** (08) → **the generational
-run→score→breed regime** (09). Living-food worlds are Lotka-Volterra, so these are
++ flight** (07) → **size-selective refugia — rocks that sort bodies by size — + anchored
+kelp + turnover** (08) → **the generational run→score→breed regime** (09). Living-food worlds are Lotka-Volterra, so these are
 *examples to watch* over a coexistence window (§7), not steady states.
 
 The producer economy is now **nutrient-metabolism**: photosynthesis CONSUMES a diffusing
