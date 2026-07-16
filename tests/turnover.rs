@@ -52,6 +52,7 @@ fn config(mortal: bool) -> SimConfig {
             captured_brain: None,
             captured_from: None,
             anchor: None,
+            spawn_zone: None,
         }],
         components: vec![ComponentConfig {
             name: "Carrion".into(),

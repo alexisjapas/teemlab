@@ -320,6 +320,12 @@ pub struct Archetype {
     /// Omitted from the RON when absent (`skip_serializing_if`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<AnchorConfig>,
+    /// **Founding spawn region** ([`SpawnZone`]): confine this species' founders to a
+    /// shape, or keep them out of one. `None` (default, every existing scenario) ⇒ the
+    /// whole-arena scatter, RNG stream untouched → byte-identical. Governs birth
+    /// position only. Omitted from the RON when absent (`skip_serializing_if`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_zone: Option<SpawnZone>,
 }
 
 impl Archetype {
@@ -353,6 +359,7 @@ impl Archetype {
             captured_brain: None,
             captured_from: None,
             anchor: None,
+            spawn_zone: None,
         }
     }
 
@@ -386,6 +393,7 @@ impl Archetype {
             captured_brain: None,
             captured_from: None,
             anchor: None,
+            spawn_zone: None,
         }
     }
 
@@ -713,6 +721,55 @@ pub struct AnchorConfig {
     /// [`Anchor`](crate::components::Anchor) is dropped and it becomes a free body (a
     /// dislodged fragment that drifts / settles where it was knocked).
     pub die_on_detach: bool,
+}
+
+/// A **spawn region** for a species' founders — the *starting-position* constraint
+/// ([`Archetype::spawn_zone`]). The founding scatter normally fills the whole arena
+/// ([`crate::spawn::spawn_agents`]); a zone confines it to a shape (`exclude: false`)
+/// or **keeps it out** of one (`exclude: true`). It governs **only birth position**,
+/// never the sim afterward: a body is free to move wherever physics allows once alive.
+///
+/// The motivating use is a **size-selective refugium** built entirely from scenario
+/// data (no engine change): a nutrient source ringed by **solid** sources (rocks, cf.
+/// [`Source::solid`]) with gaps too small for a grazer but wide enough for a tiny
+/// rooted plant → a pseudo-inexhaustible food patch. Founders are then placed to
+/// match: the plant `Inside` the ring, the grazer `Outside` it (`exclude: true`), so
+/// the standing crop starts where the geometry protects it. Absent (`None`, every
+/// existing scenario) ⇒ the whole-arena scatter, RNG stream untouched → byte-identical.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpawnZone {
+    /// The region's shape, in world coordinates.
+    pub shape: ZoneShape,
+    /// `false` (default): founders spawn **inside** `shape`. `true`: they spawn
+    /// **outside** it — the shape is a keep-out (e.g. a grazer barred from the plant
+    /// refugium). `#[serde(default)]` → a zone lists `exclude` only when `true`.
+    #[serde(default)]
+    pub exclude: bool,
+}
+
+/// The shape of a [`SpawnZone`] — a disc or an axis-aligned box, in world coordinates.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ZoneShape {
+    /// A disc: `center` and `radius`.
+    Circle { center: [f32; 2], radius: f32 },
+    /// An axis-aligned rectangle between two opposite corners.
+    Rect { min: [f32; 2], max: [f32; 2] },
+}
+
+impl ZoneShape {
+    /// Whether the world point `(x, y)` lies within the shape (boundary included).
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        match *self {
+            ZoneShape::Circle { center, radius } => {
+                let (dx, dy) = (x - center[0], y - center[1]);
+                dx * dx + dy * dy <= radius * radius
+            }
+            ZoneShape::Rect { min, max } => {
+                x >= min[0] && x <= max[0] && y >= min[1] && y <= max[1]
+            }
+        }
+    }
 }
 
 /// How a **species relates to a component** — the environmental analogue of the
@@ -1216,6 +1273,14 @@ impl SimConfig {
             .and_then(|a| a.anchor.as_ref())
     }
 
+    /// The **spawn zone** of archetype `species`, if its founders are confined ([`SpawnZone`]).
+    /// `None` (default, all existing scenarios) → the whole-arena founding scatter → byte-identical.
+    pub fn spawn_zone_of(&self, species: u16) -> Option<&SpawnZone> {
+        self.archetypes
+            .get(species as usize)
+            .and_then(|a| a.spawn_zone.as_ref())
+    }
+
     /// The **mutability** ("mutable?" facet per gene) of archetype `species`. Falls
     /// back to the default for an out-of-list index.
     pub fn mutable_of(&self, species: u16) -> Mutability {
@@ -1525,6 +1590,25 @@ mod tests {
             .iter()
             .find(|a| !a.is_sessile())
             .expect("a mobile agent")
+    }
+
+    /// A [`ZoneShape`] recognizes its interior (boundary inclusive) for both shapes.
+    #[test]
+    fn zone_shape_contains_disc_and_box() {
+        let c = ZoneShape::Circle {
+            center: [10.0, 0.0],
+            radius: 5.0,
+        };
+        assert!(c.contains(10.0, 0.0)); // centre
+        assert!(c.contains(15.0, 0.0)); // on the rim (≤)
+        assert!(!c.contains(16.0, 0.0)); // just outside
+        let r = ZoneShape::Rect {
+            min: [-2.0, -3.0],
+            max: [4.0, 5.0],
+        };
+        assert!(r.contains(0.0, 0.0));
+        assert!(r.contains(-2.0, 5.0)); // corner (inclusive)
+        assert!(!r.contains(5.0, 0.0));
     }
 
     /// A partial scenario parses, and the omitted fields fall back to the default.

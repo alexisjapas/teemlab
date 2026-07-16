@@ -50,6 +50,7 @@ fn hunter_sees_and_chases_its_target() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
             // The bait: a sessile source (Phase 3b) — immobile, never consumed
             // (zero-rate relation); the hunter must see it as a "target".
@@ -74,6 +75,7 @@ fn hunter_sees_and_chases_its_target() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
         ],
         // The food (species 1) holds a "Food" component the hunter (species 0) needs, so

@@ -59,6 +59,7 @@ fn sessile(name: &str, idx: usize, genotype: Genotype) -> Archetype {
         captured_brain: None,
         captured_from: None,
         anchor: None,
+        spawn_zone: None,
     }
 }
 

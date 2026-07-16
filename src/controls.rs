@@ -138,6 +138,7 @@ fn archetype_diverged(a: &Archetype, b: &Archetype) -> bool {
         mutable,
         captured_brain,
         anchor,
+        spawn_zone,
         // Live or display-only.
         name: _,
         color: _,
@@ -152,6 +153,7 @@ fn archetype_diverged(a: &Archetype, b: &Archetype) -> bool {
         || *mutable != b.mutable
         || *captured_brain != b.captured_brain
         || *anchor != b.anchor
+        || *spawn_zone != b.spawn_zone
 }
 
 /// The simulation controls — pause / step / speed / reset. Only acts on

@@ -6,7 +6,7 @@ use crate::components::{
     Action, Age, Agent, Anchor, Generation, Lineage, Maneuver, Perception, Radius, Reserve,
     Species, Wall,
 };
-use crate::config::SimConfig;
+use crate::config::{SimConfig, SpawnZone, ZoneShape};
 use crate::genotype::Genotype;
 use crate::nutrients::{Emits, Nutrients};
 use crate::rng::Rng;
@@ -83,7 +83,14 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
     let mut founder_k = vec![0usize; config.archetypes.len()];
     for (i, species) in species_seq.into_iter().enumerate() {
         let span = config.arena_half_extent - config.agent_radius_of(species) - 5.0;
-        let pos = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
+        // Founding position: the whole-arena scatter unless the archetype declares a
+        // spawn zone. The `None` branch is byte-for-byte the historical draw (two
+        // `next_signed`), so a scenario without zones keeps its exact RNG stream
+        // (chaos-sensitive: [[mlp-test-chaos-sensitive]]); only a zoned species reroutes.
+        let pos = match config.spawn_zone_of(species) {
+            None => Vec2::new(rng.next_signed() * span, rng.next_signed() * span),
+            Some(zone) => sample_in_zone(&mut rng, zone, span),
+        };
         // `heading` is drawn **in all cases** (even if a capture ignores it) to
         // keep the RNG stream bit-for-bit identical to scenarios without capture;
         // `brain_seed` is not a draw (derived from the seed).
@@ -137,6 +144,43 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 lineage,
             ),
         }
+    }
+}
+
+/// Draws a founding position honouring a [`SpawnZone`], within the spawnable arena
+/// (`±span`). **Inside** a shape (`exclude: false`) samples the shape directly — a disc
+/// by polar sampling (uniform over the area), a rectangle by two lerps — so it always
+/// succeeds; the point is clamped back into the arena. **Outside** (`exclude: true`)
+/// rejection-samples the whole-arena scatter until the point misses the shape, capped at
+/// 64 tries (a keep-out covering almost the whole arena then falls back to the last draw
+/// rather than looping). Only reached for a zoned species, so the byte-identity of
+/// unzoned scenarios is unaffected (cf. [`spawn_agents`]).
+fn sample_in_zone(rng: &mut Rng, zone: &SpawnZone, span: f32) -> Vec2 {
+    let lo = Vec2::splat(-span);
+    let hi = Vec2::splat(span);
+    if zone.exclude {
+        let mut p = Vec2::ZERO;
+        for _ in 0..64 {
+            p = Vec2::new(rng.next_signed() * span, rng.next_signed() * span);
+            if !zone.shape.contains(p.x, p.y) {
+                return p;
+            }
+        }
+        p // keep-out too large to escape: accept the last draw (author misconfigured).
+    } else {
+        let p = match zone.shape {
+            ZoneShape::Circle { center, radius } => {
+                // Polar with r ∝ √u for a uniform disc (else points bunch at the centre).
+                let r = radius * rng.next_f32().sqrt();
+                let a = rng.next_f32() * std::f32::consts::TAU;
+                Vec2::new(center[0] + r * a.cos(), center[1] + r * a.sin())
+            }
+            ZoneShape::Rect { min, max } => Vec2::new(
+                min[0] + rng.next_f32() * (max[0] - min[0]),
+                min[1] + rng.next_f32() * (max[1] - min[1]),
+            ),
+        };
+        p.clamp(lo, hi)
     }
 }
 
@@ -295,6 +339,57 @@ fn spawn_sources(commands: &mut Commands, config: &SimConfig) {
         // historical intangible emitter, no collider → byte-identical, no RNG.
         if source.solid {
             entity.insert((RigidBody::Static, Collider::circle(source.radius)));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{SpawnZone, ZoneShape};
+
+    /// `sample_in_zone` respects the zone: `Inside` always lands within the shape (and the
+    /// arena), `Outside` never does — for both a disc and a rectangle.
+    #[test]
+    fn sample_in_zone_respects_the_shape() {
+        let mut rng = Rng::new(0xC0FFEE);
+        let span = 400.0;
+        let disc = ZoneShape::Circle {
+            center: [60.0, -40.0],
+            radius: 50.0,
+        };
+        let inside = SpawnZone {
+            shape: disc,
+            exclude: false,
+        };
+        let outside = SpawnZone {
+            shape: disc,
+            exclude: true,
+        };
+        for _ in 0..500 {
+            let p = sample_in_zone(&mut rng, &inside, span);
+            assert!(disc.contains(p.x, p.y), "inside sample escaped: {p:?}");
+            assert!(
+                p.x.abs() <= span && p.y.abs() <= span,
+                "outside the arena: {p:?}"
+            );
+            let q = sample_in_zone(&mut rng, &outside, span);
+            assert!(
+                !disc.contains(q.x, q.y),
+                "outside sample fell in the disc: {q:?}"
+            );
+        }
+        let rect = ZoneShape::Rect {
+            min: [-120.0, 20.0],
+            max: [-40.0, 160.0],
+        };
+        let in_rect = SpawnZone {
+            shape: rect,
+            exclude: false,
+        };
+        for _ in 0..500 {
+            let p = sample_in_zone(&mut rng, &in_rect, span);
+            assert!(rect.contains(p.x, p.y), "rect sample escaped: {p:?}");
         }
     }
 }

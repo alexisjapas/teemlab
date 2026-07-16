@@ -57,6 +57,7 @@ fn prey_sees_and_flees_its_predator() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
             // Species 1: the predator, immobile (max_speed 0) — the scarecrow. Bigger than
             // the prey so it dominates it (the size half of `can_eat`).
@@ -80,6 +81,7 @@ fn prey_sees_and_flees_its_predator() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
         ],
         // The prey (species 0) holds a "Flesh" component the predator (species 1) needs,

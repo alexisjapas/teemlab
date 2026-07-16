@@ -57,6 +57,7 @@ fn one_agent_config() -> SimConfig {
             captured_brain: None,
             captured_from: None,
             anchor: None,
+            spawn_zone: None,
         }],
         // No relations, no sources: the field is inert except for what recycling
         // deposits. A single nutrient component (index 0) is where `reap` recycles;

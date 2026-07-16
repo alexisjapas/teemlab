@@ -47,6 +47,7 @@ fn repro_world(reserve_max: f32, threshold: f32, offspring: f32) -> SimConfig {
             captured_brain: None,
             captured_from: None,
             anchor: None,
+            spawn_zone: None,
         }],
         seed: 0x5EED,
         cost_law: CostLaw::inert(),

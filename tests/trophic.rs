@@ -63,6 +63,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
             Archetype {
                 name: "Plant".into(),
@@ -77,6 +78,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 captured_brain: None,
                 captured_from: None,
                 anchor: None,
+                spawn_zone: None,
             },
         ],
         // Forager (0) eats the plant (1): predation (transfer) at a steady rate, in
