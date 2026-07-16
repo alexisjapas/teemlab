@@ -16,6 +16,15 @@ use bevy::image::{Image, ImageSampler};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
+/// Breathing margin around the arena for the **fit-the-arena** framing (`1.0` =
+/// flush with the walls; `1.18` shows a band of bank/sand around them). The single
+/// source of truth for that band, so the three places that frame the arena agree:
+/// the windowed Observe view (`main::set_sim_camera`), the 9:16 video composition
+/// ([`crate::dataviz`]), and the arena-only recorder (`bin/record`). They drifted
+/// apart before (1.18 / 1.08 / 1.1) — a filmed run then framed the arena tighter
+/// than the editor showed it.
+pub const ARENA_VIEW_MARGIN: f32 = 1.18;
+
 /// Adds the sim's rendering systems (entity meshes, reserve-based shading,
 /// arena, heading indicator, inner/outer **backgrounds**). To be combined with a
 /// camera provided by the binary (window for `main`, image target for `record`).

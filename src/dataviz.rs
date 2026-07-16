@@ -43,8 +43,6 @@ const LETTERBOX_LAYER: usize = 2;
 /// video.
 const VIZ_W: f32 = 900.0;
 const VIZ_H: f32 = 700.0;
-/// Breathing margin around the arena in the top square.
-const ARENA_MARGIN: f32 = 1.08;
 /// Number of rotating pages (0 = curves, 1 = inspector).
 const PAGES: usize = 2;
 
@@ -265,7 +263,7 @@ fn compose_viewports(
             ..default()
         });
         sim_cam.is_active = true;
-        let span = 2.0 * config.arena_half_extent * ARENA_MARGIN;
+        let span = 2.0 * config.arena_half_extent * crate::visuals::ARENA_VIEW_MARGIN;
         match &mut *sim_proj {
             Projection::Orthographic(o) => {
                 o.scaling_mode = ScalingMode::AutoMin {

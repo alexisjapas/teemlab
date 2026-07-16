@@ -243,8 +243,9 @@ fn debug_screenshot(mut frames: Local<u32>, mut commands: Commands) {
 /// Breathing margin around the arena for the **base** framing (1.0 = flush with the
 /// edges): "Fit arena" shows the walls *plus* a band of bank/sand around them.
 /// Shared by `camera_navigation` (cursor-anchored zoom math) and
-/// `set_sim_camera` (the actual framing), so the two agree on the base scale.
-const VIEW_MARGIN: f32 = 1.18;
+/// `set_sim_camera` (the actual framing), so the two agree on the base scale — and,
+/// via the shared constant, with the video recorder's framing too.
+const VIEW_MARGIN: f32 = teemlab::visuals::ARENA_VIEW_MARGIN;
 
 /// User pan/zoom of the sim view, layered on top of the automatic fit-the-arena
 /// framing. **Rendering only** (a windowed-build resource, read in the egui pass);
