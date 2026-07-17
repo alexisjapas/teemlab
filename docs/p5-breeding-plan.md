@@ -412,7 +412,14 @@ variant = `mlp_evolved` reaching (then beating) parity.
   `match_ticks` (more in-match neuroevolution generations per match — the refuge enables this
   without extinction), a rival-relative fitness, or co-evolution. The `spawn_zone` tool + refugium
   stand as reusable primitives; the *stable-window* hypothesis for the parity ceiling is
-  **falsified** by the Hunter control.
+  **falsified** by the Hunter control. **Reproduce** — the five experiment scenarios live in the
+  (gitignored, local) `scenarios/saved/`, run headless with the `breed` bin:
+  `refuge_demo.ron` (the placement demo, no batch — open in the app to see the ring),
+  `refuge_control_hunter.ron` (the **positive control**: a Hunter foraging vs the Wander →
+  `dominance ≈ +33`), `refuge_control_open_mlp.ron` (the open-food MLP baseline → `~−15`),
+  `refuge_breed_enclosed.ron` (food locked in the core → flat `~+3`), and
+  `refuge_breed_core.ron` (protected core + open halo → flat `~0–4`). E.g.
+  `cargo run --bin breed -- scenarios/saved/refuge_control_hunter.ron 4`.
 
 ---
 

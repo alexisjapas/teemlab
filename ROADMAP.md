@@ -69,6 +69,30 @@ experiment driver). Claims were weakened to the post-refactor economy's honest r
 relations to its 3-species layout). `cargo test` green (163 pass, 0 fail, 3 ignored),
 `clippy --all-targets` clean.
 
+**Post-Phase-C additions (2026-07-16/17, same branch, not yet on `main`).** Several
+self-contained features + one recorded research result, all sim byte-identical (`tests/mlp`
+green throughout):
+- **HUD run-timer fix** — a hot reset now restarts the run clock (and the curve axes) at 0
+  via a re-based epoch in `metrics::History`; the graph "Clear" button deliberately does not.
+- **Recorder** — a single shared arena fit-margin (`visuals::ARENA_VIEW_MARGIN`) unifies the
+  Observe view, the 9:16 video composition and the recorder (they had drifted to 1.18/1.08/1.1);
+  plus `record --stop-when BRAINS [--stop-after S]`, ending a film once a brain-filtered subset
+  goes extinct so a dead run is not padded with an empty arena.
+- **`Fitness::Advantage`** — a lineage-relative fitness (`w/w̄`, the dominant founder lineage's
+  time-integrated share) over a new inert `Lineage(u16)` tag, to escape `Population`'s
+  carrying-capacity flatline. It escapes the flatline but is noisy and does **not** breed past
+  parity on living food (`docs/p5-breeding-plan.md` §7).
+- **`Archetype.spawn_zone`** — per-species founding spawn zones (a `Circle`/`Rect` the founders
+  spawn inside, or are kept out of); the byte-identical enabler of a **size-selective refugium**
+  built from scenario data alone (a nutrient vent ringed by rocks with size-selective gaps).
+- **Refuge breeding experiment — the "stable window" hypothesis for the parity ceiling is
+  FALSIFIED.** With a **positive control** (a hand-written Hunter forager crushes a Wander
+  control, `dominance ≈ +33`), the bred MLP never climbs that gradient across three stable
+  regimes — the bottleneck is **MLP neuroevolution**, not the food or stability. Full write-up +
+  the five local `scenarios/saved/refuge_*.ron` reproductions: `docs/p5-breeding-plan.md` §7. The
+  real past-parity levers target the *learning* (longer `match_ticks`, a rival-relative fitness,
+  co-evolution), not the food supply.
+
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.
 
