@@ -18,16 +18,16 @@ cargo run --bin record -- scenarios/examples/04_evolution.ron --out outputs/run.
 | `--seconds S` | `61`        | Length of simulated time to render.                |
 | `--width W`   | `1080`      | Frame width (the arena is square).                 |
 | `--height H`  | `1080`      | Frame height.                                      |
-| `--nutrients` | off         | Overlay the nutrient **heatmap** layer.            |
+| `--components` | off         | Overlay the component **heatmap** maps.           |
 
-The `--nutrients` overlay is especially good on the resource scenarios — try it on
+The `--components` overlay is especially good on the resource scenarios — try it on
 [`02_nutrients.ron`](./scenarios.md#02--nutrients) to film the oases blooming, or on
 [`12_nutrient_web.ron`](./scenarios.md#12--nutrient-web) to watch recycling light up the
 field.
 
 ```sh
 cargo run --bin record -- scenarios/examples/02_nutrients.ron \
-    --out outputs/nutrients.mp4 --seconds 90 --nutrients
+    --out outputs/nutrients.mp4 --seconds 90 --components
 ```
 
 ## From the editor

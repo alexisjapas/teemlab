@@ -1,7 +1,7 @@
 //! Trophic nutrient transfer — **eating carries the nutrient up the food chain**.
 //!
 //! The first slice of the nutrient food web (ROADMAP §9 "T3"): until now the
-//! nutrient ([`Nutrients`]) only entered an entity by **absorption** from the field
+//! nutrient ([`ComponentStore`]) only entered an entity by **absorption** from the field
 //! (plants on a substrate); fauna never acquired any. Now the *single interaction
 //! primitive* (§3) carries it: when an actor eats a prey (`transfer: true`), it
 //! receives the share of the prey's nutrient store proportional to the fraction of
@@ -22,8 +22,8 @@ use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
 use teemlab::config::{Archetype, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
-use teemlab::nutrients::Nutrients;
 use teemlab::spawn::spawn_agent;
+use teemlab::substrate::ComponentStore;
 
 mod common;
 
@@ -121,6 +121,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 0.0,
                 0,
                 config.reserve_max_of(0),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -134,6 +135,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
                 0.0,
                 1,
                 config.reserve_max_of(1),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -144,7 +146,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
     // flow up the chain.
     app.world_mut()
         .run_system_once(
-            move |mut q: Query<(&Species, &mut Nutrients), With<Agent>>| {
+            move |mut q: Query<(&Species, &mut ComponentStore), With<Agent>>| {
                 for (species, mut store) in &mut q {
                     if species.0 == 1 {
                         store.set(0, plant_nutrient0);
@@ -161,7 +163,7 @@ fn eating_carries_the_nutrient_from_prey_to_predator() {
 
     // Read the two stores back.
     let world = app.world_mut();
-    let mut q = world.query_filtered::<(&Species, &Nutrients), With<Agent>>();
+    let mut q = world.query_filtered::<(&Species, &ComponentStore), With<Agent>>();
     let mut forager = None;
     let mut plant = None;
     for (species, store) in q.iter(world) {

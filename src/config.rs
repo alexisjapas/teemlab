@@ -39,7 +39,7 @@ pub struct SimConfig {
     /// [`BrainKind::Sessile`] brain (Phase 3b), without number collision. Empty →
     /// inert world (nothing at spawn).
     pub archetypes: Vec<Archetype>,
-    /// Cells-per-side of **every** component [`Field`](crate::nutrients::Field) (one
+    /// Cells-per-side of **every** component [`Field`](crate::substrate::Field) (one
     /// shared grid resolution over the arena). Default 48; only meaningful when
     /// [`components`](Self::components) is non-empty.
     pub field_resolution: usize,
@@ -60,6 +60,28 @@ pub struct SimConfig {
     /// (`docs/component-emission-plan.md`), bundled one row per (species, component).
     /// Empty by default; a species with no row ignores the substrate.
     pub field_relations: Vec<FieldRelation>,
+    /// **Randomized founder nutrient store**: when `true`, each founding agent is born
+    /// holding a *random* fraction (uniform in `[0, capacity]`) of its component-`0`
+    /// nutrient store instead of the T2 empty one — a warm-up stock that lets producers
+    /// photosynthesise from the first tick (their store no longer starts empty) and
+    /// *desynchronises* the cohort's first starvation wave. Complements
+    /// [`ComponentConfig::initial`] (a stock in the field) with a stock *inside* the
+    /// founders. Draws one RNG value per founder, **after** the position/heading draws
+    /// (then the energy draw), so a scenario with neither flag keeps its exact stream.
+    /// `false` (default) → founders born empty (T2) → byte-identical
+    /// ([[mlp-test-chaos-sensitive]]).
+    #[serde(default)]
+    pub random_initial_nutrients: bool,
+    /// **Randomized founder energy**: when `true`, each founding agent is born with a
+    /// *random* fraction (uniform in `[0, reserve_max]`) of its energy reserve instead of
+    /// a full one — a heterogeneous cohort ("caught mid-life") rather than all brand-new.
+    /// NB founders are otherwise born **full**, so this *lowers* the average starting
+    /// buffer: it adds variance, it does **not** aid warm-up survival the way
+    /// [`random_initial_nutrients`](Self::random_initial_nutrients) does. Draws one RNG
+    /// value per founder, **after** the nutrient draw. `false` (default) → founders born
+    /// full → byte-identical.
+    #[serde(default)]
+    pub random_initial_energy: bool,
     /// Bounds of the maximum-speed gene.
     pub speed_bounds: Bounds,
     /// Bounds of the agility gene.
@@ -632,7 +654,7 @@ impl Default for Mutability {
 }
 
 /// A **component**: a diffusible substrate (nutrient / toxin / pheromone / biomass),
-/// rendered as a [`Field`](crate::nutrients::Field). Differentiated only by the
+/// rendered as a [`Field`](crate::substrate::Field). Differentiated only by the
 /// (species, component) relations that reference it (Law 11), never by a type. The
 /// grid resolution is shared ([`SimConfig::field_resolution`]); per-component are its
 /// `diffusion` (spreading) and `decay` (dissipation — a pheromone fades, detritus
@@ -647,6 +669,15 @@ pub struct ComponentConfig {
     pub diffusion: f32,
     /// Per-tick fractional decay, in `[0, 1]` (`0` → conserved, a nutrient).
     pub decay: f32,
+    /// **Initial background concentration**: every field cell starts at this value, a
+    /// uniform stock laid down before the first tick so life has an absorbable reserve
+    /// while the sources' point emissions build their gradients. A uniform field is
+    /// **stationary** under diffusion ([`Field::diffuse`](crate::substrate::Field::diffuse) —
+    /// every cell already equals its neighbour mean), so this is a pure *starting stock*
+    /// (drawn down by absorption), not a sustained supply: it buys a warm-up window, then
+    /// the system relaxes to the source-bounded oasis equilibrium. `0.0` (default) → the
+    /// empty field of every existing scenario → byte-identical.
+    pub initial: f32,
 }
 
 impl Default for ComponentConfig {
@@ -655,6 +686,7 @@ impl Default for ComponentConfig {
             name: "Component".to_string(),
             diffusion: 0.0,
             decay: 0.0,
+            initial: 0.0,
         }
     }
 }
@@ -662,7 +694,7 @@ impl Default for ComponentConfig {
 /// A substrate **source**: a fixed point that emits a component into its field. A
 /// *distinct category* from [`Archetype`] (it is not a life form): spawned as a
 /// **non-`Agent`** entity ([`crate::spawn::spawn_sources`]) carrying
-/// [`Emits`](crate::nutrients::Emits), with no collider (intangible) but a visual.
+/// [`Emits`](crate::substrate::Emits), with no collider (intangible) but a visual.
 /// Sources are hand-edited in the RON (GUI editing is roadmapped).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -927,6 +959,8 @@ impl Default for SimConfig {
             components: Vec::new(),
             sources: Vec::new(),
             field_relations: Vec::new(),
+            random_initial_nutrients: false,
+            random_initial_energy: false,
             speed_bounds: Bounds {
                 min: 40.0,
                 max: 260.0,
@@ -1072,7 +1106,7 @@ impl SimConfig {
     }
 
     /// The per-component **store capacities** of `species` (the `capacity` verb). Sizes
-    /// the agent's [`Nutrients`](crate::nutrients::Nutrients) store at spawn; a
+    /// the agent's [`ComponentStore`](crate::substrate::ComponentStore) store at spawn; a
     /// single-axis scenario (capacity only on component `0`) yields `[cap, 0, …]` →
     /// byte-identical with the former single `max` from [`nutrient_of`](Self::nutrient_of).
     pub fn capacities_of(&self, species: u16) -> Vec<f32> {

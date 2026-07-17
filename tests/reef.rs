@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use teemlab::SimConfig;
 use teemlab::components::{Agent, Species};
-use teemlab::nutrients::Fields;
+use teemlab::substrate::Fields;
 
 mod common;
 

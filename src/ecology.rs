@@ -24,9 +24,9 @@ use crate::components::{
 };
 use crate::config::SimConfig;
 use crate::genotype::Genotype;
-use crate::nutrients::{Fields, Nutrients};
 use crate::rng::Rng;
 use crate::spawn::spawn_agent_with_brain;
+use crate::substrate::{ComponentStore, Fields};
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -63,7 +63,7 @@ pub fn metabolize(
             &Brain,
             &Maneuver,
             &Action,
-            &mut Nutrients,
+            &mut ComponentStore,
         ),
         With<Agent>,
     >,
@@ -140,7 +140,7 @@ pub fn metabolize(
 /// fauna starved empty (SIM Law 11 — one uniform death rule, no kind exempted).
 ///
 /// **Recycling (T3 link 2):** a dying body returns the nutrient it had accumulated in
-/// its [`Nutrients`] store to the [`crate::nutrients::Field`] at its cell — the biogeochemical
+/// its [`ComponentStore`] store to the [`crate::substrate::Field`] at its cell — the biogeochemical
 /// loop that **closes the leak** the trophic transfer opened. Link 1 made the nutrient
 /// flow *up* the chain into biomass; without recycling a death would then **destroy**
 /// it. The field gains **exactly** what the body held (conservation, Law 9 in spirit:
@@ -152,7 +152,7 @@ pub fn reap(
     mut commands: Commands,
     config: Res<SimConfig>,
     mut fields: ResMut<Fields>,
-    agents: Query<(Entity, &Reserve, &Transform, &Nutrients, &Species), With<Agent>>,
+    agents: Query<(Entity, &Reserve, &Transform, &ComponentStore, &Species), With<Agent>>,
 ) {
     // Corpse/carrion deposits (the `emit_at_death` verb) — computed once; a scenario with
     // none does no per-death work (byte-identical).
@@ -221,7 +221,7 @@ pub fn age_agents(time: Res<Time>, mut agents: Query<&mut Age, With<Agent>>) {
 /// extend to mutate the weights.
 ///
 /// **Nutrient axis (T2):** reproduction is *also* gated on the nutrient store
-/// ([`Nutrients`]) — a parent needs `offspring_nutrient` in store to reproduce, and
+/// ([`ComponentStore`]) — a parent needs `offspring_nutrient` in store to reproduce, and
 /// **spends** it (the child is born with an **empty** store). With the nutrient
 /// genes at 0 (every pre-T2 scenario) the gate passes spending nothing → unchanged.
 /// This is the second axis of ROADMAP §9's two-axis design: a missing nutrient stops
@@ -251,7 +251,7 @@ pub fn reproduce(
             &Brain,
             &Generation,
             &Lineage,
-            &mut Nutrients,
+            &mut ComponentStore,
         ),
         With<Agent>,
     >,

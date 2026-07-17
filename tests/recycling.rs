@@ -2,7 +2,7 @@
 //!
 //! Link 2 of the nutrient food web (ROADMAP §9 "T3"), the counterpart of the
 //! trophic transfer (link 1): link 1 lets the nutrient flow *up* the chain into an
-//! agent's [`Nutrients`] store, so a death must **return** that store to the
+//! agent's [`ComponentStore`] store, so a death must **return** that store to the
 //! substrate — otherwise eating would slowly **destroy** the nutrient. `reap` now
 //! deposits a dead body's store into the [`NutrientField`] at its cell, closing the
 //! conservation loop (Law 9 in spirit: matter is moved, not created or destroyed).
@@ -21,8 +21,8 @@ use teemlab::brain::BrainKind;
 use teemlab::components::{Agent, Species};
 use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
-use teemlab::nutrients::{Fields, Nutrients};
 use teemlab::spawn::spawn_agent;
+use teemlab::substrate::{ComponentStore, Fields};
 
 mod common;
 
@@ -66,6 +66,7 @@ fn one_agent_config() -> SimConfig {
             name: "Nutrient".into(),
             diffusion: 0.0,
             decay: 0.0,
+            initial: 0.0,
         }],
         // The Body (species 0) holds nutrient (capacity 100) — the store recycling
         // returns to the field at death. Declared in the field-relations table.
@@ -100,13 +101,14 @@ fn world_with_one_body(config: &SimConfig, stored: f32) -> App {
                 0.0,
                 0,
                 1.0, // a sliver of energy → starves within a tick or two
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
         })
         .expect("one-off spawn");
     app.world_mut()
-        .run_system_once(move |mut q: Query<&mut Nutrients, With<Agent>>| {
+        .run_system_once(move |mut q: Query<&mut ComponentStore, With<Agent>>| {
             for mut store in &mut q {
                 store.set(0, stored);
             }

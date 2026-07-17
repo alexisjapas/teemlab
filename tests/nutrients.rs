@@ -54,9 +54,16 @@ fn nutrient_gates_reproduction_without_a_death_spiral() {
     let founders = base.archetypes[0].count;
     assert!(!base.sources.is_empty(), "the scenario must ship sources");
 
-    // The contrast world: the very same scenario with the nutrient sources removed.
+    // The contrast world: the very same scenario stripped of **every** nutrient input —
+    // both the vents (`sources`) and the field's uniform warm-up stock
+    // (`ComponentConfig::initial`, which the shipped meadow now seeds). A truly barren world
+    // is the honest "no nutrient → collapse" control; leaving the initial stock in would let
+    // the field feed the plants for a long while and mask the survival-gating.
     let mut no_sources = base.clone();
     no_sources.sources.clear();
+    for c in &mut no_sources.components {
+        c.initial = 0.0;
+    }
 
     let mut failures = Vec::new();
 
@@ -117,5 +124,62 @@ fn nutrient_gates_reproduction_without_a_death_spiral() {
         failures.is_empty(),
         "T2 nutrient gating not robust:\n  {}",
         failures.join("\n  ")
+    );
+}
+
+/// Founder **starting stock** (`random_initial_nutrients`): with the flag on, each founding
+/// plant is born holding a *random* fraction of its nutrient capacity — a warm-up reserve
+/// that lets it photosynthesise from the first tick rather than starving while the sources'
+/// gradients build. With the flag off, founders are born empty (T2). We drive **both** states
+/// explicitly (the shipped meadow now enables the flag, so we can't lean on its default) and,
+/// to isolate the *founder-store* seeding from field absorption, strip the field's `initial`
+/// stock in both worlds. We then compare the aggregate nutrient held one tick after spawn: the
+/// seeded run holds on the order of half the total capacity, the empty run essentially none.
+#[test]
+fn random_initial_nutrients_seeds_founder_stores() {
+    use teemlab::substrate::ComponentStore;
+
+    let base = SimConfig::from_ron_str(SCENARIO).expect("valid nutrients scenario");
+    let (_, capacity, _) = base.nutrient_of(0);
+    let founders = base.archetypes[0].count;
+    assert!(
+        capacity > 0.0 && founders > 0,
+        "scenario must hold a nutrient store"
+    );
+    let cap_total = capacity * founders as f32;
+
+    // Aggregate nutrient (component 0) held across all live agents, one tick after spawn.
+    let held = |cfg: &SimConfig| -> f32 {
+        let mut app = common::stepping_app(cfg);
+        app.update(); // Startup (spawns founders) + one fixed tick.
+        let world = app.world_mut();
+        let mut q = world.query::<&ComponentStore>();
+        q.iter(world).map(|n| n.current(0)).sum()
+    };
+
+    // A controlled world with the field's background stock removed, so the only nutrient a
+    // founder can hold comes from the store seeding under test (not a tick of absorption).
+    let controlled = |flag: bool| -> SimConfig {
+        let mut cfg = base.clone();
+        cfg.seed = 0x1234;
+        cfg.random_initial_nutrients = flag;
+        for c in &mut cfg.components {
+            c.initial = 0.0;
+        }
+        cfg
+    };
+
+    // Off: founders born empty → aggregate store ~nil.
+    let held_off = held(&controlled(false));
+    // On: each founder seeded to a random fraction of capacity → ~half the total capacity.
+    let held_on = held(&controlled(true));
+
+    assert!(
+        held_off < 0.1 * cap_total,
+        "flag off: founders should be born empty, held {held_off:.2} of {cap_total:.0}"
+    );
+    assert!(
+        held_on > 0.25 * cap_total,
+        "flag on: founders should be seeded, held {held_on:.2} of {cap_total:.0}"
     );
 }

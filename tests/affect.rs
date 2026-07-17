@@ -1,5 +1,5 @@
 //! Affect verb — a component's local concentration EDITS an agent's [`Reserve`]
-//! (`nutrients::affect_agents`): `affect < 0` drains it (a **toxin**), `affect > 0` feeds
+//! (`substrate::affect_agents`): `affect < 0` drains it (a **toxin**), `affect > 0` feeds
 //! it (a **boon**), `affect == 0` leaves it (Law 11 — a toxin and a nutrient differ only
 //! by the verb pointed at the field). This is a **direct, deterministic** proof of the
 //! mechanism, decoupled from any example scenario: a single Source floods the small arena

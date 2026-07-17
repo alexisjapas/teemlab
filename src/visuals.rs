@@ -10,7 +10,7 @@
 
 use crate::components::{Agent, Locomotion, Perception, Radius, Reserve, Species};
 use crate::config::SimConfig;
-use crate::nutrients::{Field, Fields};
+use crate::substrate::{Field, Fields};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{Image, ImageSampler};
 use bevy::prelude::*;
@@ -64,7 +64,7 @@ impl Plugin for VisualsPlugin {
                     draw_heading,
                     draw_play_area,
                     sync_layer_flags,
-                    render_nutrient_layers,
+                    render_component_layers,
                     apply_agent_layer,
                     crate::decor::render_decor,
                 ),
@@ -82,7 +82,7 @@ pub struct Layers {
     /// The agents layer (their meshes and heading indicator).
     pub agents: bool,
     /// One flag per nutrient field (T2: a single one), each a background heatmap.
-    pub nutrients: Vec<bool>,
+    pub components: Vec<bool>,
 }
 
 impl Default for Layers {
@@ -92,8 +92,8 @@ impl Default for Layers {
             // Left empty on purpose: the per-component flags are grown to the scenario's
             // field count by `sync_layer_flags`, which fills them from `NewLayerVisible`
             // (the windowed default → every component shown). The recorder sets its own
-            // `Layers` from `--nutrients` (cf. `bin/record`).
-            nutrients: Vec::new(),
+            // `Layers` from `--components` (cf. `bin/record`).
+            components: Vec::new(),
         }
     }
 }
@@ -101,7 +101,7 @@ impl Default for Layers {
 /// Visibility handed to a nutrient layer that **appears** when the field count grows
 /// (a scenario load / reset) — the fill value used by [`sync_layer_flags`]. The
 /// windowed build wants every declared component shown by default (`true`, "see the
-/// whole substrate"); the video recorder overrides it to `false` so a `--nutrients`
+/// whole substrate"); the video recorder overrides it to `false` so a `--components`
 /// render only shows the field it explicitly asked for, keeping existing videos
 /// byte-identical.
 #[derive(Resource)]
@@ -114,7 +114,7 @@ impl Default for NewLayerVisible {
 }
 
 /// Display color of nutrient `index` (cyclic palette) — the hue of its heatmap.
-pub fn nutrient_color(index: usize) -> Srgba {
+pub fn component_color(index: usize) -> Srgba {
     const PALETTE: [Srgba; 4] = [
         Srgba::new(1.00, 0.60, 0.20, 1.0), // amber
         Srgba::new(0.30, 0.80, 1.00, 1.0), // cyan
@@ -294,7 +294,7 @@ fn draw_sources(mut gizmos: Gizmos, config: Res<crate::SimConfig>) {
 /// A **filled body** for a solid source (a rock): a pixel-art disc sprite tinted the
 /// source's color, under the agents (`z = -4`, above the play-area and the component
 /// heatmaps). One per **solid** [`Source`](crate::config::Source), reconciled against
-/// the config every frame — mirroring [`render_nutrient_layers`] — so editing a source
+/// the config every frame — mirroring [`render_component_layers`] — so editing a source
 /// (moving, resizing, toggling `solid`) shows live. It carries the index of the source
 /// it mirrors so a reconcile can find it again.
 #[derive(Component)]
@@ -304,7 +304,7 @@ struct SourceBody {
 }
 
 /// Rendering only: keep one filled disc ([`SourceBody`]) per **solid** source, tinted and
-/// placed from the config. Reconciles like [`render_nutrient_layers`]: update the discs
+/// placed from the config. Reconciles like [`render_component_layers`]: update the discs
 /// that still map to a solid source, hide those whose source vanished or turned
 /// intangible, and spawn a disc for any solid source that lacks one. No solid source
 /// (every scenario before rocks) → nothing spawned. A live radius edit re-fetches the
@@ -403,44 +403,102 @@ fn apply_agent_layer(layers: Res<Layers>, mut agents: Query<&mut Visibility, Wit
     }
 }
 
-/// A nutrient **heatmap** quad (one per nutrient field). Holds the field index and
-/// the grid resolution the texture was built for, so a scenario reload that changes
-/// the grid rebuilds it.
-/// Purely a **rendering** artifact (a background sprite), not part of the simulated
-/// world — so the windowed build's hot reset despawns it explicitly:
-/// [`render_nutrient_layers`] only ever touches indices that still exist in
-/// [`Fields`], so a reload into a scenario with **fewer** fields would otherwise leave
-/// the dropped layers orphaned (frozen on their last texture).
+/// A nutrient **heatmap** quad (one per nutrient field). Purely a **rendering** artifact
+/// (a background sprite), not part of the simulated world — so the windowed build's hot
+/// reset despawns it explicitly: [`render_component_layers`] only ever touches indices that
+/// still exist in [`Fields`], so a reload into a scenario with **fewer** fields would
+/// otherwise leave the dropped layers orphaned (frozen on their last texture).
+///
+/// The layer caches the **texture geometry** the field is painted onto: with the decor on,
+/// the quad grows past the arena square to cover the wobbly water basin, and a precomputed
+/// [`mask`](Self::mask) clips the tint to the shoreline (fill the pond, never the sand). The
+/// geometry depends on the field resolution and the decor's `(seed, half_extent)`, so those
+/// are cached to rebuild the texture + mask only when they change (the staleness idiom).
 #[derive(Component)]
-pub struct NutrientLayer {
+pub struct ComponentLayer {
     index: usize,
-    res: usize,
+    /// Inputs the geometry + mask were built for (rebuild when any changes).
+    field_res: usize,
+    seed: u64,
+    half_extent: f32,
+    /// Texture side (texels) and its world half-extent (the quad is `2·hm` on a side).
+    tex_res: usize,
+    hm: f32,
+    /// Per-texel water coverage (`tex_res²`, row-major in **image** orientation) the
+    /// concentration alpha is multiplied by. **Empty** ⇒ no mask (decor off → arena square).
+    mask: Vec<f32>,
 }
 
-/// Paints `field`'s concentrations into `image` (res×res RGBA): the nutrient's hue
-/// with **alpha ∝ concentration** (normalized to the field's current max), so empty
-/// cells are transparent and whatever is behind shows through. World +Y is mapped to
-/// the image's **top** row (vertical flip).
-fn paint_nutrient_image(image: &mut Image, field: &Field, color: Srgba) {
-    let res = field.resolution();
+/// The heatmap's texture geometry + water mask for `field` under `config`. **Decor on:** the
+/// quad grows to the pond's bounding box ([`Basin::water_half_extent`]) and the mask clips
+/// the tint to the wobbly shoreline — the field's edge values extrapolate outward across the
+/// bank (sampling clamps to the arena square), then feather out on the sand. **Decor off:**
+/// no pond — the bare arena square, no mask (byte-identical to the historical quad).
+///
+/// [`Basin::water_half_extent`]: crate::decor::Basin::water_half_extent
+fn heatmap_geometry(config: &SimConfig, field: &Field) -> (usize, f32, Vec<f32>) {
+    let h = config.arena_half_extent;
+    if !config.decor.enabled {
+        return (field.resolution().max(1), h, Vec::new());
+    }
+    let basin = crate::decor::Basin::new(config.seed, h);
+    let hm = basin.water_half_extent();
+    // Keep the field's texel density, extended to span the pond → a shoreline as crisp as
+    // the field is (linear sampling + the mask feather smooth what is left).
+    let tex_res = ((field.resolution() as f32) * hm / h.max(1.0))
+        .round()
+        .max(1.0) as usize;
+    let mut mask = vec![0.0_f32; tex_res * tex_res];
+    for (j, row) in mask.chunks_mut(tex_res).enumerate() {
+        let wy = hm - (j as f32 + 0.5) / tex_res as f32 * 2.0 * hm; // image top row = world +Y
+        for (i, cell) in row.iter_mut().enumerate() {
+            let wx = -hm + (i as f32 + 0.5) / tex_res as f32 * 2.0 * hm;
+            *cell = basin.coverage(wx, wy);
+        }
+    }
+    (tex_res, hm, mask)
+}
+
+/// Paints `field` into `image` (`tex_res²` RGBA): the nutrient's hue with **alpha ∝
+/// concentration** (normalized to the field's current max) times the water `mask`. Each
+/// texel samples the field at its **world** position (clamped to the arena square, so the
+/// bank extrapolates the nearest edge value), so an enlarged quad stays aligned with the
+/// sources. World +Y maps to the image's top row. An empty `mask` = coverage 1 everywhere
+/// (decor off).
+fn paint_component_image(
+    image: &mut Image,
+    field: &Field,
+    color: Srgba,
+    hm: f32,
+    tex_res: usize,
+    mask: &[f32],
+) {
     let cells = field.cells();
     let max = cells.iter().copied().fold(0.0_f32, f32::max).max(1e-6);
-    for y in 0..res {
-        let row = (res - 1 - y) as u32; // world +Y → image top row
-        for x in 0..res {
-            let a = (cells[y * res + x] / max).clamp(0.0, 1.0);
+    for j in 0..tex_res {
+        let wy = hm - (j as f32 + 0.5) / tex_res as f32 * 2.0 * hm;
+        for i in 0..tex_res {
+            let wx = -hm + (i as f32 + 0.5) / tex_res as f32 * 2.0 * hm;
+            let cover = mask.get(j * tex_res + i).copied().unwrap_or(1.0);
+            let a = (field.sample(Vec2::new(wx, wy)) / max * cover).clamp(0.0, 1.0);
             let _ = image.set_color_at(
-                x as u32,
-                row,
+                i as u32,
+                j as u32,
                 Color::srgba(color.red, color.green, color.blue, a),
             );
         }
     }
 }
 
-/// A fresh res×res heatmap image (linear-sampled → a smooth map, not blocky cells).
-fn make_nutrient_image(field: &Field, color: Srgba) -> Image {
-    let res = field.resolution().max(1) as u32;
+/// A fresh `tex_res²` heatmap image (linear-sampled → a smooth map, not blocky cells).
+fn make_component_image(
+    field: &Field,
+    color: Srgba,
+    hm: f32,
+    tex_res: usize,
+    mask: &[f32],
+) -> Image {
+    let res = tex_res.max(1) as u32;
     let mut image = Image::new_fill(
         Extent3d {
             width: res,
@@ -453,14 +511,14 @@ fn make_nutrient_image(field: &Field, color: Srgba) -> Image {
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     image.sampler = ImageSampler::linear();
-    paint_nutrient_image(&mut image, field, color);
+    paint_component_image(&mut image, field, color, hm, tex_res, mask);
     image
 }
 
-/// Rendering only: keep the per-component visibility flags ([`Layers::nutrients`]) sized
+/// Rendering only: keep the per-component visibility flags ([`Layers::components`]) sized
 /// to the actual number of fields — a scenario with `N` components needs `N` toggles.
 /// New components are filled from [`NewLayerVisible`]: `true` in the windowed build (every
-/// declared component is shown by default), `false` in the recorder (a `--nutrients` video
+/// declared component is shown by default), `false` in the recorder (a `--components` video
 /// shows only the field it asked for → byte-identical). Sizing these flags also makes the
 /// extra components *reachable* — the View ▸ Layers menu iterates them, so a field at
 /// index ≥ 1 (pheromone / toxicity / detritus) that had no flag would be both force-hidden
@@ -470,8 +528,8 @@ fn sync_layer_flags(
     fields: Res<Fields>,
     new_visible: Res<NewLayerVisible>,
 ) {
-    if layers.nutrients.len() != fields.len() {
-        layers.nutrients.resize(fields.len(), new_visible.0);
+    if layers.components.len() != fields.len() {
+        layers.components.resize(fields.len(), new_visible.0);
     }
 }
 
@@ -479,28 +537,27 @@ fn sync_layer_flags(
 /// at `z = -5`, above the play-area at `z = -10`). Off by default; toggled per
 /// component via [`Layers`]. Active layers **share** an opacity budget (`N` active ⇒
 /// `1/N` each), so several stacked maps blend without saturating the background. One
-/// quad ([`NutrientLayer`]) per [`Fields`] entry, hued by [`nutrient_color`].
-fn render_nutrient_layers(
+/// quad ([`ComponentLayer`]) per [`Fields`] entry, hued by [`component_color`].
+fn render_component_layers(
     mut commands: Commands,
     layers: Res<Layers>,
     fields: Res<Fields>,
     config: Res<SimConfig>,
     mut images: ResMut<Assets<Image>>,
     mut quads: Query<(
-        &mut NutrientLayer,
+        &mut ComponentLayer,
         &mut Sprite,
         &mut Visibility,
         &mut Transform,
     )>,
 ) {
     // Shared opacity: a full budget split across the *active* layers.
-    let active = layers.nutrients.iter().filter(|&&on| on).count().max(1);
+    let active = layers.components.iter().filter(|&&on| on).count().max(1);
     let opacity = 1.0 / active as f32;
-    let side = 2.0 * config.arena_half_extent;
 
     for (index, field) in fields.iter().enumerate() {
-        let enabled = layers.nutrients.get(index).copied().unwrap_or(false);
-        let color = nutrient_color(index);
+        let enabled = layers.components.get(index).copied().unwrap_or(false);
+        let color = component_color(index);
 
         if let Some((mut layer, mut sprite, mut vis, mut tf)) =
             quads.iter_mut().find(|(l, ..)| l.index == index)
@@ -514,27 +571,51 @@ fn render_nutrient_layers(
                 continue; // hidden: skip the texture repaint.
             }
             sprite.color = Color::srgba(1.0, 1.0, 1.0, opacity);
-            sprite.custom_size = Some(Vec2::splat(side));
             tf.translation.z = -5.0 - index as f32 * 0.1;
-            if layer.res == field.resolution() {
+            // The geometry (quad size + water mask) is stable while the field resolution and
+            // the decor's (seed, half_extent) hold; only then repaint in place. Otherwise a
+            // scenario reload changed the pond → rebuild the texture, mask and quad.
+            let fresh = layer.field_res == field.resolution()
+                && layer.seed == config.seed
+                && layer.half_extent == config.arena_half_extent;
+            if fresh {
                 if let Some(mut img) = images.get_mut(&sprite.image) {
-                    paint_nutrient_image(&mut img, field, color);
+                    paint_component_image(
+                        &mut img,
+                        field,
+                        color,
+                        layer.hm,
+                        layer.tex_res,
+                        &layer.mask,
+                    );
                 }
             } else {
-                // The grid changed (scenario reload): rebuild the texture to fit.
-                sprite.image = images.add(make_nutrient_image(field, color));
-                layer.res = field.resolution();
+                let (tex_res, hm, mask) = heatmap_geometry(&config, field);
+                sprite.image = images.add(make_component_image(field, color, hm, tex_res, &mask));
+                layer.field_res = field.resolution();
+                layer.seed = config.seed;
+                layer.half_extent = config.arena_half_extent;
+                layer.tex_res = tex_res;
+                layer.hm = hm;
+                layer.mask = mask;
             }
+            sprite.custom_size = Some(Vec2::splat(2.0 * layer.hm));
         } else if enabled {
-            let handle = images.add(make_nutrient_image(field, color));
+            let (tex_res, hm, mask) = heatmap_geometry(&config, field);
+            let handle = images.add(make_component_image(field, color, hm, tex_res, &mask));
             commands.spawn((
-                NutrientLayer {
+                ComponentLayer {
                     index,
-                    res: field.resolution(),
+                    field_res: field.resolution(),
+                    seed: config.seed,
+                    half_extent: config.arena_half_extent,
+                    tex_res,
+                    hm,
+                    mask,
                 },
                 Sprite {
                     image: handle,
-                    custom_size: Some(Vec2::splat(side)),
+                    custom_size: Some(Vec2::splat(2.0 * hm)),
                     color: Color::srgba(1.0, 1.0, 1.0, opacity),
                     ..default()
                 },

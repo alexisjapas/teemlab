@@ -24,10 +24,10 @@ pub mod genotype;
 pub mod interaction;
 pub mod metrics;
 pub mod movement;
-pub mod nutrients;
 pub mod rng;
 pub mod selection;
 pub mod spawn;
+pub mod substrate;
 pub mod visuals;
 
 use avian2d::prelude::*;
@@ -68,7 +68,7 @@ impl Plugin for SimPlugin {
             // The component fields (the substrate): one concentration grid per
             // declared component, sized from the scenario. Empty (no component) or
             // inert (no source, diffusion/decay 0) → existing scenarios byte-identical.
-            .insert_resource(nutrients::Fields::from_config(&self.config))
+            .insert_resource(substrate::Fields::from_config(&self.config))
             .add_systems(Startup, spawn::setup_world)
             // perceive → decide → act, strictly within FixedUpdate.
             // `interact` extends "act" (eat/attack); then the energy economy:
@@ -104,12 +104,12 @@ impl Plugin for SimPlugin {
                     movement::anchor_spring,
                     ecology::reap,
                     ecology::metabolize,
-                    nutrients::emit_nutrients,
-                    nutrients::emit_components,
-                    nutrients::diffuse_nutrients,
-                    nutrients::decay_nutrients,
-                    nutrients::absorb_nutrients,
-                    nutrients::affect_agents,
+                    substrate::emit_sources,
+                    substrate::emit_components,
+                    substrate::diffuse_fields,
+                    substrate::decay_fields,
+                    substrate::absorb_components,
+                    substrate::affect_agents,
                     ecology::age_agents,
                     ecology::reproduce,
                 )

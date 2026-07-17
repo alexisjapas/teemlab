@@ -236,7 +236,7 @@ consequences bind every future addition:
   layer; each **nutrient field** is a *background* heatmap layer (a linear-sampled
   texture, alpha ∝ concentration, behind the agents at `z = -5`), **off by default**.
   All toggleable; the nutrient layers **share** an opacity budget (`N` active ⇒ `1/N`
-  each, so 2 ⇒ 50 %). In the **video** too (`record --nutrients`), off by default →
+  each, so 2 ⇒ 50 %). In the **video** too (`record --components`), off by default →
   existing videos unchanged. (The roadmapped "Nutrient-field visualization — layers"
   of §9, done.)
 - **Trophic nutrient transfer — the food web, link 1 (T3, §9)**: *eating carries the
@@ -1375,7 +1375,7 @@ and *scaling* work.
       `add`/`take` + mass-conserving `diffuse`), `emit → diffuse → absorb` systems
       between `metabolize` and `reproduce`, the 3 genes appended non-mutable (RNG-safe,
       pre-T2 scenarios byte-identical), sources spawned as non-`Agent` entities, and a
-      **toggleable heatmap layer** (windowed + `record --nutrients`, cf. §0). Driver
+      **toggleable heatmap layer** (windowed + `record --components`, cf. §0). Driver
       green multi-seed, with the *no-sources* falsifiable contrast.
     - **Correction vs the plan:** the child is born with an **empty** nutrient store
       (the nutrient is a **consumable** removed from the pool), not endowed with
@@ -1435,7 +1435,7 @@ and *scaling* work.
   system** (`Layers` resource): the agents are the main layer, the nutrient fields are
   background heatmaps, all toggleable, the nutrient layers sharing an opacity budget
   (`N` ⇒ `1/N`). In the windowed build (egui "Layers" panel) **and** the video
-  (`record --nutrients`). The 50/50 two-layer case becomes real once T3 adds a 2nd
+  (`record --components`). The 50/50 two-layer case becomes real once T3 adds a 2nd
   nutrient.
 - **GUI editing of sources (basic editing done; click-to-place + markers remain)**: the
   World editor now has a **"Nutrients" section** (`editor::nutrient_section`) editing the

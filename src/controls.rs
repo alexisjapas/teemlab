@@ -22,10 +22,10 @@ use teemlab::components::{Agent, Wall};
 use teemlab::config::Archetype;
 use teemlab::ecology::SimRng;
 use teemlab::metrics::History;
-use teemlab::nutrients::{Emits, Fields};
 use teemlab::selection::Selection;
 use teemlab::spawn;
-use teemlab::visuals::NutrientLayer;
+use teemlab::substrate::{Emits, Fields};
+use teemlab::visuals::ComponentLayer;
 
 /// Controls state: chosen speed, pending steps, requested reset. The buttons (in
 /// `EguiPrimaryContextPass`, too late for the frame's fixed loop) only write
@@ -86,6 +86,8 @@ pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
         field_resolution,
         components,
         sources,
+        random_initial_nutrients,
+        random_initial_energy,
         seed,
         founder_pools,
         // Live-applied: read from the config every tick/frame, never stale in the world.
@@ -116,6 +118,8 @@ pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
         || *seed != world.seed
         || *components != world.components
         || *sources != world.sources
+        || *random_initial_nutrients != world.random_initial_nutrients
+        || *random_initial_energy != world.random_initial_energy
         || *founder_pools != world.founder_pools
         || archetypes.len() != world.archetypes.len()
         || archetypes
@@ -318,9 +322,9 @@ pub fn drive_steps(
 /// entities, which `populate` would otherwise re-add on top, duplicating them),
 /// re-populate, and reset the sim resources (RNG, **the nutrient field**) and the
 /// HUD. The despawn also sweeps the **nutrient heatmap layers**
-/// ([`NutrientLayer`](teemlab::visuals::NutrientLayer)): a pure render artifact keyed
+/// ([`ComponentLayer`](teemlab::visuals::ComponentLayer)): a pure render artifact keyed
 /// by field index, it would otherwise linger frozen when the new scenario declares
-/// **fewer** fields (or none) — `render_nutrient_layers` only repaints indices that
+/// **fewer** fields (or none) — `render_component_layers` only repaints indices that
 /// still exist, never the orphans. In `PreUpdate`: the commands apply before the
 /// fixed loop, so the frame already restarts on the new world.
 ///
@@ -342,7 +346,7 @@ pub fn apply_reset(
     mut fixed: ResMut<Time<Fixed>>,
     mut baseline: ResMut<WorldBaseline>,
     mut selection: ResMut<Selection>,
-    simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>, With<NutrientLayer>)>>,
+    simulated: Query<Entity, Or<(With<Agent>, With<Wall>, With<Emits>, With<ComponentLayer>)>>,
 ) {
     if !controls.reset_requested {
         return;

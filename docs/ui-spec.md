@@ -153,7 +153,7 @@ right-to-left in code, Export first).
 
 - **View ▾** — render-layer toggles (`visuals::Layers`): agents (default on) and
   the nutrient heatmap(s) (**default on in the windowed build**, shared opacity
-  budget; the recorder keeps its own default of off unless `--nutrients`). View
+  budget; the recorder keeps its own default of off unless `--components`). View
   concerns are never saved with the scenario.
 - **Help** — a direct button: opens the **keyboard shortcuts** cheatsheet (also
   `?` / `F1`). All other help is hover-first (tooltips), so no menu remains.

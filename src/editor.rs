@@ -1476,11 +1476,11 @@ pub(crate) fn draw_mlp_graph(
 /// states it for the user.
 pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &SimConfig) {
     crate::theme::toggle_row(ui, "Agents", &mut layers.agents);
-    if !layers.nutrients.is_empty() {
+    if !layers.components.is_empty() {
         // One toggle per component field, labelled by the scenario's component name
         // (Nutrient / Pheromone / Toxicity / Detritus…) so each map is findable. The
         // per-row id ([`egui::Ui::push_id`]) keeps two same-named components distinct.
-        for (i, on) in layers.nutrients.iter_mut().enumerate() {
+        for (i, on) in layers.components.iter_mut().enumerate() {
             let label = config
                 .components
                 .get(i)
@@ -1493,9 +1493,9 @@ pub(crate) fn layers_section(ui: &mut egui::Ui, layers: &mut Layers, config: &Si
 
 /// "World" section: the **scenario** parameters (everything but the per-species
 /// archetypes), as framed **cards** (the same idiom as the archetype editor's
-/// Body/Genes/Brain) — *Arena & generation*, *Relations*, *Nutrients*, *Gene bounds*,
+/// Body/Genes/Brain) — *Arena & generation*, *Relations*, *ComponentStore*, *Gene bounds*,
 /// *Appearance*. Each card carries a **collapsible** header (open by default for the
-/// short, frequent ones; closed for the heavy *Nutrients* / *Gene bounds*). Direct
+/// short, frequent ones; closed for the heavy *ComponentStore* / *Gene bounds*). Direct
 /// read/write of the [`SimConfig`], hence persisted by "Save". Some fields only take
 /// effect at the next Reset (⟲); relations act **live**.
 pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
@@ -1538,8 +1538,8 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     // the run itself happens in the Breeding window / the `breed` bin.
     batch_section(ui, config);
 
-    // Nutrients and gene bounds each frame their own card (below).
-    nutrient_section(ui, config);
+    // ComponentStore and gene bounds each frame their own card (below).
+    components_section(ui, config);
     gene_bounds_section(ui, config);
 
     // APPEARANCE — windowed-render backgrounds (read continuously by
@@ -1575,7 +1575,7 @@ pub(crate) fn world_section(ui: &mut egui::Ui, config: &mut SimConfig) {
 /// but with a **collapsible** header inside it (default closed): with its field grid
 /// plus a card per source it is the other heavy section, and inert for most scenarios
 /// (no source ⇒ inert layer), so it folds away while keeping the sibling card frame.
-fn nutrient_section(ui: &mut egui::Ui, config: &mut SimConfig) {
+fn components_section(ui: &mut egui::Ui, config: &mut SimConfig) {
     card(ui, |ui| {
         let resp = egui::CollapsingHeader::new("Components")
             .default_open(false)
@@ -2164,9 +2164,10 @@ fn place(
         0.0,
         seed,
         config.reserve_max_of(species),
-        0, // placed by hand: generation 0 (founder).
-        0, // lineage 0: inert in the live world (only the breeding scorer reads it,
-           // and the orchestrator re-populates isolated worlds, never these).
+        0.0, // placed by hand: born with an empty nutrient store.
+        0,   // placed by hand: generation 0 (founder).
+        0,   // lineage 0: inert in the live world (only the breeding scorer reads it,
+             // and the orchestrator re-populates isolated worlds, never these).
     );
 }
 

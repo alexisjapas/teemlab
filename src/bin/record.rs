@@ -27,9 +27,9 @@
 //!
 //! Usage: `record [scenario.ron] [--out f.mp4] [--fps N] [--seconds S]
 //! [--width W] [--height H] [--select MODE] [--select-interval S] [--no-hud]
-//! [--hud-interval S] [--nutrients] [--stop-when BRAINS] [--stop-after S]`.
+//! [--hud-interval S] [--components] [--stop-when BRAINS] [--stop-after S]`.
 //!
-//! `--nutrients` overlays the nutrient **heatmap** layer in the arena (the
+//! `--components` overlays the component **heatmap** layer in the arena (the
 //! background "calque"); off by default, so existing videos are unchanged.
 //!
 //! `--stop-when BRAINS` ends the film early — once every living agent of the named
@@ -94,9 +94,9 @@ struct Settings {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
-    /// Overlay the nutrient **heatmap** layer(s) in the arena (the background
+    /// Overlay the component **heatmap** layer(s) in the arena (the background
     /// "calque", cf. [`Layers`]). Off by default → videos unchanged.
-    nutrients: bool,
+    components: bool,
     /// Auto-stop: which brain **families** to watch for extinction (`true` at the
     /// family's index). `None` = no auto-stop (film the full `seconds`). When every
     /// living agent of a watched family is gone, the recording ends after
@@ -160,7 +160,7 @@ impl Settings {
             hud: true,
             hud_interval: 6.0,
             // Nutrient heatmap off by default → existing videos unchanged.
-            nutrients: false,
+            components: false,
             // Auto-stop off by default (film the full `seconds`); `--stop-when` arms it.
             stop_when: None,
             stop_after: 3.0,
@@ -188,8 +188,8 @@ impl Settings {
                 // Overlaid visualizer (stats / curves / inspector), 9:16 composition.
                 "--hud" => s.hud = true,
                 "--no-hud" => s.hud = false,
-                // Overlay the nutrient heatmap layer (background "calque").
-                "--nutrients" => s.nutrients = true,
+                // Overlay the component heatmap layer (background "calque").
+                "--components" => s.components = true,
                 "--hud-interval" => {
                     s.hud_interval = next()
                         .parse()
@@ -400,15 +400,15 @@ fn main() -> AppExit {
     .add_plugins(SimPlugin::new(config))
     .add_plugins(VisualsPlugin)
     // View layers ("calques"): the recorder defaults to agents-only (videos
-    // unchanged); `--nutrients` overlays the nutrient heatmap layer. Replaces the
+    // unchanged); `--components` overlays the component heatmap layer. Replaces the
     // default `Layers` that `VisualsPlugin` just inserted. T2 has a single nutrient
     // field → a one-element flag vector.
     .insert_resource(Layers {
         agents: true,
-        nutrients: vec![settings.nutrients],
+        components: vec![settings.components],
     })
     // New nutrient layers (index ≥ 1, appearing when a scenario declares more than one
-    // component) stay hidden in the recorder: `--nutrients` shows only the first field,
+    // component) stay hidden in the recorder: `--components` shows only the first field,
     // so existing videos are byte-identical. The windowed build defaults this to `true`.
     .insert_resource(NewLayerVisible(false))
     // Curve sampling (shared with the windowed build) + overlaid native visualizer.
@@ -463,8 +463,8 @@ fn main() -> AppExit {
         width,
         height,
         if settings.hud { " +HUD" } else { "" },
-        if settings.nutrients {
-            " +nutrients"
+        if settings.components {
+            " +components"
         } else {
             ""
         },

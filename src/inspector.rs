@@ -18,8 +18,8 @@ use teemlab::components::{
 };
 use teemlab::config::{Archetype, SimConfig};
 use teemlab::genotype::{Genotype, TRAITS};
-use teemlab::nutrients::Nutrients;
 use teemlab::selection::{AutoSelect, Selection, SelectionRoll};
+use teemlab::substrate::ComponentStore;
 use teemlab::visuals::BlurCamera;
 
 use crate::editor::{Palette, card, draw_mlp_graph};
@@ -209,7 +209,7 @@ pub(crate) fn inspector_section(
             &Brain,
             &Generation,
             &Age,
-            &Nutrients,
+            &ComponentStore,
         ),
         With<Agent>,
     >,

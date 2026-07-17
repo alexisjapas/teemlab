@@ -48,6 +48,12 @@ pub struct RecorderPanel {
     hud: bool,
     /// Interval (s) for rotating the visualizer's sections (curves ↔ inspector).
     hud_interval: f32,
+    /// Overlay the **component** concentration maps (the substrate fields — a nutrient, a
+    /// pheromone, … — of which "nutrient" is just one instance, Law 11) behind the agents.
+    /// On by default; passes `record --components`. The subprocess is a fresh re-render, so
+    /// this is the *only* way a recording shows the substrate — the live View ▸ Layers
+    /// toggles do not carry over.
+    components: bool,
     /// **Video** component — render the run to `video.mp4`. On by default; the only
     /// component wired for now (Sound / Metrics are shown off + disabled in the menu,
     /// added here when they land).
@@ -80,6 +86,9 @@ impl Default for RecorderPanel {
             // Visualizer overlaid by default (cf. `record --hud`).
             hud: true,
             hud_interval: 6.0,
+            // Component maps overlaid by default: the substrate is part of what a run shows,
+            // and a recording can't inherit the live layer toggles (fresh subprocess).
+            components: true,
             video: true,
             child: None,
             launch_requested: false,
@@ -170,6 +179,11 @@ impl RecorderPanel {
                     );
                 });
             }
+            crate::theme::toggle_row(ui, "Component maps", &mut self.components).on_hover_text(
+                "Overlay the substrate concentration maps (nutrient, pheromone, …) behind the \
+                 agents, masked to the water. On by default. The live View ▸ Layers toggles \
+                 do not carry into a recording.",
+            );
         });
     }
 }
@@ -307,6 +321,11 @@ pub fn drive_recorder(
     // HUD enabled by default on the `record` side: pass `--no-hud` only if it is off.
     if !panel.hud {
         cmd.arg("--no-hud");
+    }
+    // Component maps are OFF by default in `record` (videos unchanged without it): pass
+    // `--components` only when the menu's "Component maps" is on.
+    if panel.components {
+        cmd.arg("--components");
     }
     match cmd.spawn() {
         Ok(child) => {

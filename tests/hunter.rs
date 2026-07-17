@@ -84,6 +84,7 @@ fn hunter_sees_and_chases_its_target() {
             name: "Food".into(),
             diffusion: 0.0,
             decay: 0.0,
+            initial: 0.0,
         }],
         field_relations: vec![
             FieldRelation {
@@ -125,6 +126,7 @@ fn hunter_sees_and_chases_its_target() {
                 0.0,
                 0,
                 config.reserve_max_of(0),
+                0.0,
                 0, // founder: generation 0.
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -138,6 +140,7 @@ fn hunter_sees_and_chases_its_target() {
                 0.0,
                 1,
                 config.reserve_max_of(1),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );

@@ -16,8 +16,8 @@ use teemlab::brain::BrainKind;
 use teemlab::components::Species;
 use teemlab::config::{Archetype, ComponentConfig, CostLaw, FieldRelation, Mutability};
 use teemlab::genotype::Genotype;
-use teemlab::nutrients::Fields;
 use teemlab::spawn::spawn_agent;
+use teemlab::substrate::Fields;
 
 mod common;
 
@@ -58,6 +58,7 @@ fn config(mortal: bool) -> SimConfig {
             name: "Carrion".into(),
             diffusion: 0.0, // stays put → total() is exact
             decay: 0.0,
+            initial: 0.0,
         }],
         // The body leaves a fixed CORPSE of carrion (component 0) at death.
         field_relations: vec![FieldRelation {
@@ -97,6 +98,7 @@ fn carrion_after(mortal: bool, energy: f32, ticks: usize) -> f32 {
                 0.0,
                 0,
                 energy,
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );

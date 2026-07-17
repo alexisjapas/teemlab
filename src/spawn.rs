@@ -8,8 +8,8 @@ use crate::components::{
 };
 use crate::config::{SimConfig, SpawnZone, ZoneShape};
 use crate::genotype::Genotype;
-use crate::nutrients::{Emits, Nutrients};
 use crate::rng::Rng;
+use crate::substrate::{ComponentStore, Emits};
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -117,6 +117,23 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
         // lineage `k`. Its descendants inherit the tag at reproduction, so the
         // scorer can read each founder-variant's share of the population.
         let lineage = k as u16;
+        // Founder **starting stock** (opt-in). Both draws come *after* the
+        // position/heading draws, and only when their flag is set, so a scenario with
+        // neither flag never draws → byte-for-byte the historical stream
+        // ([[mlp-test-chaos-sensitive]]). Canonical order when both on: nutrient, then
+        // energy. A random store lets producers photosynthesise from tick 0 and staggers
+        // the first starvation wave; random energy (founders are otherwise born full)
+        // only spreads the reserve, so it is a separate opt-in.
+        let nutrients = if config.random_initial_nutrients {
+            rng.next_f32() * config.nutrient_of(species).1
+        } else {
+            0.0 // founder: born with no nutrient (T2).
+        };
+        let energy = if config.random_initial_energy {
+            rng.next_f32() * config.reserve_max_of(species)
+        } else {
+            config.reserve_max_of(species) // founder: born full.
+        };
         match pooled.or_else(|| config.captured_brain_of(species).cloned()) {
             Some(brain) => spawn_agent_with_brain(
                 commands,
@@ -125,8 +142,8 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 Species(species),
                 pos,
                 brain,
-                config.reserve_max_of(species),
-                0.0, // founder: born with no nutrient (T2).
+                energy,
+                nutrients,
                 0,   // founder: generation 0.
                 0.0, // ...born at age 0.
                 lineage,
@@ -139,7 +156,8 @@ fn spawn_agents(commands: &mut Commands, config: &SimConfig) {
                 pos,
                 heading,
                 brain_seed,
-                config.reserve_max_of(species),
+                energy,
+                nutrients,
                 0, // founder: generation 0.
                 lineage,
             ),
@@ -198,6 +216,7 @@ pub fn spawn_agent(
     heading: f32,
     brain_seed: u64,
     energy: f32,
+    nutrients: f32,
     generation: u32,
     lineage: u16,
 ) {
@@ -214,10 +233,12 @@ pub fn spawn_agent(
     let brain = config
         .brain_of(species.0)
         .build(brain_seed, heading, n_inputs);
-    // A freshly compiled agent is born at age 0, and (as a founder) with no
-    // nutrient — only reproduction endows a child with `offspring_nutrient` (T2).
+    // A freshly compiled agent is born at age 0; its nutrient store is whatever the
+    // caller seeds (`0.0` for a hand-placed agent / a founder that did not opt into a
+    // starting stock — only reproduction otherwise endows a child, `offspring_nutrient`).
     spawn_agent_with_brain(
-        commands, config, genotype, species, pos, brain, energy, 0.0, generation, 0.0, lineage,
+        commands, config, genotype, species, pos, brain, energy, nutrients, generation, 0.0,
+        lineage,
     );
 }
 
@@ -253,7 +274,7 @@ pub fn spawn_agent_with_brain(
         },
         Radius(r),
         // Genealogy (depth fixed, age grows per tick) + the **nutrient store** (T2,
-        // filled by `absorb_nutrients`, spent at reproduction). Grouped in a
+        // filled by `absorb_components`, spent at reproduction). Grouped in a
         // sub-tuple to stay under Bevy's bundle arity bound. With the nutrient genes
         // at 0 the store is inert (`max == 0`) → byte-identical.
         (
@@ -267,7 +288,7 @@ pub fn spawn_agent_with_brain(
             // param seeds the nutrient (component 0). Founders and children are born
             // empty (`nutrients == 0`) → byte-identical.
             {
-                let mut store = Nutrients::new(config.capacities_of(species.0));
+                let mut store = ComponentStore::new(config.capacities_of(species.0));
                 store.set(0, nutrients);
                 store
             },
@@ -314,14 +335,14 @@ pub fn spawn_agent_with_brain(
 /// a **non-`Agent`** entity carrying [`Emits`] at a fixed position. It has **no**
 /// `Agent` / `Reserve` / `Genotype` / `Brain` / `Collider` — so every life system
 /// (all `With<Agent>`) ignores it *by construction* (no metabolism, death,
-/// reproduction or decision), and it is intangible. Only [`emit_nutrients`] reads
+/// reproduction or decision), and it is intangible. Only [`emit_sources`] reads
 /// it. The visual (color, radius) lives in the config and is drawn by a dedicated
 /// render path (rendering is a later step); the sources never move, so nothing needs
 /// to be stored on the entity for that. Uses **no** RNG → adding sources leaves the
 /// agent RNG stream of [`spawn_agents`] untouched (and an empty `sources` list is a
 /// no-op → existing scenarios byte-identical).
 ///
-/// [`emit_nutrients`]: crate::nutrients::emit_nutrients
+/// [`emit_sources`]: crate::substrate::emit_sources
 fn spawn_sources(commands: &mut Commands, config: &SimConfig) {
     for source in &config.sources {
         let mut entity = commands.spawn((

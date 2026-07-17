@@ -452,6 +452,51 @@ fn basin_sdf(x: f32, y: f32, m: f32, scale: f32, ph: &[f32; 12]) -> f32 {
     east.min(west).min(north).min(south)
 }
 
+/// Width (wu) over which the water mask **feathers** to zero across the shoreline, so a
+/// masked overlay (the nutrient heatmap) meets the sand with a soft edge, not a hard cut —
+/// roughly the crest+lip band the baked decor draws there.
+const SHORE_FEATHER: f32 = 8.0;
+
+/// The **basin geometry** of a decor `(seed, arena_half_extent)`: enough to query the water
+/// *shape* without re-baking a texture. A **presentation** helper — the nutrient heatmap
+/// masks itself to the pond so its tint fills the water and never the sand — never read by
+/// the simulation (DEV Rules 1 & 3). Reconstructs the same midline, scale and 12 edge phases
+/// [`bake`] uses (the first 12 LCG draws) and the same [`basin_sdf`], so its water shape is
+/// identical to the baked backdrop's, texel for texel.
+pub struct Basin {
+    m: f32,
+    scale: f32,
+    phases: [f32; 12],
+}
+
+impl Basin {
+    /// Reconstruct the basin of `(seed, arena_half_extent)`.
+    pub fn new(seed: u64, arena_half_extent: f32) -> Self {
+        let h = arena_half_extent.max(TEXEL_WU);
+        let scale = h / REF_POOL_HALF;
+        let m = h + BANK_AMPLITUDE * scale;
+        let mut rng = Lcg::new(visual_seed(seed));
+        let mut phases = [0.0_f32; 12];
+        for ph in &mut phases {
+            *ph = rng.next_f32() * std::f32::consts::TAU;
+        }
+        Self { m, scale, phases }
+    }
+
+    /// Water **coverage** at world `(x, y)` in `[0, 1]`: `1` inside the basin, feathering to
+    /// `0` across the shoreline ([`SHORE_FEATHER`] wu), `0` on the sand — the alpha a
+    /// water-masked overlay multiplies in.
+    pub fn coverage(&self, x: f32, y: f32) -> f32 {
+        (basin_sdf(x, y, self.m, self.scale, &self.phases) / SHORE_FEATHER).clamp(0.0, 1.0)
+    }
+
+    /// Half-side of the water's **bounding box** — the farthest the wobbly shoreline can
+    /// reach (`m + BANK_AMPLITUDE·scale`). A quad of this half-side covers the whole pond.
+    pub fn water_half_extent(&self) -> f32 {
+        self.m + BANK_AMPLITUDE * self.scale
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Bevy glue — the thin `Update` systems registered by `VisualsPlugin`.
 // ---------------------------------------------------------------------------
@@ -464,7 +509,7 @@ const BASE_Z: f32 = -9.0;
 const FILM_Z: f32 = 5.0;
 
 /// What the current textures were baked from — rebake only when this changes
-/// (the `NutrientLayer` staleness idiom).
+/// (the `ComponentLayer` staleness idiom).
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct DecorKey {
     seed: u64,
@@ -472,7 +517,7 @@ pub(crate) struct DecorKey {
 }
 
 /// One of the two decor sprites (base under / film above the entities). Carries
-/// no sim marker (`Agent`/`Wall`/`Emits`/`NutrientLayer`) on purpose: like
+/// no sim marker (`Agent`/`Wall`/`Emits`/`ComponentLayer`) on purpose: like
 /// `PlayAreaBg` it survives the hot reset and is reconciled here.
 #[derive(Component)]
 pub struct DecorLayer {

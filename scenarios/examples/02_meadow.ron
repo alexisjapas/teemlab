@@ -59,7 +59,13 @@
     cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
     field_resolution: 256,
     components: [
-        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+        // `initial`: a uniform background stock of nutrient laid over the whole arena at
+        // t=0, so plants everywhere can photosynthesise from the first tick while the vents'
+        // gradients build up (instead of the map-wide starvation the empty field caused). A
+        // uniform field is stationary under diffusion → a one-time WARM-UP reserve, drawn
+        // down by absorption, not a sustained supply: the long-run carrying capacity is still
+        // set by the vents (oases), the seed only smooths the opening seconds.
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0, initial: 0.1),
     ],
     sources: [
         (pos: (-150.0, 120.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
@@ -72,5 +78,9 @@
         // the nutrient limits SURVIVAL (photosynthesis), the energy threshold limits breeding.
         (species: 0, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
     ],
+    // Founders are born holding a random fraction of their nutrient store (not empty), so
+    // the opening cohort can photosynthesise at once and the first starvation wave is
+    // staggered rather than synchronised — the in-body counterpart of the field's `initial`.
+    random_initial_nutrients: true,
     seed: 7,
 )

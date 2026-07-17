@@ -192,7 +192,7 @@ pub struct Perception {
     /// **Proprioceptive** channels — the agent's own internal state, normalized
     /// to `[0, 1]`, **scalar** (one per agent, *not* per ray): in order, the
     /// energy reserve fraction ([`Reserve::fraction`]), the nutrient store
-    /// fraction ([`crate::nutrients::Nutrients::fraction`]) and the current speed
+    /// fraction ([`crate::substrate::ComponentStore::fraction`]) and the current speed
     /// fraction (`|v| / max_speed`). Written by `perceive`, read as the **tail**
     /// of the MLP input vector (after the per-ray channels, cf.
     /// [`crate::brain::MlpBrain`]). They let a brain *modulate on its own state* —

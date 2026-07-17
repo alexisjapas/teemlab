@@ -9,7 +9,7 @@ use crate::components::{
     Action, Agent, Anchor, Locomotion, Maneuver, Perception, Reserve, Species, Vision,
 };
 use crate::config::SimConfig;
-use crate::nutrients::Nutrients;
+use crate::substrate::ComponentStore;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 
@@ -28,7 +28,7 @@ use bevy::prelude::*;
 pub fn perceive(
     spatial: SpatialQuery,
     config: Res<SimConfig>,
-    fields: Res<crate::nutrients::Fields>,
+    fields: Res<crate::substrate::Fields>,
     mut agents: Query<
         (
             Entity,
@@ -38,7 +38,7 @@ pub fn perceive(
             &Vision,
             &Locomotion,
             &Reserve,
-            &Nutrients,
+            &ComponentStore,
             &mut Perception,
         ),
         With<Agent>,

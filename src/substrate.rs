@@ -100,6 +100,16 @@ impl Field {
         self.cells[i] += amount;
     }
 
+    /// Set **every** cell to `value` — the field's initial background concentration
+    /// ([`ComponentConfig::initial`](crate::config::ComponentConfig::initial)), laid down
+    /// before the first tick. A uniform field is **stationary** under
+    /// [`diffuse`](Self::diffuse) (each cell already equals its neighbour mean), so this
+    /// seeds a *starting stock* that absorption draws down, not a sustained supply.
+    /// `value == 0.0` reproduces the empty field → byte-identical.
+    pub fn fill(&mut self, value: f32) {
+        self.cells.fill(value);
+    }
+
     /// Remove up to `amount` from the cell containing `pos`, returning the amount
     /// **actually** taken (`min(amount, cell)`). Conservation: an absorber gains
     /// exactly what the cell loses.
@@ -255,12 +265,17 @@ impl Fields {
                 .components
                 .iter()
                 .map(|c| {
-                    Field::new(
+                    let mut field = Field::new(
                         config.field_resolution,
                         config.arena_half_extent,
                         c.diffusion,
                         c.decay,
-                    )
+                    );
+                    // Seed the uniform background stock (`initial == 0.0` → still empty →
+                    // byte-identical). Stationary under diffusion, so it is a warm-up
+                    // reserve drawn down by absorption, not a sustained faucet.
+                    field.fill(c.initial);
+                    field
                 })
                 .collect(),
         )
@@ -269,7 +284,7 @@ impl Fields {
 
 /// A per-agent **component store**: how much of each scenario component
 /// ([`SimConfig::components`](crate::config::SimConfig::components)) the agent holds.
-/// Filled by [`absorb_nutrients`] from each component's [`Field`], carried up the food
+/// Filled by [`absorb_components`] from each component's [`Field`], carried up the food
 /// chain by predation ([`crate::interaction`]), spent at reproduction
 /// ([`crate::ecology::reproduce`]) and returned to the field at death
 /// ([`crate::ecology::reap`]). Attached to **every** agent at spawn, sized to the
@@ -288,7 +303,7 @@ impl Fields {
 /// sun-/food-fed → *survival*): a missing nutrient stops **reproduction**, it never
 /// causes death — the two-axis design that fixes the T1 death spiral.
 #[derive(Component, Clone, Debug, Default)]
-pub struct Nutrients {
+pub struct ComponentStore {
     /// Amount of each component currently held, indexed like
     /// [`SimConfig::components`](crate::config::SimConfig::components).
     current: Vec<f32>,
@@ -297,7 +312,7 @@ pub struct Nutrients {
     capacity: Vec<f32>,
 }
 
-impl Nutrients {
+impl ComponentStore {
     /// A store with the given per-component capacities, holding nothing.
     pub fn new(capacity: Vec<f32>) -> Self {
         Self {
@@ -379,7 +394,7 @@ impl Nutrients {
 
 /// Emission of a substrate **source** (e.g. a submarine volcanic vent): deposits
 /// `rate` per second of component `component` into the field cell under it (cf.
-/// [`emit_nutrients`]). Carried by a **non-`Agent`** entity (spawned by
+/// [`emit_sources`]). Carried by a **non-`Agent`** entity (spawned by
 /// [`crate::spawn::spawn_sources`]) → the whole life machinery (every system queries
 /// `With<Agent>`) ignores it *by construction*: no metabolism, death, reproduction
 /// or decision.
@@ -395,7 +410,7 @@ pub struct Emits {
 /// The source is **not** an `Agent`; only this system reads [`Emits`]. A scenario
 /// with no source has an empty query → no-op (byte-identical); an out-of-range
 /// component index is skipped.
-pub fn emit_nutrients(
+pub fn emit_sources(
     time: Res<Time>,
     mut fields: ResMut<Fields>,
     sources: Query<(&Transform, &Emits)>,
@@ -412,7 +427,7 @@ pub fn emit_nutrients(
 /// `emit · dt` of that component into the field cell under it — the **symmetric of
 /// absorption** (`docs/component-emission-plan.md` §3): the agent→environment write
 /// (organic waste / pheromone / toxin). Runs alongside the source emission
-/// ([`emit_nutrients`]), before diffusion/decay. A scenario with no `emit` relation is
+/// ([`emit_sources`]), before diffusion/decay. A scenario with no `emit` relation is
 /// a no-op (early return) → byte-identical.
 pub fn emit_components(
     time: Res<Time>,
@@ -442,7 +457,7 @@ pub fn emit_components(
 /// ([`Field::diffuse`]) — this is what turns point emission into **gradients** (life
 /// clusters around sources). Mass-conserving; each field inert (early return inside
 /// `diffuse`) when its `diffusion == 0`.
-pub fn diffuse_nutrients(mut fields: ResMut<Fields>) {
+pub fn diffuse_fields(mut fields: ResMut<Fields>) {
     for field in fields.iter_mut() {
         field.diffuse();
     }
@@ -451,7 +466,7 @@ pub fn diffuse_nutrients(mut fields: ResMut<Fields>) {
 /// DECAY: one dissipation step of **every** field ([`Field::decay_step`]) — a fading
 /// pheromone / decomposing detritus. Each field inert (early return) when its
 /// `decay == 0` (a conserved nutrient) → byte-identical for T2 scenarios.
-pub fn decay_nutrients(mut fields: ResMut<Fields>) {
+pub fn decay_fields(mut fields: ResMut<Fields>) {
     for field in fields.iter_mut() {
         field.decay_step();
     }
@@ -459,16 +474,16 @@ pub fn decay_nutrients(mut fields: ResMut<Fields>) {
 
 /// ABSORB: each agent pulls **each component it absorbs**
 /// ([`FieldRelation`](crate::config::FieldRelation) `absorb > 0`) from that component's
-/// [`Field`] into its [`Nutrients`] store, capped by the `absorb` rate and the remaining
+/// [`Field`] into its [`ComponentStore`] store, capped by the `absorb` rate and the remaining
 /// capacity. Conservation: the store gains exactly what the cell loses ([`Field::take`]).
 /// A scenario with no absorbing relation is a no-op (early return); before the
 /// per-component store only component `0` (the nutrient) was absorbed, so existing
 /// single-axis scenarios are unchanged.
-pub fn absorb_nutrients(
+pub fn absorb_components(
     time: Res<Time>,
     config: Res<SimConfig>,
     mut fields: ResMut<Fields>,
-    mut agents: Query<(&Transform, &Species, &mut Nutrients), With<Agent>>,
+    mut agents: Query<(&Transform, &Species, &mut ComponentStore), With<Agent>>,
 ) {
     if !config.field_relations.iter().any(|f| f.absorb > 0.0) {
         return;
@@ -604,6 +619,36 @@ mod tests {
         let max = f.cells.iter().cloned().fold(f32::MIN, f32::max);
         let min = f.cells.iter().cloned().fold(f32::MAX, f32::min);
         assert!(max - min < peak0, "the field must flatten toward uniform");
+    }
+
+    /// `fill` seeds a **uniform** background stock: every cell equals `value` (so the
+    /// total is `value · res²`), and a uniform field is **stationary** under diffusion —
+    /// the warm-up-stock contract of [`ComponentConfig::initial`](crate::config::ComponentConfig::initial)
+    /// (a starting reserve, not a moving front). `fill(0.0)` leaves the field empty.
+    #[test]
+    fn fill_seeds_uniform_and_is_stationary_under_diffusion() {
+        let mut f = Field::new(8, 10.0, 0.5, 0.0); // diffusing
+        f.fill(2.0);
+        assert!(
+            f.cells.iter().all(|&c| c == 2.0),
+            "every cell holds `value`"
+        );
+        assert!(
+            (f.total() - 2.0 * 64.0).abs() < 1e-4,
+            "total = value · res²"
+        );
+
+        let before = f.cells.clone();
+        f.diffuse();
+        assert_eq!(
+            f.cells, before,
+            "a uniform field does not move under diffusion"
+        );
+
+        // fill(0.0) reproduces the empty field (byte-identical seed).
+        let mut g = Field::new(4, 10.0, 0.3, 0.0);
+        g.fill(0.0);
+        assert!(g.cells.iter().all(|&c| c == 0.0));
     }
 
     /// With `diffusion == 0` the field never spreads — the byte-identical guarantee

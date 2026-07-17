@@ -65,7 +65,7 @@ offspring, but it does **not** die (no death spiral, the fix to the T1 prototype
 The renderer becomes a set of toggleable **layers** ("calques"): the agents (main
 layer) over the nutrient **heatmaps** (background, off by default, sharing an opacity
 budget) — in the windowed build (a "Layers" panel) **and** in the video
-(`record --nutrients`). Cf. [`ROADMAP.md`](ROADMAP.md) §9 and
+(`record --components`). Cf. [`ROADMAP.md`](ROADMAP.md) §9 and
 [`docs/nutrients-t2-plan.md`](docs/nutrients-t2-plan.md). The **food web (T3, done)** then
 closes the loop: **eating carries the nutrient up the chain** (the interaction primitive
 transfers a biomass-proportional share on predation) and a **dying body recycles** its
@@ -143,11 +143,11 @@ src/
   recorder.rs     egui menu (windowed only): configures and launches the `record` binary as a subprocess.
   dashboard.rs    egui breeding dashboard (windowed only, P5): drives the generational Orchestrator on a BACKGROUND thread (so the render loop stays responsive); a floating window with Run/Stop + progress, a fitness-vs-generation curve and a PER-FACTION leaderboard (inspect a genome's MLP graph + Save to library). Requires a scenario with a `batch`; toggled from the top-bar Breeding button.
   metrics.rs      MetricsPlugin: shared metrics (History + sampling) — population / trait curves, live stats; one source for the egui HUD and the native visualizer.
-  visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder; toggleable Layers (agents + nutrient heatmaps, shared opacity).
+  visuals.rs      VisualsPlugin: sim rendering (mesh, arena, vision) shared windowed ⇄ recorder; toggleable Layers (agents + component heatmaps, shared opacity).
   dataviz.rs      DataVizPlugin: the NATIVE Bevy visualizer (Text2d / Sprite / gizmos) for the VIDEO (stats / curves / inspector, 9:16) — reserved to `record`.
   selection.rs    Selection (the inspected / highlighted agent) + its rendering (ring + vision rays), shared windowed ⇄ recorder (auto-select drives the video).
   bin/headless.rs Headless binary → `headless` (smoke test, no rendering).
-  bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--nutrients` overlays the nutrient heatmap layer.
+  bin/record.rs   Headless recording binary → `record`: renders without a window, pipes frames to ffmpeg; `--components` overlays the component heatmap layer.
   bin/sweep.rs    Headless `sweep`: runs a scenario many times and scores each final world by biodiversity (a seed or parameter sweep) — the search for a coexistence band.
   bin/train.rs    Headless `train` (generator): trains an MLP on the oasis flora, captures the best brain seen over the whole run (peak generation, before the living-food population fades), and writes the evolved variant + the 06_learning showcase (the trained MLP vs a wander control).
   bin/breed.rs    Headless `breed` (generator, P5): drives the generational Orchestrator on a scenario's `batch`, prints fitness per generation per faction, captures the best genome into the catalog (species/saved/).
@@ -193,9 +193,9 @@ cargo run --bin headless scenarios/examples/01_drift.ron      # explicit scenari
 
 # Record a run to video (headless render → ffmpeg); output in outputs/:
 cargo run --bin record -- scenarios/examples/03_grazing.ron --out outputs/run.mp4
-#   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
+#   options: --out F  --fps N  --seconds S  --width W  --height H  --components
 #   (defaults: 30 fps, 61 s, 1080×1080 — the arena is square)
-#   --nutrients overlays the nutrient heatmap layer (e.g. for scenarios/examples/02_meadow.ron)
+#   --components overlays the component heatmap layer (e.g. for scenarios/examples/02_meadow.ron)
 
 # Generational regime (P5) + dev generators (headless; the breeding one needs a `batch`):
 cargo run --bin breed -- scenarios/examples/09_breeding.ron [generations]    # run → score → breed; captures the best genome into species/saved/
@@ -269,7 +269,7 @@ agent inspector; a **bottom** strip with the HUD curves. Editing an archetype op
 editor as a second left column (or, on a narrow window, in place of the list). The side
 panels are **resizable**, always reserving a minimum width for the sim, so the panels
 *reserve* the edges and the simulation stays framed and fully visible in the center.
-The **View** menu holds the layer toggles (agents + nutrient heatmaps); the **Help**
+The **View** menu holds the layer toggles (agents + component heatmaps); the **Help**
 menu the inline-help switch and a keyboard-shortcuts cheatsheet (`?`). A single theme
 (`theme.rs`) and one keybinding table (`keymap.rs`) keep the look and the shortcuts
 consistent. All this tooling lives outside `FixedUpdate` (rendering / UI); the headless

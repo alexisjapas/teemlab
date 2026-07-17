@@ -26,7 +26,7 @@ components: [
   the component *fade* (a pheromone trail, decomposing detritus).
 
 Watch any field directly: the renderer draws each as a **heatmap layer** (toggle in
-**View ▸ Layers**, or `--nutrients` to the recorder).
+**View ▸ Layers**, or `--components` to the recorder).
 
 ## Sources
 

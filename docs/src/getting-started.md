@@ -53,9 +53,9 @@ TEEMLAB_TICKS=20000 cargo run --bin headless scenarios/examples/03_flora.ron
 
 ```sh
 cargo run --bin record -- scenarios/examples/04_evolution.ron --out outputs/run.mp4
-#   options: --out F  --fps N  --seconds S  --width W  --height H  --nutrients
+#   options: --out F  --fps N  --seconds S  --width W  --height H  --components
 #   defaults: 30 fps, 61 s, 1080×1080 (the arena is square)
-#   --nutrients overlays the nutrient heatmap (great for 02_nutrients.ron)
+#   --components overlays the component heatmap (great for 02_nutrients.ron)
 ```
 
 See [Recording videos](./recording.md) for the menu-driven workflow.

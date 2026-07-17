@@ -91,6 +91,7 @@ fn prey_sees_and_flees_its_predator() {
             name: "Flesh".into(),
             diffusion: 0.0,
             decay: 0.0,
+            initial: 0.0,
         }],
         field_relations: vec![
             FieldRelation {
@@ -133,6 +134,7 @@ fn prey_sees_and_flees_its_predator() {
                 0.0,
                 0,
                 config.reserve_max_of(0),
+                0.0,
                 0, // founder: generation 0.
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -146,6 +148,7 @@ fn prey_sees_and_flees_its_predator() {
                 0.0,
                 1,
                 config.reserve_max_of(1),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );

@@ -8,7 +8,7 @@
 
 use crate::components::{Action, Agent, Reserve, Species};
 use crate::config::SimConfig;
-use crate::nutrients::Nutrients;
+use crate::substrate::ComponentStore;
 use avian2d::prelude::*;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -48,7 +48,7 @@ use bevy::prelude::*;
 /// **Trophic nutrient transfer (T3).** Predation carries not only energy but the
 /// **components** embodied in the prey's biomass: an actor that eats a fraction `f =
 /// actual/avail` of the target's reserve also receives that same fraction of each of the
-/// target's [`Nutrients`] stores — the nutrient flowing **up** the food chain. Inert when
+/// target's [`ComponentStore`] stores — the nutrient flowing **up** the food chain. Inert when
 /// the prey holds nothing; at the actor's capacity the surplus is **clamped away** (lost),
 /// exactly as energy beyond `reserve.max` is — the leak **recycling** closes.
 ///
@@ -76,7 +76,7 @@ pub fn interact(
     // The prey's nutrient store, carried up the chain by predation (T3). Read in
     // pass 2 (the start-of-tick amount, like `avail` for energy), written at the
     // end. Disjoint from `reserves` (a different component).
-    mut nutrients: Query<&mut Nutrients>,
+    mut nutrients: Query<&mut ComponentStore>,
     // Reach filter reused from one actor to the next (cf. loop): we avoid
     // reallocating an `EntityHashSet` for every actor and every tick.
     mut filter: Local<SpatialQueryFilter>,

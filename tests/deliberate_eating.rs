@@ -90,6 +90,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
             name: "Food".into(),
             diffusion: 0.0,
             decay: 0.0,
+            initial: 0.0,
         }],
         field_relations: vec![
             FieldRelation {
@@ -130,6 +131,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
                 0.0,
                 0,
                 config.reserve_max_of(0),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -142,6 +144,7 @@ fn plant_reserve_after_grazing(gate_off: bool, ticks: usize) -> f32 {
                 0.0,
                 1,
                 config.reserve_max_of(1),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
@@ -211,6 +214,7 @@ fn reserve_after_holding(act_cost: f32, gate_off: bool, ticks: usize) -> (f32, f
                 0.0,
                 0,
                 config.reserve_max_of(0),
+                0.0,
                 0,
                 0, // lineage: inert here (no breeding scoring)
             );
