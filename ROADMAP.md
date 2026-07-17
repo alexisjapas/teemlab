@@ -93,6 +93,46 @@ green throughout):
   real past-parity levers target the *learning* (longer `match_ticks`, a rival-relative fitness,
   co-evolution), not the food supply.
 
+**⟳ Next — example-set redesign around the split-arena control (2026-07-17, planned).**
+The Phase-C set introduces one mechanic per scenario, so a demonstration relies on
+comparing *across* runs. The redesign's core device is the **split arena as an in-simulation
+control**: an impassable rock wall halves the arena so a contrast shows in a *single frame*.
+Prototype validated (`scenarios/saved/split_prototype.ron`, local, git-ignored): an
+overlapping solid-rock wall (`Source{solid:true}`, radius 22 / spacing 35, spawn margin 30 >
+`seed_dispersal`) is **impassable to agents and to seed-dispersal** (0 crossings over 120 s ×
+2 seeds); the substrate `Field` still diffuses across it (a plain grid, reflecting boundaries,
+**no obstacle mask**) but only ~8 % of mass as a *dilute* bath (≈1–5 % of peak concentration,
+cannot sustain a producer) — a soft confound, tolerable where each half keeps its own sources.
+
+Target arc — **8 scenarios, the non-MLP half built and polished FIRST**:
+- **01 meadow** — producers on localized nutrients (the current 02; ship with `initial` 0.1,
+  the measured anti-opening-starvation warm-up).
+- **02 divide** — *split*: producers + nutrients + herbivores on one side, herbivores alone on
+  the other → trophic dependence shown in one frame.
+- **03 selection** — a priced trait pruned: a wanderer never uses its eyes, yet vision is taxed
+  (`Vision::metabolic_cost`, Law 7), so it decays. Built **as a split** (mutable vs frozen
+  genes) — the decay becomes a side-by-side contrast, and this recovers the **pure-drift null**
+  (the retired `01_drift`) as an integrated control.
+- **04 hunt** — Hunter vs Wander: the *same* vision, now *used*, pays for itself. 03→04 is the
+  deliberate "a trait is worth its cost only if used" pair.
+- **05 restraint** — *split*: prudent | greedy grazers, the tragedy of the commons (field leak
+  is swamped here — sources on both sides).
+
+**Deferred — MLP scenarios 06–08 (resume later).** MLP alone → vs Wander → post-sweep. Parked
+open question: make the *generational* gain legible (08 = evolved-vs-trained rather than
+both-vs-Wander) rather than repeating "beats random". These come **after** the simple non-MLP
+scenarios and after the UI redesign is finished.
+
+**Deferred — the 3-level food web returns only with multi-nutrient metabolism.** The current
+`07_foodweb` / `08_reef` (3 emergent trophic levels, detritus) are dropped from the *teaching*
+set: the chain is **not correct on a single hardcoded nutrient** — `metabolize` draws `take(0)`
+in hardcoded (same root cause parked the signals/toxin scene above), so distinct trophic tiers
+cannot partition resources. Its return is a **dependency on a component metabolization /
+transformation system** (per-species / multi-nutrient); document and re-add the web then.
+
+**Work order:** simple, well-made non-MLP scenarios (01–05) + finishing the UI redesign come
+first; the MLP arc and the food-web return come after.
+
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.
 
