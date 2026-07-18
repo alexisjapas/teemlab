@@ -13,8 +13,8 @@ mod common;
 
 #[test]
 fn anchored_bodies_stay_rooted_at_their_anchor() {
-    let mut config = SimConfig::from_ron_file("scenarios/examples/02_meadow.ron")
-        .expect("scenario flora.ron loadable");
+    let mut config = SimConfig::from_ron_file("scenarios/examples/01_meadow.ron")
+        .expect("scenario 01_meadow.ron loadable");
     // Root every archetype with a stiff spring and a tear tension far above anything a
     // mere neighbour jostle produces (so nothing tears): the test isolates "stays put".
     for arch in &mut config.archetypes {

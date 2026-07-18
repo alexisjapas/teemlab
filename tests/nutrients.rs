@@ -22,7 +22,7 @@ use teemlab::components::{Agent, Species};
 mod common;
 
 /// The bundled scenario, loaded as-is.
-const SCENARIO: &str = include_str!("../scenarios/examples/02_meadow.ron");
+const SCENARIO: &str = include_str!("../scenarios/examples/01_meadow.ron");
 
 /// Four independent worlds: a behavior that holds for all of them is not luck.
 const SEEDS: [u64; 4] = [0x00C0_FFEE, 0x1234, 0x9999, 0xBEEF];

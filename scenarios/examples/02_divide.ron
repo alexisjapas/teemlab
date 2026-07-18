@@ -1,0 +1,163 @@
+// 02 · Divide — trophic dependence, shown in a single frame.
+//
+// The arena is split by an impassable DIAGONAL wall of rocks (`Source { solid: true }`, a
+// static collider each — impassable to bodies AND to seed-dispersal — running corner to
+// corner). The SAME grazer runs in the two triangular halves on DIFFERENT ground:
+//   • UPPER-LEFT — nutrient vents feed a stand of PRODUCERS (sessile photosynthesisers), and
+//     grazers graze them: energy (and the nutrient it carries) flows up the chain, so the
+//     herd PERSISTS and oscillates with its food (Lotka-Volterra).
+//   • LOWER-RIGHT — the same grazers, but NO producers and no vents: nothing to eat. They pay
+//     the allometric cost law every second (SIM Law 1/7) and, finding no energy, drift, thin,
+//     and wink out — the bare "price of being alive" (the retired 01_drift lesson), now the
+//     control half of a living comparison.
+//
+// One frame therefore carries the whole point: a consumer is not self-sufficient — strip its
+// producers and it dies, however capable it is. The field leaks a little nutrient across the
+// wall, but it is inert here: the bare side has no producer to absorb it and the grazers feed
+// only by eating, so the lower-right herd starves regardless.
+//
+// Watch: the upper-left half stays green-and-orange and breathing; the lower-right goes quiet.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 440.0,
+    archetypes: [
+        (
+            // Fed grazer — confined to the UPPER-LEFT half, where the producers grow.
+            name: "Grazer (fed)",
+            color: (1.0, 0.55, 0.35),
+            count: 8,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 100.0,
+                agility: 0.12,
+                vision_range: 110.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+                seed_dispersal: 15.0,
+            ),
+            brain: Hunter,
+            mutable: (mutation_rate: false),
+            spawn_zone: Some((shape: Circle(center: (-147.0, 147.0), radius: 180.0))),
+        ),
+        (
+            // Starved grazer — identical body, confined to the LOWER-RIGHT half, where there
+            // is nothing to eat.
+            name: "Grazer (starved)",
+            color: (0.62, 0.4, 0.42),
+            count: 8,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 100.0,
+                agility: 0.12,
+                vision_range: 110.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+                seed_dispersal: 15.0,
+            ),
+            brain: Hunter,
+            mutable: (mutation_rate: false),
+            spawn_zone: Some((shape: Circle(center: (147.0, -147.0), radius: 180.0))),
+        ),
+        (
+            // Producers — the UPPER-LEFT half's food base only.
+            name: "Producer",
+            color: (0.35, 0.8, 0.42),
+            count: 110,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 20.0,
+                offspring_energy: 12.0,
+                mutation_rate: 0.0,
+                photosynthesis: 6.0,
+                seed_dispersal: 24.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+            spawn_zone: Some((shape: Circle(center: (-147.0, 147.0), radius: 180.0))),
+        ),
+    ],
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 4.0, rate: 16.0),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        // UPPER-LEFT-half vents only (all clear of the diagonal y=x) — the lower-right stays bare.
+        (pos: (-240.0, 200.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-120.0, 260.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-260.0, 60.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Impassable DIAGONAL wall along y=x, corner to corner (38 overlapping rocks, radius 22):
+        (pos: (-440.0, -440.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-415.6, -415.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-391.1, -391.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-366.7, -366.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-342.2, -342.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-317.8, -317.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-293.3, -293.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-268.9, -268.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-244.4, -244.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-220.0, -220.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-195.6, -195.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-171.1, -171.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-146.7, -146.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-122.2, -122.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-97.8, -97.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-73.3, -73.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-48.9, -48.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-24.4, -24.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (0.0, 0.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (24.4, 24.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (48.9, 48.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (73.3, 73.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (97.8, 97.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (122.2, 122.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (146.7, 146.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (171.1, 171.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (195.6, 195.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (220.0, 220.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (244.4, 244.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (268.9, 268.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (293.3, 293.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (317.8, 317.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (342.2, 342.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (366.7, 366.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (391.1, 391.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (415.6, 415.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (440.0, 440.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+    ],
+    field_relations: [
+        // Both grazers: NEED the nutrient (producers digestible), hold it, harvest only by
+        // eating, breed on it, recycle at death — identical rows; only their side differs.
+        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),
+        (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),
+        // Producer: absorbs & holds the nutrient, seeds on it, recycles at death.
+        (species: 2, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
+    ],
+    seed: 1,
+)

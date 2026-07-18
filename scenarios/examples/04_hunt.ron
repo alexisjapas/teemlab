@@ -1,0 +1,127 @@
+// 04 · Hunt — a trait is worth its cost only if it is used.
+//
+// The pair to 03. There, a WANDERER never steers on its eyes, so selection melted
+// its (costed) vision down. Here the SAME eyes, on the SAME body, at the SAME cost,
+// are given to two foragers that differ ONLY in their brain:
+//   • HUNTER — reads the `target` channel and steers toward the nearest reed it can
+//     eat (size dominance + digestibility, SIM Law 8). Its vision PAYS: it finds
+//     food the wanderer stumbles past.
+//   • WANDER — drifts at random and eats whatever it blunders into. It carries the
+//     identical vision gene and pays the identical metabolic cost (range × rays),
+//     but never acts on it — pure overhead, exactly as in 03.
+//
+// Both share one flora stock, so this is a direct contest on equal terms. The hunter
+// harvests more, breeds more, and OUT-COMPETES the wander control, which dwindles.
+// The lesson of the 03→04 pair: vision is not "good" or "bad" in itself — it is worth
+// its price precisely when a brain turns it into better foraging (Law 7), and worthless
+// otherwise. A bite transfers ENERGY and, proportional to it, the NUTRIENT the reed
+// absorbed (trophic transfer); grazing gives the reeds turnover. Lotka-Volterra, so an
+// example to watch over a coexistence window (ROADMAP §7), not a fixed steady state.
+//
+// Watch: the two forager curves diverge — the hunter climbs, the wander sinks.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 420.0,
+    archetypes: [
+        (
+            name: "Hunter",
+            color: (1.0, 0.55, 0.35),
+            count: 8,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 100.0,
+                agility: 0.12,
+                vision_range: 110.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Hunter,
+            mutable: (
+                mutation_rate: false,
+            ),
+        ),
+        (
+            // The control: identical body, identical eyes, identical cost — only the
+            // decider differs. It cannot steer on what it sees, so its vision is dead
+            // weight it nonetheless pays for.
+            name: "Wander",
+            color: (0.55, 0.6, 0.95),
+            count: 8,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 100.0,
+                agility: 0.12,
+                vision_range: 110.0,
+                vision_fov_deg: 130.0,
+                reproduction_threshold: 100.0,
+                offspring_energy: 45.0,
+                mutation_rate: 0.06,
+                vision_rays: 7.0,
+            ),
+            brain: Wander(turn_rate: 0.25),
+            mutable: (
+                mutation_rate: false,
+            ),
+        ),
+        (
+            name: "Reed",
+            color: (0.35, 0.8, 0.42),
+            count: 130,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 20.0,
+                offspring_energy: 12.0,
+                mutation_rate: 0.0,
+                photosynthesis: 6.0,
+                seed_dispersal: 24.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+    ],
+    // A gentle bite (vs the default 40/s): a forager mouths a reed over ~2 s instead
+    // of vaporising it, so grazing pressure stays near the reeds' regrowth.
+    cost_law: (size_exponent: 2.0, maintenance: 0.04, locomotion: 0.02, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 4.0, rate: 16.0),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0),
+    ],
+    sources: [
+        (pos: (-160.0, 160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, 160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-160.0, -160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (160.0, -160.0), component: 0, rate: 16.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+    ],
+    field_relations: [
+        // Both foragers NEED the nutrient (makes reeds digestible), hold it, harvest it
+        // only by eating (no absorption), breed on it, recycle at death — identical rows.
+        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),
+        (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 20.0, need: 1.0),
+        // Reed: absorbs & holds the nutrient, seeds on it, recycles at death.
+        (species: 2, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
+    ],
+    seed: 1,
+)

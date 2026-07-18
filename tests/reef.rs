@@ -1,4 +1,4 @@
-//! Reef driver — **size-selective refugia** (`scenarios/examples/08_reef.ron`). Solid rocks
+//! Reef driver — **size-selective refugia** (`scenarios/deferred/reef.ron`). Solid rocks
 //! (`Collider::circle(radius)`) ringed around each vent leave ~18 px gaps, so a disc of
 //! radius r threads a gap only when G ≥ 2·r: the small HERBIVORE (r 6, needs 12 px) crosses
 //! into the sheltered kelp gardens, the large OMNIVORE (r 12, needs 24 px) is WALLED OUT.
@@ -58,7 +58,7 @@ struct Run {
 }
 
 fn run(seed: u64) -> Run {
-    let mut cfg = SimConfig::from_ron_file("scenarios/examples/08_reef.ron").expect("reef loads");
+    let mut cfg = SimConfig::from_ron_file("scenarios/deferred/reef.ron").expect("reef loads");
     cfg.seed = seed;
     let hz = cfg.tick_hz as usize;
     let mut app = common::stepping_app(&cfg);

@@ -15,10 +15,10 @@ mod common;
 
 #[test]
 fn agents_stay_within_arena() {
-    // The evolution scenario: it moves at full speed and reproduces, so it presses
-    // the edges in every useful way.
-    let config = SimConfig::from_ron_file("scenarios/examples/04_selection.ron")
-        .expect("scenario 04_selection.ron loadable");
+    // The selection scenario: its wanderers move at full speed and reproduce, so they
+    // press the edges in every useful way.
+    let config = SimConfig::from_ron_file("scenarios/examples/03_selection.ron")
+        .expect("scenario 03_selection.ron loadable");
 
     // Each `update()` advances by exactly one fixed tick (cf. `common::stepping_app`).
     let mut app = common::stepping_app(&config);

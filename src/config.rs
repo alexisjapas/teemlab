@@ -1888,12 +1888,12 @@ mod tests {
         assert_eq!(cfg.founder_max_speed_of(9), cfg.genotype_of(9).max_speed);
     }
 
-    /// The grazing scenario: a hunter forager **and** a sessile food source it can
-    /// prey on — otherwise the "target" channel stays zero and the forager starves.
+    /// The hunt scenario: a hunter forager **and** a sessile food source it can prey on —
+    /// otherwise the "target" channel stays zero and the forager starves.
     #[test]
-    fn bundled_grazing_scenario_uses_hunter_on_a_target() {
-        let text = include_str!("../scenarios/examples/03_grazing.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid grazing scenario");
+    fn bundled_hunt_scenario_uses_hunter_on_a_target() {
+        let text = include_str!("../scenarios/examples/04_hunt.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid hunt scenario");
         assert!(
             cfg.archetypes
                 .iter()
@@ -1910,7 +1910,7 @@ mod tests {
     /// producer base, hunter consumers, and a pyramid (producers ≫ apex predators).
     #[test]
     fn bundled_foodweb_is_a_trophic_chain() {
-        let text = include_str!("../scenarios/examples/07_foodweb.ron");
+        let text = include_str!("../scenarios/deferred/foodweb.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid food-web scenario");
         assert!(cfg.archetypes.len() >= 3, "three trophic levels");
         // A pyramid: the producer base is far more numerous than the apex predator.
@@ -1931,12 +1931,12 @@ mod tests {
         );
     }
 
-    /// The evolution scenario activates the loop (reproduction + mutation) and bounds
+    /// The selection scenario activates the loop (reproduction + mutation) and bounds
     /// the food (finite regrowth → carrying capacity).
     #[test]
-    fn bundled_evolution_scenario_closes_the_loop() {
-        let text = include_str!("../scenarios/examples/04_selection.ron");
-        let cfg = SimConfig::from_ron_str(text).expect("valid evolution scenario");
+    fn bundled_selection_scenario_closes_the_loop() {
+        let text = include_str!("../scenarios/examples/03_selection.ron");
+        let cfg = SimConfig::from_ron_str(text).expect("valid selection scenario");
         let agent = first_mobile(&cfg);
         let genotype = &agent.genotype;
         assert!(
@@ -1961,7 +1961,7 @@ mod tests {
     /// `tests/mlp`, `tests/cohabitation`).
     #[test]
     fn bundled_learning_pits_a_learned_brain_against_wander() {
-        let text = include_str!("../scenarios/examples/06_learning.ron");
+        let text = include_str!("../scenarios/deferred/learning.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid learning scenario");
         assert_eq!(
             cfg.archetypes[0].count, cfg.archetypes[1].count,
@@ -1986,7 +1986,7 @@ mod tests {
     /// generator, not a CI sim). Guardrail on the batch schema + the scenario wiring.
     #[test]
     fn bundled_mlp_breed_carries_a_batch_regime() {
-        let text = include_str!("../scenarios/examples/09_breeding.ron");
+        let text = include_str!("../scenarios/deferred/breeding.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid MLP-breeding scenario");
         let batch = cfg.batch.as_ref().expect("a batch regime");
         assert!(batch.generations > 1, "a generational run");
@@ -1999,7 +1999,7 @@ mod tests {
     /// The meadow scenario (producers): a **sessile** plant that lives on photosynthesis.
     #[test]
     fn bundled_meadow_is_a_sessile_photosynthetic_plant() {
-        let text = include_str!("../scenarios/examples/02_meadow.ron");
+        let text = include_str!("../scenarios/examples/01_meadow.ron");
         let cfg = SimConfig::from_ron_str(text).expect("valid meadow scenario");
         assert_eq!(cfg.brain_of(0), BrainKind::Sessile);
         assert!(

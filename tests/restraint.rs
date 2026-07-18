@@ -4,18 +4,18 @@
 //! The `Grazer` control brain forages exactly like the `Hunter` but gates its eating on
 //! its own hunger (proprioception, `self_state` energy): a PRUDENT grazer (low threshold)
 //! leaves food uneaten when sated; a GREEDY one (threshold 1.0) eats whatever is in
-//! range. Same body, same economy — only the appetite gate differs. On
-//! `scenarios/examples/05_restraint.ron`, two robust results:
+//! range. Same body, same economy — only the appetite gate differs. `05_restraint.ron` is a
+//! SPLIT arena (a prudent monoculture | a greedy monoculture, each on its own half), giving
+//! two robust results:
 //!
-//! (A) RESTRAINT GRAZES GENTLER ([`restraint_grazes_gentler_than_greed`]): over the same
-//!     window a PRUDENT monoculture leaves MORE flora standing than a GREEDY one (its lower
-//!     appetite is a lighter footprint on the commons), while the GREEDY one over-consumes
-//!     and over-breeds. Both eventually wind down on this living-food economy (the
-//!     Lotka-Volterra wall, ROADMAP §7) — so we assert the CONTRAST at a mid-window, not a
-//!     persistence the post-refactor economy no longer sustains.
-//! (B) TRAGEDY OF THE COMMONS ([`greed_outcompetes_restraint`]): in a MIXED world greed is
-//!     individually superior (eats more → harvests more nutrient → more offspring), so it
-//!     out-competes prudence — restraint stabilises but is not individually selected.
+//! (A) RESTRAINT IS A STABILITY LEVER ([`split_prudent_persists_greedy_collapses`]): run AS
+//!     SHIPPED (the split), by a late window the GREEDY half has boom-busted to extinction
+//!     while the identical PRUDENT half still PERSISTS — collapse vs persistence from the
+//!     appetite gate alone, side by side in one frame.
+//! (B) TRAGEDY OF THE COMMONS ([`greed_outcompetes_restraint`]): remove the divider so the two
+//!     share ONE oasis, and greed is individually superior (eats more → harvests more nutrient
+//!     → more offspring), so it out-competes prudence — restraint stabilises but is not
+//!     individually selected.
 //!
 //! What would make restraint SELECTABLE (evolvable) is spatial viscosity strong enough
 //! that a lineage inherits the patch it preserved or exhausted (§2). Mobile foragers here
@@ -52,14 +52,28 @@ fn counts(app: &mut App) -> (usize, usize, usize) {
 }
 
 /// Run the scenario for `seconds` at `seed`, overriding the greedy (0) and prudent (1)
-/// founder counts — `0` yields a MONOCULTURE of the other. Returns the final
-/// (greedy, prudent, flora) living counts. Manual single-stepping (one `update()` = one
-/// fixed tick), the same world as both binaries.
-fn run(seed: u64, greedy: usize, prudent: usize, seconds: usize) -> (usize, usize, usize) {
+/// founder counts — `0` yields a MONOCULTURE of the other. When `mixed`, the divider is
+/// removed (each grazer's `spawn_zone` cleared and the solid wall rocks dropped) so the two
+/// share ONE oasis — the tragedy-of-commons setup; otherwise they run as shipped, each
+/// confined to its own half. Returns the final (greedy, prudent, flora) living counts.
+/// Manual single-stepping (one `update()` = one fixed tick), the same world as both binaries.
+fn run(
+    seed: u64,
+    greedy: usize,
+    prudent: usize,
+    seconds: usize,
+    mixed: bool,
+) -> (usize, usize, usize) {
     let mut config = SimConfig::from_ron_str(SCENARIO).expect("valid restraint scenario");
     config.seed = seed;
     config.archetypes[0].count = greedy;
     config.archetypes[1].count = prudent;
+    if mixed {
+        for a in &mut config.archetypes {
+            a.spawn_zone = None;
+        }
+        config.sources.retain(|s| !s.solid);
+    }
     let hz = config.tick_hz as usize;
 
     let mut app = App::new();
@@ -77,48 +91,40 @@ fn run(seed: u64, greedy: usize, prudent: usize, seconds: usize) -> (usize, usiz
     counts(&mut app)
 }
 
-/// (A) Restraint grazes GENTLER on the commons. Same body, same economy — only the appetite
-/// gate differs. Over the same mid-window, a PRUDENT monoculture leaves MORE flora standing
-/// than a GREEDY one (the lower ceiling is a lighter footprint), while the GREEDY one
-/// over-consumes and over-breeds (a boom that later dooms it). Both wind down on this
-/// living-food economy (§7), so we pin the CONTRAST, not a persistence: behavioural restraint
-/// is a measurably lighter hand on the shared resource.
+/// (A) RESTRAINT IS A STABILITY LEVER — the split's point, shown in one frame. Run the
+/// scenario AS SHIPPED (both grazers, each confined to its own half with its own equal flora
+/// and vents). By a late window the GREEDY monoculture has stripped its patch and BOOM-BUSTED
+/// to extinction, while the identical PRUDENT monoculture — differing ONLY in its appetite
+/// gate — still PERSISTS with its flora. Same body, same economy: the appetite is the whole
+/// difference, and behavioural restraint is the difference between collapse and persistence.
 #[test]
-fn restraint_grazes_gentler_than_greed() {
-    const HORIZON: usize = 40;
+fn split_prudent_persists_greedy_collapses() {
+    const HORIZON: usize = 110;
     for seed in SEEDS {
-        let (greedy_only, _, greedy_flora) = run(seed, 16, 0, HORIZON);
-        let (_, prudent_only, prudent_flora) = run(seed, 0, 16, HORIZON);
-
-        // Prudence leaves more of the commons standing than greed.
+        let (greedy, prudent, _flora) = run(seed, 16, 16, HORIZON, false);
+        // Prudence still standing where greed has crashed: a decisive side-by-side contrast.
         assert!(
-            prudent_flora > greedy_flora,
-            "seed {seed}: prudence must preserve more flora than greed \
-             (prudent {prudent_flora} vs greedy {greedy_flora} at {HORIZON}s)"
-        );
-        // Greed over-consumes → over-breeds: the boom (that later busts) is bigger.
-        assert!(
-            greedy_only > prudent_only,
-            "seed {seed}: greed should over-breed on what it strips \
-             (greedy {greedy_only} vs prudent {prudent_only} at {HORIZON}s)"
+            prudent >= 8 && greedy < prudent,
+            "seed {seed}: the prudent half must persist where the greedy half collapses \
+             (prudent {prudent} vs greedy {greedy} at {HORIZON}s)"
         );
     }
 }
 
-/// (B) TRAGEDY OF THE COMMONS. In a MIXED world, greed is individually superior — it eats
-/// more, harvests more nutrient, and out-reproduces prudence — so restraint is NOT
-/// individually selected: the greedy lineage overtakes the prudent one while the shared
-/// commons still stands. (The greed-dominated system then boom-busts — the stability it
-/// forfeited, cf. [`restraint_prevents_collapse`].) Making restraint *selectable* needs
-/// spatial viscosity (§2), which mobile foragers here swamp — the deferred open
-/// hypothesis (ROADMAP §9).
+/// (B) TRAGEDY OF THE COMMONS. Remove the divider (`mixed`) so the two grazers share ONE
+/// oasis: greed is now individually superior — it eats more, harvests more nutrient, and
+/// out-reproduces prudence — so restraint is NOT individually selected, the greedy lineage
+/// overtakes the prudent one while the shared commons still stands. (The greed-dominated
+/// system then boom-busts — the stability it forfeited, cf. result A.) Making restraint
+/// *selectable* needs spatial viscosity (§2), which mobile foragers here swamp — the
+/// deferred open hypothesis (ROADMAP §9).
 #[test]
 fn greed_outcompetes_restraint() {
     // Long enough that the competition has played out (greed has overtaken prudence) while
     // greed still holds a real population — genuine displacement, not mutual collapse.
     const PEAK: usize = 60;
     for seed in SEEDS {
-        let (greedy, prudent, _flora) = run(seed, 16, 16, PEAK);
+        let (greedy, prudent, _flora) = run(seed, 16, 16, PEAK, true);
         assert!(
             greedy > prudent && greedy >= 4,
             "seed {seed}: greed should out-compete restraint in a well-mixed world \

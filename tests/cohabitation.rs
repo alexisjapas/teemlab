@@ -25,7 +25,7 @@ use teemlab::components::{Agent, Species};
 mod common;
 
 /// The bundled scenario, loaded as-is: the driver measures WHAT the binaries launch.
-const SCENARIO: &str = include_str!("../scenarios/examples/06_learning.ron");
+const SCENARIO: &str = include_str!("../scenarios/deferred/learning.ron");
 
 /// Experiment seeds (cf. §5: we replay a *config*, not bit-for-bit).
 const SEEDS: [u64; 5] = [0x00C0_FFEE, 0x1234, 0x9999, 0xABCD, 0xBEEF];

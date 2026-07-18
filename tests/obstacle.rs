@@ -18,12 +18,12 @@ mod common;
 
 const ROCK_R: f32 = 40.0;
 
-/// The grazing scenario (mobile foragers + sessile food) with a single central feature
+/// The hunt scenario (mobile foragers + sessile food) with a single central feature
 /// of radius [`ROCK_R`] that **emits nothing** (`rate 0`) — so the only thing that can
 /// keep a body out of its disc is the collider, present iff `solid`.
 fn evolution_with_central_rock(solid: bool) -> SimConfig {
-    let mut config = SimConfig::from_ron_file("scenarios/examples/03_grazing.ron")
-        .expect("scenario 03_grazing.ron loadable");
+    let mut config = SimConfig::from_ron_file("scenarios/examples/04_hunt.ron")
+        .expect("scenario 04_hunt.ron loadable");
     config.sources = vec![Source {
         pos: [0.0, 0.0],
         component: 0,

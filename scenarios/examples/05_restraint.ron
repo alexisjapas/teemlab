@@ -1,30 +1,32 @@
-// 05 · Restraint — deliberate eating, and the tragedy of the commons.
+// 05 · Restraint — deliberate eating as a stability lever, shown in one frame.
 //
-// 04's Hunter eats reflexively. Here the forager can CHOOSE when to eat: the `Grazer`
-// brain forages exactly like a Hunter but gates its bite on its OWN hunger — it reads
-// its energy reserve (PROPRIOCEPTION, the self-state channel) and eats only while it
-// is below `hunger_threshold`. Two foragers share one oasis, SAME body and economy,
-// differing ONLY in that appetite gate (eating is free, so nothing else separates
-// them):
-//   • GREEDY  (1.0) eats whatever is in range, even when full — it strips its patch;
-//   • PRUDENT (0.6) stops at two-thirds full — its time-averaged draw ≈ its metabolic
-//     need, so it leaves the flora alive.
+// 04's forager eats reflexively. Here the grazer CHOOSES when to eat: the `Grazer` brain
+// forages exactly like a Hunter but gates its bite on its OWN hunger — it reads its energy
+// reserve (PROPRIOCEPTION, the self-state channel) and eats only while below its
+// `hunger_threshold`. A DIAGONAL rock wall (corner to corner along y=x) splits the arena into
+// two triangular MONOCULTURES with the SAME body and economy and their own equal flora +
+// vents, differing ONLY in appetite:
+//   • LOWER-RIGHT — GREEDY (threshold 1.0): eats whatever is in range, even when full. It
+//     strips its patch faster than the flora regrows, overshoots, and BOOM-BUSTS to extinction.
+//   • UPPER-LEFT  — PRUDENT (0.6): stops at two-thirds full, so its time-averaged draw ≈ its
+//     metabolic need. It leaves the flora alive and PERSISTS with it.
 //
-// The driver (tests/restraint.rs) pins two results. (A) A prudent MONOCULTURE is a
-// stability lever — it persists and its flora thrives, where a greedy monoculture
-// overshoots and collapses to extinction. (B) But MIXED, as shipped here, greed is
-// individually superior (eats more → more nutrient → more offspring), so it OUT-COMPETES
-// prudence and then boom-busts the flora it dominates: the tragedy of the commons.
-// Restraint stabilises but is not individually selected (making it *evolve* needs strong
-// spatial viscosity — ROADMAP §9, deferred). Slow foragers, so grazing pressure sits near
-// the flora's regrowth and the contrast is legible.
+// One frame, the whole result: restraint is an ecological STABILISER — a prudent monoculture
+// holds where an identical greedy one collapses (driver `tests/restraint.rs`, result A).
+// The OTHER result — that in a MIXED world greed is individually superior and OUT-COMPETES
+// prudence (the tragedy of the commons, result B) — is still there, but needs the two to
+// share one patch; the driver reproduces it by removing this divider. Restraint stabilises
+// yet is not individually selected (making it *evolve* needs strong spatial viscosity —
+// ROADMAP §9). Vents in both halves, so the wall's field leak is swamped.
 //
-// Watch: crimson (greedy) overtakes teal (prudent), then overshoots its own oasis.
+// Watch: the upper-left half (teal) holds green and breathing; the lower-right (crimson)
+// blooms, overshoots, and goes quiet.
 (
     tick_hz: 64.0,
     arena_half_extent: 540.0,
     archetypes: [
         (
+            // Greedy — LOWER-RIGHT half. Eats reflexively; overshoots.
             name: "Greedy",
             color: (0.9, 0.32, 0.36),
             count: 16,
@@ -43,8 +45,10 @@
             ),
             brain: Grazer(hunger_threshold: 1.0),
             mutable: (mutation_rate: false),
+            spawn_zone: Some((shape: Circle(center: (180.0, -180.0), radius: 220.0))),
         ),
         (
+            // Prudent — UPPER-LEFT half. Stops when sated; leaves food alive.
             name: "Prudent",
             color: (0.3, 0.8, 0.75),
             count: 16,
@@ -63,8 +67,10 @@
             ),
             brain: Grazer(hunger_threshold: 0.6),
             mutable: (mutation_rate: false),
+            spawn_zone: Some((shape: Circle(center: (-180.0, 180.0), radius: 220.0))),
         ),
         (
+            // Flora — the shared food base, scattered across BOTH halves.
             name: "Flora",
             color: (0.4, 0.85, 0.4),
             count: 240,
@@ -103,14 +109,63 @@
         (name: "Nutrient", diffusion: 0.3, decay: 0.0),
     ],
     sources: [
-        (pos: (-240.0, 240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (240.0, 240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (-240.0, -240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
-        (pos: (240.0, -240.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Two vents per half — all clear of the diagonal y=x (each side self-sufficient → the
+        // wall's field leak is swamped). Upper-left (prudent, y > x):
+        (pos: (-280.0, 120.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-120.0, 280.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Lower-right (greedy, y < x):
+        (pos: (280.0, -120.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (120.0, -280.0), component: 0, rate: 30.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Impassable DIAGONAL wall along y=x, corner to corner (45 overlapping rocks, radius 22):
+        (pos: (-540.0, -540.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-515.5, -515.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-490.9, -490.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-466.4, -466.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-441.8, -441.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-417.3, -417.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-392.7, -392.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-368.2, -368.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-343.6, -343.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-319.1, -319.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-294.5, -294.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-270.0, -270.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-245.5, -245.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-220.9, -220.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-196.4, -196.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-171.8, -171.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-147.3, -147.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-122.7, -122.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-98.2, -98.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-73.6, -73.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-49.1, -49.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-24.5, -24.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (0.0, 0.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (24.5, 24.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (49.1, 49.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (73.6, 73.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (98.2, 98.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (122.7, 122.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (147.3, 147.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (171.8, 171.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (196.4, 196.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (220.9, 220.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (245.5, 245.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (270.0, 270.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (294.5, 294.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (319.1, 319.1), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (343.6, 343.6), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (368.2, 368.2), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (392.7, 392.7), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (417.3, 417.3), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (441.8, 441.8), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (466.4, 466.4), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (490.9, 490.9), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (515.5, 515.5), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (540.0, 540.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
     ],
     field_relations: [
-        // Both grazers: need the nutrient (flora digestible), harvest it only by eating
-        // (no absorption), breed on it, recycle at death. Identical — only appetite differs.
+        // Both grazers: need the nutrient (flora digestible), harvest it only by eating (no
+        // absorption), breed on it, recycle at death. Identical — only appetite and side differ.
         (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 8.0, need: 1.0),
         // Flora: absorbs & holds the nutrient, seeds on it (oases), recycles at death.

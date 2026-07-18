@@ -93,45 +93,58 @@ green throughout):
   real past-parity levers target the *learning* (longer `match_ticks`, a rival-relative fitness,
   co-evolution), not the food supply.
 
-**⟳ Next — example-set redesign around the split-arena control (2026-07-17, planned).**
-The Phase-C set introduces one mechanic per scenario, so a demonstration relies on
-comparing *across* runs. The redesign's core device is the **split arena as an in-simulation
-control**: an impassable rock wall halves the arena so a contrast shows in a *single frame*.
-Prototype validated (`scenarios/saved/split_prototype.ron`, local, git-ignored): an
-overlapping solid-rock wall (`Source{solid:true}`, radius 22 / spacing 35, spawn margin 30 >
-`seed_dispersal`) is **impassable to agents and to seed-dispersal** (0 crossings over 120 s ×
-2 seeds); the substrate `Field` still diffuses across it (a plain grid, reflecting boundaries,
-**no obstacle mask**) but only ~8 % of mass as a *dilute* bath (≈1–5 % of peak concentration,
-cannot sustain a producer) — a soft confound, tolerable where each half keeps its own sources.
+**✓ Done — the non-MLP split-arena teaching set (2026-07-18, same branch, not yet on `main`).**
+The Phase-C set introduced one mechanic per scenario, so a demonstration relied on comparing
+*across* runs. The redesign's core device is the **split arena as an in-simulation control**:
+an impassable **diagonal** wall of overlapping solid rocks (`Source{solid:true}`, radius 22,
+~35 spacing, **corner to corner along y=x so it reaches the arena edges**) halves the arena
+into two triangles so a contrast shows in a *single frame* (impassable to agents and seeds;
+founders placed by a per-triangle Circle `spawn_zone`; the `Field` still leaks ~8 % dilute
+across it, swamped where each half keeps its own sources — [[split-arena-barrier-leak]]).
+Pure scenario-data + test-
+fixture + docs change; **no engine touched**, so the sim stays byte-identical (`tests/mlp`
+green throughout). The teaching set is now a concise **five**, `01_meadow … 05_restraint`:
+- **01 meadow** — producers on a scarce nutrient (the ex-`02_meadow`, essentially as-is;
+  `initial` 0.1 + `random_initial_nutrients` warm-up). Not a split. Drivers `flora`/`nutrients`.
+- **02 divide** — *split*, NEW: the same grazer in both triangular halves, producers + vents in
+  ONE only → that herd persists, the bare-side herd starves (recovering the retired `01_drift`
+  "price of being alive" as the control half). Driver `tests/divide.rs`.
+- **03 selection** — *split*, mutable vs frozen vision. **Finding: the old `04_selection`
+  "selection melts the eyes down" claim was never validated and DID NOT hold** — a random
+  wanderer cannot sustain a population on seek-required food, so it collapses (n→1) before
+  selection acts, and vision never moved. Fixed by a **food-limited dense regime**: far-sighted
+  wanderers (vision 300 / 13 rays) on a grazed-down flora carpet reach carrying capacity, where
+  the ~2/s vision cost (`Vision::metabolic_cost`, Law 7) creates a real reproductive edge for
+  low-vision mutants. Measured: the mutable half's mean `vision_range` decays 300 → ~160–250 and
+  `vision_rays` ~13 → 6–10 over the window while the FROZEN control half holds exactly at 300 /
+  13, both persisting (an *example to watch*, §7 — the flora oscillates hard, then winds down
+  after the decay is plain). Driver `tests/selection.rs`.
+- **04 hunt** — Hunter vs Wander (ex-`03_grazing` + a Wander control): the *same* eyes and cost,
+  the Hunter *uses* them and out-forages the Wander (→0–2) that can't. The deliberate 03→04 pair.
+- **05 restraint** — *split*: prudent monoculture persists | greedy monoculture boom-busts to
+  extinction, side by side (result A, the stability lever). Driver `tests/restraint.rs`
+  reproduces the mixed tragedy-of-commons (result B) by stripping the divider in-test.
 
-Target arc — **8 scenarios, the non-MLP half built and polished FIRST**:
-- **01 meadow** — producers on localized nutrients (the current 02; ship with `initial` 0.1,
-  the measured anti-opening-starvation warm-up).
-- **02 divide** — *split*: producers + nutrients + herbivores on one side, herbivores alone on
-  the other → trophic dependence shown in one frame.
-- **03 selection** — a priced trait pruned: a wanderer never uses its eyes, yet vision is taxed
-  (`Vision::metabolic_cost`, Law 7), so it decays. Built **as a split** (mutable vs frozen
-  genes) — the decay becomes a side-by-side contrast, and this recovers the **pure-drift null**
-  (the retired `01_drift`) as an integrated control.
-- **04 hunt** — Hunter vs Wander: the *same* vision, now *used*, pays for itself. 03→04 is the
-  deliberate "a trait is worth its cost only if used" pair.
-- **05 restraint** — *split*: prudent | greedy grazers, the tragedy of the commons (field leak
-  is swamped here — sources on both sides).
+The **deferred** scenarios moved out of the menu to a committed **`scenarios/deferred/`**
+(`learning`, `foodweb`, `reef`, `breeding`) — still test/`train`/`breed` fixtures, retargeted;
+`01_drift` retired. Every coupled test/bin retargeted (`tests/{nutrients,flora,anchor,
+containment,obstacle,mlp,cohabitation,bred_control,predator_prey,reef}`, the `config.rs`
+food-web units, `editor.rs`, `train`/`sweep`); README module-map + example commands rewritten.
 
-**Deferred — MLP scenarios 06–08 (resume later).** MLP alone → vs Wander → post-sweep. Parked
-open question: make the *generational* gain legible (08 = evolved-vs-trained rather than
-both-vs-Wander) rather than repeating "beats random". These come **after** the simple non-MLP
-scenarios and after the UI redesign is finished.
+**Deferred — MLP scenarios 06–08 (resume later).** MLP alone → vs Wander → post-sweep (the
+`deferred/learning` + `deferred/breeding` fixtures seed this). Parked open question: make the
+*generational* gain legible (08 = evolved-vs-trained rather than both-vs-Wander) rather than
+repeating "beats random". These come after the non-MLP set and the UI redesign.
 
-**Deferred — the 3-level food web returns only with multi-nutrient metabolism.** The current
-`07_foodweb` / `08_reef` (3 emergent trophic levels, detritus) are dropped from the *teaching*
-set: the chain is **not correct on a single hardcoded nutrient** — `metabolize` draws `take(0)`
-in hardcoded (same root cause parked the signals/toxin scene above), so distinct trophic tiers
-cannot partition resources. Its return is a **dependency on a component metabolization /
-transformation system** (per-species / multi-nutrient); document and re-add the web then.
+**Deferred — the 3-level food web returns only with multi-nutrient metabolism.** The parked
+`deferred/foodweb` / `deferred/reef` (3 emergent trophic levels, detritus) are out of the
+*teaching* set: the chain is **not correct on a single hardcoded nutrient** — `metabolize` draws
+`take(0)` in hardcoded (same root cause parked the signals/toxin scene above), so distinct
+trophic tiers cannot partition resources. Its return is a **dependency on a component
+metabolization / transformation system** (per-species / multi-nutrient); re-add the web then.
 
-**Work order:** simple, well-made non-MLP scenarios (01–05) + finishing the UI redesign come
-first; the MLP arc and the food-web return come after.
+**Work order:** the non-MLP set (01–05) is **done**; finishing the UI redesign comes next, then
+the MLP arc and the food-web return.
 
 Everything in this §0 *below* still describes `main` (pre-refactor); it will be rewritten
 when the branch lands.

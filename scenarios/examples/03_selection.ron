@@ -1,0 +1,184 @@
+// 03 · Selection — a priced trait decays when it is not used (with its own control).
+//
+// Natural selection made legible (SIM Law 7 — every characteristic is priced), and its
+// null shown IN THE SAME FRAME. A DIAGONAL rock wall (corner to corner along y=x) splits the
+// arena. In BOTH triangular halves live the SAME far-sighted WANDERERS (vision range 300, 13
+// rays) foraging a dense flora carpet on the same vents. A wanderer drifts at random and eats
+// what it blunders into — it never STEERS on its eyes — so their vision is pure overhead: a
+// real metabolic cost (range × rays, `Vision::metabolic_cost` ≈ 2/s at the founding value)
+// that buys nothing.
+//   • UPPER-LEFT — vision is MUTABLE. Once the flora is grazed to a limiting level, a wanderer
+//     that spends less on eyes it never uses breeds faster, so selection MELTS the eyes down:
+//     over the run the population's mean `vision_rays` roughly halves and its `vision_range`
+//     slides well below the founding 300.
+//   • LOWER-RIGHT — vision is FROZEN (those two genes are non-mutable; everything else drifts
+//     exactly as on the other side). It is the CONTROL: same economy, same drift on every other
+//     gene, but the eyes cannot move — so they stay far-sighted at 300 / 13.
+//
+// The contrast IS the proof: a gene falling only where it is allowed to mutate is selection,
+// not decay from noise or crowding. This integrates the retired 01_drift's pure baseline as a
+// live control. Give these same eyes to a Hunter that USES them (04) and they are kept — the
+// deliberate 03→04 pair. Vents in both halves, so the wall's field leak is swamped. Living
+// food, so both halves are an example to watch over a coexistence window: the flora oscillates
+// hard (Lotka-Volterra, ROADMAP §7) and the run eventually winds down — long after the decay
+// is plain.
+//
+// Watch the gene-drift curves in the HUD: the upper-left's vision range and ray count fall;
+// the lower-right's hold flat at the founding value.
+(
+    tick_hz: 64.0,
+    arena_half_extent: 400.0,
+    archetypes: [
+        (
+            // Mutable eyes — UPPER-LEFT half. Vision drifts; selection prunes it.
+            name: "Mutable eyes",
+            color: (1.0, 0.5, 0.4),
+            count: 14,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 55.0,
+                agility: 0.12,
+                vision_range: 300.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 66.0,
+                offspring_energy: 33.0,
+                mutation_rate: 0.15,
+                vision_rays: 13.0,
+            ),
+            brain: Wander(turn_rate: 0.25),
+            mutable: (
+                mutation_rate: false,
+            ),
+            spawn_zone: Some((shape: Circle(center: (-133.0, 133.0), radius: 160.0))),
+        ),
+        (
+            // Frozen eyes — LOWER-RIGHT half. The control: same everything, but vision cannot
+            // mutate, so it stays put.
+            name: "Frozen eyes",
+            color: (0.3, 0.7, 0.95),
+            count: 14,
+            radius: 8.0,
+            reserve_max: 120.0,
+            genotype: (
+                max_speed: 55.0,
+                agility: 0.12,
+                vision_range: 300.0,
+                vision_fov_deg: 120.0,
+                reproduction_threshold: 66.0,
+                offspring_energy: 33.0,
+                mutation_rate: 0.15,
+                vision_rays: 13.0,
+            ),
+            brain: Wander(turn_rate: 0.25),
+            mutable: (
+                mutation_rate: false,
+                vision_range: false,
+                vision_rays: false,
+            ),
+            spawn_zone: Some((shape: Circle(center: (133.0, -133.0), radius: 160.0))),
+        ),
+        (
+            // Flora — the shared food base, scattered across BOTH halves.
+            name: "Flora",
+            color: (0.4, 0.85, 0.4),
+            count: 100,
+            radius: 6.0,
+            reserve_max: 50.0,
+            genotype: (
+                max_speed: 0.0,
+                vision_range: 30.0,
+                vision_rays: 1.0,
+                reproduction_threshold: 18.0,
+                offspring_energy: 11.0,
+                mutation_rate: 0.0,
+                photosynthesis: 7.0,
+                seed_dispersal: 20.0,
+            ),
+            brain: Sessile,
+            mutable: (
+                max_speed: false,
+                agility: false,
+                vision_range: false,
+                vision_fov: false,
+                reproduction_threshold: false,
+                offspring_energy: false,
+                mutation_rate: false,
+                vision_rays: false,
+                photosynthesis: false,
+                seed_dispersal: false,
+                brain_cost: false,
+                act_cost: false,
+            ),
+        ),
+    ],
+    // A low floor so the useless eyes have room to slide all the way down.
+    vision_range_bounds: (min: 30.0, max: 320.0),
+    // A gentle cost law: a low metabolic floor lets a clumsy random forager survive between
+    // meals, so each half sustains a breeding population and selection has generations to act.
+    cost_law: (size_exponent: 2.0, maintenance: 0.02, locomotion: 0.012, maneuver: 0.0002, metabolic_cost: 0.25),
+    predation: (size_margin: 0.1, range: 8.0, rate: 15.0),
+    field_resolution: 256,
+    components: [
+        (name: "Nutrient", diffusion: 0.3, decay: 0.0, initial: 0.1),
+    ],
+    sources: [
+        // Five vents per half — all clear of the diagonal y=x (each side self-sufficient → the
+        // wall's field leak is swamped). Upper-left (y > x):
+        (pos: (-250.0, 150.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-150.0, 250.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-100.0, 120.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-220.0, 40.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (-60.0, 300.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Lower-right (y < x):
+        (pos: (250.0, -150.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (150.0, -250.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (100.0, -120.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (220.0, -40.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        (pos: (60.0, -300.0), component: 0, rate: 15.0, color: (1.0, 0.55, 0.2), radius: 12.0),
+        // Impassable DIAGONAL wall along y=x, corner to corner (33 overlapping rocks, radius 22):
+        (pos: (-400.0, -400.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-375.0, -375.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-350.0, -350.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-325.0, -325.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-300.0, -300.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-275.0, -275.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-250.0, -250.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-225.0, -225.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-200.0, -200.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-175.0, -175.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-150.0, -150.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-125.0, -125.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-100.0, -100.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-75.0, -75.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-50.0, -50.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (-25.0, -25.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (0.0, 0.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (25.0, 25.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (50.0, 50.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (75.0, 75.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (100.0, 100.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (125.0, 125.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (150.0, 150.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (175.0, 175.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (200.0, 200.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (225.0, 225.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (250.0, 250.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (275.0, 275.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (300.0, 300.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (325.0, 325.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (350.0, 350.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (375.0, 375.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+        (pos: (400.0, 400.0), component: 0, rate: 0.0, color: (0.46, 0.46, 0.52), radius: 22.0, solid: true),
+    ],
+    field_relations: [
+        // Both wanderers: need the nutrient (flora digestible), hold it, breed on it — the
+        // identical economy; only vision's mutability (and the side) differs.
+        (species: 0, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 12.0, need: 1.0),
+        (species: 1, component: 0, capacity: 30.0, emit_at_death: 3.0, repro_cost: 12.0, need: 1.0),
+        // Flora: absorbs & holds the nutrient, seeds on it, recycles at death.
+        (species: 2, component: 0, absorb: 2.5, capacity: 10.0, emit_at_death: 5.0),
+    ],
+    random_initial_nutrients: true,
+    seed: 1,
+)
