@@ -29,7 +29,9 @@ use crate::brain::{Brain, MlpBrain};
 use crate::components::{Action, Age, Agent, Generation, Perception, Reserve, Species, Vision};
 use crate::config::SimConfig;
 use crate::genotype::{Genotype, TRAITS};
-use crate::metrics::{Curve, History, live_stats, population_curves, trait_curves};
+use crate::metrics::{
+    Curve, History, drift_curves, filter_population_curves, live_stats, population_curves,
+};
 use crate::selection::Selection;
 use crate::visuals::srgb3;
 
@@ -499,7 +501,9 @@ fn draw_curves(
         return;
     }
 
-    let (pop, y_max) = population_curves(history, config);
+    // Same species selector as the live HUD (`SimConfig::species_display`): one curve
+    // set, two graphs.
+    let (pop, y_max) = filter_population_curves(population_curves(history, config).0, config);
     text(
         commands,
         font,
@@ -528,7 +532,9 @@ fn draw_curves(
         18.0,
         Color::WHITE,
     );
-    let traits = trait_curves(history);
+    // Same display filter as the live HUD (`SimConfig::gene_display`): one gene
+    // set, two graphs.
+    let traits = drift_curves(history, config);
     plot(
         commands,
         gizmos,

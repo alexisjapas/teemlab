@@ -104,6 +104,12 @@ impl RecorderPanel {
         self.child.is_some()
     }
 
+    /// Whether the 9:16 **visualizer overlay** (which carries the curve graphs) is on — the
+    /// record menu shows the curve-filter controls only then (cf. [`crate::panels`]).
+    pub fn hud(&self) -> bool {
+        self.hud
+    }
+
     /// Ask [`drive_recorder`] to start a recording at the next `Update` (ignored while
     /// one is already running). The **sole** launch entry point (the menu's *Run record*).
     pub fn request_launch(&mut self) {

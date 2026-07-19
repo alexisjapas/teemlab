@@ -1,20 +1,22 @@
-//! Selection driver — a priced, UNUSED trait decays only where it is allowed to
-//! (`scenarios/examples/03_selection.ron`, the split control).
+//! Selection driver — a priced, UNUSED trait decays only in the species that is allowed to
+//! mutate it, and it does so FAST: the mutable lineage's advantage over the frozen control
+//! is plain **inside two minutes** (`scenarios/examples/03_selection.ron`, the in-arena
+//! control).
 //!
-//! Both halves run the SAME far-sighted wanderers (vision range 300, 13 rays) that never
-//! steer on their eyes, foraging the same flora. Vision is pure overhead (a real
-//! `Vision::metabolic_cost`, SIM Law 7), so once the flora is grazed to a limiting level a
-//! wanderer that spends less on it breeds faster. The two halves differ ONLY in whether
-//! vision may mutate:
-//!   • MUTABLE (species 0) → selection melts the eyes down (mean `vision_range` slides well
-//!     below the founding 300);
+//! Both species are the SAME far-sighted wanderers (vision range 300, 21 rays) that never
+//! steer on their eyes, sharing one open arena and the same flora. Vision is pure overhead
+//! (a real `Vision::metabolic_cost`, SIM Law 7, the dominant drain), so with the flora grazed
+//! to a limiting level a wanderer that spends less on it breeds faster. The two species differ
+//! ONLY in whether vision may mutate:
+//!   • MUTABLE (species 0) → selection melts the eyes down (mean `vision_range` slides from
+//!     300 to ~210 within 2 min) and, paying far less overhead, out-breeds the control;
 //!   • FROZEN (species 1) → the CONTROL: same economy, same drift on every OTHER gene, but
-//!     vision is non-mutable, so it stays exactly at the founding 300 / 13.
+//!     vision is non-mutable, so it stays exactly at the founding 300 and dwindles.
 //!
-//! The falsifiable contrast: a gene falling ONLY on the side where it can mutate is
-//! selection, not noise or crowding. Living food (an example to watch, ROADMAP §7): the
-//! flora oscillates hard, but both halves sustain a breeding population well past the point
-//! where the decay is plain. Single-stepping, the same world as the binaries.
+//! The falsifiable contrast: a gene falling ONLY in the species that can mutate it is
+//! selection, not noise or crowding. The founders are LARGE cohorts (40 each) so the outcome
+//! is selection, not a coin-flip — the cheaper mutant wins every seed. Single-stepping, the
+//! same world as the binaries.
 
 use bevy::prelude::*;
 use teemlab::SimConfig;
@@ -24,13 +26,13 @@ use teemlab::genotype::Genotype;
 mod common;
 
 const SEEDS: [u64; 3] = [1, 2, 3];
-/// Long enough that food-limited selection has plainly pruned the mutable side, while both
-/// halves still hold a population (the decay precedes the eventual §7 wind-down).
-const HORIZON: usize = 300;
+/// The demo window: the mutable lineage's advantage — decayed vision AND a clear population
+/// lead over the frozen control — must be plain by here (the user's "under two minutes").
+const HORIZON: usize = 120;
 
 /// After `seconds` at `seed`, the mean `vision_range` and living count of the MUTABLE
-/// (species 0) and FROZEN (species 1) halves — from a SINGLE run (read both, don't re-sim).
-fn vision_by_half(seed: u64, seconds: usize) -> [(f32, usize); 2] {
+/// (species 0) and FROZEN (species 1) lineages — from a SINGLE run (read both, don't re-sim).
+fn vision_by_species(seed: u64, seconds: usize) -> [(f32, usize); 2] {
     let mut config = SimConfig::from_ron_file("scenarios/examples/03_selection.ron")
         .expect("scenario 03_selection.ron loadable");
     config.seed = seed;
@@ -54,27 +56,38 @@ fn vision_by_half(seed: u64, seconds: usize) -> [(f32, usize); 2] {
 }
 
 #[test]
-fn mutable_vision_decays_frozen_control_holds() {
+fn mutable_advantage_is_plain_within_two_minutes() {
     for seed in SEEDS {
-        let [(mutable_range, mutable_n), (frozen_range, frozen_n)] = vision_by_half(seed, HORIZON);
+        let [(mutable_range, mutable_n), (frozen_range, frozen_n)] =
+            vision_by_species(seed, HORIZON);
 
+        // The frozen control is still present (a flat 300 line to read against) — it dwindles
+        // but is not gone at two minutes.
         assert!(
             mutable_n > 0 && frozen_n > 0,
-            "seed {seed}: both halves must persist to be conclusive \
+            "seed {seed}: both lineages must persist at {HORIZON}s to be conclusive \
              (mutable n{mutable_n}, frozen n{frozen_n})"
         );
-        // The control never moves: vision is non-mutable, so every survivor still carries
-        // the founding 300 exactly.
+        // The control never moves: vision is non-mutable, so every survivor still carries the
+        // founding 300 exactly.
         assert!(
             (frozen_range - 300.0).abs() < 1.0,
             "seed {seed}: the frozen control's vision must stay at the founding 300 \
              (got {frozen_range:.1})"
         );
-        // The mutable half has been pruned well below it — selection at work.
+        // Mechanism: the mutable lineage's eyes have plainly melted down (observed ~204–228
+        // by 120s; a comfortable margin below).
         assert!(
-            mutable_range < 290.0,
-            "seed {seed}: the mutable half's vision must decay below the frozen control \
-             (mutable {mutable_range:.1} vs frozen {frozen_range:.1} at {HORIZON}s)"
+            mutable_range < 265.0,
+            "seed {seed}: the mutable lineage's vision must have decayed clearly by {HORIZON}s \
+             (mutable {mutable_range:.1} vs frozen {frozen_range:.1})"
+        );
+        // Outcome: paying less overhead, the mutable lineage out-breeds the control by a clear
+        // margin (observed ~2–3×; require ≥1.4× to leave room across seeds).
+        assert!(
+            mutable_n as f32 >= 1.4 * frozen_n as f32,
+            "seed {seed}: the mutable lineage must lead the frozen control by {HORIZON}s \
+             (mutable n{mutable_n} vs frozen n{frozen_n})"
         );
     }
 }

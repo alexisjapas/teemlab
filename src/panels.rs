@@ -604,7 +604,7 @@ fn world_thumbnail(painter: &egui::Painter, rect: egui::Rect, seed: u64) {
 /// disabled) — then a single **Run record** button, the *only* entry point to launching
 /// a (headless) recording. A recording in flight swaps the launcher for a spinner +
 /// Cancel. Stays open while you edit it (closes only on a click outside).
-fn record_menu(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
+fn record_menu(ui: &mut egui::Ui, panel: &mut RecorderPanel, config: &mut SimConfig) {
     // Cap the width: egui menus lay out **justified** (they stretch to fill the popup's
     // width, which defaults very wide), so a `min_width` can't tighten them — only a
     // `max_width` does.
@@ -615,6 +615,22 @@ fn record_menu(ui: &mut egui::Ui, panel: &mut RecorderPanel) {
     // Video's render sub-options appear (editable) when Video is on.
     if panel.video {
         panel.video_options_ui(ui);
+        // The curve graphs' display filters — which genes, which species — the SAME fields
+        // (`gene_display` / `species_display`) the live Observe HUD edits. Set here, they are
+        // saved into the recording's `scenario.ron`, so the video's overlaid curves match.
+        // Only meaningful with the HUD overlay (the curves) on, and only when there is a
+        // choice to make (>1 gene / >1 fauna species).
+        if panel.hud() {
+            let has_species = teemlab::metrics::fauna_species_indices(config).len() > 1;
+            let has_genes = teemlab::metrics::mutable_trait_indices(config).len() > 1;
+            if has_species || has_genes {
+                ui.indent("rec_curve_filters", |ui| {
+                    crate::theme::caption(ui, "Curve graphs");
+                    crate::hud::species_selector(ui, config, "Species:");
+                    crate::hud::gene_chips(ui, config, "Genes:");
+                });
+            }
+        }
     }
     // Sound / Metrics: planned — shown off and non-interactive for now (their disabled
     // state carries the "not yet" — no wide caption needed).
@@ -997,7 +1013,13 @@ pub fn dock(
                                             crate::theme::line(crate::theme::ACCENT),
                                         ));
                                     crate::theme::sticky_menu(ui, rec_button, |ui| {
-                                        record_menu(ui, &mut state.recorder_panel);
+                                        // Display-only edits (the curve filters) → bypass
+                                        // change detection like the HUD (cf. `hud_section`).
+                                        record_menu(
+                                            ui,
+                                            &mut state.recorder_panel,
+                                            config.bypass_change_detection(),
+                                        );
                                     });
                                 },
                             );
@@ -1014,7 +1036,11 @@ pub fn dock(
                 .default_size(crate::layout::BOTTOM_DEFAULT)
                 .size_range(crate::layout::BOTTOM_DEFAULT..=crate::layout::BOTTOM_DEFAULT)
                 .show_inside(&mut root, |ui| {
-                    hud::hud_section(ui, &mut history, &config);
+                    // `bypass_change_detection`: the only thing the HUD writes is the
+                    // display-only gene filter (`gene_display`), which no sim system reads
+                    // — touching it must not flag the config changed (which would rebuild
+                    // the movement / interaction caches every frame for nothing).
+                    hud::hud_section(ui, &mut history, config.bypass_change_detection());
                 });
 
             // RIGHT — the agent inspector. Fixed width, always open (no fold, no drag): a

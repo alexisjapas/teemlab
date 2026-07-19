@@ -130,6 +130,36 @@ pub struct SimConfig {
     /// The pixel-art **backdrop** (sand + water basin, `crate::decor`) — a
     /// presentation setting like the two colors above, saved with the scenario.
     pub decor: DecorConfig,
+    /// **Gene-drift display filter** (presentation only): the genes to plot in the
+    /// evolution graph, named by their [`TRAITS`](crate::genotype::TRAITS) label.
+    /// **Empty** (default) → the automatic view: every gene that is mutable in at
+    /// least one archetype (a frozen gene stays flat and only clutters). A
+    /// **non-empty** list narrows the graph to exactly those genes, so a teaching
+    /// scenario can foreground the one or two whose drift is the whole point (03's
+    /// vision decay). Honored by **both** plotting backends — the live HUD
+    /// ([`crate::hud`]) and the recorded video ([`crate::dataviz`]) — so the editor
+    /// and the video agree; a name that matches no trait is ignored. Read only for
+    /// display, never by the sim → byte-identical ([[mlp-test-chaos-sensitive]]).
+    #[serde(default)]
+    pub gene_display: Vec<String>,
+    /// **Species selector** (presentation only): the fauna species to focus **both**
+    /// evolution graphs on, named by their archetype `name`. It is the single species axis
+    /// shared by the two plots:
+    /// - the **population graph** shows only the named species' curves (its food line and
+    ///   any unnamed species hidden);
+    /// - the **gene-drift graph** splits into per-species curves for the named species
+    ///   (each keeping its **gene's** color, the species named in the legend), instead of
+    ///   the pooled mean.
+    ///
+    /// **Empty** (default) → both graphs' automatic views: the population graph shows every
+    /// living species plus the food line, and the drift graph pools all fauna into one curve
+    /// per gene. A name matching no fauna species is ignored. So 03 foregrounds its two
+    /// lineages on both graphs at once — the mutable eyes melting beside the frozen control
+    /// holding flat. Combines with [`gene_display`](Self::gene_display) (which genes) — the
+    /// two are the independent axes of the drift graph. Read only for display, never by the
+    /// sim → byte-identical ([[mlp-test-chaos-sensitive]]).
+    #[serde(default)]
+    pub species_display: Vec<String>,
     /// RNG seed: replay an *experiment config*, not bit-for-bit.
     pub seed: u64,
     /// **Generational regime** parameters (§4 axis A — batched reproduction). `None`
@@ -1017,6 +1047,10 @@ impl Default for SimConfig {
             play_area_color: [0.07, 0.07, 0.09],
             off_game_color: [0.17, 0.17, 0.19],
             decor: DecorConfig::default(),
+            // No filter: the graph auto-selects the mutable genes.
+            gene_display: Vec::new(),
+            // No species focus: population shows all species + food, drift pools the fauna.
+            species_display: Vec::new(),
             seed: 0x00C0_FFEE,
             batch: None,
             founder_pools: std::collections::HashMap::new(),
@@ -1761,6 +1795,9 @@ mod tests {
     fn ron_roundtrip_is_lossless() {
         let mut cfg = SimConfig::default();
         cfg.archetypes.push(Archetype::new_food(1));
+        // The presentation-only graph filters round-trip like any other field.
+        cfg.gene_display = vec!["Vision range".into(), "Rays (precision)".into()];
+        cfg.species_display = vec!["Mutable eyes".into(), "Frozen eyes".into()];
         let text = cfg.to_ron_string().expect("RON serialization");
         let back = SimConfig::from_ron_str(&text).expect("RON re-read");
         assert_eq!(cfg, back);

@@ -109,6 +109,10 @@ pub fn world_diverged(config: &SimConfig, world: &SimConfig) -> bool {
         play_area_color: _,
         off_game_color: _,
         decor: _,
+        // Display-only: the graph filters (which genes, which species), read by the plot
+        // backends every frame — never baked into the world, so an edit needs no reset.
+        gene_display: _,
+        species_display: _,
         // Outside the live world (the breeding orchestrator runs its own copies).
         batch: _,
     } = config;
